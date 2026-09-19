@@ -55,7 +55,7 @@ _PERMANENT_ERRORS = (
 )
 
 
-def _video_id(source_url: str) -> str | None:
+def video_id(source_url: str) -> str | None:
     if not source_url or len(source_url) > 2048:
         return None
     try:
@@ -172,7 +172,7 @@ class YouTubeResolver:
         self._timeout = timeout
 
     async def resolve(self, source_url: str) -> ResolvedTrack:
-        if _video_id(source_url) is None:
+        if video_id(source_url) is None:
             raise TrackError("Only single YouTube video URLs are supported.")
 
         args = (

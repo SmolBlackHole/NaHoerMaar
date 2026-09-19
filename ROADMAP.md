@@ -2,8 +2,8 @@
 
 Parent: [Project README](README.md)
 
-Status: phase 1 complete. Phase 2 implemented, pending live Discord acceptance.
-Phases 3-6 remain proposed.
+Status: phases 1 and 3 complete. Phase 2 implemented, with live failure and
+disconnect checks still pending. Phases 4-6 remain proposed.
 
 ## Current scope
 
@@ -90,18 +90,18 @@ See the [activity field restrictions](https://docs.discord.com/developers/events
 
 ## 3. API and simultaneous changes
 
-- [ ] Expose queue operations, player controls, channel selection and a state
+- [x] Expose queue operations, player controls, channel selection and a state
   snapshot through FastAPI. Route every state change, including playback
   callbacks, through the same player service
-- [ ] Apply queue mutations in order. Concurrent additions both survive;
+- [x] Apply queue mutations in order. Concurrent additions both survive;
   their order follows successful backend commits
-- [ ] Address entries by ID. Reorder and clear requests include the queue
+- [x] Address entries by ID. Reorder and clear requests include the queue
   revision they were based on. Reject a stale request with the current state
   instead of overwriting someone else's changes
-- [ ] Give mutations request IDs so retrying a request cannot add or skip twice.
+- [x] Give mutations request IDs so retrying a request cannot add or skip twice.
   Playback actions also identify the playback instance they target: two people
   skipping the same track must not skip its successor
-- [ ] Broadcast committed state changes to every connected dashboard. Reconnect
+- [x] Broadcast committed state changes to every connected dashboard. Reconnect
   with a fresh snapshot; ignore older revisions. Persist revisions with state
   changes so they remain ordered across restarts. Keep progress timestamps
   separate from queue revisions

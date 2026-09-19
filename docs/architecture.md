@@ -75,16 +75,54 @@ ends the owning runtime and triggers cleanup.
 Voice has its own FSM: `disconnected` -> `connecting` -> `connected`. A failed join,
 disconnect or channel change returns an interrupted track to the front of the
 queue. Reconnecting requires a manual playback start. Channel selection, volume
-and attempt IDs are runtime values. The database schema is unchanged.
+and attempt IDs are runtime values.
 
 Stop, disconnect and shutdown cancel extraction and reap the owned child processes.
 FFmpeg cleanup completes before another audio source starts. The controller owns
 accepted operations until they finish, even if their awaiting caller is cancelled.
 
-## Planned integrations
+## API and simultaneous changes
+
+FastAPI owns one runtime through its lifespan. HTTP controls and playback
+callbacks share the controller's lock. The API reads complete committed
+snapshots and never writes to the database or Discord directly.
+
+SQLite schema version 2 adds revisions and request receipts. Version 1 migrates
+in a transaction, preserving entries and order. `revision` orders visible state
+changes, including runtime-only changes such as volume. `queue_revision` changes
+only when upcoming entries or their order change. Startup advances the global
+revision because the voice connection and other runtime values reset.
+
+Reorder and clear compare the client's queue revision under the controller lock.
+Playback controls compare the expected playback attempt ID. A late skip for a
+finished track cannot consume its successor.
+
+Each mutation reserves its request ID before it runs. Queue edits commit their
+outcome in the same transaction as the queue and revisions. Retrying an ID with
+the same command returns its stored outcome and a fresh snapshot; reusing it for
+another command fails. Receipts have no automatic expiry.
+
+Discord effects cannot share a SQLite transaction. If the process exits before
+their outcome is saved, recovery marks the request as interrupted. It does not
+execute the request again. The client reads the current state before deciding
+whether to submit a new request ID.
+
+SSE subscribers register and receive their first snapshot under the same lock
+as publication. Each subscriber buffers at most one snapshot, replacing an older
+pending update when needed. Reconnect always starts with the current state.
+The server closes event streams before draining HTTP requests during shutdown.
+Failed database writes close streams and make API requests return 503 until
+restart.
+
+Playback progress uses position and timestamp anchors updated on playback
+transitions. Displaying elapsed time needs no per-second database writes.
+
+See the [API contract](api.md) for requests, responses and conflict handling.
+
+## Dashboard
 
 The Nuxt dashboard will provide login, voice channel selection, a queue and
-playback controls through a FastAPI API. All controls will live in the dashboard;
+playback controls through the API. All controls will live in the dashboard;
 no Discord chat or slash commands are planned.
 
 See the [roadmap](../ROADMAP.md) for upcoming work.

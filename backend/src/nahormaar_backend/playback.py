@@ -7,14 +7,20 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime
+from functools import partial
 from math import isfinite
 from pathlib import Path
 from uuid import UUID, uuid4
 
+from . import commands
 from .audio import SourceResolver, TrackError, VoiceChannelInfo, VoiceError, VoiceOutput
+from .commands import Outcome, Receipt, Revisions
+from .events import Snapshots
 from .fsm import VoiceEvent
 from .models import PlaybackState, PlayerSnapshot, QueueEntry
 from .player import Player
@@ -35,6 +41,17 @@ class PlaybackStatus:
     channel_id: int | None
     volume: float
     last_issue: PlaybackIssue | None
+    revision: int = 0
+    queue_revision: int = 0
+    position_seconds: float = 0
+    position_updated_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CommandReply:
+    outcome: Outcome
+    status: PlaybackStatus
+    replayed: bool = False
 
 
 class _PlayerWorker:
@@ -54,16 +71,16 @@ class _PlayerWorker:
         path.parent.mkdir(parents=True, exist_ok=True)
         self._store = SQLiteStore(path)
         self._player = Player(self._store)
+        self._player.recover_requests()
+        self._player.publish(self._player.revisions.revision, True)
         return self._player.snapshot
 
-    async def call(
-        self, operation: Callable[[Player], PlayerSnapshot]
-    ) -> PlayerSnapshot:
+    async def call[T](self, operation: Callable[[Player], T]) -> T:
         return await asyncio.get_running_loop().run_in_executor(
             self._executor, self._call, operation
         )
 
-    def _call(self, operation: Callable[[Player], PlayerSnapshot]) -> PlayerSnapshot:
+    def _call[T](self, operation: Callable[[Player], T]) -> T:
         if self._player is None:
             raise RuntimeError("Player worker is not open.")
         return operation(self._player)
@@ -90,6 +107,7 @@ class PlaybackController:
         snapshot: PlayerSnapshot,
         resolver: SourceResolver,
         voice: VoiceOutput,
+        revisions: Revisions,
     ) -> None:
         self._worker = worker
         self._snapshot = snapshot
@@ -101,11 +119,18 @@ class PlaybackController:
         self._retried = False
         self._volume = 1.0
         self._last_issue: PlaybackIssue | None = None
+        self._revisions = revisions
+        self._position_seconds = 0.0
+        self._position_updated_at: datetime | None = None
+        self._position_clock: float | None = None
+        self._pending_receipt: Receipt | None = None
+        self._events: Snapshots[PlaybackStatus] = Snapshots()
         self._faulted = False
         self._closing = False
         self._load_task: asyncio.Task[None] | None = None
         self._commands: set[asyncio.Task[PlayerSnapshot]] = set()
         self._close_task: asyncio.Task[None] | None = None
+        self._published = self.status
         voice.set_disconnect_handler(self._disconnected_callback)
 
     @classmethod
@@ -116,7 +141,8 @@ class PlaybackController:
         opening = asyncio.create_task(worker.open(database))
         try:
             snapshot = await asyncio.shield(opening)
-            return cls(worker, snapshot, resolver, voice)
+            versions = await worker.call(lambda player: player.revisions)
+            return cls(worker, snapshot, resolver, voice, versions)
         except BaseException:
             await asyncio.shield(worker.close())
             # Retrieve a late initialization error if the caller was cancelled.
@@ -136,7 +162,32 @@ class PlaybackController:
             self._voice.channel_id,
             self._volume,
             self._last_issue,
+            self._revisions.revision,
+            self._revisions.queue_revision,
+            self._position_seconds,
+            self._position_updated_at,
         )
+
+    async def read_status(self) -> PlaybackStatus:
+        async with self._lock:
+            self._require_available()
+            return self._published
+
+    @asynccontextmanager
+    async def subscribe(self) -> AsyncGenerator[asyncio.Queue[PlaybackStatus | None]]:
+        async with self._lock:
+            self._require_available()
+            queue = self._events.subscribe(self._published)
+        try:
+            yield queue
+        finally:
+            self._events.unsubscribe(queue)
+
+    def _require_available(self) -> None:
+        if self._closing:
+            raise RuntimeError("Playback controller is closed.")
+        if self._faulted:
+            raise RuntimeError("Playback is halted after an operational failure.")
 
     def channels(self) -> tuple[VoiceChannelInfo, ...]:
         return self._voice.channels()
@@ -156,27 +207,144 @@ class PlaybackController:
 
     async def _execute(self, action: Callable[[], Awaitable[None]]) -> PlayerSnapshot:
         async with self._lock:
-            if self._closing:
-                raise RuntimeError("Playback controller is closed.")
-            if self._faulted:
-                raise RuntimeError("Playback is halted after an operational failure.")
+            self._require_available()
+            self._pending_receipt = None
             try:
-                await action()
+                try:
+                    await action()
+                except VoiceError as exc:
+                    await self._voice_failed(str(exc))
+                    await self._publish()
+                    raise
+                except (StorageError, ValueError, KeyError):
+                    raise
+                except Exception:
+                    await self._fault("Playback operation failed; restart the backend.")
+                    await self._publish()
+                    raise
+                await self._publish()
             except StorageError:
                 await self._fault(
                     "Player database operation failed; playback stopped.",
                     persist_failure=False,
                 )
+                self._events.close()
                 raise
+            finally:
+                self._pending_receipt = None
+            return self._snapshot
+
+    async def _publish(self) -> None:
+        self._update_position()
+        changed = self.status != self._published
+        self._revisions = await self._worker.call(
+            lambda player: player.publish(
+                self._published.revision, changed, self._pending_receipt
+            )
+        )
+        status = self.status
+        if status != self._published:
+            self._published = status
+            self._events.publish(status)
+
+    def _update_position(self) -> None:
+        previous = self._published
+        now = self._loop.time()
+        if previous.attempt_id != self._attempt_id:
+            self._position_seconds = 0.0
+        elif previous.player.state is self._snapshot.state:
+            return
+        elif (
+            previous.player.state is PlaybackState.PLAYING
+            and self._position_clock is not None
+        ):
+            self._position_seconds += now - self._position_clock
+        self._position_clock = now
+        self._position_updated_at = datetime.now(UTC)
+
+    async def request(
+        self, request_id: UUID, command: commands.Command
+    ) -> CommandReply:
+        receipt = Receipt(request_id, commands.fingerprint(command))
+        outcome = Outcome()
+        replayed = False
+
+        async def action() -> None:
+            nonlocal outcome, replayed
+            existing = await self._worker.call(lambda player: player.reserve(receipt))
+            if existing is not None:
+                replayed = existing.fingerprint == receipt.fingerprint
+                outcome = (
+                    existing.outcome or Outcome("interrupted", 409)
+                    if replayed
+                    else Outcome("idempotency_conflict", 409)
+                )
+                return
+            try:
+                outcome = await self._dispatch(command, receipt)
+            except KeyError:
+                outcome = Outcome("entry_not_found", 404)
+            except ValueError:
+                outcome = Outcome("invalid_action", 409)
             except VoiceError as exc:
                 await self._voice_failed(str(exc))
-                raise
-            except (ValueError, KeyError):
-                raise
-            except Exception:
-                await self._fault("Playback operation failed; restart the backend.")
-                raise
-            return self._snapshot
+                outcome = Outcome("voice_unavailable", 503)
+            self._pending_receipt = replace(receipt, outcome=outcome)
+
+        await asyncio.shield(self._submit(action))
+        # A later action may already have committed. Return its fresh snapshot,
+        # while retaining the original request's outcome.
+        return CommandReply(outcome, await self.read_status(), replayed)
+
+    async def _dispatch(self, command: commands.Command, receipt: Receipt) -> Outcome:
+        if isinstance(command, (commands.Move, commands.Clear)):
+            if command.expected_queue_revision != self._revisions.queue_revision:
+                return Outcome("queue_conflict", 409)
+        if isinstance(command, commands.Control):
+            if command.expected_playback_id != self._attempt_id:
+                return Outcome("playback_conflict", 409)
+        operation: Callable[[Player], PlayerSnapshot]
+        match command:
+            case commands.Add(source_url):
+                entry = QueueEntry(source_url)
+                operation = partial(Player.enqueue, entry=entry)
+                outcome = Outcome(entry_id=entry.id)
+            case commands.Remove(entry_id):
+                operation = partial(Player.remove, entry_id=entry_id)
+                outcome = Outcome()
+            case commands.Move(entry_id, before_entry_id, _):
+                operation = partial(
+                    Player.move_before,
+                    entry_id=entry_id,
+                    before_entry_id=before_entry_id,
+                )
+                outcome = Outcome()
+            case commands.Clear():
+                operation = Player.clear
+                outcome = Outcome()
+            case commands.Control(action, _):
+                await {
+                    "play": self._play,
+                    "pause": self._pause,
+                    "skip": self._skip,
+                    "stop": self._stop,
+                }[action]()
+                return Outcome()
+            case commands.Volume(volume):
+                self._set_volume(volume)
+                return Outcome()
+            case commands.Connect(channel_id):
+                await self._connect(channel_id)
+                return Outcome()
+            case commands.Disconnect():
+                await self._leave()
+                return Outcome()
+        await self._change(
+            lambda player: player.apply_request(
+                replace(receipt, outcome=outcome), operation
+            )
+        )
+        return outcome
 
     async def _change(self, operation: Callable[[Player], PlayerSnapshot]) -> None:
         self._snapshot = await self._worker.call(operation)
@@ -211,14 +379,17 @@ class PlaybackController:
 
     async def connect(self, channel_id: int) -> PlayerSnapshot:
         async def action() -> None:
-            if self._voice.connected and self._voice.channel_id == channel_id:
-                return
-            await self._leave()
-            await self._change(lambda player: player.voice(VoiceEvent.CONNECT))
-            await self._voice.connect(channel_id)
-            await self._change(lambda player: player.voice(VoiceEvent.CONNECTED))
+            await self._connect(channel_id)
 
         return await asyncio.shield(self._submit(action))
+
+    async def _connect(self, channel_id: int) -> None:
+        if self._voice.connected and self._voice.channel_id == channel_id:
+            return
+        await self._leave()
+        await self._change(lambda player: player.voice(VoiceEvent.CONNECT))
+        await self._voice.connect(channel_id)
+        await self._change(lambda player: player.voice(VoiceEvent.CONNECTED))
 
     async def disconnect(self) -> PlayerSnapshot:
         return await asyncio.shield(self._submit(self._leave))
@@ -229,25 +400,25 @@ class PlaybackController:
         await self._voice.disconnect()
 
     async def play(self) -> PlayerSnapshot:
-        async def action() -> None:
-            if not self._voice.connected:
-                raise ValueError("Join a voice channel before starting playback.")
-            was_paused = self._snapshot.state is PlaybackState.PAUSED
-            await self._change(Player.play)
-            self._last_issue = None
-            if was_paused:
-                self._voice.resume()
-            else:
-                self._begin()
+        return await asyncio.shield(self._submit(self._play))
 
-        return await asyncio.shield(self._submit(action))
+    async def _play(self) -> None:
+        if not self._voice.connected:
+            raise ValueError("Join a voice channel before starting playback.")
+        was_paused = self._snapshot.state is PlaybackState.PAUSED
+        await self._change(Player.play)
+        self._last_issue = None
+        if was_paused:
+            self._voice.resume()
+        else:
+            self._begin()
 
     async def pause(self) -> PlayerSnapshot:
-        async def action() -> None:
-            await self._change(Player.pause)
-            self._voice.pause()
+        return await asyncio.shield(self._submit(self._pause))
 
-        return await asyncio.shield(self._submit(action))
+    async def _pause(self) -> None:
+        await self._change(Player.pause)
+        self._voice.pause()
 
     async def skip(self) -> PlayerSnapshot:
         target = self._attempt_id
@@ -255,31 +426,40 @@ class PlaybackController:
         async def action() -> None:
             if target != self._attempt_id:
                 return
-            if not self._voice.connected:
-                await self._leave()
-                return
-            await self._change(Player.skip)
-            await self._halt()
-            self._begin()
+            await self._skip()
 
         return await asyncio.shield(self._submit(action))
+
+    async def _skip(self) -> None:
+        if not self._voice.connected:
+            await self._leave()
+            return
+        await self._change(Player.skip)
+        await self._halt()
+        self._begin()
 
     async def stop(self) -> PlayerSnapshot:
-        async def action() -> None:
-            await self._change(Player.stop)
-            await self._halt()
+        return await asyncio.shield(self._submit(self._stop))
 
-        return await asyncio.shield(self._submit(action))
+    async def _stop(self) -> None:
+        await self._change(Player.stop)
+        await self._halt()
 
     async def set_volume(self, volume: float) -> PlayerSnapshot:
         if not isfinite(volume) or not 0 <= volume <= 1:
             raise ValueError("Volume must be between 0 and 1.")
 
         async def action() -> None:
-            self._voice.set_volume(volume)
-            self._volume = volume
+            self._set_volume(volume)
 
         return await asyncio.shield(self._submit(action))
+
+    def _set_volume(self, volume: float) -> None:
+        if not isfinite(volume) or not 0 <= volume <= 1:
+            raise ValueError("Volume must be between 0 and 1.")
+        if volume != self._volume:
+            self._voice.set_volume(volume)
+            self._volume = volume
 
     def _begin(self, *, retried: bool = False) -> None:
         entry = self._snapshot.current
@@ -437,8 +617,12 @@ class PlaybackController:
     async def close(self) -> None:
         if self._close_task is None:
             self._closing = True
+            self._events.close()
             self._close_task = asyncio.create_task(self._close())
         await asyncio.shield(self._close_task)
+
+    def close_events(self) -> None:
+        self._events.close()
 
     async def _close(self) -> None:
         errors: list[Exception] = []

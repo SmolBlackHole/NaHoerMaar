@@ -20,11 +20,36 @@ runs. You can override it with `FFMPEG_PATH`. On Linux and macOS, audio processi
 also needs the system Opus library (`libopus0` on Debian/Ubuntu,
 `opus` through Homebrew on macOS).
 
-## Try Discord playback
+## Configure Discord
 
 Copy `.env.example` to `.env` and set `DISCORD_TOKEN` and `DISCORD_GUILD_ID`.
 Environment variables override `.env` values. Invite the bot to that server with
 View Channel, Connect and Speak permissions for the test voice channel.
+
+## Run the API
+
+```powershell
+.venv\Scripts\python.exe -m nahormaar_backend
+```
+
+Open [the API explorer](http://127.0.0.1:8000/docs) to try the controls. Use
+`GET /api/channels` to find a channel, connect with `PUT /api/voice/channel`, add
+a video through `POST /api/queue`, then call `POST /api/player/play` with
+`expected_playback_id: null`.
+
+Every mutation needs a UUID in its `Idempotency-Key` header. Generate one with
+`[guid]::NewGuid().ToString()` in PowerShell. Reuse it only when retrying the same
+request. See the [API contract](api.md) for payloads and conflict handling.
+
+The server binds to `127.0.0.1:8000` and runs one bot instance. Keep one worker;
+multiple workers would each start a bot and own a different player. Login is
+still pending, so shared deployment is not supported yet. Browser requests must
+use the API's own origin.
+
+Ctrl+C closes the HTTP event streams, stops audio and disconnects the bot. The
+queue survives and waits for a manual start after restarting the backend.
+
+## Try Discord playback without the API
 
 List the available voice channels:
 
@@ -51,11 +76,11 @@ The script uses `data/live-test.sqlite3` and replaces that test queue on each
 playback run. The normal runtime uses `DATABASE_PATH`, defaulting to
 `data/player.sqlite3`.
 
-Local tests cover real FFmpeg decoding, failure recovery and callback races.
-Live acceptance still requires two consecutive tracks and the playback controls
-to work in Discord. Disconnect the bot during playback and check that audio stops
-without consuming the interrupted entry. Repeat on the deployment host before
-shared use.
+Two consecutive tracks and the playback controls have been tested in Discord.
+Live checks for an unavailable track, an unexpected voice disconnect and the
+visible presence remain open. During the disconnect check, audio must stop and
+the interrupted entry must return to the queue. Repeat playback acceptance on
+the deployment host before shared use.
 
 ## Daily bio
 

@@ -4,9 +4,11 @@
 
 """Single-owner player service. Publish state only after its storage commit."""
 
+from collections.abc import Callable
 from dataclasses import replace
 from uuid import UUID
 
+from .commands import Receipt, Revisions
 from .fsm import PlaybackEvent, VoiceEvent, transition, voice_transition
 from .models import PlayerSnapshot, QueueEntry
 from .storage import SQLiteStore
@@ -16,10 +18,14 @@ class Player:
     def __init__(self, store: SQLiteStore) -> None:
         self._store = store
         stored = store.load()
-        recovered = transition(stored, PlaybackEvent.RECOVER)
-        if recovered != stored:
-            store.save(recovered)
-        self._snapshot = recovered
+        self._snapshot: PlayerSnapshot = stored
+        self._revisions = store.revisions()
+        self._receipt: Receipt | None = None
+        self._commit(transition(stored, PlaybackEvent.RECOVER))
+
+    @property
+    def revisions(self) -> Revisions:
+        return self._revisions
 
     @property
     def snapshot(self) -> PlayerSnapshot:
@@ -27,13 +33,48 @@ class Player:
 
     def _commit(self, snapshot: PlayerSnapshot) -> PlayerSnapshot:
         if snapshot != self._snapshot:
-            if (
-                replace(snapshot, voice_state=self._snapshot.voice_state)
-                != self._snapshot
-            ):
-                self._store.save(snapshot)
+            versions = Revisions(
+                self._revisions.revision + 1,
+                self._revisions.queue_revision
+                + (
+                    tuple(entry.id for entry in snapshot.upcoming)
+                    != tuple(entry.id for entry in self._snapshot.upcoming)
+                ),
+            )
+            self._store.save(snapshot, revisions=versions, receipt=self._receipt)
+            self._revisions = versions
             self._snapshot = snapshot
+        elif self._receipt is not None:
+            self._store.finish(self._receipt)
         return self._snapshot
+
+    def reserve(self, receipt: Receipt) -> Receipt | None:
+        return self._store.reserve(receipt)
+
+    def recover_requests(self) -> None:
+        self._store.interrupt_requests()
+
+    def apply_request(
+        self, receipt: Receipt, operation: Callable[["Player"], PlayerSnapshot]
+    ) -> PlayerSnapshot:
+        """Commit a queue operation and its successful outcome together."""
+        self._receipt = receipt
+        try:
+            return operation(self)
+        finally:
+            self._receipt = None
+
+    def publish(
+        self, previous_revision: int, changed: bool, receipt: Receipt | None = None
+    ) -> Revisions:
+        """Assign runtime-only changes a durable revision before publication."""
+        if changed and self._revisions.revision == previous_revision:
+            versions = replace(self._revisions, revision=previous_revision + 1)
+            self._store.save(self._snapshot, revisions=versions, receipt=receipt)
+            self._revisions = versions
+        elif receipt is not None:
+            self._store.finish(receipt)
+        return self._revisions
 
     def enqueue(self, entry: QueueEntry) -> PlayerSnapshot:
         return self._commit(

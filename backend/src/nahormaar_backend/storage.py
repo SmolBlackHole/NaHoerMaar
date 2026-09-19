@@ -21,14 +21,16 @@ from sqlalchemy import (
     insert,
     inspect,
     select,
+    update,
 )
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from sqlalchemy.pool import ConnectionPoolEntry
 
+from .commands import Outcome, Receipt, Revisions
 from .models import PlaybackState, PlayerSnapshot, QueueEntry
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 
 
 class _Base(DeclarativeBase):
@@ -58,6 +60,18 @@ class _PlayerRow(_Base):
     current_entry_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("queue_entries.id")
     )
+    revision: Mapped[int] = mapped_column(default=0, server_default="0")
+    queue_revision: Mapped[int] = mapped_column(default=0, server_default="0")
+
+
+class _RequestRow(_Base):
+    __tablename__ = "requests"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    fingerprint: Mapped[str]
+    code: Mapped[str | None]
+    status_code: Mapped[int | None]
+    entry_id: Mapped[UUID | None]
 
 
 class StorageError(RuntimeError):
@@ -129,57 +143,84 @@ class SQLiteStore:
                     )
                     return
 
-                if version != _SCHEMA_VERSION or tables != set(_Base.metadata.tables):
+                expected_tables = set(_Base.metadata.tables)
+                if version == 1:
+                    expected_tables.remove("requests")
+                if version not in (1, _SCHEMA_VERSION) or tables != expected_tables:
                     raise ValueError(f"Unsupported player database schema ({version}).")
                 for table in _Base.metadata.sorted_tables:
+                    if table.name not in expected_tables:
+                        continue
                     columns = [
                         column["name"] for column in inspector.get_columns(table.name)
                     ]
-                    if columns != list(table.columns.keys()):
+                    expected_columns = list(table.columns.keys())
+                    if version == 1 and table.name == "player_state":
+                        expected_columns = expected_columns[:-2]
+                    if columns != expected_columns:
                         raise ValueError(f"Unexpected columns in {table.name}.")
-        except (SQLAlchemyError, ValueError) as exc:
+                if inspector.get_view_names():
+                    raise ValueError("Unexpected database views.")
+                if version == 1:
+                    for name in ("revision", "queue_revision"):
+                        connection.exec_driver_sql(
+                            f"ALTER TABLE player_state ADD COLUMN {name} "
+                            "INTEGER NOT NULL DEFAULT 0"
+                        )
+                    _Base.metadata.tables["requests"].create(connection)
+                    # Validate old data before committing any schema changes.
+                    with Session(bind=connection) as session:
+                        self._load(session)
+                    connection.exec_driver_sql("PRAGMA user_version = 2")
+        except (SQLAlchemyError, TypeError, ValueError) as exc:
             raise StorageError(f"Invalid player database: {exc}") from exc
 
     def load(self) -> PlayerSnapshot:
         """Read stored state as immutable domain values; do not recover playback."""
         try:
             with self._session() as session:
-                players = session.scalars(select(_PlayerRow)).all()
-                if len(players) != 1 or players[0].id != 1:
-                    raise ValueError("Expected exactly one player state.")
-                player = players[0]
-                state = PlaybackState(player.state)
-                rows = session.scalars(
-                    select(_QueueEntryRow).order_by(_QueueEntryRow.position)
-                )
-                entries: list[QueueEntry] = []
-                for position, row in enumerate(rows):
-                    if row.position != position:
-                        raise ValueError("Queue positions must be contiguous integers.")
-                    entries.append(
-                        QueueEntry(
-                            id=row.id,
-                            source_url=row.source_url,
-                            video_id=row.video_id,
-                            title=row.title,
-                            uploader=row.uploader,
-                            duration_seconds=row.duration_seconds,
-                            thumbnail_url=row.thumbnail_url,
-                        )
-                    )
-
-                current = None
-                if player.current_entry_id is not None:
-                    if not entries or entries[0].id != player.current_entry_id:
-                        raise ValueError(
-                            "Current entry must precede the upcoming queue."
-                        )
-                    current = entries.pop(0)
-                return PlayerSnapshot(state, current, tuple(entries))
+                return self._load(session)
         except (SQLAlchemyError, TypeError, ValueError) as exc:
             raise StorageError(f"Invalid player database: {exc}") from exc
 
-    def save(self, snapshot: PlayerSnapshot) -> None:
+    def _load(self, session: Session) -> PlayerSnapshot:
+        players = session.scalars(select(_PlayerRow)).all()
+        if len(players) != 1 or players[0].id != 1:
+            raise ValueError("Expected exactly one player state.")
+        player = players[0]
+        Revisions(player.revision, player.queue_revision)
+        state = PlaybackState(player.state)
+        rows = session.scalars(select(_QueueEntryRow).order_by(_QueueEntryRow.position))
+        entries: list[QueueEntry] = []
+        for position, row in enumerate(rows):
+            if row.position != position:
+                raise ValueError("Queue positions must be contiguous integers.")
+            entries.append(
+                QueueEntry(
+                    id=row.id,
+                    source_url=row.source_url,
+                    video_id=row.video_id,
+                    title=row.title,
+                    uploader=row.uploader,
+                    duration_seconds=row.duration_seconds,
+                    thumbnail_url=row.thumbnail_url,
+                )
+            )
+
+        current = None
+        if player.current_entry_id is not None:
+            if not entries or entries[0].id != player.current_entry_id:
+                raise ValueError("Current entry must precede the upcoming queue.")
+            current = entries.pop(0)
+        return PlayerSnapshot(state, current, tuple(entries))
+
+    def save(
+        self,
+        snapshot: PlayerSnapshot,
+        *,
+        revisions: Revisions | None = None,
+        receipt: Receipt | None = None,
+    ) -> None:
         """Commit a whole snapshot, or leave the previous snapshot intact."""
         entries = snapshot.upcoming
         if snapshot.current is not None:
@@ -211,5 +252,66 @@ class SQLiteStore:
                 player.current_entry_id = (
                     snapshot.current.id if snapshot.current else None
                 )
+                if revisions is not None:
+                    player.revision = revisions.revision
+                    player.queue_revision = revisions.queue_revision
+                if receipt is not None:
+                    self._finish(session, receipt)
         except SQLAlchemyError as exc:
             raise StorageError(f"Cannot save player state: {exc}") from exc
+
+    def revisions(self) -> Revisions:
+        try:
+            with self._session() as session:
+                row = session.get(_PlayerRow, 1)
+                if row is None:
+                    raise StorageError("Player state is missing.")
+                return Revisions(row.revision, row.queue_revision)
+        except (SQLAlchemyError, ValueError) as exc:
+            raise StorageError("Cannot read player revisions.") from exc
+
+    def reserve(self, receipt: Receipt) -> Receipt | None:
+        """Return an existing receipt, or commit a reservation before any effect."""
+        try:
+            with self._session() as session, session.begin():
+                row = session.get(_RequestRow, receipt.request_id)
+                if row is not None:
+                    outcome = (
+                        Outcome(row.code, row.status_code, row.entry_id)
+                        if row.code is not None and row.status_code is not None
+                        else None
+                    )
+                    return Receipt(row.id, row.fingerprint, outcome)
+                session.add(
+                    _RequestRow(id=receipt.request_id, fingerprint=receipt.fingerprint)
+                )
+                return None
+        except SQLAlchemyError as exc:
+            raise StorageError("Cannot reserve control request.") from exc
+
+    @staticmethod
+    def _finish(session: Session, receipt: Receipt) -> None:
+        row = session.get(_RequestRow, receipt.request_id)
+        if row is None or receipt.outcome is None:
+            raise StorageError("Cannot finish an unreserved control request.")
+        row.code = receipt.outcome.code
+        row.status_code = receipt.outcome.status_code
+        row.entry_id = receipt.outcome.entry_id
+
+    def finish(self, receipt: Receipt) -> None:
+        try:
+            with self._session() as session, session.begin():
+                self._finish(session, receipt)
+        except SQLAlchemyError as exc:
+            raise StorageError("Cannot save control request outcome.") from exc
+
+    def interrupt_requests(self) -> None:
+        try:
+            with self._session() as session, session.begin():
+                session.execute(
+                    update(_RequestRow)
+                    .where(_RequestRow.code.is_(None))
+                    .values(code="interrupted", status_code=409)
+                )
+        except SQLAlchemyError as exc:
+            raise StorageError("Cannot recover control requests.") from exc
