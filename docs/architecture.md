@@ -152,11 +152,13 @@ event stream; playback continues.
 Thumbnails come from track metadata or the YouTube video ID. Cover and Video fill
 the player area, with a dark, blurred overlay behind the track details;
 the settings button reveals the native YouTube controls and the full video frame.
-The embed loads only while the Video view is visible and connected. Leaving that view
-or hiding the browser tab destroys it. Returning creates a new embed at the bot's
-current position, initially muted. The native YouTube controls affect only the
-browser preview. It follows bot play/pause changes, but does not synchronize
-viewers or compensate for Discord audio latency.
+The embed first loads while the Video view is visible and connected, initially muted.
+Switching to Queue, hiding the browser tab or losing the connection pauses the preview
+and keeps the embed. Returning aligns it with the bot's current position and play/pause
+state. Track changes in the background load a new embed only when the player becomes
+visible again. Selecting Cover or leaving the player page destroys the embed.
+The native YouTube controls affect only the browser preview. It follows bot play/pause
+changes, but does not synchronize viewers or compensate for Discord audio latency.
 
 At the end of the video, the preview returns to Cover. YouTube's `rel=0` setting
 limits recommendations to the same channel; it does not disable them. End cards

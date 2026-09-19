@@ -16,5 +16,8 @@ export function usePlaybackPosition() {
 	const position = computed(() =>
 		player.snapshot ? playbackPosition(player.snapshot, now.value) : 0,
 	);
-	return { now, position };
+	function currentPosition() {
+		return player.snapshot ? playbackPosition(player.snapshot, Date.now()) : 0;
+	}
+	return { now, position, currentPosition };
 }

@@ -4,7 +4,8 @@ import type { PlaybackState } from "#shared/player";
 const props = defineProps<{
 	videoId: string;
 	title: string;
-	position: number;
+	getPosition: () => number;
+	active: boolean;
 	state: PlaybackState;
 	interactive: boolean;
 }>();
@@ -17,7 +18,8 @@ const emit = defineEmits<{
 const host = ref<HTMLElement>();
 const ready = ref(false);
 let embed: YouTubePlayer | undefined;
-let active = true;
+let disposed = false;
+let initializing = false;
 let readyTimeout: ReturnType<typeof setTimeout> | undefined;
 
 function updateInteraction() {
@@ -25,12 +27,12 @@ function updateInteraction() {
 }
 function followPlayer() {
 	if (!ready.value || !embed) return;
-	if (props.state === "playing") embed.playVideo();
+	if (props.active && props.state === "playing") embed.playVideo();
 	else embed.pauseVideo();
 }
 function align() {
 	if (!ready.value || !embed) return;
-	embed.seekTo(props.position, true);
+	if (props.active) embed.seekTo(props.getPosition(), true);
 	followPlayer();
 }
 function startPreview() {
@@ -41,14 +43,16 @@ function startPreview() {
 defineExpose({ align, startPreview });
 function fail() {
 	clearTimeout(readyTimeout);
-	if (active) emit("failed");
+	if (!disposed) emit("failed");
 }
-onMounted(async () => {
+async function initialize() {
+	if (disposed || !props.active || !host.value || embed || initializing) return;
+	initializing = true;
 	emit("ready", false);
 	emit("blocked", false);
 	try {
 		const api = await loadYouTube();
-		if (!active || !host.value) return;
+		if (disposed || !props.active || !host.value) return;
 		const target = document.createElement("div");
 		host.value.append(target);
 		readyTimeout = setTimeout(fail, 15000);
@@ -60,7 +64,7 @@ onMounted(async () => {
 				origin: location.origin,
 				playsinline: 1,
 				autoplay: 0,
-				start: Math.floor(props.position),
+				start: Math.floor(props.getPosition()),
 				controls: 1,
 				disablekb: 0,
 				rel: 0,
@@ -68,7 +72,7 @@ onMounted(async () => {
 			},
 			events: {
 				onReady(event) {
-					if (!active) return;
+					if (disposed) return;
 					clearTimeout(readyTimeout);
 					embed = event.target;
 					embed.getIframe().title = props.title;
@@ -76,25 +80,40 @@ onMounted(async () => {
 					embed.mute();
 					ready.value = true;
 					emit("ready", true);
-					followPlayer();
+					align();
 				},
 				onError: fail,
 				onStateChange(event) {
-					if (active && event.data === 0) emit("ended");
+					if (disposed) return;
+					if (!props.active && event.data === 1) embed?.pauseVideo();
+					if (props.active && event.data === 0) emit("ended");
 				},
 				onAutoplayBlocked() {
-					if (active) emit("blocked", true);
+					if (!disposed && props.active) emit("blocked", true);
 				},
 			},
 		});
 	} catch {
 		fail();
+	} finally {
+		initializing = false;
 	}
-});
+}
+onMounted(initialize);
+watch(
+	() => props.active,
+	(visible) => {
+		if (!visible) followPlayer();
+		else if (ready.value) {
+			emit("blocked", false);
+			align();
+		} else void initialize();
+	},
+);
 watch(() => props.state, followPlayer);
 watch(() => props.interactive, updateInteraction);
 onBeforeUnmount(() => {
-	active = false;
+	disposed = true;
 	clearTimeout(readyTimeout);
 	embed?.destroy();
 });

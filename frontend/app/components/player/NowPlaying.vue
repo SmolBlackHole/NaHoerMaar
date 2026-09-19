@@ -6,7 +6,7 @@ const props = defineProps<{ active: boolean }>();
 const emit = defineEmits<{ queue: [] }>();
 const player = usePlayerStore();
 const { icons } = useTheme();
-const { position } = usePlaybackPosition();
+const { currentPosition } = usePlaybackPosition();
 const current = computed(() => player.snapshot?.current ?? null);
 const nextTrack = computed(() => player.snapshot?.upcoming[0] ?? null);
 const videoId = computed(() => (current.value ? youtubeVideoId(current.value.source_url) : null));
@@ -68,12 +68,13 @@ watch(loadVideo, (visible) => {
 				<UIcon :name="icons.headphones" />
 			</div>
 			<PlayerVideo
-				v-if="preview === 'video' && current && !videoFailed && loadVideo && videoId"
+				v-if="preview === 'video' && current && !videoFailed && videoId"
 				ref="video"
 				:key="player.snapshot?.playback_id ?? videoId"
 				:video-id="videoId"
 				:title="trackTitle(current)"
-				:position="position"
+				:get-position="currentPosition"
+				:active="loadVideo"
 				:state="player.snapshot?.state ?? 'idle'"
 				:interactive="videoControls"
 				@ready="videoReady = $event"
