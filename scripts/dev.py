@@ -27,20 +27,20 @@ def _venv_python() -> Path:
 def _require_node() -> None:
     node = shutil.which("node")
     if node is None:
-        raise SystemExit("Node.js 22 or newer with npm is required.")
+        raise SystemExit("Node.js 24 or newer with npm is required.")
     completed = subprocess.run(  # noqa: S603 - resolved Node executable, fixed arguments
         (node, "--version"), check=True, capture_output=True, text=True
     )
     major = int(completed.stdout.strip().removeprefix("v").partition(".")[0])
-    if major < 22:
-        raise SystemExit("Node.js 22 or newer with npm is required.")
+    if major < 24:
+        raise SystemExit("Node.js 24 or newer with npm is required.")
 
 
 def _npm() -> str:
     executable = "npm.cmd" if os.name == "nt" else "npm"
     resolved = shutil.which(executable)
     if resolved is None:
-        raise SystemExit("Node.js 22 or newer with npm is required.")
+        raise SystemExit("Node.js 24 or newer with npm is required.")
     return resolved
 
 

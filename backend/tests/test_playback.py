@@ -196,7 +196,9 @@ def test_pause_resume_volume_clear_and_stop_have_distinct_effects(
             assert controller.snapshot.upcoming == ()
             await controller.stop()
             assert controller.snapshot == PlayerSnapshot(
-                upcoming=(first,), voice_state=VoiceState.CONNECTED
+                upcoming=(first,),
+                voice_state=VoiceState.CONNECTED,
+                recently_played=resumed.recently_played,
             )
         finally:
             await controller.close()
@@ -404,10 +406,13 @@ def test_connection_loss_preserves_current_for_manual_restart(tmp_path: Path) ->
                 lambda: controller.snapshot.state is PlaybackState.PLAYING
             )
             voice.lose_connection()
+            history = controller.snapshot.recently_played
             await _wait_until(
                 lambda: controller.snapshot.voice_state is VoiceState.DISCONNECTED
             )
-            assert controller.snapshot == PlayerSnapshot(upcoming=(entry,))
+            assert controller.snapshot == PlayerSnapshot(
+                upcoming=(entry,), recently_played=history
+            )
             assert controller.status.last_issue is not None
             assert "connection lost" in controller.status.last_issue.message
 

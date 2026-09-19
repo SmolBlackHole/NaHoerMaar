@@ -1,0 +1,17 @@
+Google Fonts attribution
+
+Nuxt Fonts may bundle the configured families below in a production build. The
+families are distributed under the SIL Open Font License, Version 1.1. The
+family-specific OFL text and copyright attribution are maintained by Google
+Fonts in each linked directory:
+
+- DM Sans: [local OFL notice](fonts/dmsans.txt), [source](https://github.com/google/fonts/tree/main/ofl/dmsans)
+- Geist: [local OFL notice](fonts/geist.txt), [source](https://github.com/google/fonts/tree/main/ofl/geist)
+- Inter: [local OFL notice](fonts/inter.txt), [source](https://github.com/google/fonts/tree/main/ofl/inter)
+- Outfit: [local OFL notice](fonts/outfit.txt), [source](https://github.com/google/fonts/tree/main/ofl/outfit)
+- Public Sans: [local OFL notice](fonts/publicsans.txt), [source](https://github.com/google/fonts/tree/main/ofl/publicsans)
+- Poppins: [local OFL notice](fonts/poppins.txt), [source](https://github.com/google/fonts/tree/main/ofl/poppins)
+- Raleway: [local OFL notice](fonts/raleway.txt), [source](https://github.com/google/fonts/tree/main/ofl/raleway)
+
+The local files contain the complete family-specific license text. The license
+FAQ is available at https://scripts.sil.org/OFL.

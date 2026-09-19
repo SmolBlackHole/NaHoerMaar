@@ -57,7 +57,7 @@ def test_migrate_v1_recovers_current_preserving_ids_order_and_revisions(
     with SQLiteStore(path) as store:
         assert Player(store).revisions.revision == 1
     with closing(sqlite3.connect(path)) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 3
 
 
 @pytest.mark.parametrize(
@@ -98,6 +98,43 @@ def test_outcome_failure_rolls_back_queue_and_revision(tmp_path: Path) -> None:
         assert player.snapshot.upcoming == store.load().upcoming == ()
         assert player.revisions == store.revisions() == before
         assert store.reserve(receipt) == Receipt(receipt.request_id, "add")
+
+
+@pytest.mark.parametrize("corrupt", [False, True])
+def test_migrate_v2_preserves_receipts_and_rolls_back_invalid_data(
+    tmp_path: Path, corrupt: bool
+) -> None:
+    path = tmp_path / "v2.sqlite3"
+    version_one(path)
+    request_id = uuid4()
+    with closing(sqlite3.connect(path, autocommit=True)) as db:
+        db.executescript("""
+            ALTER TABLE player_state ADD COLUMN revision INTEGER NOT NULL DEFAULT 9;
+            ALTER TABLE player_state ADD COLUMN queue_revision INTEGER NOT NULL DEFAULT 4;
+            CREATE TABLE requests (
+                id CHAR(32) PRIMARY KEY, fingerprint TEXT NOT NULL, code TEXT,
+                status_code INTEGER, entry_id CHAR(32)
+            );
+            PRAGMA user_version = 2;
+        """)
+        db.execute(
+            "INSERT INTO requests VALUES (?, 'add', 'ok', 200, NULL)", (request_id.hex,)
+        )
+        if corrupt:
+            db.execute("UPDATE player_state SET state = 'invalid'")
+    before = path.read_bytes()
+    if corrupt:
+        with pytest.raises(StorageError):
+            SQLiteStore(path)
+        assert path.read_bytes() == before
+    else:
+        with SQLiteStore(path) as store:
+            assert store.revisions().revision == 9
+            assert store.revisions().queue_revision == 4
+            assert store.load().recently_played == ()
+            assert store.reserve(Receipt(request_id, "add")) == Receipt(
+                request_id, "add", Outcome()
+            )
 
 
 @pytest.mark.parametrize("commit", [False, True])

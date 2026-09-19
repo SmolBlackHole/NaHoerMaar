@@ -8,6 +8,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
+from .models import TrackMetadata
+
 
 @dataclass(frozen=True, slots=True)
 class ResolvedTrack:
@@ -16,6 +18,23 @@ class ResolvedTrack:
     is_opus: bool = False
     title: str | None = None
     uploader: str | None = None
+    video_id: str | None = None
+    duration_seconds: float | None = None
+    thumbnail_url: str | None = None
+    artist: str | None = None
+    uploader_url: str | None = None
+
+    @property
+    def metadata(self) -> TrackMetadata:
+        return TrackMetadata(
+            self.video_id,
+            self.title,
+            self.uploader,
+            self.duration_seconds,
+            self.thumbnail_url,
+            self.artist,
+            self.uploader_url,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +59,10 @@ class VoiceError(RuntimeError):
 
 class SourceResolver(Protocol):
     async def resolve(self, source_url: str) -> ResolvedTrack: ...
+
+
+class MetadataResolver(Protocol):
+    async def metadata(self, source_url: str) -> TrackMetadata: ...
 
 
 class VoiceOutput(Protocol):

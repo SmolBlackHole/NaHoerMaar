@@ -1,0 +1,18 @@
+Pixabots — Free Pack (2,000 pixel characters)
+
+Copyright (c) 2026 Pablo Stanley
+
+Free for personal, commercial, and editorial use.
+Attribution appreciated but not required: pixabots.com
+
+You may:
+  - Use these images in apps, websites, games, presentations, prints, merchandise.
+  - Modify, recolor, or composite as needed.
+  - Redistribute as part of a larger work.
+
+You may not:
+  - Resell the images themselves as a standalone asset pack.
+  - Claim authorship of the original art.
+
+These are 2,000 of the 10,752 unique combinations available at pixabots.com.
+The full set, custom palettes, API access, and CLI are also free over there.

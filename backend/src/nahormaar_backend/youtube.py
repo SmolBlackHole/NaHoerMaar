@@ -16,6 +16,7 @@ from typing import cast
 from urllib.parse import parse_qs, urlsplit
 
 from .audio import ResolvedTrack, TrackError
+from .models import TrackMetadata
 from .processes import (
     ProcessOutputLimitError,
     ProcessResult,
@@ -153,14 +154,23 @@ def _resolved_track(result: ProcessResult) -> ResolvedTrack:
         or parsed_stream.password is not None
     ):
         raise TrackError("YouTube returned no playable audio stream.")
-    title = value.get("title")
+    title = value.get("track") or value.get("title")
     uploader = value.get("uploader")
+    artist = value.get("artist")
+    identifier = value.get("id")
+    thumbnail = value.get("thumbnail")
+    uploader_url = value.get("channel_url") or value.get("uploader_url")
     return ResolvedTrack(
         stream_url,
         _parse_headers(value.get("http_headers")),
         value.get("acodec") == "opus",
         title=title if isinstance(title, str) else None,
         uploader=uploader if isinstance(uploader, str) else None,
+        video_id=identifier if isinstance(identifier, str) else None,
+        duration_seconds=float(duration),
+        thumbnail_url=thumbnail if isinstance(thumbnail, str) else None,
+        artist=artist if isinstance(artist, str) else None,
+        uploader_url=uploader_url if isinstance(uploader_url, str) else None,
     )
 
 
@@ -170,6 +180,9 @@ class YouTubeResolver:
             raise ValueError("timeout must be positive")
         self._node_path = node_path
         self._timeout = timeout
+
+    async def metadata(self, source_url: str) -> TrackMetadata:
+        return (await self.resolve(source_url)).metadata
 
     async def resolve(self, source_url: str) -> ResolvedTrack:
         if video_id(source_url) is None:

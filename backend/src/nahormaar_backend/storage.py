@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 from types import TracebackType
 from uuid import UUID
@@ -28,9 +29,9 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from sqlalchemy.pool import ConnectionPoolEntry
 
 from .commands import Outcome, Receipt, Revisions
-from .models import PlaybackState, PlayerSnapshot, QueueEntry
+from .models import HistoryEntry, PlaybackState, PlayerSnapshot, QueueEntry
 
-_SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 3
 
 
 class _Base(DeclarativeBase):
@@ -49,6 +50,25 @@ class _QueueEntryRow(_Base):
     uploader: Mapped[str | None]
     duration_seconds: Mapped[float | None]
     thumbnail_url: Mapped[str | None]
+    artist: Mapped[str | None]
+    uploader_url: Mapped[str | None]
+
+
+class _HistoryRow(_Base):
+    __tablename__ = "playback_history"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    position: Mapped[int] = mapped_column(unique=True)
+    played_at: Mapped[str]
+    entry_id: Mapped[UUID]
+    source_url: Mapped[str]
+    video_id: Mapped[str | None]
+    title: Mapped[str | None]
+    uploader: Mapped[str | None]
+    duration_seconds: Mapped[float | None]
+    thumbnail_url: Mapped[str | None]
+    artist: Mapped[str | None]
+    uploader_url: Mapped[str | None]
 
 
 class _PlayerRow(_Base):
@@ -146,7 +166,9 @@ class SQLiteStore:
                 expected_tables = set(_Base.metadata.tables)
                 if version == 1:
                     expected_tables.remove("requests")
-                if version not in (1, _SCHEMA_VERSION) or tables != expected_tables:
+                if version in (1, 2):
+                    expected_tables.remove("playback_history")
+                if version not in (1, 2, _SCHEMA_VERSION) or tables != expected_tables:
                     raise ValueError(f"Unsupported player database schema ({version}).")
                 for table in _Base.metadata.sorted_tables:
                     if table.name not in expected_tables:
@@ -156,6 +178,8 @@ class SQLiteStore:
                     ]
                     expected_columns = list(table.columns.keys())
                     if version == 1 and table.name == "player_state":
+                        expected_columns = expected_columns[:-2]
+                    if version in (1, 2) and table.name == "queue_entries":
                         expected_columns = expected_columns[:-2]
                     if columns != expected_columns:
                         raise ValueError(f"Unexpected columns in {table.name}.")
@@ -168,10 +192,16 @@ class SQLiteStore:
                             "INTEGER NOT NULL DEFAULT 0"
                         )
                     _Base.metadata.tables["requests"].create(connection)
+                if version in (1, 2):
+                    for name in ("artist", "uploader_url"):
+                        connection.exec_driver_sql(
+                            f"ALTER TABLE queue_entries ADD COLUMN {name} VARCHAR"
+                        )
+                    _Base.metadata.tables["playback_history"].create(connection)
                     # Validate old data before committing any schema changes.
                     with Session(bind=connection) as session:
                         self._load(session)
-                    connection.exec_driver_sql("PRAGMA user_version = 2")
+                    connection.exec_driver_sql("PRAGMA user_version = 3")
         except (SQLAlchemyError, TypeError, ValueError) as exc:
             raise StorageError(f"Invalid player database: {exc}") from exc
 
@@ -204,6 +234,8 @@ class SQLiteStore:
                     uploader=row.uploader,
                     duration_seconds=row.duration_seconds,
                     thumbnail_url=row.thumbnail_url,
+                    artist=row.artist,
+                    uploader_url=row.uploader_url,
                 )
             )
 
@@ -212,7 +244,32 @@ class SQLiteStore:
             if not entries or entries[0].id != player.current_entry_id:
                 raise ValueError("Current entry must precede the upcoming queue.")
             current = entries.pop(0)
-        return PlayerSnapshot(state, current, tuple(entries))
+        history: list[HistoryEntry] = []
+        for position, item in enumerate(
+            session.scalars(select(_HistoryRow).order_by(_HistoryRow.position))
+        ):
+            if item.position != position:
+                raise ValueError("History positions must be contiguous integers.")
+            history.append(
+                HistoryEntry(
+                    id=item.id,
+                    played_at=datetime.fromisoformat(item.played_at),
+                    entry=QueueEntry(
+                        id=item.entry_id,
+                        source_url=item.source_url,
+                        video_id=item.video_id,
+                        title=item.title,
+                        uploader=item.uploader,
+                        duration_seconds=item.duration_seconds,
+                        thumbnail_url=item.thumbnail_url,
+                        artist=item.artist,
+                        uploader_url=item.uploader_url,
+                    ),
+                )
+            )
+        return PlayerSnapshot(
+            state, current, tuple(entries), recently_played=tuple(history)
+        )
 
     def save(
         self,
@@ -244,8 +301,28 @@ class SQLiteStore:
                         uploader=entry.uploader,
                         duration_seconds=entry.duration_seconds,
                         thumbnail_url=entry.thumbnail_url,
+                        artist=entry.artist,
+                        uploader_url=entry.uploader_url,
                     )
                     for position, entry in enumerate(entries)
+                )
+                session.execute(delete(_HistoryRow))
+                session.add_all(
+                    _HistoryRow(
+                        id=item.id,
+                        position=position,
+                        played_at=item.played_at.isoformat(),
+                        entry_id=item.entry.id,
+                        source_url=item.entry.source_url,
+                        video_id=item.entry.video_id,
+                        title=item.entry.title,
+                        uploader=item.entry.uploader,
+                        duration_seconds=item.entry.duration_seconds,
+                        thumbnail_url=item.entry.thumbnail_url,
+                        artist=item.entry.artist,
+                        uploader_url=item.entry.uploader_url,
+                    )
+                    for position, item in enumerate(snapshot.recently_played)
                 )
                 session.flush()
                 player.state = snapshot.state.value

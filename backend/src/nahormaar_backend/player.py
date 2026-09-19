@@ -5,12 +5,19 @@
 """Single-owner player service. Publish state only after its storage commit."""
 
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import asdict, replace
+from datetime import UTC, datetime
 from uuid import UUID
 
 from .commands import Receipt, Revisions
 from .fsm import PlaybackEvent, VoiceEvent, transition, voice_transition
-from .models import PlayerSnapshot, QueueEntry
+from .models import (
+    HISTORY_LIMIT,
+    HistoryEntry,
+    PlayerSnapshot,
+    QueueEntry,
+    TrackMetadata,
+)
 from .storage import SQLiteStore
 
 
@@ -81,6 +88,27 @@ class Player:
             replace(self._snapshot, upcoming=(*self._snapshot.upcoming, entry))
         )
 
+    def enrich(self, entry_id: UUID, metadata: TrackMetadata) -> PlayerSnapshot:
+        """Merge public metadata only while the entry still belongs to the queue."""
+        values = {
+            key: value for key, value in asdict(metadata).items() if value is not None
+        }
+
+        def enrich_entry(entry: QueueEntry) -> QueueEntry:
+            return replace(entry, **values) if entry.id == entry_id else entry
+
+        return self._commit(
+            replace(
+                self._snapshot,
+                current=enrich_entry(self._snapshot.current)
+                if self._snapshot.current
+                else None,
+                upcoming=tuple(
+                    enrich_entry(entry) for entry in self._snapshot.upcoming
+                ),
+            )
+        )
+
     def _upcoming_entry(self, entry_id: UUID) -> QueueEntry:
         if self._snapshot.current is not None and self._snapshot.current.id == entry_id:
             raise ValueError("The current entry is controlled by skip and stop.")
@@ -135,9 +163,16 @@ class Player:
         """Start the next entry, resume a paused entry, or retry a failed entry."""
         return self._apply(PlaybackEvent.PLAY)
 
-    def mark_playing(self) -> PlayerSnapshot:
+    def mark_playing(self, *, record_history: bool = True) -> PlayerSnapshot:
         """Confirm that the current loading entry has started."""
-        return self._apply(PlaybackEvent.READY)
+        snapshot = transition(self._snapshot, PlaybackEvent.READY)
+        if record_history and snapshot.current is not None:
+            item = HistoryEntry(snapshot.current, datetime.now(UTC))
+            snapshot = replace(
+                snapshot,
+                recently_played=(item, *snapshot.recently_played)[:HISTORY_LIMIT],
+            )
+        return self._commit(snapshot)
 
     def pause(self) -> PlayerSnapshot:
         return self._apply(PlaybackEvent.PAUSE)

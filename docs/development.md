@@ -2,7 +2,7 @@
 
 Parent: [Project README](../README.md)
 
-Python 3.12+ and Node.js 22+ with npm are required.
+Python 3.12+ and Node.js 24.11+ with npm are required.
 
 ## Set up
 
@@ -19,6 +19,25 @@ Setup installs a local FFmpeg binary through `imageio-ffmpeg` and checks that it
 runs. You can override it with `FFMPEG_PATH`. On Linux and macOS, audio processing
 also needs the system Opus library (`libopus0` on Debian/Ubuntu,
 `opus` through Homebrew on macOS).
+
+## Run the dashboard
+
+```powershell
+npm run dev
+```
+
+Open `http://127.0.0.1:3000` and run the API in a second terminal. Choose a name,
+join a voice channel, add a YouTube video link and press play. On PowerShell
+systems that block `npm.ps1`, use `npm.cmd run dev`.
+
+The dashboard forwards controls and live updates to `http://127.0.0.1:8000`.
+Set `NUXT_BACKEND_URL` if the backend uses a different port. Controls stay disabled
+until live state arrives. Search and playlist import are not available yet.
+
+Switch the current track's preview to Video to open a muted YouTube player, or
+enable Cinema for a larger view. Some videos cannot be embedded; their artwork
+and source link remain available. Recently played keeps the last 100 started
+tracks and lets you add them again.
 
 ## Configure Discord
 
@@ -42,9 +61,11 @@ Every mutation needs a UUID in its `Idempotency-Key` header. Generate one with
 request. See the [API contract](api.md) for payloads and conflict handling.
 
 The server binds to `127.0.0.1:8000` and runs one bot instance. Keep one worker;
-multiple workers would each start a bot and own a different player. Login is
-still pending, so shared deployment is not supported yet. Browser requests must
-use the API's own origin.
+multiple workers would each start a bot and own a different player. Browser
+profiles are local names and avatars, not access control. Discord login and the
+whitelist are still pending, so shared deployment is not supported yet. Both the
+API and the dashboard proxy accept only local hosts and reject requests from
+other origins.
 
 Ctrl+C closes the HTTP event streams, stops audio and disconnects the bot. The
 queue survives and waits for a manual start after restarting the backend.
@@ -104,7 +125,7 @@ This runs:
 
 - Repository text and documentation link checks.
 - Ruff linting and formatting, strict mypy and Pyright, and pytest for Python.
-- Node.js syntax checks and tests for the frontend.
+- Frontend tests, Nuxt type checking and a production build.
 
 Use `npm run check` to check only the frontend. Shell wrappers are available as
 `scripts/check.sh` and `scripts/check.ps1`.

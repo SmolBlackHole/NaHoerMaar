@@ -5,6 +5,7 @@
 """Immutable queue entries and player state."""
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import StrEnum
 from math import isfinite
 from uuid import UUID, uuid4
@@ -25,6 +26,17 @@ class VoiceState(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class TrackMetadata:
+    video_id: str | None = None
+    title: str | None = None
+    uploader: str | None = None
+    duration_seconds: float | None = None
+    thumbnail_url: str | None = None
+    artist: str | None = None
+    uploader_url: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class QueueEntry:
     source_url: str
     id: UUID = field(default_factory=uuid4)
@@ -33,6 +45,8 @@ class QueueEntry:
     uploader: str | None = None
     duration_seconds: float | None = None
     thumbnail_url: str | None = None
+    artist: str | None = None
+    uploader_url: str | None = None
 
     def __post_init__(self) -> None:
         if not self.source_url.strip():
@@ -43,12 +57,27 @@ class QueueEntry:
             raise ValueError("Duration must be finite and non-negative.")
 
 
+HISTORY_LIMIT = 100
+
+
+@dataclass(frozen=True, slots=True)
+class HistoryEntry:
+    entry: QueueEntry
+    played_at: datetime
+    id: UUID = field(default_factory=uuid4)
+
+    def __post_init__(self) -> None:
+        if self.played_at.utcoffset() is None:
+            raise ValueError("Playback history needs a timezone-aware timestamp.")
+
+
 @dataclass(frozen=True, slots=True)
 class PlayerSnapshot:
     state: PlaybackState = PlaybackState.IDLE
     current: QueueEntry | None = None
     upcoming: tuple[QueueEntry, ...] = ()
     voice_state: VoiceState = VoiceState.DISCONNECTED
+    recently_played: tuple[HistoryEntry, ...] = ()
 
     def __post_init__(self) -> None:
         if (self.state is PlaybackState.IDLE) != (self.current is None):
@@ -58,3 +87,8 @@ class PlayerSnapshot:
             entry_ids.append(self.current.id)
         if len(entry_ids) != len(set(entry_ids)):
             raise ValueError("Queue entry IDs must be unique across the player.")
+        history_ids = [item.id for item in self.recently_played]
+        if len(history_ids) > HISTORY_LIMIT or len(history_ids) != len(
+            set(history_ids)
+        ):
+            raise ValueError("Invalid playback history.")

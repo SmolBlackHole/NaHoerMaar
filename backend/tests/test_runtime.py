@@ -33,7 +33,15 @@ class FakeController:
         type(self).instances.append(self)
 
     @classmethod
-    async def create(cls, database: Path, resolver: object, voice: object) -> Self:
+    async def create(
+        cls,
+        database: Path,
+        resolver: object,
+        voice: object,
+        *,
+        metadata_resolver: object,
+    ) -> Self:
+        assert metadata_resolver is resolver
         del resolver, voice
         error = cls.create_error
         if error is not None:

@@ -2,13 +2,14 @@
 
 A private Discord music bot controlled entirely through a web dashboard.
 
-In development. YouTube playback, a persistent queue and a local control API
-are implemented. The dashboard and login are still planned.
+In development. Play YouTube videos in Discord, manage the shared queue and
+control playback from the dashboard. Search, playlist imports and login are
+still planned.
 See the [roadmap](ROADMAP.md).
 
 ## Development
 
-Install Python 3.12+ and Node.js 22+ with npm. From the repository root, run:
+Install Python 3.12+ and Node.js 24.11+ with npm. From the repository root, run:
 
 ```powershell
 python scripts/dev.py setup

@@ -34,6 +34,11 @@ SQLAlchemy maps queue entries and player state to SQLite. Each persistent change
 commits in one Session transaction before the Player publishes its new snapshot.
 Failed writes and failed commits leave the previous snapshot intact.
 
+The last 100 started tracks are stored with timestamps and independent history
+IDs. Recording a start and entering `playing` share one transaction. Skips keep
+the history entry; removing an unplayed track creates none. Resuming or retrying
+a stream automatically does not count twice.
+
 Creating a Player runs the FSM's `recover` event: an interrupted track returns
 to the front of the queue, playback becomes `idle`, and the separate voice
 state becomes `disconnected`. Recovery is saved before the Player is usable;
@@ -52,6 +57,11 @@ The [YouTube resolver](../backend/src/nahormaar_backend/youtube.py) runs `yt-dlp
 in a cancellable child process with a 30-second deadline. It resolves one finite,
 public video immediately before playback and selects the best available audio.
 Stream URLs, codec information and HTTP headers stay in memory.
+
+One background task resolves missing metadata for upcoming entries. It processes
+one entry at a time, outside the command lock. Results update existing IDs only,
+so removing a track during extraction cannot bring it back. Playback resolution
+also saves public metadata before the track starts.
 
 For Opus sources, FFmpeg copies the encoded audio into an Ogg stream. At 100%
 volume, compatible 20-ms packets reach Discord unchanged. Lower volume requires
@@ -87,8 +97,9 @@ FastAPI owns one runtime through its lifespan. HTTP controls and playback
 callbacks share the controller's lock. The API reads complete committed
 snapshots and never writes to the database or Discord directly.
 
-SQLite schema version 2 adds revisions and request receipts. Version 1 migrates
-in a transaction, preserving entries and order. `revision` orders visible state
+SQLite schema version 3 stores artist and channel metadata and playback history.
+Versions 1 and 2 migrate in a transaction, preserving entries, order and existing
+request receipts. `revision` orders visible state
 changes, including runtime-only changes such as volume. `queue_revision` changes
 only when upcoming entries or their order change. Startup advances the global
 revision because the voice connection and other runtime values reset.
@@ -121,8 +132,24 @@ See the [API contract](api.md) for requests, responses and conflict handling.
 
 ## Dashboard
 
-The Nuxt dashboard will provide login, voice channel selection, a queue and
-playback controls through the API. All controls will live in the dashboard;
-no Discord chat or slash commands are planned.
+The Nuxt dashboard controls playback, volume, voice channels and the shared queue.
+Its server forwards HTTP requests and SSE to FastAPI on localhost. The proxy
+keeps the API's local-host and same-origin restrictions.
+
+The browser accepts snapshots by revision and disables mutations while
+disconnected. Reorder and clear use the displayed queue revision; playback
+actions use the displayed playback ID. A lost response leaves the request ID
+and payload available for a safe retry. Closing the dashboard only closes its
+event stream; playback continues.
+
+Thumbnails come from track metadata or the YouTube video ID, with a fallback
+when loading fails. A muted YouTube embed provides an optional video preview;
+cinema mode enlarges it and adds a backdrop from the artwork. The preview follows
+play/pause changes, but does not synchronize viewers or compensate for Discord
+audio latency.
+
+Browser profiles store a name and a Pixabot avatar locally. They do not authenticate
+API access. Discord login and the whitelist remain planned. The Overview uses
+the retained playback history, not lifetime listening statistics.
 
 See the [roadmap](../ROADMAP.md) for upcoming work.

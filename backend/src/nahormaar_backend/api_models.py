@@ -68,6 +68,8 @@ class Entry(BaseModel):
     uploader: str | None
     duration_seconds: float | None
     thumbnail_url: str | None
+    artist: str | None
+    uploader_url: str | None
 
     @classmethod
     def from_entry(cls, entry: QueueEntry) -> "Entry":
@@ -80,12 +82,21 @@ class Issue(BaseModel):
     fatal: bool
 
 
+class RecentEntry(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    played_at: datetime
+    entry: Entry
+
+
 class State(BaseModel):
     revision: int
     queue_revision: int
     state: PlaybackState
     current: Entry | None
     upcoming: tuple[Entry, ...]
+    recently_played: tuple[RecentEntry, ...]
     voice_state: VoiceState
     channel_id: str | None
     playback_id: UUID | None
@@ -104,6 +115,9 @@ class State(BaseModel):
             state=player.state,
             current=Entry.from_entry(player.current) if player.current else None,
             upcoming=tuple(Entry.from_entry(entry) for entry in player.upcoming),
+            recently_played=tuple(
+                RecentEntry.model_validate(item) for item in player.recently_played
+            ),
             voice_state=player.voice_state,
             channel_id=str(status.channel_id)
             if status.channel_id is not None

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 from collections import deque
 from pathlib import Path
@@ -20,6 +21,8 @@ EXCLUDED_DIRECTORIES = frozenset(
         ".pytest_cache",
         ".ruff_cache",
         ".venv",
+        ".nuxt",
+        ".output",
         "build",
         "dist",
         "node_modules",
@@ -52,9 +55,12 @@ TEMPLATE_TOKEN = re.compile(r"{{[a-z0-9_]+}}")
 
 
 def _excluded(path: Path, root: Path) -> bool:
+    relative = path.relative_to(root)
+    if relative.parts[0] in {"data", "tmp"}:
+        return True
     return any(
         part in EXCLUDED_DIRECTORIES or part.endswith(".egg-info")
-        for part in path.relative_to(root).parts
+        for part in relative.parts
     )
 
 
@@ -169,8 +175,11 @@ def _check_text_files(root: Path) -> list[str]:
 def _check_git_diff(root: Path) -> list[str]:
     if not (root / ".git").exists():
         return []
-    completed = subprocess.run(
-        ("git", "diff", "--check"),
+    git = shutil.which("git")
+    if git is None:
+        return ["git diff --check failed: Git is not installed"]
+    completed = subprocess.run(  # noqa: S603 - installed Git, fixed read-only arguments
+        (git, "diff", "--check"),
         cwd=root,
         check=False,
         capture_output=True,

@@ -81,6 +81,28 @@ def test_missing_or_invalid_display_metadata_does_not_prevent_playback(
     assert resolved.stream_url
 
 
+def test_music_metadata_prefers_track_name_and_preserves_artist_and_channel() -> None:
+    resolved = youtube_module._resolved_track(  # pyright: ignore[reportPrivateUsage]
+        ProcessResult(
+            0,
+            _metadata(
+                track="Song",
+                artist="Artist",
+                thumbnail="https://i.ytimg.com/cover.jpg",
+                channel_url="https://www.youtube.com/channel/example",
+            ),
+            b"",
+        )
+    )
+    assert resolved.metadata.title == "Song"
+    assert resolved.metadata.artist == "Artist"
+    assert resolved.metadata.uploader == "Example artist"
+    assert resolved.metadata.duration_seconds == 213
+    assert resolved.metadata.video_id == "dQw4w9WgXcQ"
+    assert resolved.metadata.thumbnail_url == "https://i.ytimg.com/cover.jpg"
+    assert resolved.metadata.uploader_url == "https://www.youtube.com/channel/example"
+
+
 @pytest.mark.parametrize(
     ("acodec", "is_opus"),
     [

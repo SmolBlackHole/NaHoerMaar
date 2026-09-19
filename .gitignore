@@ -27,6 +27,9 @@ dist/
 # Node.js
 node_modules/
 coverage/
+.nuxt/
+.output/
+.data/
 
 # C and C++
 .build/

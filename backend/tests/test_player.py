@@ -85,8 +85,9 @@ def test_clear_keeps_current_but_stop_requeues_it(
     assert player.snapshot.current == first
     assert player.snapshot.state is PlaybackState.PLAYING
     assert player.snapshot.upcoming == ()
+    history = player.snapshot.recently_played
     player.stop()
-    assert player.snapshot == PlayerSnapshot(upcoming=(first,))
+    assert player.snapshot == PlayerSnapshot(upcoming=(first,), recently_played=history)
     assert store.load() == player.snapshot
     assert player.play().state is PlaybackState.LOADING
 
@@ -102,7 +103,9 @@ def test_player_controls_follow_fsm(player: Player, store: SQLiteStore) -> None:
     assert player.pause().state is PlaybackState.PAUSED
     assert player.play().state is PlaybackState.PLAYING
     assert player.skip().current == second
-    assert player.skip() == PlayerSnapshot()
+    assert player.skip() == PlayerSnapshot(
+        recently_played=player.snapshot.recently_played
+    )
     assert store.load() == player.snapshot
 
 

@@ -6,11 +6,20 @@
 	"type": "module",
 	"license": "MPL-2.0",
 	"engines": {
-		"node": ">=22"
+		"node": ">=24.11.0"
 	},
-	"workspaces": ["frontend"],
+	"workspaces": [
+		"frontend"
+	],
 	"scripts": {
+		"dev": "npm run dev --workspace frontend",
+		"build": "npm run build --workspace frontend",
 		"check": "npm run check --workspaces",
 		"test": "npm run test --workspaces"
+	},
+	"overrides": {
+		"fontless": {
+			"esbuild": "^0.28.2"
+		}
 	}
 }

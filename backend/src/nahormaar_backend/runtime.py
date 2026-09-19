@@ -21,7 +21,7 @@ async def open_runtime(settings: Settings) -> AsyncGenerator[PlaybackController,
     resolver = YouTubeResolver(settings.node_path)
     try:
         controller = await PlaybackController.create(
-            settings.database_path, resolver, voice
+            settings.database_path, resolver, voice, metadata_resolver=resolver
         )
     except BaseException:
         await asyncio.shield(voice.close())

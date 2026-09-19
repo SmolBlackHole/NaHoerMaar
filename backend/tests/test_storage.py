@@ -201,6 +201,10 @@ os._exit(0)
         )
     )
     with SQLiteStore(path) as store:
-        assert Player(store).snapshot == expected
+        recovered = Player(store).snapshot
+        assert recovered.state == expected.state
+        assert recovered.upcoming == expected.upcoming
+        assert len(recovered.recently_played) == 1
+        assert recovered.recently_played[0].entry.id == UUID(int=1)
     with SQLiteStore(path) as store:
-        assert Player(store).snapshot == expected
+        assert Player(store).snapshot == recovered

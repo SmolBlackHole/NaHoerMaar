@@ -9,8 +9,15 @@ The local API runs at `http://127.0.0.1:8000`. Its interactive reference is at
 
 `GET /api/state` returns the current track, upcoming entries, playback and voice
 states, channel ID, volume, playback ID, progress anchors and any playback issue.
-Metadata fields may be null until metadata enrichment is implemented. Discord
-channel IDs are strings; queue and playback IDs are UUIDs.
+Titles, artists, uploader links, duration and thumbnails arrive asynchronously;
+unavailable fields remain null. Discord channel IDs are strings; queue and
+playback IDs are UUIDs.
+
+`recently_played` contains up to 100 starts, newest first. Each item has its own
+`id`, a timezone-aware `played_at` timestamp and an `entry` with track metadata.
+Skipped tracks remain in history; unplayed removals do not enter it. Pause/resume
+and automatic stream retries do not add another start. Requeue a history item
+through `POST /api/queue` with its source URL.
 
 `GET /api/channels` lists voice channels with `can_connect` and `can_speak` flags.
 

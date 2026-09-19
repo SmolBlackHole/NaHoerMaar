@@ -3,7 +3,8 @@
 Parent: [Project README](README.md)
 
 Status: phases 1 and 3 complete. Phase 2 implemented, with live failure and
-disconnect checks still pending. Phases 4-6 remain proposed.
+disconnect checks still pending. The dashboard controls individual YouTube links;
+search, playlist imports and login remain open.
 
 ## Current scope
 
@@ -117,11 +118,12 @@ with the backend without reloading the page.
   searches. Validate supported sources before extraction
 - [ ] Return search results with title, uploader, duration and thumbnail, and
   support adding selected results
-- [ ] Provide playlist previews before import. Add selected entries as one ordered
-  batch and report unavailable entries or import limits explicitly
+- [ ] Detect YouTube playlist links and open a playlist tab. Let users select
+  individual tracks or queue the entire playlist in source order, with unavailable
+  entries and import limits shown explicitly
 - [ ] Bound search results, playlist imports and concurrent extraction work.
   Expose import progress, cancellation and partial failures through the API
-- [ ] Keep metadata separate from temporary stream URLs. A delayed metadata
+- [x] Keep metadata separate from temporary stream URLs. A delayed metadata
   result must not recreate an entry someone has already removed
 
 Acceptance: links, search and playlists produce usable queue entries. A playlist
@@ -133,14 +135,21 @@ missing thumbnails do not abort an otherwise valid import.
 - [ ] Build the Nuxt dashboard around the current track, upcoming queue, search
   and voice channel selection. Let users select search results and preview
   playlists before adding tracks
-- [ ] Show thumbnails, source links, duration and playback progress. Use a
+- [x] Show thumbnails, song and artist links, duration and playback progress. Use a
   fallback image when artwork is missing or fails to load
-- [ ] Add playback controls, volume, queue removal and reordering. Reordering
+- [x] Add playback controls, volume, queue removal and reordering. Reordering
   works with drag and drop as well as keyboard controls
-- [ ] Show pending actions and explain rejected changes. When the connection
+- [x] Show pending actions and explain rejected changes. When the connection
   drops, mark the view as disconnected and disable mutations until state has
   synchronized again
-- [ ] Make the controls usable on phones. Distinguish an empty queue, loading,
+- [x] Restore the Overview with statistics from playback history
+- [x] Choose a browser profile name and a random Pixabot avatar, with profile editing
+- [x] Offer a muted YouTube video preview with an artwork fallback and a cinema
+  mode that extends the artwork's colors into the surrounding area
+- [x] Keep a footer with project, license and avatar credits in the sidebar
+- [x] Persist the last 100 started tracks in Recently played and let users requeue
+  them. Keep skipped tracks, but exclude unplayed removals
+- [x] Make the controls usable on phones. Distinguish an empty queue, loading,
   paused playback, unavailable media and a disconnected bot
 
 Acceptance: two browsers can control the same session and see each other's
@@ -166,7 +175,13 @@ live updates. Session expiry is visible in the dashboard.
 
 ## Deferred
 
+- [ ] Watch Together in the browser dashboard, with shared video state, synchronized
+  playback and a way to recover after reconnecting. No Discord screen sharing
+- [ ] Decide how to distinguish music from video for Watch Together. Consider
+  preferring YouTube Music for songs and treating ordinary YouTube links as video;
+  preserve an explicit choice when that guess is wrong
+
 - Spotify link and playlist import, after YouTube playback works.
 - Multiple Discord servers or simultaneous voice channels.
-- Seeking, shuffle, repeat, playback history, saved personal playlists and voting.
+- Seeking, shuffle, repeat, saved personal playlists and voting.
 - YouTube livestreams and media that requires a personal YouTube login.

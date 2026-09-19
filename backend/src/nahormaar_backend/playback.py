@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
@@ -18,11 +19,18 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from . import commands
-from .audio import SourceResolver, TrackError, VoiceChannelInfo, VoiceError, VoiceOutput
+from .audio import (
+    MetadataResolver,
+    SourceResolver,
+    TrackError,
+    VoiceChannelInfo,
+    VoiceError,
+    VoiceOutput,
+)
 from .commands import Outcome, Receipt, Revisions
 from .events import Snapshots
 from .fsm import VoiceEvent
-from .models import PlaybackState, PlayerSnapshot, QueueEntry
+from .models import PlaybackState, PlayerSnapshot, QueueEntry, TrackMetadata
 from .player import Player
 from .storage import SQLiteStore, StorageError
 
@@ -108,6 +116,7 @@ class PlaybackController:
         resolver: SourceResolver,
         voice: VoiceOutput,
         revisions: Revisions,
+        metadata_resolver: MetadataResolver | None = None,
     ) -> None:
         self._worker = worker
         self._snapshot = snapshot
@@ -117,6 +126,7 @@ class PlaybackController:
         self._lock = asyncio.Lock()
         self._attempt_id: UUID | None = None
         self._retried = False
+        self._history_recorded = False
         self._volume = 1.0
         self._last_issue: PlaybackIssue | None = None
         self._revisions = revisions
@@ -131,18 +141,30 @@ class PlaybackController:
         self._commands: set[asyncio.Task[PlayerSnapshot]] = set()
         self._close_task: asyncio.Task[None] | None = None
         self._published = self.status
+        self._metadata_wake = asyncio.Event()
+        self._metadata_wake.set()
+        self._metadata_task = (
+            asyncio.create_task(self._enrich_queue(metadata_resolver))
+            if metadata_resolver is not None
+            else None
+        )
         voice.set_disconnect_handler(self._disconnected_callback)
 
     @classmethod
     async def create(
-        cls, database: Path, resolver: SourceResolver, voice: VoiceOutput
+        cls,
+        database: Path,
+        resolver: SourceResolver,
+        voice: VoiceOutput,
+        *,
+        metadata_resolver: MetadataResolver | None = None,
     ) -> PlaybackController:
         worker = _PlayerWorker()
         opening = asyncio.create_task(worker.open(database))
         try:
             snapshot = await asyncio.shield(opening)
             versions = await worker.call(lambda player: player.revisions)
-            return cls(worker, snapshot, resolver, voice, versions)
+            return cls(worker, snapshot, resolver, voice, versions, metadata_resolver)
         except BaseException:
             await asyncio.shield(worker.close())
             # Retrieve a late initialization error if the caller was cancelled.
@@ -348,6 +370,46 @@ class PlaybackController:
 
     async def _change(self, operation: Callable[[Player], PlayerSnapshot]) -> None:
         self._snapshot = await self._worker.call(operation)
+        self._metadata_wake.set()
+
+    async def _enrich_queue(self, resolver: MetadataResolver) -> None:
+        attempted: set[UUID] = set()
+        while not self._closing and not self._faulted:
+            await self._metadata_wake.wait()
+            self._metadata_wake.clear()
+            attempted.intersection_update(entry.id for entry in self._snapshot.upcoming)
+            entry = next(
+                (
+                    entry
+                    for entry in self._snapshot.upcoming
+                    if entry.id not in attempted
+                    and (entry.title is None or entry.duration_seconds is None)
+                ),
+                None,
+            )
+            if entry is None:
+                continue
+            attempted.add(entry.id)
+            try:
+                metadata = await resolver.metadata(entry.source_url)
+            except TrackError:
+                self._metadata_wake.set()
+                continue
+            except Exception:
+                logging.getLogger(__name__).warning("Could not load queue metadata.")
+                self._metadata_wake.set()
+                continue
+
+            async def apply_metadata(
+                entry_id: UUID = entry.id, values: TrackMetadata = metadata
+            ) -> None:
+                await self._change(lambda player: player.enrich(entry_id, values))
+
+            try:
+                await asyncio.shield(self._submit(apply_metadata))
+            except (RuntimeError, StorageError):
+                return
+            self._metadata_wake.set()
 
     async def enqueue(self, entry: QueueEntry) -> PlayerSnapshot:
         async def action() -> None:
@@ -468,6 +530,8 @@ class PlaybackController:
         attempt_id = uuid4()
         self._attempt_id = attempt_id
         self._retried = retried
+        if not retried:
+            self._history_recorded = False
         self._load_task = asyncio.create_task(self._load(attempt_id, entry))
 
     async def _load(self, attempt_id: UUID, entry: QueueEntry) -> None:
@@ -501,6 +565,7 @@ class PlaybackController:
             if not self._voice.connected:
                 await self._leave()
                 return
+            await self._change(lambda player: player.enrich(entry.id, track.metadata))
             try:
                 self._voice.play(
                     track,
@@ -509,7 +574,12 @@ class PlaybackController:
             except TrackError as exc:
                 await self._track_failed(exc)
                 return
-            await self._change(Player.mark_playing)
+            await self._change(
+                lambda player: player.mark_playing(
+                    record_history=not self._history_recorded
+                )
+            )
+            self._history_recorded = True
 
         self._submit(ready)
 
@@ -626,6 +696,9 @@ class PlaybackController:
 
     async def _close(self) -> None:
         errors: list[Exception] = []
+        if self._metadata_task is not None:
+            self._metadata_task.cancel()
+            await asyncio.gather(self._metadata_task, return_exceptions=True)
         async with self._lock:
             try:
                 await self._halt()
