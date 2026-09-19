@@ -1,0 +1,20 @@
+{
+	"recommendations": [
+		"aaron-bond.better-comments",
+		"antfu.file-nesting",
+		"bierner.markdown-preview-github-styles",
+		"charliermarsh.ruff",
+		"christian-kohler.path-intellisense",
+		"davidanson.vscode-markdownlint",
+		"editorconfig.editorconfig",
+		"github.vscode-github-actions",
+		"ibm.output-colorizer",
+		"lacroixdavid1.vscode-format-context-menu",
+		"mhutchie.git-graph",
+		"ms-python.python",
+		"ms-python.vscode-pylance",
+		"ms-python.vscode-python-envs",
+		"redhat.vscode-yaml",
+		"tamasfe.even-better-toml"
+	]
+}

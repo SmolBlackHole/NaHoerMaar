@@ -1,0 +1,42 @@
+# SPDX-FileCopyrightText: 2026 SmolBlackHole
+#
+# SPDX-License-Identifier: MPL-2.0
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Editors and operating systems
+.idea/
+.vscode/*.local.json
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.py[cod]
+.coverage
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.venv/
+dist/
+*.egg-info/
+
+# Node.js
+node_modules/
+coverage/
+
+# C and C++
+.build/
+CMakeFiles/
+CMakeCache.txt
+Testing/
+compile_commands.json
+
+# Generic generated output
+build/
+out/
+tmp/
+*.log

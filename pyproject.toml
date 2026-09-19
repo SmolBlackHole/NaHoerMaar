@@ -1,0 +1,62 @@
+# SPDX-FileCopyrightText: 2026 SmolBlackHole
+#
+# SPDX-License-Identifier: MPL-2.0
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nahormaar-backend"
+version = "0.1.0"
+description = "Python backend for the private NaHörMaar Discord music bot."
+readme = "README.md"
+license = "MPL-2.0"
+requires-python = ">=3.12"
+authors = [{ name = "SmolBlackHole" }]
+
+[project.optional-dependencies]
+dev = [
+    "mypy>=1.14",
+    "pyright>=1.1.400",
+    "pytest>=8.3",
+    "ruff>=0.9",
+]
+
+[tool.setuptools.packages.find]
+where = ["backend/src"]
+
+[tool.setuptools.package-data]
+"nahormaar_backend" = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+pythonpath = ["backend/src"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+src = ["backend/src", "backend/tests", "scripts"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "B", "UP", "RUF", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+"backend/tests/**/*.py" = ["S101"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = ["backend/src"]
+files = ["backend/src/nahormaar_backend", "backend/tests"]
+
+[tool.pyright]
+include = ["backend/src", "backend/tests"]
+extraPaths = ["backend/src"]
+venvPath = "."
+venv = ".venv"
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
