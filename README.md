@@ -2,7 +2,8 @@
 
 A private Discord music bot controlled entirely through a web dashboard.
 
-In development. The dashboard, API and audio playback are not implemented yet.
+In development. The queue persists across restarts; the dashboard, API and audio
+playback are still planned.
 YouTube support comes first; see the [roadmap](ROADMAP.md).
 
 ## Development
@@ -19,7 +20,7 @@ setup.
 
 ## Documentation
 
-- [Planned architecture](docs/architecture.md)
+- [Architecture](docs/architecture.md)
 - [Roadmap](ROADMAP.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)

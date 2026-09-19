@@ -2,4 +2,4 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""Project package."""
+"""Persistent queue and playback state for NaHörMaar."""

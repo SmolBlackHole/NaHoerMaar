@@ -1,0 +1,107 @@
+# SPDX-FileCopyrightText: 2026 SmolBlackHole
+#
+# SPDX-License-Identifier: MPL-2.0
+
+"""Single-owner player service. Publish state only after its storage commit."""
+
+from dataclasses import replace
+from uuid import UUID
+
+from .fsm import PlaybackEvent, transition
+from .models import PlayerSnapshot, QueueEntry
+from .storage import SQLiteStore
+
+
+class Player:
+    def __init__(self, store: SQLiteStore) -> None:
+        self._store = store
+        stored = store.load()
+        recovered = transition(stored, PlaybackEvent.RECOVER)
+        if recovered != stored:
+            store.save(recovered)
+        self._snapshot = recovered
+
+    @property
+    def snapshot(self) -> PlayerSnapshot:
+        return self._snapshot
+
+    def _commit(self, snapshot: PlayerSnapshot) -> PlayerSnapshot:
+        if snapshot != self._snapshot:
+            self._store.save(snapshot)
+            self._snapshot = snapshot
+        return self._snapshot
+
+    def enqueue(self, entry: QueueEntry) -> PlayerSnapshot:
+        return self._commit(
+            replace(self._snapshot, upcoming=(*self._snapshot.upcoming, entry))
+        )
+
+    def _upcoming_entry(self, entry_id: UUID) -> QueueEntry:
+        if self._snapshot.current is not None and self._snapshot.current.id == entry_id:
+            raise ValueError("The current entry is controlled by skip and stop.")
+
+        for entry in self._snapshot.upcoming:
+            if entry.id == entry_id:
+                return entry
+
+        raise KeyError(entry_id)
+
+    def remove(self, entry_id: UUID) -> PlayerSnapshot:
+        self._upcoming_entry(entry_id)
+
+        return self._commit(
+            replace(
+                self._snapshot,
+                upcoming=tuple(
+                    entry for entry in self._snapshot.upcoming if entry.id != entry_id
+                ),
+            )
+        )
+
+    def move_before(
+        self, entry_id: UUID, before_entry_id: UUID | None = None
+    ) -> PlayerSnapshot:
+        entry = self._upcoming_entry(entry_id)
+
+        if before_entry_id is not None:
+            self._upcoming_entry(before_entry_id)
+        if entry_id == before_entry_id:
+            return self._snapshot
+
+        upcoming = [item for item in self._snapshot.upcoming if item.id != entry_id]
+        index = len(upcoming)
+        if before_entry_id is not None:
+            index = next(
+                index
+                for index, item in enumerate(upcoming)
+                if item.id == before_entry_id
+            )
+        upcoming.insert(index, entry)
+
+        return self._commit(replace(self._snapshot, upcoming=tuple(upcoming)))
+
+    def clear(self) -> PlayerSnapshot:
+        return self._commit(replace(self._snapshot, upcoming=()))
+
+    def _apply(self, event: PlaybackEvent) -> PlayerSnapshot:
+        return self._commit(transition(self._snapshot, event))
+
+    def play(self) -> PlayerSnapshot:
+        """Start the next entry, resume a paused entry, or retry a failed entry."""
+        return self._apply(PlaybackEvent.PLAY)
+
+    def mark_playing(self) -> PlayerSnapshot:
+        """Confirm that the current loading entry has started."""
+        return self._apply(PlaybackEvent.READY)
+
+    def pause(self) -> PlayerSnapshot:
+        return self._apply(PlaybackEvent.PAUSE)
+
+    def skip(self) -> PlayerSnapshot:
+        return self._apply(PlaybackEvent.SKIP)
+
+    def stop(self) -> PlayerSnapshot:
+        return self._apply(PlaybackEvent.STOP)
+
+    def fail(self) -> PlayerSnapshot:
+        return self._apply(PlaybackEvent.FAIL)
