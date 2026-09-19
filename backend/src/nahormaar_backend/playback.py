@@ -21,6 +21,7 @@ from uuid import UUID, uuid4
 from . import commands
 from .audio import (
     MetadataResolver,
+    ResolvedTrack,
     SourceResolver,
     TrackError,
     VoiceChannelInfo,
@@ -131,6 +132,8 @@ class PlaybackController:
         self._last_issue: PlaybackIssue | None = None
         self._revisions = revisions
         self._position_seconds = 0.0
+        self._position_origin = 0.0
+        self._resolved_track: ResolvedTrack | None = None
         self._position_updated_at: datetime | None = None
         self._position_clock: float | None = None
         self._pending_receipt: Receipt | None = None
@@ -273,7 +276,7 @@ class PlaybackController:
         previous = self._published
         now = self._loop.time()
         if previous.attempt_id != self._attempt_id:
-            self._position_seconds = 0.0
+            self._position_seconds = self._position_origin if self._attempt_id else 0.0
         elif previous.player.state is self._snapshot.state:
             return
         elif (
@@ -322,13 +325,13 @@ class PlaybackController:
         if isinstance(command, (commands.Move, commands.Clear)):
             if command.expected_queue_revision != self._revisions.queue_revision:
                 return Outcome("queue_conflict", 409)
-        if isinstance(command, commands.Control):
+        if isinstance(command, (commands.Control, commands.Seek)):
             if command.expected_playback_id != self._attempt_id:
                 return Outcome("playback_conflict", 409)
         operation: Callable[[Player], PlayerSnapshot]
         match command:
-            case commands.Add(source_url):
-                entry = QueueEntry(source_url)
+            case commands.Add(source_url, added_by):
+                entry = QueueEntry(source_url, added_by=added_by)
                 operation = partial(Player.enqueue, entry=entry)
                 outcome = Outcome(entry_id=entry.id)
             case commands.Remove(entry_id):
@@ -354,6 +357,9 @@ class PlaybackController:
                 return Outcome()
             case commands.Volume(volume):
                 self._set_volume(volume)
+                return Outcome()
+            case commands.Seek(position_seconds, _):
+                await self._seek(position_seconds)
                 return Outcome()
             case commands.Connect(channel_id):
                 await self._connect(channel_id)
@@ -523,12 +529,45 @@ class PlaybackController:
             self._voice.set_volume(volume)
             self._volume = volume
 
+    async def _seek(self, position_seconds: float) -> None:
+        entry = self._snapshot.current
+        track = self._resolved_track
+        if (
+            not isfinite(position_seconds)
+            or entry is None
+            or entry.duration_seconds is None
+            or not 0 <= position_seconds < entry.duration_seconds
+            or track is None
+        ):
+            raise ValueError("Seek to a position within the current track.")
+        if not self._voice.connected:
+            raise VoiceError("Discord voice is not connected.")
+        await self._change(Player.seek)
+        was_paused = self._snapshot.state is PlaybackState.PAUSED
+        await self._halt()
+        attempt_id = uuid4()
+        self._attempt_id = attempt_id
+        self._position_origin = position_seconds
+        try:
+            self._voice.play(
+                track,
+                lambda error: self._completed_callback(attempt_id, error),
+                position_seconds=position_seconds,
+            )
+        except TrackError as exc:
+            await self._track_failed(exc)
+            return
+        self._resolved_track = track
+        if was_paused:
+            self._voice.pause()
+
     def _begin(self, *, retried: bool = False) -> None:
         entry = self._snapshot.current
         if entry is None:
             return
         attempt_id = uuid4()
         self._attempt_id = attempt_id
+        self._position_origin = 0.0
         self._retried = retried
         if not retried:
             self._history_recorded = False
@@ -580,6 +619,7 @@ class PlaybackController:
                 )
             )
             self._history_recorded = True
+            self._resolved_track = track
 
         self._submit(ready)
 
@@ -625,6 +665,7 @@ class PlaybackController:
 
     async def _halt(self) -> None:
         self._attempt_id = None
+        self._resolved_track = None
         task, self._load_task = self._load_task, None
         try:
             if task is not None:

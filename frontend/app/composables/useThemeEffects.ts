@@ -5,6 +5,7 @@ export function useThemeEffects() {
 	const store = useSettingsStore();
 	const appConfig = useAppConfig();
 	const colorMode = useColorMode();
+	const artworkPalette = useArtworkPalette();
 
 	function applyMode() {
 		const hour = new Date().getHours();
@@ -21,14 +22,14 @@ export function useThemeEffects() {
 	});
 
 	watch(
-		() => store.settings.primaryColor,
+		() => artworkPalette.value?.primary ?? store.settings.primaryColor,
 		(value) => {
 			appConfig.ui.colors.primary = value;
 		},
 		{ immediate: true },
 	);
 	watch(
-		() => store.settings.neutralColor,
+		() => artworkPalette.value?.neutral ?? store.settings.neutralColor,
 		(value) => {
 			appConfig.ui.colors.neutral = value;
 		},

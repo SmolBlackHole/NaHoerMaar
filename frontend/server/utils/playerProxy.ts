@@ -11,7 +11,7 @@ const localHosts = new Set(["127.0.0.1", "localhost", "[::1]"]);
 const routes: Record<string, RegExp> = {
 	GET: /^\/api\/(state|channels|events)$/,
 	POST: /^\/api\/(queue(?:\/clear|\/[a-f0-9-]{36}\/move)?|player\/(play|pause|skip|stop))$/,
-	PUT: /^\/api\/(player\/volume|voice\/channel)$/,
+	PUT: /^\/api\/(player\/(volume|seek)|voice\/channel)$/,
 	DELETE: /^\/api\/(queue\/[a-f0-9-]{36}|voice\/channel)$/,
 };
 
@@ -51,7 +51,12 @@ export function playerProxy(backendUrl: () => string) {
 				},
 			});
 		} catch (error) {
-			if (!abort.signal.aborted) throw error;
+			if (abort.signal.aborted) return;
+			if (event.node.res.headersSent) {
+				event.node.res.destroy();
+				return;
+			}
+			throw error;
 		} finally {
 			event.node.res.off("close", closed);
 		}

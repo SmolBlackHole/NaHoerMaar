@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { listeningStats } from "#shared/player";
+import { groupHistory, listeningStats } from "#shared/player";
 import { usePlayerStore } from "~/stores/player";
 useSeoMeta({ title: "Overview | NaHörMaar" });
 const player = usePlayerStore();
@@ -13,6 +13,9 @@ const stats = computed(() =>
 	listeningStats(player.snapshot?.recently_played ?? [], days.value, now.value),
 );
 const maxStarts = computed(() => Math.max(1, ...stats.value.buckets.map((day) => day.count)));
+const recentTracks = computed(() =>
+	groupHistory(player.snapshot?.recently_played ?? []).slice(0, 5),
+);
 const metrics = computed(() => [
 	{ label: "Tracks started", value: stats.value.starts, icon: icons.value.play },
 	{ label: "Different tracks", value: stats.value.tracks, icon: icons.value.music },
@@ -44,7 +47,6 @@ function dayLabel(date: Date) {
 			</UDashboardNavbar>
 		</template>
 		<template #body>
-			<div class="-m-4 sm:-m-6"><PlayerNotice /></div>
 			<div class="space-y-8 py-4 sm:py-6">
 				<div class="flex flex-wrap items-end justify-between gap-4">
 					<div>
@@ -177,14 +179,14 @@ function dayLabel(date: Date) {
 						<div class="mb-3 flex items-center justify-between gap-4">
 							<h2 class="text-highlighted text-lg font-semibold">Recently played</h2>
 							<UButton
-								to="/history"
+								to="/?view=queue#recently-played"
 								label="View all"
 								variant="link"
 								color="neutral"
 								:trailing-icon="icons.arrowRight"
 							/>
 						</div>
-						<PlayerRecentList :entries="player.snapshot.recently_played.slice(0, 5)" />
+						<PlayerRecentList :entries="recentTracks" />
 					</section>
 				</template>
 			</div>

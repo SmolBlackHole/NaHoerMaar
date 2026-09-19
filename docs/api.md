@@ -13,10 +13,18 @@ Titles, artists, uploader links, duration and thumbnails arrive asynchronously;
 unavailable fields remain null. Discord channel IDs are strings; queue and
 playback IDs are UUIDs.
 
+Each entry includes `added_by`, either null or the browser profile's `id` (UUID),
+`name` (1 to 32 characters) and `avatar` (four hexadecimal characters). Send that
+object alongside `source_url` when adding a track. The profile is saved with the
+entry and its playback history. Requeuing records the person adding it again.
+Additions without a profile are attributed to `Anonymous`; older entries can
+still have null attribution.
+Browser profiles are self-chosen names, not authenticated Discord identities.
+
 `recently_played` contains up to 100 starts, newest first. Each item has its own
 `id`, a timezone-aware `played_at` timestamp and an `entry` with track metadata.
 Skipped tracks remain in history; unplayed removals do not enter it. Pause/resume
-and automatic stream retries do not add another start. Requeue a history item
+and seeking or automatic stream retries do not add another start. Requeue a history item
 through `POST /api/queue` with its source URL.
 
 `GET /api/channels` lists voice channels with `can_connect` and `can_speak` flags.
@@ -37,12 +45,17 @@ bodies use JSON. The supported operations are:
 | `POST /api/player/skip`           | `{"expected_playback_id": "CURRENT_PLAYBACK_UUID"}`                               |
 | `POST /api/player/stop`           | `{"expected_playback_id": "CURRENT_PLAYBACK_UUID"}`                               |
 | `PUT /api/player/volume`          | `{"volume": 0.5}`; range 0 to 1                                                   |
+| `PUT /api/player/seek`            | `{"position_seconds": 75, "expected_playback_id": "CURRENT_PLAYBACK_UUID"}`      |
 | `PUT /api/voice/channel`          | `{"channel_id": "CHANNEL_ID"}`                                                    |
 | `DELETE /api/voice/channel`       | No body                                                                           |
 
 Moving before `null` puts the entry last. Remove, move and clear affect upcoming
 entries. Use skip or stop for the current track. The API accepts individual
 YouTube video links; search and playlist import are not available yet.
+
+Seeking moves the shared Discord audio to an absolute position in seconds.
+The position must be at least zero and less than the current track's duration.
+Only playing and paused tracks can seek; a paused track stays paused.
 
 Mutation responses contain `request_id`, `code`, `entry_id` (for additions),
 `replayed` and a fresh `snapshot`. Successful operations use HTTP 200 and
@@ -61,7 +74,7 @@ current snapshot. Refresh the view before submitting a new action.
 Playback controls target the displayed `playback_id`. A mismatch returns 409
 with `code: "playback_conflict"`. This prevents two skips for one track from
 also skipping the next track. Pausing and resuming retain the same playback ID;
-starting another track or retrying extraction creates a new one.
+seeking, starting another track or retrying extraction creates a new one.
 
 If a response is lost, retry with the same request ID and payload. The outcome
 is retained across restarts, and `replayed` is true on a retry. Its snapshot is
@@ -89,4 +102,4 @@ state. Closing a browser has no effect on playback.
 
 While playing, estimate progress from `position_seconds` plus elapsed time since
 `position_updated_at`. Hold that position while paused and use the new anchor
-after the next state change. This is display progress, not a seek interface.
+after a seek or state change. Use `PUT /api/player/seek` to change the position.

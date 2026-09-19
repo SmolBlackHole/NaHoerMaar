@@ -10,9 +10,11 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 from types import TracebackType
+from typing import cast
 from uuid import UUID
 
 from sqlalchemy import (
+    JSON,
     URL,
     CheckConstraint,
     ForeignKey,
@@ -29,9 +31,36 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from sqlalchemy.pool import ConnectionPoolEntry
 
 from .commands import Outcome, Receipt, Revisions
-from .models import HistoryEntry, PlaybackState, PlayerSnapshot, QueueEntry
+from .models import Contributor, HistoryEntry, PlaybackState, PlayerSnapshot, QueueEntry
 
-_SCHEMA_VERSION = 3
+_SCHEMA_VERSION = 4
+
+
+def _contributor_data(contributor: Contributor | None) -> dict[str, str] | None:
+    if contributor is None:
+        return None
+    return {
+        "id": str(contributor.id),
+        "name": contributor.name,
+        "avatar": contributor.avatar,
+    }
+
+
+def _contributor(data: object) -> Contributor | None:
+    if data is None:
+        return None
+    if not isinstance(data, dict):
+        raise ValueError("Invalid stored contributor.")
+    fields = cast(dict[object, object], data)
+    identifier, name, avatar = (fields.get(key) for key in ("id", "name", "avatar"))
+    if (
+        set(fields) != {"id", "name", "avatar"}
+        or not isinstance(identifier, str)
+        or not isinstance(name, str)
+        or not isinstance(avatar, str)
+    ):
+        raise ValueError("Invalid stored contributor.")
+    return Contributor(UUID(identifier), name, avatar)
 
 
 class _Base(DeclarativeBase):
@@ -52,6 +81,7 @@ class _QueueEntryRow(_Base):
     thumbnail_url: Mapped[str | None]
     artist: Mapped[str | None]
     uploader_url: Mapped[str | None]
+    added_by: Mapped[dict[str, str] | None] = mapped_column(JSON)
 
 
 class _HistoryRow(_Base):
@@ -69,6 +99,7 @@ class _HistoryRow(_Base):
     thumbnail_url: Mapped[str | None]
     artist: Mapped[str | None]
     uploader_url: Mapped[str | None]
+    added_by: Mapped[dict[str, str] | None] = mapped_column(JSON)
 
 
 class _PlayerRow(_Base):
@@ -168,7 +199,10 @@ class SQLiteStore:
                     expected_tables.remove("requests")
                 if version in (1, 2):
                     expected_tables.remove("playback_history")
-                if version not in (1, 2, _SCHEMA_VERSION) or tables != expected_tables:
+                if (
+                    version not in (1, 2, 3, _SCHEMA_VERSION)
+                    or tables != expected_tables
+                ):
                     raise ValueError(f"Unsupported player database schema ({version}).")
                 for table in _Base.metadata.sorted_tables:
                     if table.name not in expected_tables:
@@ -177,6 +211,11 @@ class SQLiteStore:
                         column["name"] for column in inspector.get_columns(table.name)
                     ]
                     expected_columns = list(table.columns.keys())
+                    if version < 4 and table.name in (
+                        "queue_entries",
+                        "playback_history",
+                    ):
+                        expected_columns.remove("added_by")
                     if version == 1 and table.name == "player_state":
                         expected_columns = expected_columns[:-2]
                     if version in (1, 2) and table.name == "queue_entries":
@@ -198,10 +237,20 @@ class SQLiteStore:
                             f"ALTER TABLE queue_entries ADD COLUMN {name} VARCHAR"
                         )
                     _Base.metadata.tables["playback_history"].create(connection)
+                if version < 4:
+                    connection.exec_driver_sql(
+                        "ALTER TABLE queue_entries ADD COLUMN added_by JSON"
+                    )
+                    if version == 3:
+                        connection.exec_driver_sql(
+                            "ALTER TABLE playback_history ADD COLUMN added_by JSON"
+                        )
                     # Validate old data before committing any schema changes.
                     with Session(bind=connection) as session:
                         self._load(session)
-                    connection.exec_driver_sql("PRAGMA user_version = 3")
+                    connection.exec_driver_sql(
+                        f"PRAGMA user_version = {_SCHEMA_VERSION}"
+                    )
         except (SQLAlchemyError, TypeError, ValueError) as exc:
             raise StorageError(f"Invalid player database: {exc}") from exc
 
@@ -236,6 +285,7 @@ class SQLiteStore:
                     thumbnail_url=row.thumbnail_url,
                     artist=row.artist,
                     uploader_url=row.uploader_url,
+                    added_by=_contributor(row.added_by),
                 )
             )
 
@@ -264,6 +314,7 @@ class SQLiteStore:
                         thumbnail_url=item.thumbnail_url,
                         artist=item.artist,
                         uploader_url=item.uploader_url,
+                        added_by=_contributor(item.added_by),
                     ),
                 )
             )
@@ -303,6 +354,7 @@ class SQLiteStore:
                         thumbnail_url=entry.thumbnail_url,
                         artist=entry.artist,
                         uploader_url=entry.uploader_url,
+                        added_by=_contributor_data(entry.added_by),
                     )
                     for position, entry in enumerate(entries)
                 )
@@ -321,6 +373,7 @@ class SQLiteStore:
                         thumbnail_url=item.entry.thumbnail_url,
                         artist=item.entry.artist,
                         uploader_url=item.entry.uploader_url,
+                        added_by=_contributor_data(item.entry.added_by),
                     )
                     for position, item in enumerate(snapshot.recently_played)
                 )

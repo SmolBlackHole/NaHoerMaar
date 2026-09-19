@@ -146,6 +146,13 @@ export function createPlayerClient(
 		});
 	}
 
+	function seek(positionSeconds: number, playbackId: string) {
+		return mutate("/api/player/seek", "PUT", {
+			position_seconds: positionSeconds,
+			expected_playback_id: playbackId,
+		});
+	}
+
 	function move(entryId: string, beforeId: string | null, revision: number) {
 		return mutate(`/api/queue/${entryId}/move`, "POST", {
 			before_entry_id: beforeId,
@@ -181,6 +188,7 @@ export function createPlayerClient(
 		refreshChannels,
 		mutate,
 		control,
+		seek,
 		move,
 		retry,
 	};

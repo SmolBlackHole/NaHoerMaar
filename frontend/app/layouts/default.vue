@@ -7,6 +7,7 @@ const collapsed = ref(false);
 const links = computed(() => [
 	{
 		label: "Player",
+		"aria-label": "Player",
 		icon: icons.value.music,
 		to: "/",
 		exact: true,
@@ -16,16 +17,9 @@ const links = computed(() => [
 	},
 	{
 		label: "Overview",
+		"aria-label": "Overview",
 		icon: icons.value.layoutDashboard,
 		to: "/dashboard",
-		onSelect: () => {
-			open.value = false;
-		},
-	},
-	{
-		label: "Recently played",
-		icon: icons.value.timer,
-		to: "/history",
 		onSelect: () => {
 			open.value = false;
 		},
@@ -35,63 +29,87 @@ const links = computed(() => [
 
 <template>
 	<UDashboardGroup unit="rem" storage-key="nahormaar-layout" :persistent="false">
-		<UDashboardSidebar
-			id="navigation"
-			v-model:open="open"
-			v-model:collapsed="collapsed"
-			collapsible
-			resizable
-			:menu="{
-				title: 'Player settings',
-				description: 'Choose a Discord channel and appearance.',
-			}"
-			class="navigation-sidebar bg-elevated/25"
-			:ui="{ footer: 'shrink-0 flex-col items-stretch border-t border-default py-3 gap-2' }"
-		>
-			<template #header="{ collapsed: isCollapsed }">
-				<LayoutWorkspaceMenu :collapsed="isCollapsed" @navigate="open = false" />
-			</template>
-			<template #default="{ collapsed: isCollapsed }">
-				<UNavigationMenu
-					:collapsed="isCollapsed"
-					:items="links"
-					orientation="vertical"
-					highlight
-					tooltip
-				/>
-				<PlayerVoiceChannel v-if="!isCollapsed" />
-				<UTooltip v-else text="Expand to choose a voice channel">
-					<UButton
-						:icon="icons.headphones"
-						aria-label="Choose voice channel"
-						color="neutral"
-						variant="ghost"
-						@click="collapsed = false"
+		<div class="music-shell flex min-h-0 flex-1 overflow-hidden">
+			<UDashboardSidebar
+				id="navigation"
+				v-model:open="open"
+				v-model:collapsed="collapsed"
+				collapsible
+				resizable
+				:default-size="15"
+				:collapsed-size="4"
+				:min-size="13"
+				:max-size="20"
+				:menu="{
+					title: 'Player settings',
+					description: 'Choose a Discord channel and appearance.',
+				}"
+				class="navigation-sidebar min-h-0"
+				:ui="{
+					header: 'h-20 px-3',
+					body: 'px-3 pt-2 gap-1',
+					footer: 'shrink-0 flex-col items-stretch px-3 pt-3 pb-4 gap-1',
+				}"
+			>
+				<template #header="{ collapsed: isCollapsed }">
+					<LayoutWorkspaceMenu :collapsed="isCollapsed" @navigate="open = false" />
+				</template>
+				<template #default="{ collapsed: isCollapsed }">
+					<UNavigationMenu
+						:collapsed="isCollapsed"
+						:items="links"
+						orientation="vertical"
+						highlight
+						tooltip
+						:ui="{ link: 'min-h-11 gap-3 px-2.5 py-2.5' }"
 					/>
-				</UTooltip>
-			</template>
-			<template #footer="{ collapsed: isCollapsed }">
-				<ProfileMenu :collapsed="isCollapsed" @click="open = false" />
-				<LayoutThemeMenu :collapsed="isCollapsed" />
-				<LayoutAppFooter
-					v-if="!isCollapsed"
-					class="justify-start px-2 pt-2 leading-relaxed"
-				/>
-			</template>
-		</UDashboardSidebar>
-		<slot />
+				</template>
+				<template #footer="{ collapsed: isCollapsed }">
+					<PlayerVoiceChannel :collapsed="isCollapsed" />
+					<div class="sidebar-account" :class="{ 'is-collapsed': isCollapsed }">
+						<ProfileMenu :collapsed="isCollapsed" @click="open = false" />
+						<LayoutThemeMenu />
+					</div>
+					<LayoutAppFooter v-if="!isCollapsed" compact />
+				</template>
+			</UDashboardSidebar>
+			<div class="workspace-column flex min-h-0 min-w-0 flex-1 flex-col">
+				<main class="flex min-h-0 min-w-0 flex-1 flex-col">
+					<slot />
+				</main>
+				<PlayerNotice />
+				<PlayerDock />
+			</div>
+		</div>
 	</UDashboardGroup>
 </template>
 
-<style>
-.navigation-sidebar {
+<style scoped>
+.music-shell :deep(.navigation-sidebar) {
+	background: var(--room-sidebar);
+	overflow: hidden;
 	transition: width 240ms cubic-bezier(0.16, 1, 0.3, 1);
 }
-.navigation-sidebar[data-dragging="true"] {
+.music-shell :deep(.navigation-sidebar[data-collapsed="true"]) {
+	transition-duration: 180ms;
+}
+.music-shell :deep(.navigation-sidebar[data-dragging="true"]) {
 	transition: none;
 }
+.sidebar-account {
+	display: flex;
+	align-items: center;
+	gap: 0.25rem;
+}
+.sidebar-account.is-collapsed {
+	flex-direction: column;
+}
+.workspace-column {
+	container-type: inline-size;
+	container-name: workspace;
+}
 @media (prefers-reduced-motion: reduce) {
-	.navigation-sidebar {
+	.music-shell :deep(.navigation-sidebar) {
 		transition: none;
 	}
 }

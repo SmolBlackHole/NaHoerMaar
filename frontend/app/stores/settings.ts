@@ -6,10 +6,11 @@ export type TextSize = "sm" | "md" | "lg";
 
 export const useSettingsStore = defineStore("settings", () => {
 	const settings = reactive({
-		mode: "system" as ColorModePreference,
-		primaryColor: "indigo",
-		neutralColor: "slate",
-		fontFamily: "Public Sans",
+		mode: "dark" as ColorModePreference,
+		artworkColors: true,
+		primaryColor: "teal",
+		neutralColor: "zinc",
+		fontFamily: "Geist",
 		iconSet: "lucide" as IconSet,
 		textSize: "md" as TextSize,
 	});

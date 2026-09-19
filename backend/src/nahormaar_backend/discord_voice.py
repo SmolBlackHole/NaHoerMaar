@@ -12,6 +12,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 import importlib.util
 import logging
+from math import isfinite
 from pathlib import Path
 import re
 import struct
@@ -52,8 +53,11 @@ class _FFmpegSource(discord.AudioSource):
         headers: tuple[tuple[str, str], ...],
         *,
         opus: bool = False,
+        position_seconds: float = 0,
     ) -> None:
-        arguments = _ffmpeg_arguments(executable, source, headers, opus=opus)
+        arguments = _ffmpeg_arguments(
+            executable, source, headers, opus=opus, position_seconds=position_seconds
+        )
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         self._process: subprocess.Popen[bytes] = subprocess.Popen(  # noqa: S603
             arguments,
@@ -563,7 +567,11 @@ class DiscordVoice:
                 return
 
     def play(
-        self, track: ResolvedTrack, after: Callable[[Exception | None], None]
+        self,
+        track: ResolvedTrack,
+        after: Callable[[Exception | None], None],
+        *,
+        position_seconds: float = 0,
     ) -> None:
         voice = self._voice
         if voice is None or not voice.is_connected():
@@ -579,6 +587,7 @@ class DiscordVoice:
                 track.stream_url,
                 track.headers,
                 opus=track.is_opus,
+                position_seconds=position_seconds,
             )
         except FileNotFoundError as error:
             raise VoiceError(
@@ -669,7 +678,10 @@ def _ffmpeg_arguments(
     headers: tuple[tuple[str, str], ...],
     *,
     opus: bool = False,
+    position_seconds: float = 0,
 ) -> Sequence[str]:
+    if not isfinite(position_seconds) or position_seconds < 0:
+        raise ValueError("Playback position must be finite and non-negative.")
     arguments: list[str] = [str(executable), "-nostdin"]
     if headers:
         header_lines: list[str] = []
@@ -682,7 +694,12 @@ def _ffmpeg_arguments(
         arguments.extend(("-headers", "\r\n".join(header_lines) + "\r\n"))
     if source.startswith(("http://", "https://")):
         arguments.extend(("-rw_timeout", "15000000"))
+    if position_seconds:
+        arguments.extend(("-ss", str(position_seconds)))
     arguments.extend(("-i", source, "-map", "0:a:0"))
+    if position_seconds and opus:
+        # Input seeking can retain packets before the target when stream-copying.
+        arguments.extend(("-ss", "0"))
     if opus:
         arguments.extend(("-c:a", "copy", "-f", "opus"))
     else:

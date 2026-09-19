@@ -12,7 +12,7 @@ from uuid import uuid4
 import pytest
 
 from nahormaar_backend import commands
-from nahormaar_backend.audio import VoiceError
+from nahormaar_backend.audio import ResolvedTrack, VoiceError
 from nahormaar_backend.commands import Outcome, Receipt
 from nahormaar_backend.models import PlaybackState, QueueEntry
 from nahormaar_backend.playback import PlaybackController, PlaybackStatus
@@ -24,6 +24,106 @@ async def wait_for(predicate: Callable[[], bool]) -> None:
     async with asyncio.timeout(3):
         while not predicate():
             await asyncio.sleep(0.001)
+
+
+@pytest.mark.parametrize("paused", [False, True])
+def test_seek_preserves_track_history_queue_volume_and_pause(
+    tmp_path: Path, paused: bool
+) -> None:
+    async def scenario() -> None:
+        resolver, voice = ControlledResolver(), FakeVoice()
+        controller = await PlaybackController.create(
+            tmp_path / "player.sqlite3", resolver, voice
+        )
+        try:
+            await controller.enqueue(QueueEntry("https://youtu.be/Pqp9fDRp1lw"))
+            await controller.enqueue(QueueEntry("https://youtu.be/bWHJbIm1TAA"))
+            await controller.connect(7)
+            await controller.play()
+            await wait_for(lambda: len(resolver.requests) == 1)
+            resolver.requests[0].set_result(
+                ResolvedTrack("https://stream.invalid/audio", duration_seconds=180)
+            )
+            await wait_for(lambda: controller.snapshot.state is PlaybackState.PLAYING)
+            await controller.set_volume(0.4)
+            if paused:
+                await controller.pause()
+            before = await controller.read_status()
+            assert before.attempt_id is not None
+            request_id = uuid4()
+            command = commands.Seek(70, before.attempt_id)
+            result, conflict = await asyncio.gather(
+                controller.request(request_id, command),
+                controller.request(uuid4(), commands.Seek(30, before.attempt_id)),
+            )
+            assert result.outcome.code == "ok"
+            assert conflict.outcome.code == "playback_conflict"
+            assert result.status.player == before.player
+            assert result.status.queue_revision == before.queue_revision
+            assert result.status.volume == 0.4
+            assert result.status.position_seconds == 70
+            assert result.status.attempt_id != before.attempt_id
+            assert voice.positions == [0, 70]
+            assert voice.pause_count == (2 if paused else 0)
+
+            voice.complete(0)
+            await asyncio.sleep(0.01)
+            assert controller.snapshot == before.player
+            repeated = await controller.request(request_id, command)
+            assert repeated.replayed
+            assert repeated.outcome.code == "ok"
+            assert voice.positions == [0, 70]
+            target = controller.status.attempt_id
+            assert target is not None
+            backward = await controller.request(uuid4(), commands.Seek(10, target))
+            assert backward.status.position_seconds == 10
+            assert backward.status.player == before.player
+            assert len(backward.status.player.recently_played) == 1
+            assert voice.positions == [0, 70, 10]
+            assert len(resolver.calls) == 1
+            if paused:
+                await controller.play()
+            await controller.pause()
+            assert 10 <= controller.status.position_seconds < 11
+            voice.complete(2)
+            await wait_for(lambda: controller.snapshot.current != before.player.current)
+            assert controller.snapshot.current == before.player.upcoming[0]
+        finally:
+            await controller.close()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("position", [-1, 180, 181, float("nan"), float("inf")])
+def test_invalid_seek_leaves_playback_untouched(
+    tmp_path: Path, position: float
+) -> None:
+    async def scenario() -> None:
+        resolver, voice = ControlledResolver(), FakeVoice()
+        controller = await PlaybackController.create(
+            tmp_path / "player.sqlite3", resolver, voice
+        )
+        try:
+            await controller.enqueue(QueueEntry("https://youtu.be/Pqp9fDRp1lw"))
+            await controller.connect(7)
+            await controller.play()
+            await wait_for(lambda: len(resolver.requests) == 1)
+            resolver.requests[0].set_result(
+                ResolvedTrack("https://stream.invalid/audio", duration_seconds=180)
+            )
+            await wait_for(lambda: controller.snapshot.state is PlaybackState.PLAYING)
+            before = await controller.read_status()
+            assert before.attempt_id is not None
+            result = await controller.request(
+                uuid4(), commands.Seek(position, before.attempt_id)
+            )
+            assert result.outcome.code == "invalid_action"
+            assert result.status == before
+            assert voice.positions == [0]
+        finally:
+            await controller.close()
+
+    asyncio.run(scenario())
 
 
 def test_concurrent_requests_replay_and_queue_conflicts(tmp_path: Path) -> None:

@@ -1,6 +1,7 @@
 export default defineNuxtConfig({
 	modules: ["@nuxt/ui", "@vueuse/nuxt", "@pinia/nuxt"],
 	css: ["~/assets/css/main.css"],
+	colorMode: { preference: "dark", fallback: "dark" },
 	runtimeConfig: { backendUrl: "http://127.0.0.1:8000" },
 	vite: {
 		build: {

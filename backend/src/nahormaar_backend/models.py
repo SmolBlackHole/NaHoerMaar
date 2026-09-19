@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 from math import isfinite
+from re import fullmatch
 from uuid import UUID, uuid4
 
 
@@ -37,6 +38,22 @@ class TrackMetadata:
 
 
 @dataclass(frozen=True, slots=True)
+class Contributor:
+    id: UUID
+    name: str
+    avatar: str
+
+    def __post_init__(self) -> None:
+        if not 1 <= len(self.name) <= 32 or self.name != self.name.strip():
+            raise ValueError("A contributor needs a name of 1 to 32 characters.")
+        if not fullmatch(r"[0-9a-f]{4}", self.avatar):
+            raise ValueError("Invalid contributor avatar.")
+
+
+ANONYMOUS_CONTRIBUTOR = Contributor(UUID(int=0), "Anonymous", "0000")
+
+
+@dataclass(frozen=True, slots=True)
 class QueueEntry:
     source_url: str
     id: UUID = field(default_factory=uuid4)
@@ -47,6 +64,7 @@ class QueueEntry:
     thumbnail_url: str | None = None
     artist: str | None = None
     uploader_url: str | None = None
+    added_by: Contributor | None = None
 
     def __post_init__(self) -> None:
         if not self.source_url.strip():

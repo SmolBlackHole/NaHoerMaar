@@ -17,7 +17,8 @@ from fastapi import FastAPI
 from nahormaar_backend.api import create_app
 from nahormaar_backend.__main__ import LocalServer
 from nahormaar_backend.api_models import Channel, MutationResult, State
-from nahormaar_backend.models import QueueEntry
+from nahormaar_backend.audio import ResolvedTrack
+from nahormaar_backend.models import PlaybackState, QueueEntry
 from nahormaar_backend.playback import PlaybackController
 from test_commands import wait_for
 from test_playback import ControlledResolver, FakeVoice
@@ -129,6 +130,61 @@ def test_api_queue_contracts_and_retries(tmp_path: Path) -> None:
             schema = await client.get("/openapi.json")
             assert schema.status_code == 200
         assert harness.starts == harness.stops == 1
+
+    asyncio.run(scenario())
+
+
+def test_api_seek_validates_target_and_publishes_new_position(tmp_path: Path) -> None:
+    harness = Harness(tmp_path / "player.sqlite3")
+
+    async def scenario() -> None:
+        async with harness.client() as client:
+            assert harness.controller is not None
+            await harness.controller.enqueue(QueueEntry(VIDEO))
+            await harness.controller.connect(7)
+            await harness.controller.play()
+            await wait_for(lambda: len(harness.resolver.requests) == 1)
+            harness.resolver.requests[0].set_result(
+                ResolvedTrack("https://stream.invalid/audio", duration_seconds=180)
+            )
+            await wait_for(
+                lambda: (
+                    harness.controller is not None
+                    and harness.controller.snapshot.state is PlaybackState.PLAYING
+                )
+            )
+            before = State.model_validate((await client.get("/api/state")).json())
+            for position in (-1, "10", True, None):
+                response = await client.put(
+                    "/api/player/seek",
+                    json={
+                        "position_seconds": position,
+                        "expected_playback_id": str(before.playback_id),
+                    },
+                    headers=headers(),
+                )
+                assert response.status_code == 422
+            key = headers()
+            body = {
+                "position_seconds": 60,
+                "expected_playback_id": str(before.playback_id),
+            }
+            result = mutation(
+                await client.put("/api/player/seek", json=body, headers=key)
+            )
+            assert result.snapshot.position_seconds == 60
+            assert result.snapshot.playback_id != before.playback_id
+            assert result.snapshot.current == before.current
+            assert result.snapshot.recently_played == before.recently_played
+            replay = mutation(
+                await client.put("/api/player/seek", json=body, headers=key)
+            )
+            assert replay.replayed
+            assert harness.voice.positions == [0, 60]
+            stale = mutation(
+                await client.put("/api/player/seek", json=body, headers=headers()), 409
+            )
+            assert stale.code == "playback_conflict"
 
     asyncio.run(scenario())
 

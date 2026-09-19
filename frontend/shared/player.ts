@@ -1,3 +1,5 @@
+import type { ListenerProfile } from "./profile";
+
 export type PlaybackState = "idle" | "loading" | "playing" | "paused" | "error";
 export type PlaybackAction = "play" | "pause" | "skip" | "stop";
 
@@ -11,12 +13,32 @@ export interface QueueEntry {
 	thumbnail_url: string | null;
 	artist: string | null;
 	uploader_url: string | null;
+	added_by: ListenerProfile | null;
 }
 
 export interface HistoryEntry {
 	id: string;
 	played_at: string;
 	entry: QueueEntry;
+}
+
+export interface RecentTrack extends HistoryEntry {
+	play_count: number;
+}
+
+export function groupHistory(history: readonly HistoryEntry[]): RecentTrack[] {
+	const tracks = new Map<string, RecentTrack>();
+	const latestFirst = [...history].sort(
+		(a, b) => Date.parse(b.played_at) - Date.parse(a.played_at),
+	);
+	for (const item of latestFirst) {
+		const videoId = item.entry.video_id || youtubeVideoId(item.entry.source_url);
+		const key = videoId ? `youtube:${videoId}` : item.entry.source_url;
+		const existing = tracks.get(key);
+		if (existing) existing.play_count++;
+		else tracks.set(key, { ...item, play_count: 1 });
+	}
+	return [...tracks.values()];
 }
 
 export interface PlayerState {
@@ -192,4 +214,27 @@ export function canControl(state: PlayerState | null, action: PlaybackAction): b
 			state.state === "error" ||
 			(state.state === "idle" && state.upcoming.length > 0))
 	);
+}
+
+export function queueWaits(state: PlayerState | null, now: number): (number | null)[] {
+	if (!state) return [];
+	let seconds: number | null =
+		state.state === "playing" &&
+		!state.last_issue?.fatal &&
+		state.voice_state === "connected" &&
+		state.current?.duration_seconds != null
+			? Math.max(0, state.current.duration_seconds - playbackPosition(state, now))
+			: null;
+	return state.upcoming.map((entry) => {
+		const wait = seconds;
+		seconds =
+			seconds !== null && entry.duration_seconds !== null
+				? seconds + entry.duration_seconds
+				: null;
+		return wait;
+	});
+}
+
+export function formatWait(seconds: number): string {
+	return seconds < 60 ? "In <1 min" : `In ~${Math.round(seconds / 60)} min`;
 }

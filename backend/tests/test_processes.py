@@ -26,7 +26,10 @@ import sys
 import time
 
 child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
-pathlib.Path(sys.argv[1]).write_text(str(child.pid), encoding="ascii")
+pid_file = pathlib.Path(sys.argv[1])
+pending_file = pid_file.with_suffix(".pending")
+pending_file.write_text(str(child.pid), encoding="ascii")
+pending_file.replace(pid_file)
 time.sleep(60)
 """
 

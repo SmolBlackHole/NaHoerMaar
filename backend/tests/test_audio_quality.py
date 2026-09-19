@@ -80,6 +80,47 @@ def test_unity_volume_preserves_every_opus_packet(tmp_path: Path) -> None:
     assert source.original.closed
 
 
+@pytest.mark.parametrize("position", [0.2, 0.8])
+@pytest.mark.parametrize("container", ["opus", "webm"])
+def test_seek_keeps_original_opus_packets_at_the_requested_position(
+    tmp_path: Path, position: float, container: str
+) -> None:
+    opus = _opus_fixture(tmp_path)
+    expected = _packets(opus)
+    media = opus
+    if container == "webm":
+        media = tmp_path / "stereo.webm"
+        subprocess.run(  # noqa: S603 - fixed local encoder and test fixture paths
+            [
+                str(ffmpeg_executable()),
+                "-nostdin",
+                "-loglevel",
+                "error",
+                "-i",
+                str(opus),
+                "-c:a",
+                "copy",
+                str(media),
+            ],
+            check=True,
+            capture_output=True,
+            timeout=10,
+        )
+    source = _VolumeSource(
+        _FFmpegSource(
+            ffmpeg_executable(), str(media), (), opus=True, position_seconds=position
+        )
+    )
+    try:
+        actual = list(iter(source.read, b""))
+        start = expected.index(actual[0])
+        assert start * 0.02 == pytest.approx(position, abs=0.04)
+        assert actual == expected[start:]
+        assert source._encoder is None
+    finally:
+        source.cleanup()
+
+
 def test_live_volume_changes_keep_position_and_restore_original_packets(
     tmp_path: Path,
 ) -> None:

@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { createPlayerClient } from "../app/player/client";
 import {
 	canControl,
+	queueWaits,
+	formatWait,
 	playbackPosition,
 	youtubeVideoId,
 	type PlayerState,
@@ -18,6 +20,7 @@ const track: QueueEntry = {
 	duration_seconds: 180,
 	artist: null,
 	uploader_url: null,
+	added_by: null,
 };
 const state = (changes: Partial<PlayerState> = {}): PlayerState => ({
 	revision: 1,
@@ -145,6 +148,20 @@ describe("live player", () => {
 		expect(client.snapshot.value?.volume).toBe(0.8);
 	});
 
+	it("keeps a seek bound to the playback selected before dragging", async () => {
+		const { client, events, mutation } = setup();
+		events[0]!.emit(state({ playback_id: "next-track" }));
+		mutation.mockResolvedValue(Response.json({ code: "playback_conflict" }, { status: 409 }));
+		expect(await client.seek(75, "dragged-track")).toBe(false);
+		expect(mutation.mock.calls[0]![0]).toBe("/api/player/seek");
+		expect(mutation.mock.calls[0]![1]?.method).toBe("PUT");
+		expect(JSON.parse(mutation.mock.calls[0]![1]!.body as string)).toEqual({
+			position_seconds: 75,
+			expected_playback_id: "dragged-track",
+		});
+		expect(client.error.value).toContain("track changed");
+	});
+
 	it("keeps failed gateway requests retryable but treats rejected input as final", async () => {
 		const { client, events, mutation } = setup();
 		events[0]!.emit(state());
@@ -169,6 +186,35 @@ describe("live player", () => {
 });
 
 describe("player presentation", () => {
+	it("estimates starts in queue order and stops after an unknown duration", () => {
+		const anchor = Date.parse("2026-09-19T12:00:00Z");
+		const playing = state({
+			state: "playing",
+			current: track,
+			position_seconds: 30,
+			position_updated_at: new Date(anchor).toISOString(),
+			upcoming: [track, { ...track, duration_seconds: null }, track],
+		});
+		expect(queueWaits(playing, anchor + 10_000)).toEqual([140, 320, null]);
+		expect(
+			queueWaits({ ...playing, current: { ...track, duration_seconds: null } }, anchor),
+		).toEqual([null, null, null]);
+		expect(queueWaits({ ...playing, state: "paused" }, anchor)).toEqual([null, null, null]);
+		expect(queueWaits({ ...playing, voice_state: "disconnected" }, anchor)).toEqual([
+			null,
+			null,
+			null,
+		]);
+		expect(queueWaits(null, anchor)).toEqual([]);
+		expect(
+			queueWaits(
+				{ ...playing, last_issue: { code: "backend_halted", fatal: true, entry_id: null } },
+				anchor,
+			),
+		).toEqual([null, null, null]);
+		expect(formatWait(40)).toBe("In <1 min");
+		expect(formatWait(140)).toBe("In ~2 min");
+	});
 	it("holds paused progress and clamps playing progress to the duration", () => {
 		const anchor = "2026-09-19T12:00:00Z";
 		const playing = state({

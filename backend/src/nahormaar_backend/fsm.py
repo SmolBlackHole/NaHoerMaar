@@ -16,6 +16,7 @@ class PlaybackEvent(StrEnum):
     PLAY = "play"
     READY = "ready"
     PAUSE = "pause"
+    SEEK = "seek"
     SKIP = "skip"
     STOP = "stop"
     FAIL = "fail"
@@ -76,6 +77,7 @@ _TRANSITIONS: Mapping[PlaybackState, Mapping[PlaybackEvent, _Transition]] = (
                         PlaybackState.LOADING, _QueueEffect.ADVANCE
                     ),
                     PlaybackEvent.PAUSE: _Transition(PlaybackState.PAUSED),
+                    PlaybackEvent.SEEK: _Transition(PlaybackState.PLAYING),
                     PlaybackEvent.SKIP: _Transition(
                         PlaybackState.LOADING, _QueueEffect.ADVANCE
                     ),
@@ -94,6 +96,7 @@ _TRANSITIONS: Mapping[PlaybackState, Mapping[PlaybackEvent, _Transition]] = (
                         PlaybackState.LOADING, _QueueEffect.ADVANCE
                     ),
                     PlaybackEvent.PLAY: _Transition(PlaybackState.PLAYING),
+                    PlaybackEvent.SEEK: _Transition(PlaybackState.PAUSED),
                     PlaybackEvent.SKIP: _Transition(
                         PlaybackState.LOADING, _QueueEffect.ADVANCE
                     ),

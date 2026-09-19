@@ -229,6 +229,27 @@ def test_final_short_pcm_chunk_is_padded_to_one_discord_frame(tmp_path: Path) ->
         source.cleanup()
 
 
+def test_seek_starts_pcm_at_requested_sample(tmp_path: Path) -> None:
+    path = tmp_path / "seek.wav"
+    with wave.open(str(path), "wb") as output:
+        output.setnchannels(2)
+        output.setsampwidth(2)
+        output.setframerate(48_000)
+        output.writeframes(struct.pack("<hh", 100, 100) * 48_000)
+        output.writeframes(struct.pack("<hh", 200, 200) * 48_000)
+    adapter = _adapter(tmp_path, volume=0.4)
+    adapter.play(ResolvedTrack(str(path)), lambda error: None, position_seconds=1.25)
+    try:
+        assert adapter._playback is not None
+        assert adapter._playback.source.volume == 0.4
+        assert (
+            adapter._playback.source.original.read()
+            == struct.pack("<hh", 200, 200) * 960
+        )
+    finally:
+        asyncio.run(adapter.stop())
+
+
 def test_stop_closes_ffmpeg_process_before_returning(tmp_path: Path) -> None:
     tone = tmp_path / "tone.wav"
     _write_tone(tone)

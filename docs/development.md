@@ -34,10 +34,17 @@ The dashboard forwards controls and live updates to `http://127.0.0.1:8000`.
 Set `NUXT_BACKEND_URL` if the backend uses a different port. Controls stay disabled
 until live state arrives. Search and playlist import are not available yet.
 
-Switch the current track's preview to Video to open a muted YouTube player, or
-enable Cinema for a larger view. Some videos cannot be embedded; their artwork
-and source link remain available. Recently played keeps the last 100 started
-tracks and lets you add them again.
+Click or drag the player timeline to seek for everyone in the Discord channel.
+Arrow keys adjust the focused slider. Paused tracks stay paused after seeking.
+
+Cover and Video fill the player area behind the track details. Video starts muted;
+the settings button reveals
+YouTube's controls and quality choices. They only affect your browser. Sync returns
+the preview to the bot's position. Videos that cannot be embedded fall back to their
+cover and source link.
+The Queue tab includes Recently played, where you can requeue the last 100 started
+tracks. Repeated songs appear once with their play count. It shows five songs
+until you choose Show all.
 
 ## Configure Discord
 

@@ -2,7 +2,6 @@
 import { useProfileStore } from "~/stores/profile";
 defineProps<{ collapsed?: boolean }>();
 const profile = useProfileStore();
-const { icons } = useTheme();
 </script>
 
 <template>
@@ -11,9 +10,10 @@ const { icons } = useTheme();
 		to="/profile"
 		color="neutral"
 		variant="ghost"
-		class="w-full gap-3"
+		class="min-w-0 flex-1 gap-2.5 py-2"
 		:class="collapsed && 'justify-center px-0'"
 		aria-label="Edit your profile"
+		title="Edit your profile"
 	>
 		<img
 			:src="`/avatars/${profile.profile.avatar}.png`"
@@ -25,6 +25,5 @@ const { icons } = useTheme();
 		<span v-if="!collapsed" class="min-w-0 flex-1 truncate text-left">{{
 			profile.profile.name
 		}}</span>
-		<UIcon v-if="!collapsed" :name="icons.cog" class="size-4 text-muted" />
 	</UButton>
 </template>

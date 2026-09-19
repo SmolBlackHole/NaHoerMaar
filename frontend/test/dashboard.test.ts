@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { parseProfile, randomAvatar } from "../shared/profile";
 import avatars from "../shared/avatars.json";
-import { listeningStats, trackArtistUrl, trackArtwork, type QueueEntry } from "../shared/player";
+import {
+	groupHistory,
+	listeningStats,
+	trackArtistUrl,
+	trackArtwork,
+	type QueueEntry,
+} from "../shared/player";
 
 const entry: QueueEntry = {
 	id: "3aaf410e-77dd-4719-9299-a4cedbbce459",
@@ -13,6 +19,7 @@ const entry: QueueEntry = {
 	uploader_url: "https://www.youtube.com/channel/example",
 	duration_seconds: 180,
 	thumbnail_url: null,
+	added_by: null,
 };
 
 describe("browser profile", () => {
@@ -78,5 +85,43 @@ describe("overview", () => {
 		expect(stats.artists).toBe(1);
 		expect(stats.buckets.map((day) => day.count)).toEqual([1, 0, 0, 0, 0, 0, 1]);
 		expect(stats.topArtists).toEqual([["Artist", 2]]);
+	});
+});
+
+describe("recently played", () => {
+	it("combines URL variants and keeps the latest entry and its metadata", () => {
+		const older = { id: "old", entry, played_at: "2026-09-19T12:00:00Z" };
+		const latest = {
+			id: "latest",
+			entry: {
+				...entry,
+				id: "new-queue-entry",
+				title: "Updated title",
+				video_id: null,
+				source_url: "https://youtu.be/Pqp9fDRp1lw?t=10",
+			},
+			played_at: "2026-09-19T14:00:00Z",
+		};
+		const history = [older, latest];
+		expect(groupHistory(history)).toEqual([{ ...latest, play_count: 2 }]);
+		expect(history).toEqual([older, latest]);
+		expect(older).not.toHaveProperty("play_count");
+	});
+	it("keeps different videos with the same title separate and sorts by latest play", () => {
+		const older = { id: "old", entry, played_at: "2026-09-19T12:00:00Z" };
+		const different = {
+			id: "other",
+			entry: {
+				...entry,
+				video_id: "bWHJbIm1TAA",
+				source_url: "https://www.youtube.com/watch?v=bWHJbIm1TAA",
+			},
+			played_at: "2026-09-19T13:00:00Z",
+		};
+		expect(groupHistory([older, different])).toEqual([
+			{ ...different, play_count: 1 },
+			{ ...older, play_count: 1 },
+		]);
+		expect(groupHistory([])).toEqual([]);
 	});
 });

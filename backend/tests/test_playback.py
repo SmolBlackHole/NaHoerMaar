@@ -59,6 +59,7 @@ class FakeVoice:
         self._channel_id: int | None = None
         self._disconnect_handler: Callable[[], None] = lambda: None
         self.played: list[ResolvedTrack] = []
+        self.positions: list[float] = []
         self.callbacks: list[Callable[[Exception | None], None]] = []
         self.stop_count = 0
         self.pause_count = 0
@@ -90,9 +91,14 @@ class FakeVoice:
         self._channel_id = None
 
     def play(
-        self, track: ResolvedTrack, after: Callable[[Exception | None], None]
+        self,
+        track: ResolvedTrack,
+        after: Callable[[Exception | None], None],
+        *,
+        position_seconds: float = 0,
     ) -> None:
         self.played.append(track)
+        self.positions.append(position_seconds)
         self.callbacks.append(after)
 
     async def stop(self) -> None:

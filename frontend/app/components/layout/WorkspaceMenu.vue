@@ -14,7 +14,8 @@ const { icons } = useTheme();
 		block
 		:square="collapsed"
 		aria-label="NaHörMaar player"
-		class="py-2 font-semibold"
+		class="min-w-0 gap-3 py-2 text-base font-semibold tracking-tight"
+		:class="collapsed ? 'justify-center px-0' : 'justify-start px-2.5'"
 		:ui="{ leadingIcon: 'text-primary' }"
 		@click="emit('navigate')"
 	/>

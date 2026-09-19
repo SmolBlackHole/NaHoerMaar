@@ -6,30 +6,46 @@ const props = defineProps<{
 	title: string;
 	position: number;
 	state: PlaybackState;
-	live: boolean;
+	interactive: boolean;
 }>();
-const emit = defineEmits<{ failed: [] }>();
+const emit = defineEmits<{
+	failed: [];
+	ready: [value: boolean];
+	blocked: [value: boolean];
+	ended: [];
+}>();
 const host = ref<HTMLElement>();
 const ready = ref(false);
-const blocked = ref(false);
 let embed: YouTubePlayer | undefined;
 let active = true;
 let readyTimeout: ReturnType<typeof setTimeout> | undefined;
 
+function updateInteraction() {
+	if (embed) embed.getIframe().tabIndex = props.interactive ? 0 : -1;
+}
 function followPlayer() {
 	if (!ready.value || !embed) return;
-	if (props.state === "playing" && props.live) embed.playVideo();
+	if (props.state === "playing") embed.playVideo();
 	else embed.pauseVideo();
 }
 function align() {
-	embed?.seekTo(props.position, true);
+	if (!ready.value || !embed) return;
+	embed.seekTo(props.position, true);
 	followPlayer();
 }
+function startPreview() {
+	embed?.mute();
+	align();
+	emit("blocked", false);
+}
+defineExpose({ align, startPreview });
 function fail() {
 	clearTimeout(readyTimeout);
 	if (active) emit("failed");
 }
 onMounted(async () => {
+	emit("ready", false);
+	emit("blocked", false);
 	try {
 		const api = await loadYouTube();
 		if (!active || !host.value) return;
@@ -45,6 +61,10 @@ onMounted(async () => {
 				playsinline: 1,
 				autoplay: 0,
 				start: Math.floor(props.position),
+				controls: 1,
+				disablekb: 0,
+				rel: 0,
+				iv_load_policy: 3,
 			},
 			events: {
 				onReady(event) {
@@ -52,13 +72,18 @@ onMounted(async () => {
 					clearTimeout(readyTimeout);
 					embed = event.target;
 					embed.getIframe().title = props.title;
+					updateInteraction();
 					embed.mute();
 					ready.value = true;
+					emit("ready", true);
 					followPlayer();
 				},
 				onError: fail,
+				onStateChange(event) {
+					if (active && event.data === 0) emit("ended");
+				},
 				onAutoplayBlocked() {
-					blocked.value = true;
+					if (active) emit("blocked", true);
 				},
 			},
 		});
@@ -66,7 +91,8 @@ onMounted(async () => {
 		fail();
 	}
 });
-watch(() => [props.state, props.live], followPlayer);
+watch(() => props.state, followPlayer);
+watch(() => props.interactive, updateInteraction);
 onBeforeUnmount(() => {
 	active = false;
 	clearTimeout(readyTimeout);
@@ -75,39 +101,35 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-	<div class="space-y-3">
-		<div
-			ref="host"
-			class="video-preview aspect-video min-h-[200px] overflow-hidden rounded-lg bg-black"
-			:aria-busy="!ready"
-		/>
-		<div class="flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
-			<p role="status">
-				{{
-					!ready
-						? "Loading video preview…"
-						: blocked
-							? "Press play in the video to start the preview."
-							: "Video starts muted. Audio plays in Discord."
-				}}
-			</p>
-			<UButton
-				label="Match player position"
-				variant="link"
-				color="neutral"
-				size="xs"
-				class="p-0"
-				:disabled="!ready || !live"
-				@click="align"
-			/>
-		</div>
-	</div>
+	<div
+		ref="host"
+		class="media-video"
+		:class="{ 'is-interactive': interactive }"
+		:aria-busy="!ready"
+		:aria-hidden="!interactive"
+	/>
 </template>
 
 <style scoped>
-.video-preview :deep(iframe) {
+.media-video {
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	width: max(100cqw, 177.778cqh);
+	height: max(100cqh, 56.25cqw);
+	transform: translate(-50%, -50%);
+	pointer-events: none;
+}
+.media-video.is-interactive {
+	inset: 0;
 	width: 100%;
 	height: 100%;
-	min-height: 200px;
+	transform: none;
+	pointer-events: auto;
+}
+.media-video :deep(iframe) {
+	display: block;
+	width: 100%;
+	height: 100%;
 }
 </style>

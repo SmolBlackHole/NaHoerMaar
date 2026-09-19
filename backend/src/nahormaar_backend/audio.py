@@ -81,7 +81,11 @@ class VoiceOutput(Protocol):
     async def disconnect(self) -> None: ...
 
     def play(
-        self, track: ResolvedTrack, after: Callable[[Exception | None], None]
+        self,
+        track: ResolvedTrack,
+        after: Callable[[Exception | None], None],
+        *,
+        position_seconds: float = 0,
     ) -> None: ...
 
     async def stop(self) -> None: ...

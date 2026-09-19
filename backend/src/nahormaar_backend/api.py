@@ -158,7 +158,17 @@ def create_app(
         request_id: RequestID,
         active: Annotated[PlaybackController, Depends(player)],
     ) -> dto.MutationResult:
-        return await mutate(request_id, commands.Add(body.source_url), response, active)
+        return await mutate(
+            request_id,
+            commands.Add(
+                body.source_url,
+                body.added_by.to_contributor()
+                if body.added_by
+                else dto.ContributorData.default_contributor(),
+            ),
+            response,
+            active,
+        )
 
     @app.delete("/api/queue/{entry_id}")
     async def remove(
@@ -218,6 +228,20 @@ def create_app(
         active: Annotated[PlaybackController, Depends(player)],
     ) -> dto.MutationResult:
         return await mutate(request_id, commands.Volume(body.volume), response, active)
+
+    @app.put("/api/player/seek")
+    async def seek(
+        body: dto.SeekInput,
+        response: Response,
+        request_id: RequestID,
+        active: Annotated[PlaybackController, Depends(player)],
+    ) -> dto.MutationResult:
+        return await mutate(
+            request_id,
+            commands.Seek(body.position_seconds, body.expected_playback_id),
+            response,
+            active,
+        )
 
     @app.put("/api/voice/channel")
     async def connect(

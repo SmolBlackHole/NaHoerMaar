@@ -144,11 +144,15 @@ missing thumbnails do not abort an otherwise valid import.
   synchronized again
 - [x] Restore the Overview with statistics from playback history
 - [x] Choose a browser profile name and a random Pixabot avatar, with profile editing
-- [x] Offer a muted YouTube video preview with an artwork fallback and a cinema
-  mode that extends the artwork's colors into the surrounding area
+- [x] Show who added each track, with their name and avatar saved in the queue and history
+- [x] Give the player a cover-led dark layout, recent artwork and persistent playback
+  controls across pages, with light mode and mobile layouts
+- [x] Show approximate queue wait times while playing when preceding durations are known
+- [x] Offer full-area Cover and YouTube Video views with native video controls,
+  an artwork fallback and no video loading outside the visible Video view
 - [x] Keep a footer with project, license and avatar credits in the sidebar
-- [x] Persist the last 100 started tracks in Recently played and let users requeue
-  them. Keep skipped tracks, but exclude unplayed removals
+- [x] Group the last 100 started tracks under the queue with play counts, show five
+  songs at first and let users requeue them. Keep skipped tracks, but exclude unplayed removals
 - [x] Make the controls usable on phones. Distinguish an empty queue, loading,
   paused playback, unavailable media and a disconnected bot
 

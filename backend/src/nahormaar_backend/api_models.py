@@ -10,7 +10,13 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from .models import PlaybackState, QueueEntry, VoiceState
+from .models import (
+    ANONYMOUS_CONTRIBUTOR,
+    Contributor,
+    PlaybackState,
+    QueueEntry,
+    VoiceState,
+)
 from .playback import PlaybackStatus
 from .youtube import video_id
 
@@ -19,8 +25,24 @@ class Input(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
 
+class ContributorData(Input):
+    model_config = ConfigDict(from_attributes=True, str_strip_whitespace=True)
+
+    id: UUID
+    name: str = Field(min_length=1, max_length=32)
+    avatar: str = Field(pattern=r"^[0-9a-f]{4}$")
+
+    def to_contributor(self) -> Contributor:
+        return Contributor(self.id, self.name, self.avatar)
+
+    @staticmethod
+    def default_contributor() -> Contributor:
+        return ANONYMOUS_CONTRIBUTOR
+
+
 class AddInput(Input):
     source_url: str = Field(max_length=2048)
+    added_by: ContributorData | None = None
 
     @field_validator("source_url")
     @classmethod
@@ -47,6 +69,11 @@ class VolumeInput(Input):
     volume: float = Field(ge=0, le=1, strict=True)
 
 
+class SeekInput(Input):
+    position_seconds: float = Field(ge=0, strict=True)
+    expected_playback_id: UUID
+
+
 class ChannelInput(Input):
     channel_id: Annotated[str, Field(pattern=r"^[1-9][0-9]{0,19}$")]
 
@@ -70,6 +97,7 @@ class Entry(BaseModel):
     thumbnail_url: str | None
     artist: str | None
     uploader_url: str | None
+    added_by: ContributorData | None
 
     @classmethod
     def from_entry(cls, entry: QueueEntry) -> "Entry":

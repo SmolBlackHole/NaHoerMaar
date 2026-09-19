@@ -23,6 +23,30 @@ afterEach(async () => {
 });
 
 describe("local API proxy", () => {
+	it("forwards seek positions and playback targets", async () => {
+		const body = { position_seconds: 75, expected_playback_id: "123" };
+		const backend = await listen(
+			createServer(async (request, response) => {
+				let raw = "";
+				for await (const chunk of request) raw += chunk;
+				expect(request.url).toBe("/api/player/seek");
+				expect(request.method).toBe("PUT");
+				response.writeHead(200, { "content-type": "application/json" });
+				response.end(raw);
+			}),
+		);
+		const frontend = await listen(
+			createServer(toNodeListener(createApp().use(playerProxy(() => backend)))),
+		);
+		const response = await fetch(`${frontend}/api/player/seek`, {
+			method: "PUT",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify(body),
+		});
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual(body);
+	});
+
 	it("forwards mutation bodies, IDs and conflicts without forwarding browser cookies", async () => {
 		let forwarded: { origin?: string; key?: string; cookie?: string; body: string } | undefined;
 		const backend = await listen(
@@ -114,5 +138,40 @@ describe("local API proxy", () => {
 		expect(new TextDecoder().decode(chunk.value)).toContain('"revision":1');
 		abort.abort();
 		await closed;
+	});
+
+	it("closes an active event stream when the backend connection breaks", async () => {
+		let disconnectBackend!: () => void;
+		const backend = await listen(
+			createServer((_request, response) => {
+				response.writeHead(200, { "content-type": "text/event-stream" });
+				response.write('event: state\ndata: {"revision":1}\n\n');
+				disconnectBackend = () => response.destroy();
+			}),
+		);
+		const frontend = await listen(
+			createServer(toNodeListener(createApp().use(playerProxy(() => backend)))),
+		);
+		const abort = new AbortController();
+		const response = await fetch(`${frontend}/api/events`, { signal: abort.signal });
+		const reader = response.body!.getReader();
+		await reader.read();
+		disconnectBackend();
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		try {
+			const outcome = await Promise.race([
+				reader.read().then(
+					(result) => (result.done ? "ended" : "still open"),
+					() => "disconnected",
+				),
+				new Promise<string>((resolve) => {
+					timer = setTimeout(() => resolve("still open"), 1500);
+				}),
+			]);
+			expect(outcome).not.toBe("still open");
+		} finally {
+			clearTimeout(timer);
+			abort.abort();
+		}
 	});
 });

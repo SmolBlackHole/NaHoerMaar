@@ -3,6 +3,7 @@ import { colorNames, fontItems, modeItems, neutralNames, textSizes } from "~/con
 import { iconItems } from "~/config/icons";
 
 export interface ThemeContext {
+	artworkColors: boolean;
 	primary: string;
 	neutral: string;
 	mode: string;
@@ -11,6 +12,7 @@ export interface ThemeContext {
 	textSize: string;
 	icons: Record<string, string>;
 	setPrimary(v: string): void;
+	setArtworkColors(v: boolean): void;
 	setNeutral(v: string): void;
 	setMode(v: string): void;
 	setFontFamily(v: string): void;
@@ -23,6 +25,17 @@ const neutrals = Object.keys(neutralNames) as (keyof typeof neutralNames)[];
 
 export function useThemeMenu(ctx: ThemeContext) {
 	const themeItems = computed<DropdownMenuItem[]>(() => [
+		{
+			label: "Match artwork",
+			icon: ctx.icons.palette,
+			type: "checkbox",
+			checked: ctx.artworkColors,
+			onSelect(event: Event) {
+				event.preventDefault();
+				ctx.setArtworkColors(!ctx.artworkColors);
+			},
+		},
+		{ type: "separator" },
 		{
 			label: "Primary color",
 			icon: ctx.icons.paintbrush,

@@ -42,6 +42,16 @@ def test_start_pause_and_resume_keep_the_same_entry() -> None:
 
 
 @pytest.mark.parametrize("state", list(PlaybackState))
+def test_seek_only_preserves_an_active_or_paused_track(state: PlaybackState) -> None:
+    before = _snapshot(state)
+    if state in (PlaybackState.PLAYING, PlaybackState.PAUSED):
+        assert transition(before, PlaybackEvent.SEEK) == before
+    else:
+        with pytest.raises(InvalidTransitionError):
+            transition(before, PlaybackEvent.SEEK)
+
+
+@pytest.mark.parametrize("state", list(PlaybackState))
 def test_recovery_requeues_once_and_resets_connection(state: PlaybackState) -> None:
     before = _snapshot(state)
     after = transition(before, PlaybackEvent.RECOVER)

@@ -17,10 +17,20 @@ interface YouTubeApi {
 			videoId: string;
 			width: string;
 			height: string;
-			playerVars: { origin: string; playsinline: number; autoplay: number; start: number };
+			playerVars: {
+				origin: string;
+				playsinline: number;
+				autoplay: number;
+				start: number;
+				controls: number;
+				disablekb: number;
+				rel: number;
+				iv_load_policy: number;
+			};
 			events: {
 				onReady(event: PlayerEvent): void;
 				onError(event: PlayerEvent & { data: number }): void;
+				onStateChange(event: PlayerEvent & { data: number }): void;
 				onAutoplayBlocked(): void;
 			};
 		},

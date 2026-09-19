@@ -5,15 +5,17 @@ import type { ColorModePreference, TextSize } from "~/stores/settings";
 import { useTheme } from "~/composables/useTheme";
 import { useThemeMenu } from "~/composables/useThemeMenu";
 
-defineProps<{ collapsed?: boolean }>();
-
 const { settings, icons } = useTheme();
+const appConfig = useAppConfig();
 const { themeItems } = useThemeMenu({
+	get artworkColors() {
+		return settings.artworkColors;
+	},
 	get primary() {
-		return settings.primaryColor;
+		return appConfig.ui.colors.primary;
 	},
 	get neutral() {
-		return settings.neutralColor;
+		return appConfig.ui.colors.neutral;
 	},
 	get mode() {
 		return settings.mode;
@@ -31,10 +33,15 @@ const { themeItems } = useThemeMenu({
 		return icons.value;
 	},
 	setPrimary(value) {
+		settings.artworkColors = false;
 		settings.primaryColor = value;
 	},
 	setNeutral(value) {
+		settings.artworkColors = false;
 		settings.neutralColor = value;
+	},
+	setArtworkColors(value) {
+		settings.artworkColors = value;
 	},
 	setMode(value) {
 		settings.mode = value as ColorModePreference;
@@ -58,15 +65,13 @@ const { themeItems } = useThemeMenu({
 		:ui="{ content: 'w-56', item: 'min-h-9' }"
 	>
 		<UButton
-			:label="collapsed ? undefined : 'Appearance'"
 			:icon="icons.paintbrush"
-			:trailing-icon="collapsed ? undefined : icons.chevronsUpDown"
 			aria-label="Appearance"
+			title="Appearance"
 			color="neutral"
 			variant="ghost"
-			block
-			:square="collapsed"
-			class="data-[state=open]:bg-elevated"
+			square
+			class="size-10 shrink-0 justify-center text-muted data-[state=open]:bg-elevated"
 		/>
 		<template #chip-leading="{ item }: { item: DropdownMenuItem }">
 			<span class="inline-flex size-5 shrink-0 items-center justify-center">

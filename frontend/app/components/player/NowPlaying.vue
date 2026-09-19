@@ -1,259 +1,535 @@
 <script setup lang="ts">
-import {
-	canControl,
-	formatTime,
-	playbackPosition,
-	trackTitle,
-	trackArtwork,
-	youtubeVideoId,
-} from "#shared/player";
+import { trackArtwork, trackTitle, youtubeVideoId } from "#shared/player";
 import { usePlayerStore } from "~/stores/player";
 
+const props = defineProps<{ active: boolean }>();
+const emit = defineEmits<{ queue: [] }>();
 const player = usePlayerStore();
-const cinema = defineModel<boolean>("cinema", { default: false });
 const { icons } = useTheme();
-const now = ref(Date.now());
-useIntervalFn(() => {
-	if (player.connection === "live") now.value = Date.now();
-}, 500);
+const { position } = usePlaybackPosition();
 const current = computed(() => player.snapshot?.current ?? null);
+const nextTrack = computed(() => player.snapshot?.upcoming[0] ?? null);
 const videoId = computed(() => (current.value ? youtubeVideoId(current.value.source_url) : null));
 const artwork = computed(() => trackArtwork(current.value));
-const preview = ref<"artwork" | "video">("artwork");
+const preview = ref<"cover" | "video">("cover");
+const videoControls = ref(false);
+const visibility = useDocumentVisibility();
 const videoFailed = ref(false);
+const artworkFailed = ref(false);
+const videoReady = ref(false);
+const videoBlocked = ref(false);
+const video = useTemplateRef<{ align: () => void; startPreview: () => void }>("video");
+const loadVideo = computed(
+	() => props.active && visibility.value === "visible" && player.connection === "live",
+);
+watch(artwork, () => {
+	artworkFailed.value = false;
+});
 watch(
 	() => player.snapshot?.playback_id,
 	() => {
 		videoFailed.value = false;
+		videoReady.value = false;
+		videoBlocked.value = false;
+		videoControls.value = false;
 	},
 );
-useEventListener("keydown", (event) => {
-	if (event.key === "Escape") cinema.value = false;
-});
-const position = computed(() =>
-	player.snapshot ? playbackPosition(player.snapshot, now.value) : 0,
-);
-const action = computed(() => (player.snapshot?.state === "playing" ? "pause" : "play"));
-const label = computed(
-	() =>
-		({
-			idle: "Play",
-			loading: "Loading",
-			playing: "Pause",
-			paused: "Resume",
-			error: "Retry track",
-		})[player.snapshot?.state ?? "idle"],
-);
-const stateLabel = computed(
-	() =>
-		({
-			idle: "Ready when you are",
-			loading: "Loading audio…",
-			playing: "Now playing",
-			paused: "Paused",
-			error: "Couldn't play this track",
-		})[player.snapshot?.state ?? "idle"],
-);
-const volume = ref(100);
-watch(
-	() => player.snapshot?.volume,
-	(value) => {
-		if (value !== undefined) volume.value = Math.round(value * 100);
-	},
-	{ immediate: true },
-);
-async function setVolume() {
-	await player.mutate("/api/player/volume", "PUT", { volume: volume.value / 100 });
-	volume.value = Math.round((player.snapshot?.volume ?? 1) * 100);
+function showVideo() {
+	preview.value = "video";
+	videoFailed.value = false;
 }
+watch(preview, () => {
+	videoControls.value = false;
+});
+watch(loadVideo, (visible) => {
+	if (!visible) videoControls.value = false;
+});
 </script>
 
 <template>
 	<section
-		aria-labelledby="now-playing-heading"
-		class="player-pane relative isolate space-y-6 p-5 sm:p-8"
-		:class="cinema && 'cinema-pane'"
+		class="listening-view"
+		aria-label="Now playing"
+		:class="{
+			'is-video': preview === 'video' && !videoFailed,
+			'has-video-controls': preview === 'video' && videoControls && !videoFailed,
+		}"
 	>
-		<img
-			v-if="cinema && artwork"
-			:src="artwork"
-			alt=""
-			aria-hidden="true"
-			class="cinema-atmosphere"
-		/>
-		<div class="flex items-center justify-between gap-3">
-			<h2 id="now-playing-heading" class="text-highlighted text-lg font-semibold">
-				{{ stateLabel }}
-			</h2>
-			<UIcon
-				v-if="player.snapshot?.state === 'loading'"
-				:name="icons.loading"
-				class="size-5 motion-safe:animate-spin"
+		<div class="media-stage">
+			<img
+				v-if="artwork && !artworkFailed"
+				:src="artwork"
+				alt=""
+				referrerpolicy="no-referrer"
+				class="media-backdrop"
+				@error="artworkFailed = true"
 			/>
-			<UButton
-				:label="cinema ? 'Exit cinema' : 'Cinema'"
-				:icon="icons.system"
-				variant="ghost"
-				color="neutral"
-				:aria-pressed="cinema"
-				@click="cinema = !cinema"
-			/>
-		</div>
-		<div class="space-y-3">
-			<div v-if="videoId" class="flex gap-1" role="group" aria-label="Preview mode">
-				<UButton
-					label="Artwork"
-					:aria-pressed="preview === 'artwork'"
-					:variant="preview === 'artwork' ? 'soft' : 'ghost'"
-					color="neutral"
-					@click="preview = 'artwork'"
-				/>
-				<UButton
-					label="Video"
-					:aria-pressed="preview === 'video'"
-					:variant="preview === 'video' ? 'soft' : 'ghost'"
-					color="neutral"
-					@click="
-						preview = 'video';
-						videoFailed = false;
-					"
-				/>
+			<div v-else class="media-placeholder" aria-hidden="true">
+				<UIcon :name="icons.headphones" />
 			</div>
 			<PlayerVideo
-				v-if="preview === 'video' && videoId && !videoFailed"
+				v-if="preview === 'video' && current && !videoFailed && loadVideo && videoId"
+				ref="video"
 				:key="player.snapshot?.playback_id ?? videoId"
 				:video-id="videoId"
-				:title="current ? trackTitle(current) : 'YouTube preview'"
+				:title="trackTitle(current)"
 				:position="position"
 				:state="player.snapshot?.state ?? 'idle'"
-				:live="player.connection === 'live'"
+				:interactive="videoControls"
+				@ready="videoReady = $event"
+				@blocked="videoBlocked = $event"
 				@failed="videoFailed = true"
+				@ended="preview = 'cover'"
 			/>
-			<PlayerTrackArtwork v-else :entry="current" large />
-			<p v-if="preview === 'video' && videoFailed" role="status" class="text-muted text-sm">
-				This video can't be shown here. You can still open it on YouTube.
-			</p>
+			<template v-if="!videoControls || videoFailed">
+				<div class="media-blur" aria-hidden="true" />
+				<div class="media-shade" aria-hidden="true" />
+				<div class="media-top-shade" aria-hidden="true" />
+			</template>
 		</div>
-		<div class="min-h-16 space-y-2">
-			<h3 class="text-highlighted text-2xl font-semibold leading-tight break-words">
-				<a
-					v-if="current"
-					:href="current.source_url"
-					target="_blank"
-					rel="noopener noreferrer"
-					class="hover:underline underline-offset-4"
-					>{{ trackTitle(current) }}</a
+		<div v-if="current" class="media-toolbar">
+			<div class="media-preview-switch" role="group" aria-label="Preview mode">
+				<button
+					type="button"
+					:aria-pressed="preview === 'cover'"
+					@click="
+						preview = 'cover';
+						videoFailed = false;
+					"
 				>
-				<template v-else>Pick the next track</template>
-			</h3>
-			<p class="text-muted text-sm">
-				<PlayerArtistLink v-if="current" :entry="current" /><template v-else
-					>Add a YouTube link to the queue, join a channel and press play.</template
+					Cover
+				</button>
+				<button
+					v-if="videoId"
+					type="button"
+					:aria-pressed="preview === 'video'"
+					@click="showVideo"
 				>
+					Video
+				</button>
+			</div>
+			<div v-if="preview === 'video'" class="flex items-center gap-2">
+				<button
+					v-if="!videoFailed"
+					type="button"
+					class="media-tool-button"
+					:aria-label="videoControls ? 'Hide YouTube controls' : 'Show YouTube controls'"
+					:title="
+						videoControls ? 'Hide YouTube controls' : 'YouTube controls and quality'
+					"
+					:aria-pressed="videoControls"
+					:disabled="!videoReady || !loadVideo"
+					@click="videoControls = !videoControls"
+				>
+					<UIcon :name="icons.settings" />
+				</button>
+				<button
+					v-if="!videoFailed && !videoBlocked"
+					type="button"
+					class="media-tool-button"
+					aria-label="Sync video"
+					title="Sync video"
+					:disabled="!videoReady || !loadVideo"
+					@click="video?.align()"
+				>
+					<UIcon :name="icons.reload" />
+				</button>
+				<UPopover>
+					<button
+						type="button"
+						class="media-tool-button"
+						aria-label="About video preview"
+						title="About video preview"
+					>
+						<UIcon :name="icons.info" />
+					</button>
+					<template #content
+						><p class="max-w-64 p-4 text-sm text-default">
+							Video starts muted. YouTube controls only change your preview. Sync
+							returns it to the bot's position.
+						</p></template
+					>
+				</UPopover>
+			</div>
+		</div>
+		<div v-show="!videoControls || videoFailed" class="media-details">
+			<div class="media-copy">
+				<PlayerContributor
+					v-if="current?.added_by"
+					:contributor="current.added_by"
+					class="media-contributor"
+				/>
+				<h2
+					class="media-title"
+					:class="{ 'is-long': current && trackTitle(current).length > 48 }"
+				>
+					<a
+						v-if="current"
+						:href="current.source_url"
+						:title="trackTitle(current)"
+						target="_blank"
+						rel="noopener noreferrer"
+						>{{ trackTitle(current) }}</a
+					>
+					<template v-else>What are we<br />listening to?</template>
+				</h2>
+				<p v-if="!current" class="media-empty-help">
+					Add something to the queue.<br />The room is yours.
+				</p>
+				<button
+					v-if="!current"
+					type="button"
+					class="media-empty-action"
+					@click="emit('queue')"
+				>
+					<UIcon :name="icons.plus" />{{ nextTrack ? "Open queue" : "Add a track" }}
+				</button>
+			</div>
+			<button v-if="current" type="button" class="next-track-cue" @click="emit('queue')">
+				<span class="next-track-label text-xs text-muted">{{
+					nextTrack ? "Coming up" : "Keep it going"
+				}}</span>
+				<PlayerTrackArtwork v-if="nextTrack" :entry="nextTrack" class="size-12!" />
+				<span v-else class="next-track-icon"><UIcon :name="icons.plus" /></span>
+				<span class="min-w-0 text-left">
+					<span class="line-clamp-2 text-sm font-medium text-highlighted">{{
+						nextTrack ? trackTitle(nextTrack) : "Add the next track"
+					}}</span>
+					<span v-if="nextTrack" class="mt-1 block text-xs text-muted"
+						>{{ player.snapshot?.upcoming.length ?? 0 }} in queue</span
+					>
+				</span>
+				<UIcon :name="icons.arrowRight" class="size-4 shrink-0 text-muted" />
+			</button>
+		</div>
+		<div
+			v-if="
+				preview === 'video' &&
+				current &&
+				(videoFailed || videoBlocked || (loadVideo && !videoReady))
+			"
+			class="video-status-row"
+		>
+			<p role="status">
+				{{
+					videoFailed
+						? "This video can't be embedded."
+						: videoBlocked
+							? "Your browser paused the preview."
+							: "Loading video…"
+				}}
 			</p>
-			<UButton
-				v-if="current"
-				:to="current.source_url"
+			<a
+				v-if="videoFailed"
+				:href="current.source_url"
 				target="_blank"
 				rel="noopener noreferrer"
-				:trailing-icon="icons.external"
-				label="Open on YouTube"
-				variant="link"
-				color="neutral"
-				class="px-0"
-			/>
-		</div>
-		<div class="space-y-2">
-			<progress
-				v-if="current?.duration_seconds"
-				class="playback-progress w-full"
-				:max="current.duration_seconds"
-				:value="position"
-				aria-label="Playback progress"
-			/>
-			<div v-else class="bg-elevated h-1 w-full rounded-full" />
-			<div class="text-muted flex justify-between text-xs tabular-nums">
-				<span>{{ formatTime(position) }}</span>
-				<span>{{ formatTime(current?.duration_seconds ?? null) }}</span>
-			</div>
-		</div>
-		<div class="flex items-center justify-center gap-4">
-			<UTooltip text="Stop and return track to queue">
-				<UButton
-					:icon="icons.stop"
-					aria-label="Stop playback"
-					color="neutral"
-					variant="ghost"
-					class="size-11 justify-center"
-					:disabled="!player.enabled || !canControl(player.snapshot, 'stop')"
-					@click="player.control('stop')"
-				/>
-			</UTooltip>
-			<UButton
-				:icon="action === 'pause' ? icons.pause : icons.play"
-				:aria-label="label"
-				:label="label"
-				size="xl"
-				class="min-h-12 min-w-32 justify-center"
-				:loading="player.snapshot?.state === 'loading'"
-				:disabled="!player.enabled || !canControl(player.snapshot, action)"
-				@click="player.control(action)"
-			/>
-			<UTooltip text="Skip track">
-				<UButton
-					:icon="icons.skip"
-					aria-label="Skip track"
-					color="neutral"
-					variant="ghost"
-					class="size-11 justify-center"
-					:disabled="!player.enabled || !canControl(player.snapshot, 'skip')"
-					@click="player.control('skip')"
-				/>
-			</UTooltip>
-		</div>
-		<div class="space-y-3 border-t border-default pt-6">
-			<div class="flex justify-between text-sm">
-				<label for="bot-volume" class="flex items-center gap-2"
-					><UIcon :name="icons.volume" class="size-4" /> Bot volume</label
-				>
-				<output for="bot-volume" class="text-muted tabular-nums">{{ volume }}%</output>
-			</div>
-			<input
-				id="bot-volume"
-				v-model.number="volume"
-				type="range"
-				min="0"
-				max="100"
-				step="1"
-				class="volume-slider w-full"
-				:disabled="!player.enabled"
-				:aria-valuetext="`${volume} percent`"
-				@change="setVolume"
-			/>
-			<p class="text-muted text-xs">Changes the volume for everyone in the channel.</p>
+				class="hover:underline"
+				>Open on YouTube</a
+			>
+			<button v-else-if="videoBlocked" type="button" @click="video?.startPreview()">
+				<UIcon :name="icons.play" />Start preview
+			</button>
 		</div>
 	</section>
 </template>
 
 <style scoped>
-.cinema-pane {
-	position: relative;
-	width: 100%;
-	max-width: 64rem;
-	margin-inline: auto;
+.listening-view {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	min-width: 0;
+	min-height: 28rem;
+	color: #fff;
 }
-.cinema-pane :deep(.text-muted) {
-	color: var(--ui-text-toned);
-}
-.cinema-atmosphere {
+.media-stage {
 	position: absolute;
 	inset: 0;
 	z-index: -1;
-	width: 100%;
-	height: 75%;
-	object-fit: cover;
-	filter: blur(64px);
-	opacity: 0.2;
+	overflow: hidden;
+	container-type: size;
+	background: #17191c;
 	pointer-events: none;
+}
+.media-backdrop {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	object-position: center;
+}
+.media-details {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 18rem;
+	align-items: end;
+	gap: 3rem;
+	margin-top: auto;
+	padding-block: 6rem 1.5rem;
+}
+.has-video-controls .media-stage {
+	top: 4rem;
+	z-index: 1;
+	pointer-events: auto;
+}
+.media-toolbar,
+.video-status-row {
+	position: relative;
+	z-index: 2;
+}
+.media-placeholder {
+	position: absolute;
+	inset: 0;
+	display: grid;
+	place-items: center end;
+	padding-right: 12%;
+	color: #ffffff0d;
+}
+.media-placeholder > span {
+	width: 14rem;
+	height: 14rem;
+}
+.media-blur,
+.media-shade,
+.media-top-shade {
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+}
+.media-blur {
+	backdrop-filter: blur(24px);
+	mask-image: linear-gradient(55deg, #000 0%, #000 18%, transparent 64%);
+}
+.media-shade {
+	background:
+		linear-gradient(0deg, rgb(8 10 13 / 92%), rgb(8 10 13 / 40%) 34%, transparent 72%),
+		linear-gradient(55deg, rgb(8 10 13 / 90%) 0%, rgb(8 10 13 / 62%) 30%, transparent 78%);
+}
+.media-top-shade {
+	background: linear-gradient(
+		180deg,
+		rgb(8 10 13 / 78%),
+		rgb(8 10 13 / 24%) 20%,
+		transparent 40%
+	);
+}
+.media-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: space-between;
+	align-items: center;
+	gap: 1rem;
+	flex-shrink: 0;
+}
+.media-preview-switch {
+	display: inline-flex;
+	background: rgb(8 10 13 / 78%);
+	border-radius: 0.5rem;
+	padding: 0.25rem;
+}
+.media-preview-switch button,
+.media-tool-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.5rem;
+	min-height: 2.25rem;
+	padding: 0.375rem 0.75rem;
+	font-size: 0.75rem;
+	color: #e4e4e7;
+	cursor: pointer;
+	border-radius: 0.375rem;
+	transition:
+		background-color 160ms cubic-bezier(0.16, 1, 0.3, 1),
+		color 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.media-preview-switch button[aria-pressed="true"] {
+	background: #ffffff20;
+	color: #fff;
+}
+.media-preview-switch button:hover,
+.media-tool-button:hover {
+	background: #ffffff30;
+	color: #fff;
+}
+.media-tool-button {
+	background: rgb(8 10 13 / 78%);
+}
+.media-tool-button > span {
+	width: 1rem;
+	height: 1rem;
+}
+.media-copy {
+	min-width: 0;
+}
+.media-title {
+	max-width: 26ch;
+	font-size: 3.25rem;
+	font-weight: 600;
+	line-height: 1.09;
+	letter-spacing: -0.035em;
+	text-wrap: balance;
+	overflow-wrap: anywhere;
+}
+.media-title a:hover {
+	text-decoration: underline;
+	text-decoration-thickness: 2px;
+}
+.media-title.is-long {
+	font-size: 2.75rem;
+}
+.media-contributor {
+	margin-bottom: 1rem;
+	font-size: 0.75rem;
+	color: var(--ui-text-muted);
+}
+.media-empty-help {
+	font-size: 1rem;
+	line-height: 1.65;
+	color: #d4d4d8;
+	margin-top: 1.25rem;
+}
+.media-empty-action {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+	background: #f4f4f5;
+	color: #18181b;
+	padding: 0.75rem 1rem;
+	border-radius: 0.5rem;
+	margin-top: 1.5rem;
+	font-size: 0.875rem;
+	font-weight: 500;
+	cursor: pointer;
+}
+.next-track-cue {
+	display: grid;
+	grid-template-columns: 3rem minmax(0, 1fr) 1rem;
+	align-items: center;
+	gap: 0.75rem 1rem;
+	width: 100%;
+	min-width: 0;
+	padding: 0.25rem 0 0.25rem 2rem;
+	border-left: 1px solid rgb(255 255 255 / 18%);
+	text-align: left;
+	cursor: pointer;
+}
+.next-track-label {
+	grid-column: 1 / -1;
+}
+.next-track-cue:hover .text-highlighted {
+	color: var(--ui-primary);
+}
+.next-track-icon {
+	display: grid;
+	place-items: center;
+	width: 3rem;
+	height: 3rem;
+	flex-shrink: 0;
+	border-radius: 0.5rem;
+	background: rgb(255 255 255 / 8%);
+	color: var(--ui-text-muted);
+}
+.next-track-icon > span {
+	width: 1rem;
+	height: 1rem;
+}
+.video-status-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem;
+	min-height: 2.5rem;
+	width: min(100%, 48rem);
+	color: var(--ui-text-muted);
+	font-size: 0.75rem;
+}
+.video-status-row button {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	min-height: 2.25rem;
+	cursor: pointer;
+}
+.video-status-row button:hover,
+.video-status-row a:hover {
+	color: #fff;
+}
+.video-status-row button:disabled,
+.media-tool-button:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+@container workspace (max-width: 1000px) {
+	.media-title {
+		font-size: 2.75rem;
+	}
+}
+@container workspace (max-width: 900px) {
+	.media-details {
+		grid-template-columns: minmax(0, 1fr);
+		gap: 2rem;
+	}
+	.next-track-cue {
+		max-width: 30rem;
+		padding: 1.25rem 0 0;
+		border-left: 0;
+		border-top: 1px solid rgb(255 255 255 / 12%);
+	}
+}
+@container workspace (max-width: 600px) {
+	.listening-view {
+		min-height: 24rem;
+	}
+	.media-title {
+		font-size: 2rem;
+	}
+	.media-title.is-long {
+		font-size: 1.75rem;
+		line-height: 1.2;
+	}
+	.media-details {
+		gap: 1.5rem;
+		padding-block: 7rem 0.5rem;
+	}
+	.media-toolbar {
+		gap: 0.5rem;
+	}
+	.next-track-cue {
+		gap: 0.75rem;
+	}
+	.media-preview-switch button,
+	.media-tool-button {
+		padding-inline: 0.625rem;
+	}
+	.media-shade {
+		background: linear-gradient(
+			0deg,
+			rgb(8 10 13 / 96%),
+			rgb(8 10 13 / 65%) 38%,
+			rgb(8 10 13 / 25%) 70%,
+			rgb(8 10 13 / 10%) 100%
+		);
+	}
+	.media-blur {
+		mask-image: linear-gradient(0deg, #000, transparent 65%);
+	}
+	.media-placeholder {
+		padding-right: 0;
+		place-items: start center;
+		padding-top: 4rem;
+	}
+	.media-placeholder > span {
+		width: 10rem;
+		height: 10rem;
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.media-preview-switch button,
+	.media-tool-button {
+		transition: none;
+	}
 }
 </style>

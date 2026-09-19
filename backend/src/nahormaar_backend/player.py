@@ -177,6 +177,9 @@ class Player:
     def pause(self) -> PlayerSnapshot:
         return self._apply(PlaybackEvent.PAUSE)
 
+    def seek(self) -> PlayerSnapshot:
+        return self._apply(PlaybackEvent.SEEK)
+
     def skip(self) -> PlayerSnapshot:
         return self._apply(PlaybackEvent.SKIP)
 

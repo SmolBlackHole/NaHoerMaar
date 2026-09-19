@@ -9,10 +9,13 @@ from dataclasses import asdict, dataclass
 from typing import Literal
 from uuid import UUID
 
+from .models import ANONYMOUS_CONTRIBUTOR, Contributor
+
 
 @dataclass(frozen=True, slots=True)
 class Add:
     source_url: str
+    added_by: Contributor | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +47,12 @@ class Volume:
 
 
 @dataclass(frozen=True, slots=True)
+class Seek:
+    position_seconds: float
+    expected_playback_id: UUID
+
+
+@dataclass(frozen=True, slots=True)
 class Connect:
     channel_id: int
 
@@ -53,13 +62,17 @@ class Disconnect:
     pass
 
 
-type Command = Add | Remove | Move | Clear | Control | Volume | Connect | Disconnect
+type Command = (
+    Add | Remove | Move | Clear | Control | Volume | Seek | Connect | Disconnect
+)
 
 
 def fingerprint(command: Command) -> str:
-    return json.dumps(
-        [type(command).__name__, asdict(command)], sort_keys=True, default=str
-    )
+    payload = asdict(command)
+    if isinstance(command, Add) and command.added_by in (None, ANONYMOUS_CONTRIBUTOR):
+        # Keep receipts issued before queue attribution replayable.
+        payload.pop("added_by")
+    return json.dumps([type(command).__name__, payload], sort_keys=True, default=str)
 
 
 @dataclass(frozen=True, slots=True)

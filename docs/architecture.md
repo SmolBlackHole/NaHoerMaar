@@ -29,6 +29,8 @@ state/event pair:
 queue is empty. `play` from `error` retries the same entry. A dash means the
 event raises `InvalidTransitionError` without changing state. `finished` also
 applies while paused because a pause can race with the final audio frame.
+The `seek` event preserves `playing` or `paused` and leaves the queue unchanged;
+it is invalid in other states.
 
 SQLAlchemy maps queue entries and player state to SQLite. Each persistent change
 commits in one Session transaction before the Player publishes its new snapshot.
@@ -37,7 +39,7 @@ Failed writes and failed commits leave the previous snapshot intact.
 The last 100 started tracks are stored with timestamps and independent history
 IDs. Recording a start and entering `playing` share one transaction. Skips keep
 the history entry; removing an unplayed track creates none. Resuming or retrying
-a stream automatically does not count twice.
+a stream automatically, or seeking within it, does not count twice.
 
 Creating a Player runs the FSM's `recover` event: an interrupted track returns
 to the front of the queue, playback becomes `idle`, and the separate voice
@@ -73,6 +75,11 @@ Volume changes take effect within the running stream. The decoder follows the
 original packets even during passthrough, so lowering the volume needs no new
 extraction, connection or playback attempt. Returning to 100% restores the original
 packets when the source supports passthrough.
+
+Seeking restarts FFmpeg at the requested offset using the resolved stream URL.
+It creates a new playback attempt, so callbacks and controls for the old stream
+cannot affect the new one. Volume and pause state stay unchanged. Opus packets
+before the target are discarded without re-encoding the remaining stream.
 
 Transient extraction or stream failures get one fresh resolution and restart
 from the beginning. A failed track is then skipped, with its entry ID and error
@@ -142,11 +149,22 @@ actions use the displayed playback ID. A lost response leaves the request ID
 and payload available for a safe retry. Closing the dashboard only closes its
 event stream; playback continues.
 
-Thumbnails come from track metadata or the YouTube video ID, with a fallback
-when loading fails. A muted YouTube embed provides an optional video preview;
-cinema mode enlarges it and adds a backdrop from the artwork. The preview follows
-play/pause changes, but does not synchronize viewers or compensate for Discord
-audio latency.
+Thumbnails come from track metadata or the YouTube video ID. Cover and Video fill
+the player area, with a dark, blurred overlay behind the track details;
+the settings button reveals the native YouTube controls and the full video frame.
+The embed loads only while the Video view is visible and connected. Leaving that view
+or hiding the browser tab destroys it. Returning creates a new embed at the bot's
+current position, initially muted. The native YouTube controls affect only the
+browser preview. It follows bot play/pause changes, but does not synchronize
+viewers or compensate for Discord audio latency.
+
+At the end of the video, the preview returns to Cover. YouTube's `rel=0` setting
+limits recommendations to the same channel; it does not disable them. End cards
+during playback can still appear.
+
+Recently played groups matching video IDs and shows their playback count within
+the stored 100 starts. Each group uses its latest entry and timestamp; the raw
+history remains available for activity statistics.
 
 Browser profiles store a name and a Pixabot avatar locally. They do not authenticate
 API access. Discord login and the whitelist remain planned. The Overview uses

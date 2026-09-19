@@ -3,7 +3,7 @@
 @import "@nuxt/ui";
 
 @theme static {
-	--font-sans: "Public Sans", sans-serif;
+	--font-sans: "Geist", sans-serif;
 
 	/* Display scale */
 	--text-display-xl: 80px;
@@ -50,53 +50,42 @@
 	--text-body-sm--font-weight: 400;
 }
 
-.player-pane {
-	align-self: start;
+:root {
+	--ui-primary: var(--color-primary-700);
+	--ui-success: var(--color-success-700);
+	--ui-text-muted: var(--color-neutral-600);
+	--room-sidebar: var(--ui-bg-muted);
+	--room-dock: var(--ui-bg);
 }
-.playback-progress {
-	height: 4px;
-	appearance: none;
-	border: 0;
-	border-radius: 999px;
-	overflow: hidden;
+.dark {
+	--ui-primary: var(--color-primary-400);
+	--ui-success: var(--color-success-400);
+	--ui-bg: color-mix(in srgb, var(--color-neutral-900) 78%, var(--color-neutral-950));
+	--ui-bg-muted: color-mix(in srgb, var(--color-neutral-800) 50%, var(--ui-bg));
+	--ui-bg-elevated: var(--color-neutral-800);
+	--ui-bg-accented: var(--color-neutral-700);
+	--ui-border: color-mix(in srgb, var(--color-neutral-500) 18%, transparent);
+	--ui-text-muted: var(--color-neutral-400);
+	--room-sidebar: color-mix(in srgb, var(--color-neutral-950) 70%, var(--color-neutral-900));
+	--room-dock: var(--room-sidebar);
 }
-.playback-progress::-webkit-progress-bar {
-	background: var(--ui-bg-elevated);
-}
-.playback-progress::-webkit-progress-value {
-	background: var(--ui-primary);
-}
-.playback-progress::-moz-progress-bar {
-	background: var(--ui-primary);
-}
-.volume-slider {
-	accent-color: var(--ui-primary);
-	min-height: 24px;
-	cursor: pointer;
-}
-.volume-slider:disabled {
-	cursor: default;
-	opacity: 0.5;
-}
-.channel-select {
-	color: var(--ui-text);
+a {
+	text-underline-offset: 0.2em;
 }
 input {
 	caret-color: var(--ui-primary);
+}
+input::placeholder {
+	color: var(--ui-text-muted);
+	opacity: 1;
 }
 ::selection {
 	background: var(--ui-primary);
 	color: var(--ui-bg);
 }
-:focus-visible {
+:focus-visible:not([data-slot]) {
 	outline: 2px solid var(--ui-primary);
 	outline-offset: 3px;
-}
-@media (min-width: 1024px) {
-	.player-pane {
-		position: sticky;
-		top: 0;
-	}
 }
 
 /* Thin scrollbars */
