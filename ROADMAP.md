@@ -69,6 +69,9 @@ effects. Tests cover an empty queue, repeated videos and an interrupted track.
 - [x] Implement the player controls above, volume and automatic advancement.
   A late completion callback from a stopped or skipped track must not advance
   the queue again
+- [x] Show the current title and uploader in the bot's activity, with paused and
+  idle statuses. Coalesce rapid changes within Discord's presence update limit
+- [x] Set a daily quote as the bot's bio, keeping the same selection after a restart
 - [x] Report unavailable tracks and advance once to the next playable entry.
   A lost Discord connection stops playback and preserves the interrupted track
   for manual restart. Leaving a channel also preserves the queue
@@ -81,6 +84,9 @@ Acceptance: two YouTube tracks play consecutively in a live test on the configur
 Discord server. Pause, resume, skip, stop and volume work during playback. A failed
 track, a voice disconnect and shutdown leave no orphaned audio process. Verify
 extraction and playback from the intended deployment host before shared use.
+
+Discord bot activities support text but not thumbnail assets or progress bars.
+See the [activity field restrictions](https://docs.discord.com/developers/events/gateway-events#activity-object).
 
 ## 3. API and simultaneous changes
 

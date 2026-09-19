@@ -14,6 +14,8 @@ class ResolvedTrack:
     stream_url: str
     headers: tuple[tuple[str, str], ...] = ()
     is_opus: bool = False
+    title: str | None = None
+    uploader: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

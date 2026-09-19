@@ -153,10 +153,14 @@ def _resolved_track(result: ProcessResult) -> ResolvedTrack:
         or parsed_stream.password is not None
     ):
         raise TrackError("YouTube returned no playable audio stream.")
+    title = value.get("title")
+    uploader = value.get("uploader")
     return ResolvedTrack(
         stream_url,
         _parse_headers(value.get("http_headers")),
         value.get("acodec") == "opus",
+        title=title if isinstance(title, str) else None,
+        uploader=uploader if isinstance(uploader, str) else None,
     )
 
 

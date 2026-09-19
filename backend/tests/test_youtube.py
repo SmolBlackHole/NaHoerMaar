@@ -22,6 +22,8 @@ def _metadata(**changes: object) -> bytes:
     value: dict[str, object] = {
         "id": "dQw4w9WgXcQ",
         "duration": 213.0,
+        "title": "Example song",
+        "uploader": "Example artist",
         "live_status": "not_live",
         "url": "https://stream.example/audio?signature=secret",
         "http_headers": {"User-Agent": "test", "Referer": "https://youtube.com/"},
@@ -58,11 +60,25 @@ def test_resolver_returns_stream_and_headers_without_downloading(
         ("Referer", "https://youtube.com/"),
     )
     assert not resolved.is_opus
+    assert resolved.title == "Example song"
+    assert resolved.uploader == "Example artist"
     assert captured[-1] == _VIDEO_URL
     assert captured[captured.index("--js-runtimes") + 1] == f"node:{node_path}"
     assert "--no-playlist" in captured
     assert "--no-plugin-dirs" in captured
     assert "--simulate" in captured
+
+
+@pytest.mark.parametrize("missing", [None, 42])
+def test_missing_or_invalid_display_metadata_does_not_prevent_playback(
+    missing: object,
+) -> None:
+    resolved = youtube_module._resolved_track(  # pyright: ignore[reportPrivateUsage]
+        ProcessResult(0, _metadata(title=missing, uploader=missing), b"")
+    )
+    assert resolved.title is None
+    assert resolved.uploader is None
+    assert resolved.stream_url
 
 
 @pytest.mark.parametrize(

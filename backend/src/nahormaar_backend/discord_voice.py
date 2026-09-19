@@ -11,6 +11,7 @@ import audioop
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 import importlib.util
+import logging
 from pathlib import Path
 import re
 import struct
@@ -23,6 +24,7 @@ from discord.oggparse import OggError, OggStream
 from discord.opus import OpusNotLoaded
 
 from .audio import ResolvedTrack, TrackError, VoiceChannelInfo, VoiceError
+from .daily_bio import update_daily_bio
 
 
 _PCM_FRAME_BYTES = 3_840
@@ -30,6 +32,9 @@ _SAMPLES_PER_FRAME = 960
 _MUSIC_BITRATE_KBPS = 512
 _PROCESS_TIMEOUT_SECONDS = 2.0
 _VOICE_MONITOR_SECONDS = 0.25
+_PRESENCE_INTERVAL_SECONDS = 5.0
+_PRESENCE_TEXT_LIMIT = 128
+_LOGGER = logging.getLogger(__name__)
 _HEADER_NAME = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
 
 
@@ -200,6 +205,7 @@ class _VolumeSource(discord.AudioSource):
 @dataclass(slots=True)
 class _Playback:
     source: _VolumeSource
+    track: ResolvedTrack
     cancellation_error: Exception | None = None
 
 
@@ -255,6 +261,12 @@ class DiscordVoice:
         self._expected_disconnects: dict[int, int] = {}
         self._monitor: asyncio.Task[None] | None = None
         self._connection_lock = asyncio.Lock()
+        self._activity: discord.BaseActivity = discord.CustomActivity(
+            name="Bereit für Musik"
+        )
+        self._sent_activity: discord.BaseActivity | None = None
+        self._presence_task: asyncio.Task[None] | None = None
+        self._bio_task: asyncio.Task[None] | None = None
 
     @staticmethod
     def _validate_volume(volume: float) -> None:
@@ -278,6 +290,12 @@ class DiscordVoice:
         self._started = True
         try:
             self._validate_voice_dependencies()
+            self._presence_task = asyncio.create_task(
+                self._update_presence(), name="discord-presence"
+            )
+            self._bio_task = asyncio.create_task(
+                self._update_bio(), name="discord-daily-bio"
+            )
             await self._client.start(token)
         except asyncio.CancelledError:
             await self.close()
@@ -299,6 +317,7 @@ class DiscordVoice:
             raise self._startup_error from error
         finally:
             self._ready.set()
+            await self._stop_profile_tasks()
 
     @staticmethod
     def _validate_voice_dependencies() -> None:
@@ -317,16 +336,70 @@ class DiscordVoice:
             raise VoiceError("The configured Discord guild is unavailable.")
 
     def _discord_ready(self) -> None:
+        self._sent_activity = None
         if self._client.get_guild(self.guild_id) is None:
             self._startup_error = VoiceError(
                 "The configured Discord guild is unavailable."
             )
         self._ready.set()
 
+    def _set_activity(
+        self, track: ResolvedTrack | None = None, *, paused: bool = False
+    ) -> None:
+        if track is None:
+            self._activity = discord.CustomActivity(name="Bereit für Musik")
+            return
+        title = " ".join((track.title or "YouTube").split()) or "YouTube"
+        uploader = " ".join((track.uploader or "").split())
+        if paused:
+            self._activity = discord.CustomActivity(
+                name=f"Pausiert: {title}"[:_PRESENCE_TEXT_LIMIT]
+            )
+        else:
+            self._activity = discord.Activity(
+                type=discord.ActivityType.listening,
+                name=title[:_PRESENCE_TEXT_LIMIT],
+                state=uploader[:_PRESENCE_TEXT_LIMIT] or None,
+            )
+
+    async def _update_presence(self) -> None:
+        await self._ready.wait()
+        while True:
+            activity = self._activity
+            if self._client.is_ready() and (
+                self._sent_activity is None
+                or activity.to_dict() != self._sent_activity.to_dict()
+            ):
+                try:
+                    async with asyncio.timeout(10):
+                        await self._client.change_presence(activity=activity)
+                except Exception as error:
+                    _LOGGER.warning(
+                        "Discord presence update failed (%s); will retry.",
+                        type(error).__name__,
+                    )
+                else:
+                    self._sent_activity = activity
+            await asyncio.sleep(_PRESENCE_INTERVAL_SECONDS)
+
+    async def _update_bio(self) -> None:
+        await self._ready.wait()
+        await update_daily_bio(self._client)
+
+    async def _stop_profile_tasks(self) -> None:
+        tasks = tuple(
+            task for task in (self._presence_task, self._bio_task) if task is not None
+        )
+        self._presence_task = self._bio_task = None
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
     async def close(self) -> None:
         if self._closing:
             return
         self._closing = True
+        await self._stop_profile_tasks()
         try:
             await self.disconnect()
         finally:
@@ -519,7 +592,7 @@ class DiscordVoice:
         except Exception as error:
             pcm.cleanup()
             raise VoiceError("Discord audio processing could not start.") from error
-        playback = _Playback(source=source)
+        playback = _Playback(source=source, track=track)
         self._playback = playback
 
         def completed(error: Exception | None) -> None:
@@ -541,6 +614,7 @@ class DiscordVoice:
             source.cleanup()
             self._playback = None
             raise VoiceError("Discord audio playback could not start.") from error
+        self._set_activity(track)
 
     async def stop(self) -> None:
         await self._stop_playback(None)
@@ -551,6 +625,7 @@ class DiscordVoice:
         *,
         voice: discord.VoiceClient | None = None,
     ) -> None:
+        self._set_activity()
         playback = self._playback
         if playback is None:
             return
@@ -570,12 +645,16 @@ class DiscordVoice:
         if voice is None or not voice.is_connected():
             raise VoiceError("Discord voice is not connected.")
         voice.pause()
+        if self._playback is not None:
+            self._set_activity(self._playback.track, paused=True)
 
     def resume(self) -> None:
         voice = self._voice
         if voice is None or not voice.is_connected():
             raise VoiceError("Discord voice is not connected.")
         voice.resume()
+        if self._playback is not None:
+            self._set_activity(self._playback.track)
 
     def set_volume(self, volume: float) -> None:
         self._validate_volume(volume)

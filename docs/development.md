@@ -57,6 +57,18 @@ to work in Discord. Disconnect the bot during playback and check that audio stop
 without consuming the interrupted entry. Repeat on the deployment host before
 shared use.
 
+## Daily bio
+
+The bot sets its application description to a daily quote from
+[quotes.toml](../quotes.toml). Add entries to the `de`, `en` and `nl` arrays under
+`[quotes]`, with up to 400 characters per quote.
+
+The selection stays the same throughout the bot host's local calendar day,
+including after a restart, as long as the list is unchanged. While running, the
+bot checks for a new day once a minute. Changes to the list take effect the next
+day or after a restart. Failed updates leave playback running and retry after a
+minute.
+
 ## Run checks
 
 ```powershell

@@ -521,3 +521,154 @@ def test_wait_until_ready_reports_missing_configured_guild(tmp_path: Path) -> No
     adapter._ready.set()
     with pytest.raises(VoiceError, match="configured Discord guild"):
         asyncio.run(asyncio.wait_for(adapter.wait_until_ready(), timeout=1))
+
+
+def test_activity_tracks_audio_controls_without_changing_the_audio_source(
+    tmp_path: Path,
+) -> None:
+    tone = tmp_path / "tone.wav"
+    _write_tone(tone)
+    adapter = _adapter(tmp_path)
+    voice = cast(FakeVoiceClient, cast(Any, adapter._voice))
+    adapter.play(
+        ResolvedTrack(str(tone), title="Song\nname", uploader="Artist"),
+        lambda error: None,
+    )
+    source = voice.source
+    try:
+        playing = adapter._activity.to_dict()
+        assert playing["type"] == discord.ActivityType.listening.value
+        assert playing["name"] == "Song name"
+        assert playing.get("state") == "Artist"
+        adapter.pause()
+        assert adapter._activity.to_dict().get("state") == "Pausiert: Song name"
+        adapter.resume()
+        assert adapter._activity.to_dict() == playing
+        adapter.set_volume(0.3)
+        assert adapter._activity.to_dict() == playing
+        assert voice.source is source
+    finally:
+        asyncio.run(adapter.disconnect())
+    assert adapter._activity.to_dict().get("state") == "Bereit für Musik"
+
+
+def test_activity_limits_text_and_never_uses_stream_urls_as_fallback(
+    tmp_path: Path,
+) -> None:
+    adapter = _adapter(tmp_path)
+    adapter._set_activity(ResolvedTrack("https://example.invalid/?secret=hidden"))
+    assert adapter._activity.to_dict()["name"] == "YouTube"
+    assert "hidden" not in str(adapter._activity.to_dict())
+    track = ResolvedTrack("unused", title="x" * 500, uploader="y" * 500)
+    adapter._set_activity(track)
+    assert len(adapter._activity.to_dict()["name"]) == 128
+    assert len(adapter._activity.to_dict().get("state") or "") == 128
+    adapter._set_activity(track, paused=True)
+    assert len(adapter._activity.to_dict().get("state") or "") == 128
+
+
+class FakePresenceClient(FakeDiscordClient):
+    def __init__(self, adapter: DiscordVoice, *, fail_first: bool = False) -> None:
+        super().__init__(FakeGuild([]))
+        self.adapter = adapter
+        self.closed = asyncio.Event()
+        self.ready = True
+        self.fail_first = fail_first
+        self.attempts: list[tuple[float, discord.BaseActivity]] = []
+
+    async def start(self, token: str) -> None:
+        del token
+        self.adapter._discord_ready()
+        await self.closed.wait()
+
+    def is_ready(self) -> bool:
+        return self.ready
+
+    async def change_presence(self, *, activity: discord.BaseActivity) -> None:
+        self.attempts.append((asyncio.get_running_loop().time(), activity))
+        if self.fail_first and len(self.attempts) == 1:
+            raise ConnectionError("synthetic error containing secret data")
+
+    async def application_info(self) -> discord.AppInfo:
+        # Keep profile work pending until shutdown, without making a REST request.
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+    async def close(self) -> None:
+        self.closed.set()
+
+    async def wait_for_attempts(self, count: int) -> None:
+        async with asyncio.timeout(2):
+            while len(self.attempts) < count:
+                await asyncio.sleep(0.001)
+
+
+def test_presence_coalesces_changes_resends_after_reconnect_and_closes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(discord_voice_module, "_PRESENCE_INTERVAL_SECONDS", 0.02)
+
+    async def scenario() -> None:
+        adapter = _adapter(tmp_path)
+        client = FakePresenceClient(adapter)
+        adapter._client = cast(discord_voice_module._DiscordClient, client)
+        task = asyncio.create_task(adapter.start("test-token"))
+        try:
+            await client.wait_for_attempts(1)
+            assert client.attempts[0][1].to_dict().get("state") == "Bereit für Musik"
+            for title in ("First", "Skipped", "Current"):
+                adapter._set_activity(ResolvedTrack("unused", title=title))
+            await client.wait_for_attempts(2)
+            assert client.attempts[1][1].to_dict()["name"] == "Current"
+            await asyncio.sleep(0.05)
+            assert len(client.attempts) == 2
+            client.ready = False
+            adapter._set_activity(ResolvedTrack("unused", title="After reconnect"))
+            await asyncio.sleep(0.05)
+            assert len(client.attempts) == 2
+            client.ready = True
+            adapter._discord_ready()
+            await client.wait_for_attempts(3)
+            adapter._discord_ready()
+            await client.wait_for_attempts(4)
+            assert client.attempts[2][1].to_dict() == client.attempts[3][1].to_dict()
+            assert all(
+                later[0] - earlier[0] >= 0.02
+                for earlier, later in zip(
+                    client.attempts, client.attempts[1:], strict=False
+                )
+            )
+        finally:
+            presence = adapter._presence_task
+            bio = adapter._bio_task
+            await adapter.close()
+            await task
+        assert presence is not None and presence.done()
+        assert bio is not None and bio.done()
+        assert client.closed.is_set()
+
+    asyncio.run(scenario())
+
+
+def test_presence_failure_retries_without_stopping_the_bot_or_logging_secrets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setattr(discord_voice_module, "_PRESENCE_INTERVAL_SECONDS", 0.02)
+
+    async def scenario() -> None:
+        adapter = _adapter(tmp_path)
+        client = FakePresenceClient(adapter, fail_first=True)
+        adapter._client = cast(discord_voice_module._DiscordClient, client)
+        task = asyncio.create_task(adapter.start("test-token"))
+        try:
+            await client.wait_for_attempts(2)
+            assert not task.done()
+            assert adapter._sent_activity is not None
+            assert client.attempts[0][1].to_dict() == client.attempts[1][1].to_dict()
+        finally:
+            await adapter.close()
+            await task
+
+    asyncio.run(scenario())
+    assert "presence update failed (ConnectionError)" in caplog.text
+    assert "secret data" not in caplog.text
