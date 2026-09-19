@@ -7,7 +7,9 @@ import pytest
 from nahormaar_backend.fsm import (
     InvalidTransitionError,
     PlaybackEvent,
+    VoiceEvent,
     transition,
+    voice_transition,
 )
 from nahormaar_backend.models import (
     PlaybackState,
@@ -123,3 +125,48 @@ def test_invalid_events_do_not_change_state(
     assert error.value.state is state
     assert error.value.event is event
     assert snapshot.state is state
+
+
+@pytest.mark.parametrize("state", [PlaybackState.PLAYING, PlaybackState.PAUSED])
+@pytest.mark.parametrize("has_next", [True, False])
+def test_natural_completion_advances_even_if_pause_raced_with_end(
+    state: PlaybackState, has_next: bool
+) -> None:
+    snapshot = _snapshot(state, has_next=has_next)
+    after = transition(snapshot, PlaybackEvent.FINISHED)
+    assert after.current == (snapshot.upcoming[0] if has_next else None)
+    assert after.state is (PlaybackState.LOADING if has_next else PlaybackState.IDLE)
+
+
+@pytest.mark.parametrize(
+    "state", [PlaybackState.IDLE, PlaybackState.LOADING, PlaybackState.ERROR]
+)
+def test_completion_requires_a_started_track(state: PlaybackState) -> None:
+    with pytest.raises(InvalidTransitionError):
+        transition(_snapshot(state), PlaybackEvent.FINISHED)
+
+
+def test_voice_connect_events_require_a_pending_connection() -> None:
+    disconnected = PlayerSnapshot()
+    with pytest.raises(ValueError):
+        voice_transition(disconnected, VoiceEvent.CONNECTED)
+    connecting = voice_transition(disconnected, VoiceEvent.CONNECT)
+    assert connecting.voice_state is VoiceState.CONNECTING
+    with pytest.raises(ValueError):
+        voice_transition(connecting, VoiceEvent.CONNECT)
+    connected = voice_transition(connecting, VoiceEvent.CONNECTED)
+    assert connected.voice_state is VoiceState.CONNECTED
+    assert voice_transition(connecting, VoiceEvent.DISCONNECT) == disconnected
+    assert voice_transition(connected, VoiceEvent.DISCONNECT) == disconnected
+
+
+def test_voice_loss_preserves_track_and_does_not_resume_on_reconnect() -> None:
+    playing = _snapshot(PlaybackState.PLAYING)
+    disconnected = voice_transition(playing, VoiceEvent.DISCONNECT)
+    assert disconnected.current is None
+    assert disconnected.upcoming == (playing.current, *playing.upcoming)
+    assert voice_transition(disconnected, VoiceEvent.DISCONNECT) == disconnected
+    connecting = voice_transition(disconnected, VoiceEvent.CONNECT)
+    reconnected = voice_transition(connecting, VoiceEvent.CONNECTED)
+    assert reconnected.state is PlaybackState.IDLE
+    assert reconnected.upcoming == disconnected.upcoming

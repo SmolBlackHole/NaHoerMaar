@@ -7,7 +7,7 @@
 from dataclasses import replace
 from uuid import UUID
 
-from .fsm import PlaybackEvent, transition
+from .fsm import PlaybackEvent, VoiceEvent, transition, voice_transition
 from .models import PlayerSnapshot, QueueEntry
 from .storage import SQLiteStore
 
@@ -27,7 +27,11 @@ class Player:
 
     def _commit(self, snapshot: PlayerSnapshot) -> PlayerSnapshot:
         if snapshot != self._snapshot:
-            self._store.save(snapshot)
+            if (
+                replace(snapshot, voice_state=self._snapshot.voice_state)
+                != self._snapshot
+            ):
+                self._store.save(snapshot)
             self._snapshot = snapshot
         return self._snapshot
 
@@ -105,3 +109,9 @@ class Player:
 
     def fail(self) -> PlayerSnapshot:
         return self._apply(PlaybackEvent.FAIL)
+
+    def finished(self) -> PlayerSnapshot:
+        return self._apply(PlaybackEvent.FINISHED)
+
+    def voice(self, event: VoiceEvent) -> PlayerSnapshot:
+        return self._commit(voice_transition(self._snapshot, event))

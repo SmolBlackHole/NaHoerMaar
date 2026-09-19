@@ -28,7 +28,7 @@ def _require_node() -> None:
     node = shutil.which("node")
     if node is None:
         raise SystemExit("Node.js 22 or newer with npm is required.")
-    completed = subprocess.run(
+    completed = subprocess.run(  # noqa: S603 - resolved Node executable, fixed arguments
         (node, "--version"), check=True, capture_output=True, text=True
     )
     major = int(completed.stdout.strip().removeprefix("v").partition(".")[0])
@@ -46,17 +46,18 @@ def _npm() -> str:
 
 def _run(command: Sequence[str]) -> None:
     print(f"> {' '.join(command)}", flush=True)
-    subprocess.run(command, cwd=ROOT, check=True)
+    subprocess.run(command, cwd=ROOT, check=True)  # noqa: S603 - fixed project tooling
 
 
 def setup() -> None:
-    if sys.version_info < (3, 12):
+    if sys.version_info < (3, 12):  # noqa: UP036 - bootstrap runs before package installation
         raise SystemExit("Python 3.12 or newer is required.")
     _require_node()
     npm = _npm()
     if not _venv_python().is_file():
         _run((sys.executable, "-m", "venv", str(VENV)))
     _run((str(_venv_python()), "-m", "pip", "install", "-e", ".[dev]"))
+    _run((str(_venv_python()), "-m", "nahormaar_backend.config"))
     _run((npm, "ci"))
 
 

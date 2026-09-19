@@ -15,6 +15,48 @@ python scripts/dev.py setup
 Linux and macOS can also use `./scripts/setup.sh`. If PowerShell blocks
 `scripts/setup.ps1`, use the Python command above.
 
+Setup installs a local FFmpeg binary through `imageio-ffmpeg` and checks that it
+runs. You can override it with `FFMPEG_PATH`. On Linux and macOS, audio processing
+also needs the system Opus library (`libopus0` on Debian/Ubuntu,
+`opus` through Homebrew on macOS).
+
+## Try Discord playback
+
+Copy `.env.example` to `.env` and set `DISCORD_TOKEN` and `DISCORD_GUILD_ID`.
+Environment variables override `.env` values. Invite the bot to that server with
+View Channel, Connect and Speak permissions for the test voice channel.
+
+List the available voice channels:
+
+```powershell
+.venv\Scripts\python.exe scripts/live_playback.py
+```
+
+Use a channel ID from that output and two public YouTube video URLs:
+
+```powershell
+.venv\Scripts\python.exe scripts/live_playback.py --channel CHANNEL_ID "YOUTUBE_URL_1" "YOUTUBE_URL_2"
+```
+
+The script plays both tracks in order and exits after the queue finishes. Add
+`--controls` to exercise pause, resume, volume, skip and stop with short delays.
+Use tracks long enough to hear each operation. Ctrl+C stops playback and closes
+the connection. On Linux/macOS, use `.venv/bin/python` for these commands.
+
+At 100% volume, compatible Opus streams play without re-encoding. Lowering the
+global volume changes the audio for everyone and requires re-encoding. Returning
+to 100% restores passthrough without restarting the track.
+
+The script uses `data/live-test.sqlite3` and replaces that test queue on each
+playback run. The normal runtime uses `DATABASE_PATH`, defaulting to
+`data/player.sqlite3`.
+
+Local tests cover real FFmpeg decoding, failure recovery and callback races.
+Live acceptance still requires two consecutive tracks and the playback controls
+to work in Discord. Disconnect the bot during playback and check that audio stops
+without consuming the interrupted entry. Repeat on the deployment host before
+shared use.
+
 ## Run checks
 
 ```powershell

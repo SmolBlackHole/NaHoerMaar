@@ -2,9 +2,9 @@
 
 A private Discord music bot controlled entirely through a web dashboard.
 
-In development. The queue persists across restarts; the dashboard, API and audio
-playback are still planned.
-YouTube support comes first; see the [roadmap](ROADMAP.md).
+In development. The persistent queue and YouTube playback backend are implemented;
+live Discord validation is pending. The dashboard and API are still planned.
+See the [roadmap](ROADMAP.md).
 
 ## Development
 
@@ -15,8 +15,8 @@ python scripts/dev.py setup
 python scripts/dev.py check
 ```
 
-See the [development guide](docs/development.md) for check details and VS Code
-setup.
+See the [development guide](docs/development.md) to configure Discord and try
+playback.
 
 ## Documentation
 

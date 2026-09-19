@@ -2,7 +2,8 @@
 
 Parent: [Project README](README.md)
 
-Status: phase 1 complete. Phases 2-6 remain proposed.
+Status: phase 1 complete. Phase 2 implemented, pending live Discord acceptance.
+Phases 3-6 remain proposed.
 
 ## Current scope
 
@@ -56,22 +57,22 @@ effects. Tests cover an empty queue, repeated videos and an interrupted track.
 
 ## 2. YouTube streaming and Discord voice
 
-- [ ] Connect the bot to the configured server. List available voice channels,
+- [x] Connect the bot to the configured server. List available voice channels,
   join a selected channel and leave it on request. Report missing permissions
   and connection failures
-- [ ] Resolve a YouTube audio stream with `yt-dlp`, feed it to FFmpeg and send
+- [x] Resolve a YouTube audio stream with `yt-dlp`, feed it to FFmpeg and send
   audio through `discord.py`. Playback starts without downloading the whole
   track first. Closing the dashboard does not stop playback
-- [ ] Resolve stream URLs shortly before playback and refresh an expired URL
+- [x] Resolve stream URLs shortly before playback and refresh an expired URL
   within a bounded retry. Run extraction outside the API event loop so a slow
   request does not freeze controls
-- [ ] Implement the player controls above, volume and automatic advancement.
+- [x] Implement the player controls above, volume and automatic advancement.
   A late completion callback from a stopped or skipped track must not advance
   the queue again
-- [ ] Report unavailable tracks and advance once to the next playable entry.
+- [x] Report unavailable tracks and advance once to the next playable entry.
   A lost Discord connection stops playback and preserves the interrupted track
   for manual restart. Leaving a channel also preserves the queue
-- [ ] Clean up FFmpeg processes on stop, failure and shutdown. Verify the voice
+- [x] Clean up FFmpeg processes on stop, failure and shutdown. Verify the voice
   dependencies support [DAVE](https://discordpy.readthedocs.io/en/stable/whats_new.html#v2-7-0)
   and install the [YouTube extraction dependencies](https://github.com/yt-dlp/yt-dlp#dependencies),
   including EJS and a supported JavaScript runtime

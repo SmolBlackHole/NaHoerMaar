@@ -19,6 +19,7 @@ class PlaybackEvent(StrEnum):
     SKIP = "skip"
     STOP = "stop"
     FAIL = "fail"
+    FINISHED = "finished"
     RECOVER = "recover"
 
 
@@ -71,6 +72,9 @@ _TRANSITIONS: Mapping[PlaybackState, Mapping[PlaybackEvent, _Transition]] = (
             ),
             PlaybackState.PLAYING: MappingProxyType(
                 {
+                    PlaybackEvent.FINISHED: _Transition(
+                        PlaybackState.LOADING, _QueueEffect.ADVANCE
+                    ),
                     PlaybackEvent.PAUSE: _Transition(PlaybackState.PAUSED),
                     PlaybackEvent.SKIP: _Transition(
                         PlaybackState.LOADING, _QueueEffect.ADVANCE
@@ -86,6 +90,9 @@ _TRANSITIONS: Mapping[PlaybackState, Mapping[PlaybackEvent, _Transition]] = (
             ),
             PlaybackState.PAUSED: MappingProxyType(
                 {
+                    PlaybackEvent.FINISHED: _Transition(
+                        PlaybackState.LOADING, _QueueEffect.ADVANCE
+                    ),
                     PlaybackEvent.PLAY: _Transition(PlaybackState.PLAYING),
                     PlaybackEvent.SKIP: _Transition(
                         PlaybackState.LOADING, _QueueEffect.ADVANCE
@@ -146,3 +153,34 @@ def transition(snapshot: PlayerSnapshot, event: PlaybackEvent) -> PlayerSnapshot
             else snapshot.voice_state
         ),
     )
+
+
+class VoiceEvent(StrEnum):
+    CONNECT = "connect"
+    CONNECTED = "connected"
+    DISCONNECT = "disconnect"
+
+
+_VOICE_TRANSITIONS = MappingProxyType(
+    {
+        VoiceState.DISCONNECTED: MappingProxyType(
+            {VoiceEvent.CONNECT: VoiceState.CONNECTING}
+        ),
+        VoiceState.CONNECTING: MappingProxyType(
+            {VoiceEvent.CONNECTED: VoiceState.CONNECTED}
+        ),
+        VoiceState.CONNECTED: MappingProxyType({}),
+    }
+)
+
+
+def voice_transition(snapshot: PlayerSnapshot, event: VoiceEvent) -> PlayerSnapshot:
+    """Disconnecting always preserves an interrupted track for manual restart."""
+    if event is VoiceEvent.DISCONNECT:
+        return transition(snapshot, PlaybackEvent.RECOVER)
+    state = _VOICE_TRANSITIONS[snapshot.voice_state].get(event)
+    if state is None:
+        raise ValueError(
+            f"Cannot apply {event.value!r} while {snapshot.voice_state!r}."
+        )
+    return replace(snapshot, voice_state=state)
