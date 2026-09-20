@@ -6,7 +6,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from nahormaar_backend.models import PlaybackState, PlayerSnapshot, QueueEntry
+from nahormaar_backend.domain.models import PlaybackState, PlayerSnapshot, QueueEntry
 
 
 def test_source_url_is_enough_to_queue_an_entry() -> None:

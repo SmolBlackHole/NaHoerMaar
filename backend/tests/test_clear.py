@@ -9,10 +9,10 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from nahormaar_backend.commands import Clear, fingerprint
-from nahormaar_backend.models import Contributor, QueueEntry
-from nahormaar_backend.player import Player
-from nahormaar_backend.storage import SQLiteStore, StorageError
+from nahormaar_backend.application.player import Player
+from nahormaar_backend.domain.commands import Clear, fingerprint
+from nahormaar_backend.domain.models import Contributor, QueueEntry
+from nahormaar_backend.persistence.player_store import SQLiteStore, StorageError
 from test_api import VIDEO, Harness, headers, mutation
 
 

@@ -5,21 +5,20 @@
 from __future__ import annotations
 
 # pyright: reportPrivateUsage=false
-
 import audioop
-from io import BytesIO
 import math
-from pathlib import Path
 import struct
 import subprocess
 import wave
+from io import BytesIO
+from pathlib import Path
 
 import discord
-from discord.oggparse import OggStream
 import pytest
+from discord.oggparse import OggStream
 
 from nahormaar_backend.config import ffmpeg_executable
-from nahormaar_backend.discord_voice import _FFmpegSource, _VolumeSource
+from nahormaar_backend.integrations.discord_voice import _FFmpegSource, _VolumeSource
 
 
 def _opus_fixture(tmp_path: Path, frame_duration: int = 20) -> Path:

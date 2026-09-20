@@ -11,7 +11,7 @@ from pathlib import Path
 import psutil
 import pytest
 
-from nahormaar_backend.processes import (
+from nahormaar_backend.integrations.processes import (
     ProcessCleanupError,
     ProcessOutputLimitError,
     ProcessTimeoutError,
@@ -61,7 +61,7 @@ def test_timeout_must_be_positive_and_finite(timeout: float) -> None:
 
 
 def test_windows_children_are_hidden_and_isolated() -> None:
-    import nahormaar_backend.processes as process_module
+    import nahormaar_backend.integrations.processes as process_module
 
     flags = process_module._creation_flags()  # pyright: ignore[reportPrivateUsage]
     if sys.platform == "win32":
@@ -152,7 +152,7 @@ def test_cancellation_terminates_descendants(tmp_path: Path) -> None:
 def test_cleanup_failure_is_not_silently_ignored(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import nahormaar_backend.processes as process_module
+    import nahormaar_backend.integrations.processes as process_module
 
     class FakeProcess:
         pid = 999_999_999

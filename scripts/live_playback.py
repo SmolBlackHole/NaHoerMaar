@@ -10,9 +10,9 @@ from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
+from nahormaar_backend.application.playback import PlaybackController
 from nahormaar_backend.config import Settings
-from nahormaar_backend.models import PlaybackState, QueueEntry, VoiceState
-from nahormaar_backend.playback import PlaybackController
+from nahormaar_backend.domain.models import PlaybackState, QueueEntry, VoiceState
 from nahormaar_backend.runtime import open_runtime
 
 

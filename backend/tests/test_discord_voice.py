@@ -5,24 +5,23 @@
 from __future__ import annotations
 
 # pyright: reportPrivateUsage=false
-
 import asyncio
-from collections.abc import Callable
 import math
-from pathlib import Path
 import struct
 import subprocess
 import threading
 import time
-from typing import Any, cast
-from types import SimpleNamespace
 import wave
+from collections.abc import Callable
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, cast
 
 import discord
 import pytest
 
-import nahormaar_backend.discord_voice as discord_voice_module
-from nahormaar_backend.audio import (
+import nahormaar_backend.integrations.discord_voice as discord_voice_module
+from nahormaar_backend.application.audio import (
     ResolvedTrack,
     TrackError,
     VoiceChannelInfo,
@@ -30,12 +29,12 @@ from nahormaar_backend.audio import (
     VoiceOutput,
 )
 from nahormaar_backend.config import ffmpeg_executable
-from nahormaar_backend.discord_voice import (
+from nahormaar_backend.integrations.discord_voice import (
     DiscordVoice,
+    _ffmpeg_arguments,
     _FFmpegSource,
     _MediaStreamError,
     _VolumeSource,
-    _ffmpeg_arguments,
 )
 
 

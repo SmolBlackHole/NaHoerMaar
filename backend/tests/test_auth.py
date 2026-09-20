@@ -14,23 +14,21 @@ import pytest
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from nahormaar_backend.accounts import LoginRow, SessionRow
 from nahormaar_backend.api import create_app
-from nahormaar_backend.auth import (
-    Auth,
-    AuthError,
-    AuthSettings,
-    DiscordIdentity,
-    DiscordOAuth,
+from nahormaar_backend.application.auth import (
     LOGIN_COOKIE,
     SESSION_COOKIE,
     SESSION_SECONDS,
+    Auth,
     csrf_token,
     digest,
 )
-from nahormaar_backend.config import ConfigurationError
-from nahormaar_backend.database import database_engine
-from nahormaar_backend.storage import SQLiteStore
+from nahormaar_backend.config import AuthSettings, ConfigurationError
+from nahormaar_backend.domain.identity import AuthError, DiscordIdentity
+from nahormaar_backend.integrations.discord_oauth import DiscordOAuth
+from nahormaar_backend.persistence.database import database_engine
+from nahormaar_backend.persistence.models import LoginRow, SessionRow
+from nahormaar_backend.persistence.player_store import SQLiteStore
 from test_api import (
     AUTH_HEADERS,
     TEST_TOKEN,

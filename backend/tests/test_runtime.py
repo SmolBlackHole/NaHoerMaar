@@ -11,9 +11,9 @@ from typing import ClassVar, Self, cast
 import pytest
 
 import nahormaar_backend.runtime as runtime_module
-from nahormaar_backend.audio import VoiceError
+from nahormaar_backend.application.audio import VoiceError
+from nahormaar_backend.application.catalog import MediaCatalog
 from nahormaar_backend.config import Settings
-from nahormaar_backend.catalog import MediaCatalog
 from nahormaar_backend.runtime import open_runtime
 
 

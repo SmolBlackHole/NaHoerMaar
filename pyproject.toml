@@ -44,7 +44,11 @@ dev = [
 where = ["backend/src"]
 
 [tool.setuptools.package-data]
-"nahormaar_backend" = ["py.typed", "avatars.json", "migrations/script.py.mako"]
+"nahormaar_backend" = [
+    "py.typed",
+    "avatars.json",
+    "persistence/migrations/script.py.mako",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]

@@ -3,16 +3,20 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import asyncio
+import tomllib
 from datetime import date
 from pathlib import Path
-import tomllib
 from typing import Self, cast
 
 import discord
 import pytest
 
-import nahormaar_backend.daily_bio as bio_module
-from nahormaar_backend.daily_bio import load_quotes, quote_for_day, update_daily_bio
+import nahormaar_backend.integrations.daily_bio as bio_module
+from nahormaar_backend.integrations.daily_bio import (
+    load_quotes,
+    quote_for_day,
+    update_daily_bio,
+)
 
 
 class FakeApplication:

@@ -6,16 +6,13 @@ import asyncio
 
 import pytest
 
-from nahormaar_backend import search as module
-from nahormaar_backend import discovery_cache as cache_module
-from nahormaar_backend.audio import TrackError
-from nahormaar_backend.search import (
-    CatalogBusy,
-    CatalogTrack,
-    SearchCatalog,
-    SearchSource,
-    music_track,
-)
+from nahormaar_backend import cache as cache_module
+from nahormaar_backend.application import search as module
+from nahormaar_backend.application.audio import TrackError
+from nahormaar_backend.application.search import SearchCatalog
+from nahormaar_backend.cache import CatalogBusy
+from nahormaar_backend.domain.catalog import CatalogTrack, SearchSource
+from nahormaar_backend.integrations.youtube_search import music_track
 
 
 class Provider:

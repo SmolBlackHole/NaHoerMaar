@@ -4,14 +4,14 @@
 
 import pytest
 
-from nahormaar_backend.fsm import (
+from nahormaar_backend.domain.fsm import (
     InvalidTransitionError,
     PlaybackEvent,
     VoiceEvent,
     transition,
     voice_transition,
 )
-from nahormaar_backend.models import (
+from nahormaar_backend.domain.models import (
     PlaybackState,
     PlayerSnapshot,
     QueueEntry,

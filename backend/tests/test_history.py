@@ -5,19 +5,22 @@
 import asyncio
 from pathlib import Path
 
-from nahormaar_backend.api_models import State
-from nahormaar_backend.audio import ResolvedTrack, TrackError
-from nahormaar_backend.models import (
+from nahormaar_backend.api.schemas import State
+from nahormaar_backend.application.audio import ResolvedTrack, TrackError
+from nahormaar_backend.application.playback import PlaybackController
+from nahormaar_backend.application.player import Player
+from nahormaar_backend.domain.models import (
     HISTORY_LIMIT,
     PlaybackState,
     QueueEntry,
     TrackMetadata,
 )
-from nahormaar_backend.playback import PlaybackController
-from nahormaar_backend.player import Player
-from nahormaar_backend.storage import SQLiteStore
-from test_playback import ControlledResolver, FakeVoice
-from test_playback import _wait_until  # pyright: ignore[reportPrivateUsage]
+from nahormaar_backend.persistence.player_store import SQLiteStore
+from test_playback import (
+    ControlledResolver,
+    FakeVoice,
+    _wait_until,  # pyright: ignore[reportPrivateUsage]
+)
 
 
 def test_history_records_starts_and_survives_recovery(tmp_path: Path) -> None:

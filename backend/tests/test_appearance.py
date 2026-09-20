@@ -5,8 +5,8 @@
 import asyncio
 from pathlib import Path
 
-from nahormaar_backend.auth import SESSION_COOKIE, csrf_token
-from nahormaar_backend.preferences import Appearance
+from nahormaar_backend.application.auth import SESSION_COOKIE, csrf_token
+from nahormaar_backend.domain.preferences import Appearance
 from test_api import Harness
 
 

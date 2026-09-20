@@ -9,16 +9,16 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from nahormaar_backend.commands import Add, Outcome, Receipt, fingerprint
-from nahormaar_backend.auth import SESSION_COOKIE, csrf_token
-from nahormaar_backend.models import (
+from nahormaar_backend.application.auth import SESSION_COOKIE, csrf_token
+from nahormaar_backend.application.player import Player
+from nahormaar_backend.domain.commands import Add, Outcome, Receipt, fingerprint
+from nahormaar_backend.domain.models import (
     ANONYMOUS_CONTRIBUTOR,
     Contributor,
     QueueEntry,
     TrackMetadata,
 )
-from nahormaar_backend.player import Player
-from nahormaar_backend.storage import SQLiteStore
+from nahormaar_backend.persistence.player_store import SQLiteStore
 from test_api import VIDEO, Harness, headers, mutation
 
 

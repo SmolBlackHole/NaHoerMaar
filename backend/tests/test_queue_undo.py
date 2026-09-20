@@ -12,14 +12,15 @@ import pytest
 from sqlalchemy import event, select
 from sqlalchemy.orm import Session
 
-from nahormaar_backend import commands
-from nahormaar_backend.commands import Outcome, Receipt
-from nahormaar_backend.database import database_engine
-from nahormaar_backend.models import Contributor, QueueEntry
-from nahormaar_backend.playback import PlaybackController
-from nahormaar_backend.player import Player
-from nahormaar_backend.storage import SQLiteStore, StorageError, _UndoRow  # pyright: ignore[reportPrivateUsage]
-from nahormaar_backend.undo import Removal
+from nahormaar_backend.application.playback import PlaybackController
+from nahormaar_backend.application.player import Player
+from nahormaar_backend.domain import commands
+from nahormaar_backend.domain.commands import Outcome, Receipt
+from nahormaar_backend.domain.models import Contributor, QueueEntry
+from nahormaar_backend.domain.undo import Removal
+from nahormaar_backend.persistence.database import database_engine
+from nahormaar_backend.persistence.models import UndoRow
+from nahormaar_backend.persistence.player_store import SQLiteStore, StorageError
 from test_api import VIDEO, Harness, headers, mutation
 from test_playback import ControlledResolver, FakeVoice
 
@@ -184,7 +185,7 @@ def test_expiry_is_server_enforced_and_pruned(
             assert removed.outcome.undo_expires_at and removed.outcome.undo_id
             expired_at = removed.outcome.undo_expires_at.timestamp() + 1
             monkeypatch.setattr(
-                "nahormaar_backend.storage.time",
+                "nahormaar_backend.persistence.player_store.time",
                 lambda: expired_at,
             )
             expired = await controller.request(
@@ -197,7 +198,7 @@ def test_expiry_is_server_enforced_and_pruned(
             engine = database_engine(path)
             try:
                 with Session(engine) as session:
-                    assert session.scalar(select(_UndoRow)) is None
+                    assert session.scalar(select(UndoRow)) is None
             finally:
                 engine.dispose()
         finally:
@@ -259,7 +260,7 @@ def test_undo_and_queue_commit_or_roll_back_together(
         engine = database_engine(tmp_path / "queue.db")
         try:
             with Session(engine) as session:
-                assert (session.get(_UndoRow, removal.id) is not None) == restoring
+                assert (session.get(UndoRow, removal.id) is not None) == restoring
         finally:
             engine.dispose()
 

@@ -8,13 +8,13 @@ from uuid import uuid4
 
 import pytest
 
-from nahormaar_backend import catalog as module
-from nahormaar_backend.api_models import State
-from nahormaar_backend.catalog import MediaCatalog
-from nahormaar_backend.audio import ResolvedTrack
-from nahormaar_backend.models import PlaybackState
-from nahormaar_backend.search import SearchSource
-from nahormaar_backend.storage import SQLiteStore
+from nahormaar_backend.api.schemas import State
+from nahormaar_backend.application.audio import ResolvedTrack
+from nahormaar_backend.application.catalog import MediaCatalog
+from nahormaar_backend.domain.catalog import SearchSource
+from nahormaar_backend.domain.models import PlaybackState
+from nahormaar_backend.integrations import discovery as extractor_module
+from nahormaar_backend.persistence.player_store import SQLiteStore
 from test_api import Harness, headers, mutation
 from test_catalog import PLAYLIST, VIDEO, Runner, item
 from test_commands import wait_for
@@ -28,7 +28,7 @@ def test_search_defaults_to_music_and_validates_source(
         runner.entries = [
             {"videoId": "Pqp9fDRp1lw", "title": "Music result", "duration_seconds": 180}
         ]
-        monkeypatch.setattr(module, "run_process", runner)
+        monkeypatch.setattr(extractor_module, "run_process", runner)
         harness = Harness(tmp_path / "player.sqlite3")
         async with harness.client() as client:
             assert harness.controller is not None
@@ -39,7 +39,7 @@ def test_search_defaults_to_music_and_validates_source(
                 response.json()["entries"][0]["source_url"]
                 == "https://music.youtube.com/watch?v=Pqp9fDRp1lw"
             )
-            assert "nahormaar_backend.music_search" in runner.calls[0]
+            assert "nahormaar_backend.integrations.music_search" in runner.calls[0]
             version = response.json()["snapshot_id"]
             pinned = await client.get(
                 "/api/catalog/search", params={"q": "song", "snapshot_id": version}
@@ -67,7 +67,7 @@ def test_playback_starts_while_discovery_slots_are_busy(
     async def scenario() -> None:
         runner = Runner()
         runner.release = asyncio.Event()
-        monkeypatch.setattr(module, "run_process", runner)
+        monkeypatch.setattr(extractor_module, "run_process", runner)
         harness = Harness(tmp_path / "player.sqlite3")
         async with harness.client() as client:
             assert harness.controller is not None
@@ -111,7 +111,7 @@ def test_batch_is_atomic_ordered_and_replayed_after_restart(
     async def scenario() -> None:
         runner = Runner()
         runner.entries = [item(), item(id="bWHJbIm1TAA", duration=None)]
-        monkeypatch.setattr(module, "run_process", runner)
+        monkeypatch.setattr(extractor_module, "run_process", runner)
         async with harness.client() as client:
             assert harness.controller is not None
             library = MediaCatalog(Path("node"))
@@ -190,7 +190,7 @@ def test_invalid_batch_never_commits_a_prefix(tmp_path: Path) -> None:
 def test_batch_storage_failure_leaves_no_partial_queue(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from nahormaar_backend.storage import StorageError
+    from nahormaar_backend.persistence.player_store import StorageError
 
     async def scenario() -> None:
         harness = Harness(tmp_path / "player.sqlite3")
@@ -259,7 +259,7 @@ def test_preview_api_progress_cancel_and_queue_independence(
         runner = Runner()
         runner.entries = [item(), item(id="bWHJbIm1TAA", availability="private")]
         runner.release = asyncio.Event()
-        monkeypatch.setattr(module, "run_process", runner)
+        monkeypatch.setattr(extractor_module, "run_process", runner)
         harness = Harness(tmp_path / "player.sqlite3")
         async with harness.client() as client:
             assert harness.controller is not None

@@ -8,12 +8,12 @@ import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from .audio import VoiceError
+from .application.audio import VoiceError
+from .application.catalog import MediaCatalog
+from .application.playback import PlaybackController
 from .config import Settings
-from .catalog import MediaCatalog
-from .discord_voice import DiscordVoice
-from .playback import PlaybackController
-from .youtube import YouTubeResolver
+from .integrations.discord_voice import DiscordVoice
+from .integrations.youtube import YouTubeResolver
 
 
 @asynccontextmanager

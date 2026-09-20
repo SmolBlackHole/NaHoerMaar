@@ -10,10 +10,14 @@ from pathlib import Path
 
 import pytest
 
-from nahormaar_backend.audio import TrackError
-from nahormaar_backend.processes import ProcessResult, ProcessTimeoutError, run_process
-from nahormaar_backend.youtube import YouTubeResolver
-import nahormaar_backend.youtube as youtube_module
+import nahormaar_backend.integrations.youtube as youtube_module
+from nahormaar_backend.application.audio import TrackError
+from nahormaar_backend.integrations.processes import (
+    ProcessResult,
+    ProcessTimeoutError,
+    run_process,
+)
+from nahormaar_backend.integrations.youtube import YouTubeResolver
 
 _VIDEO_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 

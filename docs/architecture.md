@@ -2,6 +2,22 @@
 
 Parent: [Project README](../README.md)
 
+## Backend modules
+
+- `domain/` defines immutable values, commands and FSM transitions without
+  database, HTTP or Discord dependencies
+- `application/` coordinates playback, identity and discovery. The controller
+  serializes mutations; its worker owns the synchronous player and database
+- `api/` owns FastAPI routes, request and response schemas, authentication checks
+  and SSE transport
+- `persistence/` owns SQLAlchemy mappings, repositories and Alembic migrations
+- `integrations/` handles Discord voice and OAuth, YouTube extraction and child
+  processes
+
+`runtime.py` starts and closes the voice client and player together. The API
+lifespan owns that runtime and the authentication service. Configuration stays
+in `config.py`.
+
 ## Queue and player state
 
 The Python core manages one current track and an ordered queue. Each entry has
@@ -14,7 +30,7 @@ Clearing the queue leaves the current track alone. Stopping puts it first in
 the queue and waits for a new start from the beginning.
 
 Playback follows a deterministic finite-state machine. The
-[transition table](../backend/src/nahormaar_backend/fsm.py) defines every allowed
+[transition table](../backend/src/nahormaar_backend/domain/fsm.py) defines every allowed
 state/event pair:
 
 | State     | `play`    | `ready`   | `pause`  | `skip` | `stop` | `fail`  | `finished` |
@@ -54,7 +70,7 @@ stored states raise `StorageError` without replacing the database.
 
 ## Playback and voice
 
-The [PlaybackController](../backend/src/nahormaar_backend/playback.py) serializes
+The [PlaybackController](../backend/src/nahormaar_backend/application/playback.py) serializes
 controls and callbacks. One worker thread owns the synchronous Player and its
 database; Discord runs on the asyncio event loop. Each playback attempt has its
 own ID. Late extraction results and completion callbacks are ignored once that
@@ -66,25 +82,28 @@ queue, with one active voice connection. Switching servers disconnects the old
 channel before joining the new one and waits for a manual playback start.
 Late disconnect events from the old channel cannot close the new connection.
 
-The [YouTube resolver](../backend/src/nahormaar_backend/youtube.py) runs `yt-dlp`
+The [YouTube resolver](../backend/src/nahormaar_backend/integrations/youtube.py) runs `yt-dlp`
 in a cancellable child process with a 30-second deadline. It resolves one finite,
 public video immediately before playback and selects the best available audio.
 Stream URLs, codec information and HTTP headers stay in memory.
 
-One background task resolves missing metadata for upcoming entries. It processes
+The [metadata task](../backend/src/nahormaar_backend/application/metadata.py)
+resolves missing metadata for upcoming entries. It processes
 one entry at a time, outside the command lock. Results update existing IDs only,
 so removing a track during extraction cannot bring it back. Playback resolution
 also saves public metadata before the track starts.
 
-The [media catalog](../backend/src/nahormaar_backend/catalog.py) owns search,
-playlist previews and metadata-only extraction. Discovery runs at most two
+The [media catalog](../backend/src/nahormaar_backend/application/catalog.py) owns
+playlist previews and the playlist and metadata caches. `SearchCatalog` owns the
+search cache. The [discovery extractor](../backend/src/nahormaar_backend/integrations/discovery.py)
+runs at most two
 extractors concurrently, with bounded waiting, process output and deadlines.
 Playback resolution runs separately. The bounded
-[discovery cache](../backend/src/nahormaar_backend/discovery_cache.py) supplies
+[snapshot cache](../backend/src/nahormaar_backend/cache.py) supplies
 public metadata immediately and shares background refreshes. Temporary stream
 URLs are never cached here.
 
-[Search providers](../backend/src/nahormaar_backend/search.py) return the same
+[Search providers](../backend/src/nahormaar_backend/integrations/youtube_search.py) return the same
 track fields. YouTube Music uses `ytmusicapi` with the songs filter; video search
 uses `yt-dlp`. Both run in bounded child processes. Search pages use a fixed
 snapshot ID, so background updates cannot change pagination midway through
@@ -160,7 +179,11 @@ their outcome is saved, recovery marks the request as interrupted. It does not
 execute the request again. The client reads the current state before deciding
 whether to submit a new request ID.
 
-SSE subscribers register and receive their first snapshot under the same lock
+The controller publishes committed snapshots through
+[`application/events.py`](../backend/src/nahormaar_backend/application/events.py).
+[`api/events.py`](../backend/src/nahormaar_backend/api/events.py) handles SSE
+serialization, heartbeats and access rechecks.
+Subscribers register and receive their first snapshot under the same lock
 as publication. Each subscriber buffers at most one snapshot, replacing an older
 pending update when needed. Reconnect always starts with the current state.
 The server closes event streams before draining HTTP requests during shutdown.

@@ -11,9 +11,12 @@ import sys
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import imageio_ffmpeg  # type: ignore[import-untyped]
 from dotenv import dotenv_values
+
+from .domain.identity import discord_id
 
 
 class ConfigurationError(ValueError):
@@ -26,6 +29,64 @@ def environment_values(environ: Mapping[str, str] | None = None) -> Mapping[str,
     return {
         key: value for key, value in dotenv_values(".env").items() if value is not None
     } | dict(os.environ)
+
+
+CALLBACK_PATH = "/api/auth/discord/callback"
+
+
+@dataclass(frozen=True, slots=True)
+class AuthSettings:
+    public_origin: str
+    client_id: str
+    client_secret: str = field(repr=False)
+    database_path: Path
+    access_path: Path
+
+    def __post_init__(self) -> None:
+        url = urlsplit(self.public_origin)
+        if (
+            url.scheme not in ("http", "https")
+            or not url.hostname
+            or url.username
+            or url.password
+            or url.path
+            or url.query
+            or url.fragment
+            or self.public_origin != f"{url.scheme}://{url.netloc}"
+            or (
+                url.scheme == "http"
+                and url.hostname not in ("localhost", "127.0.0.1", "::1")
+            )
+        ):
+            raise ConfigurationError(
+                "PUBLIC_ORIGIN must be an HTTPS origin (HTTP is allowed on loopback only)."
+            )
+        if self.client_id and not discord_id(self.client_id):
+            raise ConfigurationError(
+                "DISCORD_CLIENT_ID must be a Discord application ID."
+            )
+
+    @property
+    def secure(self) -> bool:
+        return self.public_origin.startswith("https://")
+
+    @property
+    def redirect_uri(self) -> str:
+        return self.public_origin + CALLBACK_PATH
+
+    @classmethod
+    def from_env(cls, environ: Mapping[str, str] | None = None) -> "AuthSettings":
+        values = environment_values(environ)
+        origin = (
+            values.get("PUBLIC_ORIGIN", "http://localhost:3012").strip().rstrip("/")
+        )
+        return cls(
+            origin,
+            values.get("DISCORD_CLIENT_ID", "").strip(),
+            values.get("DISCORD_CLIENT_SECRET", "").strip(),
+            Path(values.get("DATABASE_PATH") or "data/player.sqlite3").resolve(),
+            Path(values.get("ACCESS_PATH") or "access.toml").resolve(),
+        )
 
 
 def ffmpeg_executable(override: str | None = None) -> Path:

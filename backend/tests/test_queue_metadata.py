@@ -9,15 +9,15 @@ from uuid import uuid4
 
 import pytest
 
-from nahormaar_backend import commands
-from nahormaar_backend.models import (
+from nahormaar_backend.application.playback import PlaybackController
+from nahormaar_backend.domain import commands
+from nahormaar_backend.domain.models import (
     Contributor,
     HistoryEntry,
     PlayerSnapshot,
     QueueEntry,
 )
-from nahormaar_backend.playback import PlaybackController
-from nahormaar_backend.storage import SQLiteStore
+from nahormaar_backend.persistence.player_store import SQLiteStore
 from test_playback import ControlledResolver, FakeVoice
 
 

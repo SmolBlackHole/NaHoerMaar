@@ -12,20 +12,20 @@ from pathlib import Path
 
 import pytest
 
-from nahormaar_backend.api_models import State
-from nahormaar_backend.audio import (
+from nahormaar_backend.api.schemas import State
+from nahormaar_backend.application.audio import (
     ResolvedTrack,
     TrackError,
     VoiceChannelInfo,
 )
-from nahormaar_backend.models import (
+from nahormaar_backend.application.playback import PlaybackController
+from nahormaar_backend.domain.models import (
     PlaybackState,
     PlayerSnapshot,
     QueueEntry,
     VoiceState,
 )
-from nahormaar_backend.playback import PlaybackController
-from nahormaar_backend.storage import SQLiteStore
+from nahormaar_backend.persistence.player_store import SQLiteStore
 
 
 class ControlledResolver:

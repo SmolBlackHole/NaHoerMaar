@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from nahormaar_backend.player import Player
-from nahormaar_backend.storage import SQLiteStore
+from nahormaar_backend.application.player import Player
+from nahormaar_backend.persistence.player_store import SQLiteStore
 
 
 @pytest.fixture

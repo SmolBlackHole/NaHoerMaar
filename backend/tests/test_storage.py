@@ -11,9 +11,9 @@ from uuid import UUID
 
 import pytest
 
-from nahormaar_backend.models import PlaybackState, PlayerSnapshot, QueueEntry
-from nahormaar_backend.player import Player
-from nahormaar_backend.storage import SQLiteStore, StorageError
+from nahormaar_backend.application.player import Player
+from nahormaar_backend.domain.models import PlaybackState, PlayerSnapshot, QueueEntry
+from nahormaar_backend.persistence.player_store import SQLiteStore, StorageError
 
 
 def test_metadata_and_order_survive_reopening(tmp_path: Path) -> None:
@@ -175,9 +175,9 @@ import os
 import sys
 from pathlib import Path
 from uuid import UUID
-from nahormaar_backend.models import QueueEntry
-from nahormaar_backend.player import Player
-from nahormaar_backend.storage import SQLiteStore
+from nahormaar_backend.domain.models import QueueEntry
+from nahormaar_backend.application.player import Player
+from nahormaar_backend.persistence.player_store import SQLiteStore
 
 store = SQLiteStore(Path(sys.argv[1]))
 player = Player(store)

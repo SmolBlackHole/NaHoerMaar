@@ -11,19 +11,19 @@ from uuid import UUID, uuid4
 
 import pytest
 from alembic import command
-from alembic.config import Config
 from alembic.autogenerate import compare_metadata
+from alembic.config import Config
 from alembic.migration import MigrationContext
 from sqlalchemy import MetaData, Table, update
 
-from nahormaar_backend.accounts import Accounts, AccountRow
-from nahormaar_backend.database import Base, database_engine
-from nahormaar_backend.preferences import Appearance
-
-from nahormaar_backend.commands import Outcome, Receipt
-from nahormaar_backend.models import Contributor, QueueEntry
-from nahormaar_backend.player import Player
-from nahormaar_backend.storage import SQLiteStore, StorageError
+from nahormaar_backend.application.player import Player
+from nahormaar_backend.domain.commands import Outcome, Receipt
+from nahormaar_backend.domain.models import Contributor, QueueEntry
+from nahormaar_backend.domain.preferences import Appearance
+from nahormaar_backend.persistence.accounts import Accounts
+from nahormaar_backend.persistence.database import Base, database_engine
+from nahormaar_backend.persistence.models import AccountRow
+from nahormaar_backend.persistence.player_store import SQLiteStore, StorageError
 
 
 @pytest.mark.parametrize("corrupt", [False, True])
@@ -312,10 +312,10 @@ def test_process_crash_preserves_reservation_or_atomic_outcome(
 import os, sys
 from pathlib import Path
 from uuid import UUID
-from nahormaar_backend.commands import Receipt, Outcome
-from nahormaar_backend.models import QueueEntry
-from nahormaar_backend.player import Player
-from nahormaar_backend.storage import SQLiteStore
+from nahormaar_backend.domain.commands import Receipt, Outcome
+from nahormaar_backend.domain.models import QueueEntry
+from nahormaar_backend.application.player import Player
+from nahormaar_backend.persistence.player_store import SQLiteStore
 store = SQLiteStore(Path(sys.argv[1]))
 player = Player(store)
 receipt = Receipt(UUID(int=1), 'add', Outcome(entry_id=UUID(int=2)))

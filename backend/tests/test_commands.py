@@ -11,12 +11,13 @@ from uuid import uuid4
 
 import pytest
 
-from nahormaar_backend import commands
-from nahormaar_backend.audio import ResolvedTrack, VoiceError
-from nahormaar_backend.commands import Outcome, Receipt
-from nahormaar_backend.models import PlaybackState, QueueEntry
-from nahormaar_backend.playback import PlaybackController, PlaybackStatus
-from nahormaar_backend.storage import SQLiteStore, StorageError
+from nahormaar_backend.application.audio import ResolvedTrack, VoiceError
+from nahormaar_backend.application.playback import PlaybackController
+from nahormaar_backend.application.status import PlaybackStatus
+from nahormaar_backend.domain import commands
+from nahormaar_backend.domain.commands import Outcome, Receipt
+from nahormaar_backend.domain.models import PlaybackState, QueueEntry
+from nahormaar_backend.persistence.player_store import SQLiteStore, StorageError
 from test_playback import ControlledResolver, FakeVoice
 
 

@@ -255,17 +255,17 @@ cached results visible with a clear indication that they could not be updated.
 
 ## Backend cleanup
 
-- [ ] Organize backend modules by responsibility: domain models and FSM,
+- [x] Organize backend modules by responsibility: domain models and FSM,
   application services/controllers, API views and schemas, events, media
   integrations, caching and persistence
-- [ ] Keep routes and response serialization separate from application logic.
+- [x] Keep routes and response serialization separate from application logic.
   HTTP requests and playback callbacks must use the same state-changing operations
-- [ ] Separate domain events from SSE delivery, preserving committed revisions,
+- [x] Separate committed snapshot publication from SSE delivery, preserving revisions,
   reconnect snapshots and access checks
-- [ ] Give search, playlist and metadata caches explicit ownership and consistent
+- [x] Give search, playlist and metadata caches explicit ownership and consistent
   rules for freshness, background refresh, concurrent lookups and size limits.
   Keep temporary stream URLs separate from reusable metadata
-- [ ] Group SQLAlchemy mappings, migrations and database access. Separate stored
+- [x] Group SQLAlchemy mappings, migrations and database access. Separate stored
   records from domain and API models, with explicit transaction boundaries for
   player state, history and accounts
 

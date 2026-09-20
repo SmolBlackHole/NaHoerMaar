@@ -15,14 +15,16 @@ import pytest
 import uvicorn
 from fastapi import FastAPI
 
-from nahormaar_backend.api import create_app
-from nahormaar_backend.accounts import Accounts, Account
-from nahormaar_backend.auth import AuthSettings, SESSION_COOKIE, csrf_token, digest
 from nahormaar_backend.__main__ import LocalServer
-from nahormaar_backend.api_models import Channel, MutationResult, State
-from nahormaar_backend.audio import ResolvedTrack
-from nahormaar_backend.models import PlaybackState, QueueEntry
-from nahormaar_backend.playback import PlaybackController
+from nahormaar_backend.api import create_app
+from nahormaar_backend.api.schemas import Channel, MutationResult, State
+from nahormaar_backend.application.audio import ResolvedTrack
+from nahormaar_backend.application.auth import SESSION_COOKIE, csrf_token, digest
+from nahormaar_backend.application.playback import PlaybackController
+from nahormaar_backend.config import AuthSettings
+from nahormaar_backend.domain.accounts import Account
+from nahormaar_backend.domain.models import PlaybackState, QueueEntry
+from nahormaar_backend.persistence.accounts import Accounts
 from test_commands import wait_for
 from test_playback import ControlledResolver, FakeVoice
 

@@ -12,12 +12,14 @@ from uuid import uuid4
 
 import pytest
 
-from nahormaar_backend import catalog as module
-from nahormaar_backend.audio import TrackError
-from nahormaar_backend.catalog import PreviewState, MediaCatalog
-from nahormaar_backend.search import CatalogBusy, SearchSource
-from nahormaar_backend.processes import ProcessResult, run_process
-from nahormaar_backend.youtube import playlist_id
+from nahormaar_backend.application import catalog as module
+from nahormaar_backend.application.audio import TrackError
+from nahormaar_backend.application.catalog import MediaCatalog, PreviewState
+from nahormaar_backend.cache import CatalogBusy
+from nahormaar_backend.domain.catalog import SearchSource
+from nahormaar_backend.integrations import discovery as extractor_module
+from nahormaar_backend.integrations.processes import ProcessResult, run_process
+from nahormaar_backend.integrations.youtube import playlist_id
 from test_commands import wait_for
 
 PLAYLIST = "https://music.youtube.com/playlist?list=PL12345678901234"
@@ -109,7 +111,7 @@ def test_search_limits_metadata_and_cache(monkeypatch: pytest.MonkeyPatch) -> No
             item(id="dQw4w9WgXcQ", availability="private"),
             item(id="aaaaaaaaaaa", is_live=True),
         ] + [item()] * 20
-        monkeypatch.setattr(module, "run_process", runner)
+        monkeypatch.setattr(extractor_module, "run_process", runner)
         catalog = MediaCatalog(Path("node"))
         try:
             page = await catalog.search("  Амура  ", source=SearchSource.VIDEOS)
@@ -139,7 +141,7 @@ def test_search_pages_keep_positions_and_stop_at_end(
     async def scenario() -> None:
         runner = Runner()
         runner.entries = [item(id=f"{index:011d}") for index in range(23)]
-        monkeypatch.setattr(module, "run_process", runner)
+        monkeypatch.setattr(extractor_module, "run_process", runner)
         catalog = MediaCatalog(Path("node"))
         try:
             second = await catalog.search("example", 10, SearchSource.VIDEOS)
@@ -171,7 +173,7 @@ def test_playlist_progress_limit_and_idempotent_start(
         runner = Runner()
         runner.entries = [item()] * 101
         runner.release = asyncio.Event()
-        monkeypatch.setattr(module, "run_process", runner)
+        monkeypatch.setattr(extractor_module, "run_process", runner)
         catalog = MediaCatalog(Path("node"))
         key = uuid4()
         try:
@@ -204,7 +206,7 @@ def test_cancel_and_shutdown_reap_discovery(monkeypatch: pytest.MonkeyPatch) -> 
     async def scenario() -> None:
         runner = Runner()
         runner.release = asyncio.Event()
-        monkeypatch.setattr(module, "run_process", runner)
+        monkeypatch.setattr(extractor_module, "run_process", runner)
         catalog = MediaCatalog(Path("node"))
         key = uuid4()
         catalog.start_preview(PLAYLIST, key, owner_id=key)
@@ -226,7 +228,7 @@ def test_partial_failure_keeps_loaded_tracks(monkeypatch: pytest.MonkeyPatch) ->
     async def scenario() -> None:
         runner = Runner()
         runner.code = 1
-        monkeypatch.setattr(module, "run_process", runner)
+        monkeypatch.setattr(extractor_module, "run_process", runner)
         catalog = MediaCatalog(Path("node"))
         key = uuid4()
         try:
@@ -249,7 +251,7 @@ def test_partial_failure_keeps_loaded_tracks(monkeypatch: pytest.MonkeyPatch) ->
 
 def test_preview_expires(monkeypatch: pytest.MonkeyPatch) -> None:
     async def scenario() -> None:
-        monkeypatch.setattr(module, "run_process", Runner())
+        monkeypatch.setattr(extractor_module, "run_process", Runner())
         catalog = MediaCatalog(Path("node"))
         key = uuid4()
         try:
@@ -271,7 +273,7 @@ def test_preview_is_owned_by_the_authenticated_account(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def scenario() -> None:
-        monkeypatch.setattr(module, "run_process", Runner())
+        monkeypatch.setattr(extractor_module, "run_process", Runner())
         catalog = MediaCatalog(Path("node"))
         key, owner, other = uuid4(), uuid4(), uuid4()
         try:
@@ -320,7 +322,7 @@ def test_discovery_concurrency_and_waiting_are_bounded(
     async def scenario() -> None:
         runner = Runner()
         runner.release = asyncio.Event()
-        monkeypatch.setattr(module, "run_process", runner)
+        monkeypatch.setattr(extractor_module, "run_process", runner)
         catalog = MediaCatalog(Path("node"))
         tasks = [asyncio.create_task(catalog.search(str(index))) for index in range(8)]
         try:

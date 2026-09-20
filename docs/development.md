@@ -173,12 +173,14 @@ minute.
 
 ## Database changes
 
-Update the SQLAlchemy models, then generate and review an Alembic migration:
+Update the [SQLAlchemy mappings](../backend/src/nahormaar_backend/persistence/models.py),
+then generate and review an Alembic migration:
 
 ```powershell
 python -m alembic revision --autogenerate -m "Describe the change"
 ```
 
+Migrations live in `backend/src/nahormaar_backend/persistence/migrations/versions/`.
 The backend applies pending migrations on startup. `alembic.ini` points to
 `data/player.sqlite3`; adjust `sqlalchemy.url` when developing against another
 database. Start the backend once before generating a migration for a database
