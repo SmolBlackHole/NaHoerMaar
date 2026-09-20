@@ -60,6 +60,19 @@ class PlayerRow(Base):
     )
     revision: Mapped[int] = mapped_column(default=0, server_default="0")
     queue_revision: Mapped[int] = mapped_column(default=0, server_default="0")
+    crossfade_seconds: Mapped[int] = mapped_column(default=0, server_default="0")
+
+
+class PlaybackCheckpointRow(Base):
+    __tablename__ = "playback_checkpoint"
+    __table_args__ = (CheckConstraint("id = 1"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    channel_id: Mapped[int]
+    entry_id: Mapped[UUID | None]
+    position_seconds: Mapped[float]
+    paused: Mapped[bool]
+    volume: Mapped[float]
 
 
 class RequestRow(Base):

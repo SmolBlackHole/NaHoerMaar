@@ -10,10 +10,12 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from ..domain.commands import Receipt, Revisions
+from ..domain.checkpoint import PlaybackCheckpoint
 from ..domain.fsm import PlaybackEvent, VoiceEvent, transition, voice_transition
 from ..domain.models import (
     HISTORY_LIMIT,
     HistoryEntry,
+    PlaybackState,
     PlayerSnapshot,
     QueueEntry,
     TrackMetadata,
@@ -29,7 +31,19 @@ class Player:
         self._snapshot: PlayerSnapshot = stored
         self._revisions = store.revisions()
         self._receipt: Receipt | None = None
-        self._commit(transition(stored, PlaybackEvent.RECOVER))
+        checkpoint = store.checkpoint()
+        if checkpoint is not None and stored.current is not None:
+            self._commit(replace(stored, state=PlaybackState.LOADING))
+        else:
+            self._commit(transition(stored, PlaybackEvent.RECOVER))
+
+    @property
+    def checkpoint(self) -> PlaybackCheckpoint | None:
+        return self._store.checkpoint()
+
+    def save_checkpoint(self, checkpoint: PlaybackCheckpoint | None) -> None:
+        if checkpoint != self._store.checkpoint():
+            self._store.save_checkpoint(checkpoint)
 
     @property
     def revisions(self) -> Revisions:
@@ -200,9 +214,13 @@ class Player:
         """Start the next entry, resume a paused entry, or retry a failed entry."""
         return self._apply(PlaybackEvent.PLAY)
 
-    def mark_playing(self, *, record_history: bool = True) -> PlayerSnapshot:
+    def mark_playing(
+        self, *, record_history: bool = True, paused: bool = False
+    ) -> PlayerSnapshot:
         """Confirm that the current loading entry has started."""
         snapshot = transition(self._snapshot, PlaybackEvent.READY)
+        if paused:
+            snapshot = transition(snapshot, PlaybackEvent.PAUSE)
         if record_history and snapshot.current is not None:
             item = HistoryEntry(snapshot.current, datetime.now(UTC))
             snapshot = replace(
@@ -213,6 +231,33 @@ class Player:
 
     def pause(self) -> PlayerSnapshot:
         return self._apply(PlaybackEvent.PAUSE)
+
+    def set_crossfade(self, seconds: int) -> PlayerSnapshot:
+        return self._commit(replace(self._snapshot, crossfade_seconds=seconds))
+
+    def crossfade(self, entry_id: UUID, metadata: TrackMetadata) -> PlayerSnapshot:
+        """Transfer the prepared entry and record its start in one transaction."""
+        if not self._snapshot.upcoming or self._snapshot.upcoming[0].id != entry_id:
+            raise ValueError("The prepared entry is no longer next.")
+        snapshot = transition(self._snapshot, PlaybackEvent.CROSSFADE)
+        current = replace(
+            self._snapshot.upcoming[0],
+            **{
+                key: value
+                for key, value in asdict(metadata).items()
+                if value is not None
+            },
+        )
+        return self._commit(
+            replace(
+                snapshot,
+                current=current,
+                recently_played=(
+                    HistoryEntry(current, datetime.now(UTC)),
+                    *snapshot.recently_played,
+                )[:HISTORY_LIMIT],
+            )
+        )
 
     def seek(self) -> PlayerSnapshot:
         return self._apply(PlaybackEvent.SEEK)

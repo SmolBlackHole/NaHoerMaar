@@ -48,7 +48,7 @@ def test_adopt_v5_preserves_accounts_sessions_history_and_queue(
     engine = database_engine(path)
     try:
         with engine.begin() as connection:
-            config = Config("alembic.ini")
+            config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
             config.attributes["connection"] = connection
             command.downgrade(config, "0005")
             Table("alembic_version", MetaData(), autoload_with=connection).drop(
@@ -76,7 +76,7 @@ def test_adopt_v5_preserves_accounts_sessions_history_and_queue(
             accounts.close()
         with engine.connect() as connection:
             context = MigrationContext.configure(connection)
-            assert context.get_current_revision() == "0008"
+            assert context.get_current_revision() == "0010"
             assert compare_metadata(context, Base.metadata) == []
     finally:
         engine.dispose()
@@ -124,7 +124,7 @@ def test_migrate_v1_recovers_current_preserving_ids_order_and_revisions(
     with closing(sqlite3.connect(path)) as db:
         assert (
             db.execute("SELECT version_num FROM alembic_version").fetchone()[0]
-            == "0008"
+            == "0010"
         )
 
 
@@ -256,7 +256,7 @@ def test_migrate_v3_preserves_queue_and_history_or_rolls_back(
         with closing(sqlite3.connect(path)) as db:
             assert (
                 db.execute("SELECT version_num FROM alembic_version").fetchone()[0]
-                == "0008"
+                == "0010"
             )
 
 
@@ -279,10 +279,12 @@ def test_v4_auth_migration_preserves_legacy_profiles_without_claiming_them(
             DROP TABLE accounts;
             DROP TABLE alembic_version;
             DROP TABLE queue_undo;
+            DROP TABLE playback_checkpoint;
             ALTER TABLE requests DROP COLUMN details;
             ALTER TABLE requests DROP COLUMN actor_id;
             ALTER TABLE queue_entries DROP COLUMN origin;
             ALTER TABLE playback_history DROP COLUMN origin;
+            ALTER TABLE player_state DROP COLUMN crossfade_seconds;
             PRAGMA user_version = 4;
         """)
         if corrupt:
@@ -299,7 +301,7 @@ def test_v4_auth_migration_preserves_legacy_profiles_without_claiming_them(
     with closing(sqlite3.connect(path)) as db:
         assert (
             db.execute("SELECT version_num FROM alembic_version").fetchone()[0]
-            == "0008"
+            == "0010"
         )
         assert db.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] == 0
         assert db.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 0

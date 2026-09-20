@@ -81,6 +81,7 @@ bodies use JSON. The supported operations are:
 | `POST /api/player/skip`           | `{"expected_playback_id": "CURRENT_PLAYBACK_UUID"}`                               |
 | `POST /api/player/stop`           | `{"expected_playback_id": "CURRENT_PLAYBACK_UUID"}`                               |
 | `PUT /api/player/volume`          | `{"volume": 0.5}`; range 0 to 1                                                   |
+| `PUT /api/player/crossfade`       | `{"seconds": 5}`; allowed integers: 0 (off), 3, 4, 5, 6, 7                       |
 | `PUT /api/player/seek`            | `{"position_seconds": 75, "expected_playback_id": "CURRENT_PLAYBACK_UUID"}`      |
 | `PUT /api/voice/channel`          | `{"channel_id": "CHANNEL_ID"}`                                                    |
 | `DELETE /api/voice/channel`       | No body                                                                           |
@@ -121,6 +122,14 @@ and `entries` (the affected tracks). These are stored with the operation result,
 so retries retain the original names and metadata even after profile edits or
 removal from the queue. Older receipts can have no actor or entries. New tracks
 may still have pending metadata; subsequent state updates provide their titles.
+
+`crossfade_seconds` in state snapshots is a shared, persisted setting, initially
+zero. Changing it requires the same authentication, CSRF token and request ID as
+other controls. It changes the next natural transition, never a fade already in
+progress. At fade start the incoming entry becomes current with a new playback
+ID and progress anchor. Seek targets that entry and ends the outgoing tail;
+pause and resume affect both voices. Skip stops both and advances once. Stop and
+disconnect return the incoming entry to the queue for a manual restart.
 
 Seeking moves the shared Discord audio to an absolute position in seconds.
 The position must be at least zero and less than the current track's duration.

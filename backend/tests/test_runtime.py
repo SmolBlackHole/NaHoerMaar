@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import ClassVar, Self, cast
 
@@ -34,6 +35,7 @@ class FakeController:
         self.database: Path | None = None
         self.catalog: MediaCatalog | None = None
         self.radio_catalog: RadioCatalog | None = None
+        self.restore_calls = 0
         type(self).instances.append(self)
 
     @classmethod
@@ -69,6 +71,10 @@ class FakeController:
         if error is not None:
             raise error
 
+    async def restore(self) -> None:
+        assert FakeVoice.instances[0].started.is_set()
+        self.restore_calls += 1
+
 
 class FakeVoice:
     instances: ClassVar[list[FakeVoice]] = []
@@ -84,7 +90,16 @@ class FakeVoice:
         self.token: str | None = None
         self.client_task: asyncio.Task[None] | None = None
         self.client_loop: asyncio.AbstractEventLoop | None = None
+        self.command_access_path: Path | None = None
+        self.command_connect: Callable[[int], Awaitable[object]] | None = None
         type(self).instances.append(self)
+
+    def install_commands(
+        self, access_path: Path, connect: Callable[[int], Awaitable[object]]
+    ) -> None:
+        assert self.start_calls == 0
+        self.command_access_path = access_path
+        self.command_connect = connect
 
     async def start(self, token: str) -> None:
         self.start_calls += 1
@@ -158,9 +173,34 @@ def test_runtime_uses_one_discord_client_task_on_the_current_loop(
             assert voice.client_task is not None
             assert voice.client_task.get_name() == "discord-client"
             assert cast(object, yielded) is controller
+            assert controller.restore_calls == 1
         assert controller.worker_closed
         assert voice.close_calls == 1
         assert voice.client_task is not None and voice.client_task.done()
+
+    asyncio.run(scenario())
+
+
+def test_runtime_wires_commands_to_the_shared_player_and_access_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _install_fakes(monkeypatch)
+    connected: list[int] = []
+
+    async def connect(self: FakeController, channel_id: int) -> None:
+        assert self is FakeController.instances[0]
+        connected.append(channel_id)
+
+    monkeypatch.setattr(FakeController, "connect", connect, raising=False)
+
+    async def scenario() -> None:
+        access = tmp_path / "custom-access.toml"
+        async with open_runtime(_settings(tmp_path), access_path=access):
+            voice = FakeVoice.instances[0]
+            assert voice.command_access_path == access
+            assert voice.command_connect is not None
+            await voice.command_connect(7)
+        assert connected == [7]
 
     asyncio.run(scenario())
 

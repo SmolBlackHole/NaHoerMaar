@@ -71,6 +71,18 @@ def player_router(services: ApiServices) -> APIRouter:
             user, request_id, commands.Volume(body.volume), response, active
         )
 
+    @router.put("/api/player/crossfade")
+    async def crossfade(
+        user: CurrentUser,
+        body: dto.CrossfadeInput,
+        response: Response,
+        request_id: RequestID,
+        active: Annotated[PlaybackController, Depends(services.player)],
+    ) -> dto.MutationResult:
+        return await mutate(
+            user, request_id, commands.Crossfade(body.seconds), response, active
+        )
+
     @router.put("/api/player/seek")
     async def seek(
         user: CurrentUser,

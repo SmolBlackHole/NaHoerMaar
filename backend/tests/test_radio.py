@@ -124,9 +124,10 @@ def test_radio_priority_refill_attribution_and_restart(tmp_path: Path) -> None:
         restored, _, _, _ = await setup(path)
         try:
             assert restored.status.radio.state is RadioState.OFF
-            assert restored.snapshot.state is PlaybackState.IDLE
+            assert restored.snapshot.state is PlaybackState.LOADING
+            assert restored.snapshot.current == manual
             assert restored.snapshot.recently_played[0].entry.origin == "radio"
-            assert len(restored.snapshot.upcoming) == 4
+            assert len(restored.snapshot.upcoming) == 3
         finally:
             await restored.close()
 

@@ -48,7 +48,7 @@ def create_app(
         runtime = (
             runtime_factory()
             if runtime_factory is not None
-            else open_runtime(Settings.from_env())
+            else open_runtime(Settings.from_env(), access_path=settings.access_path)
         )
         async with runtime as active:
             services.controller = active

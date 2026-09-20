@@ -18,7 +18,7 @@ import pytest
 from discord.oggparse import OggStream
 
 from nahormaar_backend.config import ffmpeg_executable
-from nahormaar_backend.integrations.discord_voice import _FFmpegSource, _VolumeSource
+from nahormaar_backend.integrations.audio_sources import FFmpegSource, VolumeSource
 
 
 def _opus_fixture(tmp_path: Path, frame_duration: int = 20) -> Path:
@@ -68,12 +68,12 @@ def _packets(path: Path) -> list[bytes]:
 def test_unity_volume_preserves_every_opus_packet(tmp_path: Path) -> None:
     opus = _opus_fixture(tmp_path)
     expected = _packets(opus)
-    source = _VolumeSource(_FFmpegSource(ffmpeg_executable(), str(opus), (), opus=True))
+    source = VolumeSource(FFmpegSource(ffmpeg_executable(), str(opus), (), opus=True))
     try:
         actual = list(iter(source.read, b""))
         assert source.is_opus()
         assert actual == expected
-        assert source._encoder is None
+        assert source._encoder._encoder is None
     finally:
         source.cleanup()
     assert source.original.closed
@@ -105,8 +105,8 @@ def test_seek_keeps_original_opus_packets_at_the_requested_position(
             capture_output=True,
             timeout=10,
         )
-    source = _VolumeSource(
-        _FFmpegSource(
+    source = VolumeSource(
+        FFmpegSource(
             ffmpeg_executable(), str(media), (), opus=True, position_seconds=position
         )
     )
@@ -115,7 +115,7 @@ def test_seek_keeps_original_opus_packets_at_the_requested_position(
         start = expected.index(actual[0])
         assert start * 0.02 == pytest.approx(position, abs=0.04)
         assert actual == expected[start:]
-        assert source._encoder is None
+        assert source._encoder._encoder is None
     finally:
         source.cleanup()
 
@@ -125,7 +125,7 @@ def test_live_volume_changes_keep_position_and_restore_original_packets(
 ) -> None:
     opus = _opus_fixture(tmp_path)
     expected = _packets(opus)
-    source = _VolumeSource(_FFmpegSource(ffmpeg_executable(), str(opus), (), opus=True))
+    source = VolumeSource(FFmpegSource(ffmpeg_executable(), str(opus), (), opus=True))
     process = source.original._process
     reference_decoder = discord.opus.Decoder()  # type: ignore[no-untyped-call]
     listener_decoder = discord.opus.Decoder()  # type: ignore[no-untyped-call]
@@ -168,7 +168,7 @@ def test_other_opus_packet_durations_keep_all_samples_in_twenty_ms_frames(
     expected = _packets(opus)
     decoder = discord.opus.Decoder()  # type: ignore[no-untyped-call]
     total_input_bytes = sum(len(decoder.decode(p, fec=False)) for p in expected)
-    source = _VolumeSource(_FFmpegSource(ffmpeg_executable(), str(opus), (), opus=True))
+    source = VolumeSource(FFmpegSource(ffmpeg_executable(), str(opus), (), opus=True))
     output_decoder = discord.opus.Decoder()  # type: ignore[no-untyped-call]
     try:
         output = [output_decoder.decode(p, fec=False) for p in iter(source.read, b"")]
@@ -181,8 +181,8 @@ def test_other_opus_packet_durations_keep_all_samples_in_twenty_ms_frames(
 
 def test_pcm_fallback_preserves_stereo_and_frame_timing(tmp_path: Path) -> None:
     _opus_fixture(tmp_path)
-    source = _VolumeSource(
-        _FFmpegSource(ffmpeg_executable(), str(tmp_path / "stereo.wav"), ())
+    source = VolumeSource(
+        FFmpegSource(ffmpeg_executable(), str(tmp_path / "stereo.wav"), ())
     )
     decoder = discord.opus.Decoder()  # type: ignore[no-untyped-call]
     try:

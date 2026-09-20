@@ -51,6 +51,7 @@ const state = (changes: Partial<PlayerState> = {}): PlayerState => ({
 	channel_id: "123456789012345678",
 	playback_id: null,
 	volume: 1,
+	crossfade_seconds: 0,
 	position_seconds: 0,
 	position_updated_at: null,
 	last_issue: null,
@@ -256,6 +257,25 @@ describe("live player", () => {
 });
 
 describe("player presentation", () => {
+	it("accounts for overlap in queue estimates, including short tracks", () => {
+		const playing = state({
+			state: "playing",
+			current: { ...track, duration_seconds: 20 },
+			crossfade_seconds: 5,
+			position_seconds: 2,
+			position_updated_at: "2026-09-20T12:00:00Z",
+			upcoming: [
+				{ ...track, duration_seconds: 4 },
+				{ ...track, duration_seconds: 20 },
+				{ ...track, duration_seconds: null },
+				track,
+			],
+		});
+		expect(queueWaits(playing, Date.parse("2026-09-20T12:00:00Z"))).toEqual([16, 18, 38, null]);
+		expect(
+			queueWaits({ ...playing, crossfade_seconds: 0 }, Date.parse("2026-09-20T12:00:00Z")),
+		).toEqual([18, 22, 42, null]);
+	});
 	it("estimates starts in queue order and stops after an unknown duration", () => {
 		const anchor = Date.parse("2026-09-19T12:00:00Z");
 		const playing = state({

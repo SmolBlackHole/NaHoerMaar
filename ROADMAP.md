@@ -11,13 +11,13 @@ presence check remain open.
 ## Current scope
 
 - Server selection from the bot's joined servers, one shared queue and one active voice channel
-- YouTube links, search and playlists, controlled entirely through a Nuxt
-  dashboard. No Discord chat or slash commands
-- The queue survives restarts. Playback resumes only after someone starts it
+- YouTube links, search and playlists, controlled through a Nuxt dashboard
+- `/pspsps` summons the bot to a whitelisted user's current Discord voice channel
+- Restarts restore the last channel and track position, including volume and pause state
 - Several people can add, remove and reorder tracks at the same time
 - Discord login and a configured whitelist control dashboard access
 
-## Proposed design
+## Architecture
 
 The Python backend owns the queue, playback and Discord connection. FastAPI and
 the Discord client run in one backend process. SQLAlchemy stores queue entries
@@ -28,9 +28,9 @@ The dashboard sends actions over HTTP and receives state updates through
 Each update carries a revision. On connection or reconnection, the backend sends
 a complete snapshot so every browser starts from the same state.
 
-Until the login phase is complete, the application binds to localhost. Concurrent
-use can be tested with several browser tabs. Shared deployment follows the
-whitelist checks in phase 6.
+Local development binds to localhost. Concurrent use can be tested with several
+browser tabs. Discord login and whitelist checks are implemented; a documented
+shared deployment remains separate work.
 
 ## 1. Queue and persistent player state
 
@@ -43,9 +43,12 @@ whitelist checks in phase 6.
 - [x] Define playback states: idle, loading, playing, paused and error, with
   explicit FSM events and allowed transitions. Track the Discord connection
   separately
-- [x] Persist queue changes atomically before acknowledging them. After a
-  restart, put the interrupted track first and wait for a manual start from
-  its beginning
+- [x] Persist queue changes atomically before acknowledging them
+- [x] Restore the last voice channel and track position after a backend restart,
+  preserving pause state and volume without counting another play. Save the
+  audio position every five seconds and on clean shutdown. Explicitly leaving
+  clears automatic rejoin; older databases without a checkpoint keep the
+  interrupted track first for a manual start
 
 | Control       | Behavior                                                                               |
 | ------------- | -------------------------------------------------------------------------------------- |
@@ -262,10 +265,23 @@ leaves the current track and upcoming queue intact.
 
 ## Next audio step
 
-- [ ] Add optional crossfade (3 to 7 seconds, off by default), with preloading
+- [x] Add optional crossfade (3 to 7 seconds, off by default), with preloading
   and audio mixing between tracks
-- [ ] Keep pause, seek, skip and queue edits consistent during transitions,
+- [x] Keep pause, seek, skip and queue edits consistent during transitions,
   without counting either track twice in playback history
+- [x] Verify the full audio pipeline offline with generated PCM and Opus sources,
+  the real Discord audio thread and recorded output. Measure three- and five-second
+  overlaps and exercise pause, volume and restart recovery without a live bot.
+  Natural fades are measured after Opus decoding; pause/resume continuity is
+  measured at the mixer output, separately from the decoder's post-pause gain ramp
+- [ ] Complete a shared live listening check of natural transitions and controls
+  before accepting the audio change for everyday use
+
+The setting is shared and persisted, with five seconds when first enabled in the
+audio settings. Only natural transitions overlap. Preparation is bounded to the
+next entry; unavailable preparation falls back to the ordinary track change.
+At fade start the incoming track becomes current. Compatible Opus packets at
+100% volume remain unchanged outside the overlap; mixing re-encodes audio.
 
 ## Unattended playback
 
@@ -299,6 +315,81 @@ responsibilities of the reorganized modules.
   adapter construction out of application services
 - [ ] When storage needs an alternative implementation, define a persistence
   contract including its errors, so application services can use either backend
+
+## Playback controller cleanup
+
+Take this on after the current audio behavior and live listening checks pass.
+`application/playback.py` has accumulated command handling, radio replenishment,
+crossfade coordination, position tracking and restart recovery in one controller.
+
+- [ ] Make the existing FSM the single authority for playback and voice-state
+  transitions. Audit controller branches and direct state replacements, including
+  checkpoint recovery in `Player`, and model missing lifecycle events explicitly
+- [ ] Keep the FSM deterministic and free of I/O. Keep audio processes, Discord,
+  storage and task cancellation in the application and integration layers
+- [ ] Separate command/undo handling, radio replenishment and checkpoint/position
+  ownership where this removes current coupling. Keep the playback controller
+  focused on coordinating transitions and their side effects
+- [ ] Audit runtime flags for duplicated domain state. Preserve attempt IDs and
+  cancellation ownership that prevent stale callbacks from affecting a new track
+- [ ] Preserve one serialized mutation path and commit before publishing state.
+  Test event sequences for natural completion, crossfade, pause/resume, seek,
+  retry, skip, disconnect and restart, including late callbacks
+
+Acceptance: playback-state changes go through explicit FSM events; API behavior,
+queue order, history counts and restart recovery stay unchanged. The refactor
+must preserve the verified audio behavior and avoid introducing a generic
+state-machine or service framework.
+
+## Frontend cleanup
+
+- [ ] Organize frontend code by responsibility, following the backend cleanup:
+  API access, live state, stores, view composables and presentation components
+- [ ] Introduce small, typed API repositories for player/queue, discovery and
+  accounts. Keep endpoint paths, payloads and response handling out of components;
+  share the existing authenticated request layer instead of adding a generic
+  repository framework
+- [ ] Separate HTTP mutations and SSE connection handling from reactive player
+  state and UI feedback. Give connection startup, reconnection and disposal one
+  owner, preserving revision ordering and request IDs across retries
+- [ ] Make the Nuxt proxy easier to extend and inspect, with explicit ownership
+  of allowed routes, query parameters, headers, cookies and streaming responses.
+  Preserve origin checks, authentication, CSRF protection and disconnect cleanup
+- [ ] Consolidate repeated loading, error and cancellation handling across search,
+  playlists, radio and profile settings. Keep shared layout effects initialized
+  once and component styles close to their Vue components
+- [ ] Review shared API types, domain values and view state for duplication.
+  Reuse components and helpers where behavior is actually shared, keeping feature
+  differences explicit
+
+Acceptance: user-visible behavior and API contracts stay unchanged. Navigation,
+sidebar toggles and Player/Queue transitions do not reload playback or create
+duplicate event streams. Existing tests still cover concurrent queue changes,
+undo, stale responses, session expiry and proxy forwarding. Verify desktop and
+mobile layouts without interrupting an active Discord session.
+
+## Documentation refresh
+
+- [x] Update the README around NaHörMaar as a shared music player for Discord
+  friend groups, with current capabilities, limitations and links to detailed docs
+- [ ] Review the docs against the implementation, removing obsolete setup steps,
+  old behavior descriptions and duplicated explanations. Distinguish implemented
+  behavior, checks still pending and planned features
+- [ ] Separate listener instructions, owner configuration and developer guidance.
+  Cover joining a channel, shared controls, queue ownership, radio and recovery;
+  explain that browser video and Discord audio have different roles
+- [ ] Keep setup and troubleshooting in the development guide, module ownership
+  and lifecycle decisions in architecture, and request/response contracts in the
+  API reference. Link between them rather than repeating the same details
+- [ ] Document configuration, migrations, backup/restore and restart behavior
+  consistently. Mark deployment instructions as pending until verified, and
+  distinguish isolated tests from checks that affect the running bot
+- [ ] Reconcile the roadmap's status and acceptance notes with the current code
+  and completed checks; keep product descriptions consistent across project metadata
+
+Acceptance: a new reader understands what the app does, what is available today
+and how to set it up. Instructions and examples match the current version,
+documentation links pass validation, and each topic has one authoritative home.
 
 ## Track likes and dislikes
 
@@ -353,7 +444,7 @@ listening time have distinct meanings, and each recap states its covered period.
 ## Deployment and recovery
 
 - [ ] Provide a documented deployment path with HTTPS, persistent data and
-  automatic process restart after a crash, preserving manual playback resumption
+  automatic process restart after a crash, using the saved playback checkpoint
 - [ ] Schedule database backups and define retention and a restore procedure
 - [ ] Test restoration into a fresh instance, including queue order, account
   profiles and available playback statistics, with credentials configured separately

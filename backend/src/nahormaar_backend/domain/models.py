@@ -11,6 +11,8 @@ from math import isfinite
 from re import fullmatch
 from uuid import UUID, uuid4
 
+from .crossfade import validate_crossfade
+
 
 class PlaybackState(StrEnum):
     IDLE = "idle"
@@ -99,8 +101,10 @@ class PlayerSnapshot:
     upcoming: tuple[QueueEntry, ...] = ()
     voice_state: VoiceState = VoiceState.DISCONNECTED
     recently_played: tuple[HistoryEntry, ...] = ()
+    crossfade_seconds: int = 0
 
     def __post_init__(self) -> None:
+        validate_crossfade(self.crossfade_seconds)
         if (self.state is PlaybackState.IDLE) != (self.current is None):
             raise ValueError("Only an idle player can have no current entry.")
         entry_ids = [entry.id for entry in self.upcoming]

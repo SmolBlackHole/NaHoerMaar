@@ -56,6 +56,13 @@ Ownership follows your account, even if you change its name or use another devic
 Click or drag the player timeline to seek for everyone in the Discord channel.
 Arrow keys adjust the focused slider. Paused tracks stay paused after seeking.
 
+Open Audio settings from the speaker button for volume and crossfade. Crossfade
+starts disabled; enabling it selects five seconds, adjustable from three to seven.
+It applies to everyone in the channel and survives backend restarts. Changes
+affect the next natural transition. Short tracks shorten the overlap; unknown
+duration or unavailable preparation uses the ordinary track change. The title
+and progress switch to the incoming song when its fade begins.
+
 Cover and Video fill the player area behind the track details. Video starts muted;
 the settings button reveals
 YouTube's controls and quality choices. They only affect your browser. Sync returns
@@ -96,6 +103,19 @@ whole queue. Changes take effect without a restart; removing someone closes
 their live updates within five seconds. A missing or invalid access file blocks
 access. Both `.env` and `access.toml` stay out of Git.
 
+Use `/pspsps` in Discord to bring the bot to your current voice channel. The
+command checks this same whitelist on every call; a dashboard account is not
+required. Its replies are visible only to you. Join a regular voice channel first;
+the bot needs View Channel, Connect and Speak there. Calling it in the bot's
+current channel leaves playback alone. Moving it to another channel returns the
+current track to the queue and waits for a manual start, just like the dashboard.
+
+The API runtime registers `/pspsps` globally during Discord login, so it is
+available on the bot's servers without configuring guild IDs. The bot invitation
+must include the `applications.commands` scope. Command registration failures
+are logged without preventing music playback. The standalone playback test script
+does not register commands.
+
 Sessions last seven days and survive backend restarts. Names and avatars belong
 to the account and work across devices. An old browser profile can suggest a
 name and avatar at first sign-in, but its past queue entries are not reassigned.
@@ -123,8 +143,39 @@ it. The dev command reads the root `.env`. A deployed Nuxt server needs the same
 value in its environment, with HTTPS for secure cookies. Deployment remains a
 separate step.
 
-Ctrl+C closes the HTTP event streams, stops audio and disconnects the bot. The
-queue survives and waits for a manual start after restarting the backend.
+Ctrl+C closes the HTTP event streams, saves the audio position, stops audio and
+disconnects the bot. On the next startup it rejoins the last channel and resolves
+a fresh stream for the same track at the saved position. Volume is restored;
+paused tracks stay paused. The queue and play counts remain unchanged. An idle
+connected bot rejoins without starting the queue. An explicit Leave clears this
+intent, so the next startup stays disconnected.
+
+Position checkpoints are also saved every five seconds. After a crash playback
+can rewind by roughly that interval. A restart during crossfade resumes the
+incoming track without replaying the outgoing tail. Radio replenishment remains
+off after restarting; entries it already queued remain available. If the saved
+channel is gone or inaccessible, the dashboard reports the issue and keeps the
+interrupted track at the front of the queue.
+
+The first upgrade from a version without checkpoints cannot recover its previous
+channel or position. It retains the queue for a manual join and start; subsequent
+restarts use the new checkpoint behavior. Ask before restarting a bot in active use.
+
+### Playback diagnostics
+
+The backend console includes timestamps and the owning process ID. Application
+events identify playback attempts, queue entries, commands and their account IDs.
+`playback.completed` records the audio position and expected duration;
+`playback.failed` distinguishes retry from skip. `crossfade.*` events report
+preparation, activation, fallback and completion. `audio.underrun` and
+`audio.recovered` mark buffer stalls, not every audio frame.
+
+Each FFmpeg child logs its process ID, exit code and whether cleanup killed it.
+Its stderr is drained into a bounded list of diagnostic categories, such as
+`http_403`, `timeout` or `invalid_media`. Raw output, media URLs, headers, tokens
+and exception messages are excluded. Unknown output is labeled `ffmpeg_message`.
+Capture the backend console when investigating a cut; the playback history alone
+records starts and cannot explain why a track ended.
 
 ## Try Discord playback without the API
 
@@ -209,6 +260,39 @@ This runs:
 - Repository text and documentation link checks.
 - Ruff linting and formatting, strict mypy and Pyright, and pytest for Python.
 - Frontend tests, Nuxt type checking and a production build.
+
+Backend tests use a separate working directory and database per test, synthetic
+Discord credentials and simulated voice connections. Real Discord login, external
+socket connections and connections to the local dev-server ports are blocked.
+HTTP integration tests use an in-process app or a temporary loopback server.
+Audio tests encode generated fixtures locally and never play them in Discord.
+This isolates application state, not the host's CPU or process environment. Two
+live interruptions coincided with audio checks and remain unexplained. Run these
+checks while the bot is on a test server until the new diagnostics establish the
+cause; do not treat the fixtures as a guarantee of no effect on shared playback.
+
+For an offline check of the complete audio pipeline:
+
+```powershell
+.venv\Scripts\python.exe -m pytest backend/tests/test_audio_pipeline.py --basetemp=tmp/audio-check -p no:cacheprovider
+```
+
+This uses the real playback controller, SQLite persistence, FFmpeg, Opus and
+discord.py audio thread. Only media lookup and Discord transport are replaced:
+generated tones play into a local recording, with no bot login or calls to the
+running API. It checks three- and five-second overlaps, pause and volume during
+a fade, cleanup, and restoring a playing or paused track after a test-instance
+restart. `crossfade.wav` and `measurement.json` in each crossfade test directory
+contain the recording and signal measurements. Reusing this `--basetemp` replaces
+the previous test output.
+
+The uninterrupted-transition checks require both tones to overlap without a
+silent frame or an abrupt gain change in the decoded Opus output. The pause check
+measures the mixer PCM, including the first resumed frame, to separate it from
+the Opus decoder's gain ramp after Discord's pause-silence packets. The output
+recording still contains those packets. These checks do not
+prove network reliability, YouTube availability or what actual Discord clients
+hear. A shared listening check still needs a separately approved live session.
 
 Use `npm run check` to check only the frontend. Shell wrappers are available as
 `scripts/check.sh` and `scripts/check.ps1`.

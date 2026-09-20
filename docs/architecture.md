@@ -47,6 +47,10 @@ event raises `InvalidTransitionError` without changing state. `finished` also
 applies while paused because a pause can race with the final audio frame.
 The `seek` event preserves `playing` or `paused` and leaves the queue unchanged;
 it is invalid in other states.
+The `crossfade` event is valid only while playing with an upcoming entry. It
+advances directly to `playing`; the incoming track and its history record commit
+together before activation. If EOF wins during that commit, the same incoming
+entry starts conventionally, without recording another play.
 
 SQLAlchemy defines the tables and handles database access; Alembic applies schema
 migrations at startup. Existing databases are adopted using their legacy version
@@ -62,11 +66,26 @@ IDs. Recording a start and entering `playing` share one transaction. Skips keep
 the history entry; removing an unplayed track creates none. Resuming or retrying
 a stream automatically, or seeking within it, does not count twice.
 
-Creating a Player runs the FSM's `recover` event: an interrupted track returns
-to the front of the queue, playback becomes `idle`, and the separate voice
-state becomes `disconnected`. Recovery is saved before the Player is usable;
-another restart does not duplicate the entry. Unknown schemas and invalid
-stored states raise `StorageError` without replacing the database.
+The singleton `playback_checkpoint` stores the connected channel, current entry
+ID, audio position, pause state and volume. Player transactions keep its entry ID
+aligned with the queue, resetting position when the current entry changes and
+clearing it on an error. The controller refreshes the position every five seconds
+and freezes the audio clock before saving on clean shutdown. These writes do not
+increment public revisions or emit SSE updates.
+
+Creating a Player with a checkpoint retains the current entry in `loading`.
+Once the Discord gateway is ready, the controller rejoins the saved channel and
+resolves a fresh stream at that offset. Paused playback starts silently and stays
+paused. Existing history identifies a resumed play, so it is not counted again.
+A shutdown during startup preserves a checkpoint that has not been restored yet.
+During a crossfade the position belongs to the incoming track; its outgoing tail
+is not restored. Radio replenishment does not restart automatically.
+
+Without a checkpoint, the FSM's `recover` event returns an interrupted track to
+the front of the queue, idle and disconnected. This also handles databases from
+before checkpoint support. A failed channel restoration reports a playback issue
+and preserves the queue for manual connection. Unknown schemas and invalid stored
+states raise `StorageError` without replacing the database.
 
 ## Playback and voice
 
@@ -124,6 +143,22 @@ decoding, scaling and Opus encoding with the music profile and a 512-kbit/s targ
 Other codecs, packet durations or container gain also require conversion. Output
 uses 48-kHz stereo with 20-ms frames.
 
+The audio adapter separates FFmpeg/frame decoding (`integrations/audio_sources.py`)
+from bounded buffering and mixing (`integrations/audio_mixer.py`). Each of at most
+two sources has a decoder thread and an eight-second buffer. The Discord audio
+thread never resolves or opens the next source. Preloading has a 20-second outer
+deadline; initial buffering has a 15-second deadline. Failures leave the current
+track alone and fall back to ordinary advancement.
+
+`application/crossfade.py` owns preparation keyed by playback attempt, next-entry
+ID and setting. A different next entry, seek, stop or disconnect cancels preparation
+and reaps its source. Only consumed 20-ms audio frames advance the fade clock.
+Complementary cosine gains sum to one, without normalization or limiting. The
+overlap is at most the configured duration and half of either track's duration.
+Mixing encodes frames with the existing music profile; compatible packets outside
+the overlap still pass through unchanged at unity volume. Tail cleanup runs off
+the audio thread and finishes before preparing a third track.
+
 Volume changes take effect within the running stream. The decoder follows the
 original packets even during passthrough, so lowering the volume needs no new
 extraction, connection or playback attempt. Returning to 100% restores the original
@@ -134,8 +169,9 @@ It creates a new playback attempt, so callbacks and controls for the old stream
 cannot affect the new one. Volume and pause state stay unchanged. Opus packets
 before the target are discarded without re-encoding the remaining stream.
 
-Transient extraction or stream failures get one fresh resolution and restart
-from the beginning. A failed track is then skipped, with its entry ID and error
+Transient extraction or stream failures get one fresh resolution at the attempt's
+starting offset (zero for a new track, the saved position for a restored track).
+A failed track is then skipped, with its entry ID and error
 available through `PlaybackStatus.last_issue`. A database failure stops audio and
 blocks further controls until restart. The last committed snapshot remains intact;
 `last_issue.fatal` reports that playback has halted. Other operational failures
@@ -144,8 +180,9 @@ ends the owning runtime and triggers cleanup.
 
 Voice has its own FSM: `disconnected` -> `connecting` -> `connected`. A failed join,
 disconnect or channel change returns an interrupted track to the front of the
-queue. Reconnecting requires a manual playback start. Channel selection, volume
-and attempt IDs are runtime values.
+queue. Reconnecting after an explicit leave or a lost voice connection requires
+a manual playback start; these actions clear the restart checkpoint. Process
+shutdown instead retains it. Attempt IDs are always new runtime values.
 
 Stop, disconnect and shutdown cancel extraction and reap the owned child processes.
 FFmpeg cleanup completes before another audio source starts. The controller owns

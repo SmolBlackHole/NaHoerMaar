@@ -67,6 +67,37 @@ class FakeVoice:
         self.resume_count = 0
         self.volumes: list[float] = []
         self.disconnect_count = 0
+        self.transitioning = False
+        self.prepared: ResolvedTrack | None = None
+        self.fade_due: Callable[[], None] = lambda: None
+        self.fade_finished: Callable[[], None] = lambda: None
+        self.fade_seconds = 0.0
+        self.position_seconds: float | None = None
+
+    async def prepare_next(
+        self, track: ResolvedTrack, seconds: float, on_due: Callable[[], None]
+    ) -> bool:
+        self.prepared = track
+        self.fade_seconds = seconds
+        self.fade_due = on_due
+        return True
+
+    async def discard_next(self) -> None:
+        self.prepared = None
+
+    def start_transition(
+        self,
+        track: ResolvedTrack,
+        after: Callable[[Exception | None], None],
+        on_faded: Callable[[], None],
+    ) -> bool:
+        if self.prepared is None:
+            return False
+        self.prepared = None
+        self.transitioning = True
+        self.fade_finished = on_faded
+        self.play(track, after)
+        return True
 
     @property
     def connected(self) -> bool:
@@ -97,13 +128,20 @@ class FakeVoice:
         after: Callable[[Exception | None], None],
         *,
         position_seconds: float = 0,
+        paused: bool = False,
     ) -> None:
         self.played.append(track)
         self.positions.append(position_seconds)
+        self.position_seconds = position_seconds
         self.callbacks.append(after)
+        if paused:
+            self.pause()
 
     async def stop(self) -> None:
         self.stop_count += 1
+        self.position_seconds = None
+        self.transitioning = False
+        self.prepared = None
 
     def pause(self) -> None:
         self.pause_count += 1
@@ -591,10 +629,15 @@ def test_close_is_idempotent_cancels_load_and_restores_current(tmp_path: Path) -
         await asyncio.gather(controller.close(), controller.close())
         await controller.close()
         assert resolver.cancelled == [entry.source_url]
-        assert controller.snapshot == PlayerSnapshot(upcoming=(entry,))
+        assert controller.snapshot.current == entry
+        assert controller.snapshot.state is PlaybackState.LOADING
         assert voice.disconnect_count == disconnects_before_close + 1
         with SQLiteStore(database) as store:
-            assert store.load() == PlayerSnapshot(upcoming=(entry,))
+            assert store.load().current == entry
+            checkpoint = store.checkpoint()
+            assert checkpoint is not None
+            assert checkpoint.channel_id == 7
+            assert checkpoint.entry_id == entry.id
         with pytest.raises(RuntimeError, match="closed"):
             await controller.enqueue(QueueEntry("https://youtu.be/late"))
 

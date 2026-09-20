@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import fields, replace
@@ -18,6 +19,7 @@ from uuid import UUID, uuid4
 
 from ..domain import commands
 from ..domain.commands import Outcome, Receipt, Revisions
+from ..domain.checkpoint import PlaybackCheckpoint
 from ..domain.fsm import VoiceEvent
 from ..domain.models import (
     Contributor,
@@ -41,12 +43,16 @@ from .audio import (
     VoiceOutput,
 )
 from .catalog import PLAYLIST_LIMIT, MediaCatalog
+from .crossfade import CrossfadePreparation, Preparation
 from .events import Snapshots
 from .metadata import QueueMetadata
 from .player import Player
 from .radio import RADIO_BUFFER, RADIO_POOL_LIMIT, RadioCatalog
 from .status import CommandReply, PlaybackIssue, PlaybackStatus
 from .worker import PlayerWorker
+
+CHECKPOINT_INTERVAL_SECONDS = 5.0
+_LOGGER = logging.getLogger(__name__)
 
 
 class PlaybackController:
@@ -60,6 +66,7 @@ class PlaybackController:
         metadata_resolver: MetadataResolver | None = None,
         catalog: MediaCatalog | None = None,
         radio_catalog: RadioCatalog | None = None,
+        checkpoint: PlaybackCheckpoint | None = None,
     ) -> None:
         self.catalog = catalog
         self.radio_catalog = radio_catalog
@@ -72,11 +79,15 @@ class PlaybackController:
         self._snapshot = snapshot
         self._resolver = resolver
         self._voice = voice
+        self._crossfade = CrossfadePreparation(resolver, voice)
+        self._deferred_fade: tuple[Preparation, ResolvedTrack] | None = None
         self._loop = asyncio.get_running_loop()
         self._lock = asyncio.Lock()
         self._attempt_id: UUID | None = None
         self._retried = False
         self._history_recorded = False
+        self._load_paused = False
+        self._restore_checkpoint = checkpoint
         self._volume = 1.0
         self._last_issue: PlaybackIssue | None = None
         self._revisions = revisions
@@ -107,6 +118,7 @@ class PlaybackController:
             else None
         )
         voice.set_disconnect_handler(self._disconnected_callback)
+        self._checkpoint_task = asyncio.create_task(self._checkpoint_loop())
 
     @classmethod
     async def create(
@@ -124,6 +136,7 @@ class PlaybackController:
         try:
             snapshot = await asyncio.shield(opening)
             versions = await worker.call(lambda player: player.revisions)
+            checkpoint = await worker.call(lambda player: player.checkpoint)
             return cls(
                 worker,
                 snapshot,
@@ -133,6 +146,7 @@ class PlaybackController:
                 metadata_resolver,
                 catalog,
                 radio_catalog,
+                checkpoint,
             )
         except BaseException:
             await asyncio.shield(worker.close())
@@ -228,6 +242,7 @@ class PlaybackController:
 
     async def _publish(self) -> None:
         self._update_position()
+        await self._save_checkpoint()
         changed = self.status != self._published
         self._revisions = await self._worker.call(
             lambda player: player.publish(
@@ -239,6 +254,197 @@ class PlaybackController:
             self._published = status
             self._events.publish(status)
         self._schedule_radio()
+        await self._prepare_crossfade()
+
+    async def restore(self) -> None:
+        """Called once the Discord gateway is ready, before serving controls."""
+
+        async def action() -> None:
+            checkpoint = self._restore_checkpoint
+            if checkpoint is None:
+                return
+            _LOGGER.info(
+                "playback.restoring channel=%s entry=%s position=%.3f paused=%s",
+                checkpoint.channel_id,
+                checkpoint.entry_id,
+                checkpoint.position_seconds,
+                checkpoint.paused,
+            )
+            self._set_volume(checkpoint.volume)
+            await self._change(lambda player: player.voice(VoiceEvent.CONNECT))
+            await self._voice.connect(checkpoint.channel_id)
+            await self._change(lambda player: player.voice(VoiceEvent.CONNECTED))
+            self._restore_checkpoint = None
+            if checkpoint.entry_id is not None:
+                self._begin(
+                    position_seconds=checkpoint.position_seconds,
+                    paused=checkpoint.paused,
+                    record_history=not any(
+                        item.entry.id == checkpoint.entry_id
+                        for item in self._snapshot.recently_played
+                    ),
+                )
+
+        try:
+            await asyncio.shield(self._submit(action))
+        except VoiceError:
+            # A missing channel or revoked permission must not take down the API.
+            # _execute already reports the failure and keeps the track queued.
+            pass
+
+    async def _save_checkpoint(self) -> None:
+        if self._restore_checkpoint is not None:
+            return
+        checkpoint = None
+        channel_id = self._voice.channel_id
+        if self._voice.connected and channel_id is not None and not self._faulted:
+            entry = self._snapshot.current
+            position = 0.0
+            if entry is not None:
+                audio_position = self._voice.position_seconds
+                if audio_position is not None:
+                    position = audio_position
+                else:
+                    position = self._position_seconds
+                    if (
+                        self._snapshot.state is PlaybackState.PLAYING
+                        and self._position_clock is not None
+                    ):
+                        position += self._loop.time() - self._position_clock
+            checkpoint = PlaybackCheckpoint(
+                channel_id,
+                entry.id if entry else None,
+                position,
+                self._snapshot.state is PlaybackState.PAUSED or self._load_paused,
+                self._volume,
+            )
+        await self._worker.call(lambda player: player.save_checkpoint(checkpoint))
+
+    async def _forget_checkpoint(self) -> None:
+        self._restore_checkpoint = None
+        await self._worker.call(lambda player: player.save_checkpoint(None))
+
+    async def _checkpoint_loop(self) -> None:
+        while True:
+            await asyncio.sleep(CHECKPOINT_INTERVAL_SECONDS)
+            async with self._lock:
+                if self._closing or self._faulted:
+                    return
+                try:
+                    await self._save_checkpoint()
+                except StorageError:
+                    await self._fault(
+                        "Playback position could not be saved; playback stopped.",
+                        persist_failure=False,
+                    )
+                    self._events.close()
+                    return
+
+    async def _prepare_crossfade(self) -> None:
+        snapshot = self._snapshot
+        track = self._resolved_track
+        key = None
+        if (
+            not self._closing
+            and not self._faulted
+            and snapshot.state in (PlaybackState.PLAYING, PlaybackState.PAUSED)
+            and snapshot.crossfade_seconds
+            and snapshot.upcoming
+            and self._attempt_id is not None
+            and track is not None
+            and track.duration_seconds is not None
+            and track.duration_seconds > 0
+            and not self._voice.transitioning
+        ):
+            entry = snapshot.upcoming[0]
+            key = Preparation(
+                self._attempt_id,
+                entry.id,
+                snapshot.crossfade_seconds,
+                entry.source_url,
+                track.duration_seconds,
+            )
+        await self._crossfade.sync(key, self._crossfade_due, self._preparation_failed)
+        if self._deferred_fade is not None and snapshot.state is PlaybackState.PLAYING:
+            deferred, self._deferred_fade = self._deferred_fade, None
+            self._crossfade_due(*deferred)
+
+    def _preparation_failed(self, key: Preparation, error: VoiceError) -> None:
+        if self._closing or self._faulted:
+            return
+
+        async def action() -> None:
+            if key == self._crossfade.key:
+                raise error
+
+        self._submit(action)
+
+    def _crossfade_due(self, key: Preparation, track: ResolvedTrack) -> None:
+        if not self._loop.is_closed():
+            self._loop.call_soon_threadsafe(self._queue_crossfade, key, track)
+
+    def _queue_crossfade(self, key: Preparation, track: ResolvedTrack) -> None:
+        if self._closing or self._faulted:
+            return
+
+        async def action() -> None:
+            if key != self._crossfade.key or key.attempt_id != self._attempt_id:
+                return
+            if self._snapshot.state is PlaybackState.PAUSED:
+                self._deferred_fade = (key, track)
+                return
+            if not self._voice.connected:
+                await self._leave()
+                return
+            _LOGGER.info(
+                "crossfade.start outgoing_attempt=%s incoming_entry=%s seconds=%s "
+                "position=%s",
+                key.attempt_id,
+                key.entry_id,
+                key.seconds,
+                self._voice.position_seconds,
+            )
+            await self._change(
+                lambda player: player.crossfade(key.entry_id, track.metadata)
+            )
+            attempt_id = uuid4()
+            self._attempt_id = attempt_id
+            self._position_origin = 0.0
+            self._retried = False
+            self._history_recorded = True
+            self._resolved_track = track
+
+            def callback(error: Exception | None) -> None:
+                self._completed_callback(attempt_id, error)
+
+            if not self._voice.start_transition(track, callback, self._fade_finished):
+                _LOGGER.warning(
+                    "crossfade.fallback attempt=%s entry=%s reason=activation_unavailable",
+                    attempt_id,
+                    key.entry_id,
+                )
+                # EOF may win while the database commits. The new current entry
+                # still starts once, without a second history record.
+                await self._voice.stop()
+                try:
+                    self._voice.play(track, callback)
+                except TrackError as error:
+                    await self._track_failed(error)
+
+        self._submit(action)
+
+    def _fade_finished(self) -> None:
+        if not self._loop.is_closed():
+            self._loop.call_soon_threadsafe(self._queue_fade_finished)
+
+    def _queue_fade_finished(self) -> None:
+        if self._closing or self._faulted:
+            return
+
+        async def action() -> None:
+            _LOGGER.info("crossfade.finished attempt=%s", self._attempt_id)
+
+        self._submit(action)
 
     def _update_position(self) -> None:
         previous = self._published
@@ -247,6 +453,8 @@ class PlaybackController:
             self._position_seconds = self._position_origin if self._attempt_id else 0.0
         elif previous.player.state is self._snapshot.state:
             return
+        elif previous.player.state is PlaybackState.LOADING:
+            self._position_seconds = self._position_origin
         elif (
             previous.player.state is PlaybackState.PLAYING
             and self._position_clock is not None
@@ -274,6 +482,15 @@ class PlaybackController:
 
         async def action() -> None:
             nonlocal outcome, replayed
+            _LOGGER.info(
+                "command.received request=%s actor=%s command=%s attempt=%s",
+                request_id,
+                actor_id,
+                command.action
+                if isinstance(command, commands.Control)
+                else type(command).__name__,
+                self._attempt_id,
+            )
             existing = await self._worker.call(lambda player: player.reserve(receipt))
             if existing is not None:
                 replayed = (
@@ -300,6 +517,12 @@ class PlaybackController:
             self._pending_receipt = replace(receipt, outcome=outcome)
 
         await asyncio.shield(self._submit(action))
+        _LOGGER.info(
+            "command.finished request=%s code=%s replayed=%s",
+            request_id,
+            outcome.code,
+            replayed,
+        )
         # A later action may already have committed. Return its fresh snapshot,
         # while retaining the original request's outcome.
         return CommandReply(outcome, await self.read_status(), replayed)
@@ -418,6 +641,9 @@ class PlaybackController:
             case commands.Volume(volume):
                 self._set_volume(volume)
                 return Outcome()
+            case commands.Crossfade(seconds):
+                operation = partial(Player.set_crossfade, seconds=seconds)
+                outcome = Outcome()
             case commands.Seek(position_seconds, _):
                 await self._seek(position_seconds)
                 return Outcome()
@@ -735,8 +961,12 @@ class PlaybackController:
         return await asyncio.shield(self._submit(action))
 
     async def _connect(self, channel_id: int) -> None:
+        _LOGGER.info(
+            "voice.connect requested=%s previous=%s", channel_id, self._voice.channel_id
+        )
         if self._voice.connected and self._voice.channel_id == channel_id:
             return
+        await self._forget_checkpoint()
         await self._halt()
         await self._change(lambda player: player.voice(VoiceEvent.DISCONNECT))
         await self._voice.disconnect()
@@ -748,6 +978,8 @@ class PlaybackController:
         return await asyncio.shield(self._submit(self._leave))
 
     async def _leave(self) -> None:
+        _LOGGER.info("voice.leave channel=%s", self._voice.channel_id)
+        await self._forget_checkpoint()
         self._stop_radio()
         await self._halt()
         await self._change(lambda player: player.voice(VoiceEvent.DISCONNECT))
@@ -785,6 +1017,11 @@ class PlaybackController:
         return await asyncio.shield(self._submit(action))
 
     async def _skip(self) -> None:
+        _LOGGER.info(
+            "playback.skip attempt=%s position=%s",
+            self._attempt_id,
+            self._voice.position_seconds,
+        )
         if not self._voice.connected:
             await self._leave()
             return
@@ -796,6 +1033,11 @@ class PlaybackController:
         return await asyncio.shield(self._submit(self._stop))
 
     async def _stop(self) -> None:
+        _LOGGER.info(
+            "playback.stop attempt=%s position=%s",
+            self._attempt_id,
+            self._voice.position_seconds,
+        )
         await self._change(Player.stop)
         self._stop_radio()
         await self._halt()
@@ -829,6 +1071,12 @@ class PlaybackController:
             raise ValueError("Seek to a position within the current track.")
         if not self._voice.connected:
             raise VoiceError("Discord voice is not connected.")
+        _LOGGER.info(
+            "playback.seek attempt=%s from=%s to=%.3f",
+            self._attempt_id,
+            self._voice.position_seconds,
+            position_seconds,
+        )
         await self._change(Player.seek)
         was_paused = self._snapshot.state is PlaybackState.PAUSED
         await self._halt()
@@ -840,24 +1088,40 @@ class PlaybackController:
                 track,
                 lambda error: self._completed_callback(attempt_id, error),
                 position_seconds=position_seconds,
+                paused=was_paused,
             )
         except TrackError as exc:
             await self._track_failed(exc)
             return
         self._resolved_track = track
-        if was_paused:
-            self._voice.pause()
 
-    def _begin(self, *, retried: bool = False) -> None:
+    def _begin(
+        self,
+        *,
+        retried: bool = False,
+        position_seconds: float = 0,
+        paused: bool = False,
+        record_history: bool = True,
+    ) -> None:
         entry = self._snapshot.current
         if entry is None:
             return
         attempt_id = uuid4()
         self._attempt_id = attempt_id
-        self._position_origin = 0.0
+        self._position_origin = position_seconds
         self._retried = retried
+        self._load_paused = paused
         if not retried:
-            self._history_recorded = False
+            self._history_recorded = not record_history
+        _LOGGER.info(
+            "playback.loading attempt=%s entry=%s video=%s position=%.3f retry=%s paused=%s",
+            attempt_id,
+            entry.id,
+            entry.video_id,
+            position_seconds,
+            retried,
+            paused,
+        )
         self._load_task = asyncio.create_task(self._load(attempt_id, entry))
 
     async def _load(self, attempt_id: UUID, entry: QueueEntry) -> None:
@@ -892,21 +1156,36 @@ class PlaybackController:
                 await self._leave()
                 return
             await self._change(lambda player: player.enrich(entry.id, track.metadata))
+            if track.duration_seconds is not None:
+                self._position_origin = min(
+                    self._position_origin, max(0, track.duration_seconds - 0.02)
+                )
             try:
                 self._voice.play(
                     track,
                     lambda error: self._completed_callback(attempt_id, error),
+                    position_seconds=self._position_origin,
+                    paused=self._load_paused,
                 )
             except TrackError as exc:
                 await self._track_failed(exc)
                 return
             await self._change(
                 lambda player: player.mark_playing(
-                    record_history=not self._history_recorded
+                    record_history=not self._history_recorded,
+                    paused=self._load_paused,
                 )
             )
+            self._load_paused = False
             self._history_recorded = True
             self._resolved_track = track
+            _LOGGER.info(
+                "playback.started attempt=%s entry=%s duration=%s opus=%s",
+                attempt_id,
+                entry.id,
+                track.duration_seconds,
+                track.is_opus,
+            )
 
         self._submit(ready)
 
@@ -921,6 +1200,13 @@ class PlaybackController:
         async def action() -> None:
             if self._attempt_id != attempt_id:
                 return
+            _LOGGER.info(
+                "playback.completed attempt=%s position=%s duration=%s error=%s",
+                attempt_id,
+                self._voice.position_seconds,
+                self._resolved_track.duration_seconds if self._resolved_track else None,
+                type(error).__name__ if error is not None else "none",
+            )
             if not self._voice.connected:
                 await self._leave()
                 return
@@ -944,6 +1230,16 @@ class PlaybackController:
         if entry is None:
             return
         retry = error.retryable and not self._retried
+        _LOGGER.warning(
+            "playback.failed attempt=%s entry=%s position=%s retryable=%s action=%s",
+            self._attempt_id,
+            entry.id,
+            self._voice.position_seconds,
+            error.retryable,
+            "retry" if retry else "skip",
+        )
+        position = self._position_origin if retry else 0
+        paused = self._load_paused or self._snapshot.state is PlaybackState.PAUSED
         if not retry:
             self._last_issue = PlaybackIssue(
                 entry.id,
@@ -956,22 +1252,26 @@ class PlaybackController:
         await self._change(Player.fail)
         await self._halt()
         await self._change(Player.play if retry else Player.skip)
-        self._begin(retried=retry)
+        self._begin(retried=retry, position_seconds=position, paused=paused)
 
     async def _halt(self) -> None:
         self._attempt_id = None
+        self._load_paused = False
         self._resolved_track = None
+        self._deferred_fade = None
         task, self._load_task = self._load_task, None
-        try:
-            if task is not None:
-                if not task.done():
-                    task.cancel()
-                results = await asyncio.gather(task, return_exceptions=True)
-                for result in results:
-                    if isinstance(result, Exception):
-                        raise result
-        finally:
-            await self._voice.stop()
+        if task is not None and not task.done():
+            task.cancel()
+        # Stop the audible source immediately while speculative work is reaped.
+        results = await asyncio.gather(
+            self._voice.stop(),
+            self._crossfade.clear(),
+            *((task,) if task is not None else ()),
+            return_exceptions=True,
+        )
+        for result in results:
+            if isinstance(result, Exception):
+                raise result
 
     def _disconnected_callback(self) -> None:
         if not self._loop.is_closed():
@@ -989,6 +1289,11 @@ class PlaybackController:
         self._submit(action)
 
     async def _fault(self, message: str, *, persist_failure: bool = True) -> None:
+        _LOGGER.error(
+            "playback.fault attempt=%s persist_failure=%s",
+            self._attempt_id,
+            persist_failure,
+        )
         self._stop_radio()
         self._faulted = True
         entry = self._snapshot.current
@@ -1032,7 +1337,14 @@ class PlaybackController:
         self._events.close()
 
     async def _close(self) -> None:
+        _LOGGER.info(
+            "playback.closing attempt=%s position=%s",
+            self._attempt_id,
+            self._voice.position_seconds,
+        )
         errors: list[Exception] = []
+        self._checkpoint_task.cancel()
+        await asyncio.gather(self._checkpoint_task, return_exceptions=True)
         self._stop_radio()
         await asyncio.gather(*tuple(self._radio_tasks), return_exceptions=True)
         if self.radio_catalog is not None:
@@ -1043,14 +1355,13 @@ class PlaybackController:
             await self.catalog.close()
         async with self._lock:
             try:
-                await self._halt()
+                if self._snapshot.state is PlaybackState.PLAYING:
+                    self._voice.pause()
+                await self._save_checkpoint()
             except Exception as exc:
                 errors.append(exc)
             try:
-                if not self._faulted:
-                    await self._change(
-                        lambda player: player.voice(VoiceEvent.DISCONNECT)
-                    )
+                await self._halt()
             except Exception as exc:
                 errors.append(exc)
             try:

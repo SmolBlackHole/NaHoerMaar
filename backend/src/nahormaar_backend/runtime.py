@@ -5,8 +5,10 @@
 """Start and close the Discord client and player in one asyncio runtime."""
 
 import asyncio
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from .application.audio import VoiceError
 from .application.catalog import MediaCatalog
@@ -18,9 +20,14 @@ from .integrations.youtube import YouTubeResolver
 from .integrations.discovery import DiscoveryExtractor
 from .integrations.youtube_radio import YouTubeMusicRadio
 
+_LOGGER = logging.getLogger(__name__)
+
 
 @asynccontextmanager
-async def open_runtime(settings: Settings) -> AsyncGenerator[PlaybackController, None]:
+async def open_runtime(
+    settings: Settings, *, access_path: Path | None = None
+) -> AsyncGenerator[PlaybackController, None]:
+    _LOGGER.info("runtime.starting")
     voice = DiscordVoice(settings.ffmpeg_path)
     resolver = YouTubeResolver(settings.node_path)
     catalog = MediaCatalog(settings.node_path)
@@ -80,14 +87,19 @@ async def open_runtime(settings: Settings) -> AsyncGenerator[PlaybackController,
                 raise ExceptionGroup("Backend shutdown failed.", errors)
 
         try:
+            if access_path is not None:
+                voice.install_commands(access_path, controller.connect)
             try:
                 async with asyncio.timeout(30):
                     await voice.wait_until_ready()
             except TimeoutError as exc:
                 raise VoiceError("Discord did not become ready in time.") from exc
             ready = True
+            await controller.restore()
+            _LOGGER.info("runtime.ready")
             yield controller
         finally:
+            _LOGGER.info("runtime.stopping")
             closing = True
             cleanup = asyncio.create_task(close())
             try:
@@ -95,3 +107,5 @@ async def open_runtime(settings: Settings) -> AsyncGenerator[PlaybackController,
             except asyncio.CancelledError:
                 await asyncio.shield(cleanup)
                 raise
+            finally:
+                _LOGGER.info("runtime.cleanup_finished")

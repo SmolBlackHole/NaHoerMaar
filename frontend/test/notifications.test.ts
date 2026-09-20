@@ -32,6 +32,7 @@ const state: PlayerState = {
 	channel_id: "123",
 	playback_id: null,
 	volume: 1,
+	crossfade_seconds: 0,
 	position_seconds: 0,
 	position_updated_at: null,
 	last_issue: null,

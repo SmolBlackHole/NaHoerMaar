@@ -24,6 +24,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from ..domain.commands import Outcome, Receipt, Revisions
+from ..domain.checkpoint import PlaybackCheckpoint
 from ..domain.models import (
     Contributor,
     HistoryEntry,
@@ -39,6 +40,7 @@ from .models import (
     AccountRow,
     HistoryRow,
     PlayerRow,
+    PlaybackCheckpointRow,
     QueueEntryRow,
     RequestRow,
     UndoRow,
@@ -118,6 +120,7 @@ class SQLiteStore:
                 upgrade(connection)
                 with Session(bind=connection) as session:
                     self._load(session)
+                    self._checkpoint(session)
                     for row in session.scalars(select(AccountRow)):
                         account_from_row(row)
         except (SQLAlchemyError, CommandError, TypeError, ValueError) as exc:
@@ -190,7 +193,11 @@ class SQLiteStore:
                 )
             )
         return PlayerSnapshot(
-            state, current, tuple(entries), recently_played=tuple(history)
+            state,
+            current,
+            tuple(entries),
+            recently_played=tuple(history),
+            crossfade_seconds=player.crossfade_seconds,
         )
 
     def save(
@@ -252,9 +259,21 @@ class SQLiteStore:
                 )
                 session.flush()
                 player.state = snapshot.state.value
+                player.crossfade_seconds = snapshot.crossfade_seconds
                 player.current_entry_id = (
                     snapshot.current.id if snapshot.current else None
                 )
+                checkpoint = session.get(PlaybackCheckpointRow, 1)
+                if checkpoint is not None:
+                    if snapshot.state is PlaybackState.ERROR:
+                        session.delete(checkpoint)
+                    else:
+                        if checkpoint.entry_id != player.current_entry_id:
+                            checkpoint.entry_id = player.current_entry_id
+                            checkpoint.position_seconds = 0
+                            checkpoint.paused = False
+                        if snapshot.state is not PlaybackState.LOADING:
+                            checkpoint.paused = snapshot.state is PlaybackState.PAUSED
                 if revisions is not None:
                     player.revision = revisions.revision
                     player.queue_revision = revisions.queue_revision
@@ -272,6 +291,50 @@ class SQLiteStore:
                 return Revisions(row.revision, row.queue_revision)
         except (SQLAlchemyError, ValueError) as exc:
             raise StorageError("Cannot read player revisions.") from exc
+
+    def checkpoint(self) -> PlaybackCheckpoint | None:
+        try:
+            with self._session() as session:
+                return self._checkpoint(session)
+        except (SQLAlchemyError, TypeError, ValueError) as exc:
+            raise StorageError("Cannot read playback checkpoint.") from exc
+
+    def _checkpoint(self, session: Session) -> PlaybackCheckpoint | None:
+        row = session.get(PlaybackCheckpointRow, 1)
+        if row is None:
+            return None
+        checkpoint = PlaybackCheckpoint(
+            row.channel_id,
+            row.entry_id,
+            row.position_seconds,
+            row.paused,
+            row.volume,
+        )
+        player = session.get(PlayerRow, 1)
+        if player is None or player.current_entry_id != checkpoint.entry_id:
+            raise ValueError("Checkpoint must match the current entry.")
+        return checkpoint
+
+    def save_checkpoint(self, checkpoint: PlaybackCheckpoint | None) -> None:
+        try:
+            with self._session() as session, session.begin():
+                session.execute(delete(PlaybackCheckpointRow))
+                if checkpoint is not None:
+                    player = session.get(PlayerRow, 1)
+                    if player is None or player.current_entry_id != checkpoint.entry_id:
+                        raise ValueError("Checkpoint must match the current entry.")
+                    session.add(
+                        PlaybackCheckpointRow(
+                            id=1,
+                            channel_id=checkpoint.channel_id,
+                            entry_id=checkpoint.entry_id,
+                            position_seconds=checkpoint.position_seconds,
+                            paused=checkpoint.paused,
+                            volume=checkpoint.volume,
+                        )
+                    )
+        except (SQLAlchemyError, ValueError) as exc:
+            raise StorageError("Cannot save playback checkpoint.") from exc
 
     def reserve(self, receipt: Receipt) -> Receipt | None:
         """Return an existing receipt, or commit a reservation before any effect."""

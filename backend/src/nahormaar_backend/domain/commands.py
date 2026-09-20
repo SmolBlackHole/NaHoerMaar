@@ -62,6 +62,11 @@ class Volume:
 
 
 @dataclass(frozen=True, slots=True)
+class Crossfade:
+    seconds: int
+
+
+@dataclass(frozen=True, slots=True)
 class Seek:
     position_seconds: float
     expected_playback_id: UUID
@@ -102,6 +107,7 @@ type Command = (
     | Clear
     | Control
     | Volume
+    | Crossfade
     | Seek
     | Connect
     | Disconnect

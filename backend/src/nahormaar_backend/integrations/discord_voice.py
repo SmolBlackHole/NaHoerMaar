@@ -7,208 +7,32 @@
 from __future__ import annotations
 
 import asyncio
-import audioop
 import importlib.util
 import logging
-import re
-import struct
-import subprocess
-import threading
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from math import isfinite
 from pathlib import Path
-from typing import BinaryIO, cast
 
 import discord
-from discord.oggparse import OggError, OggStream
 from discord.opus import OpusNotLoaded
 
 from ..application.audio import ResolvedTrack, TrackError, VoiceChannelInfo, VoiceError
+from .audio_sources import FFmpegSource, MediaStreamError, VolumeSource
+from .audio_mixer import BufferedAudio, CrossfadeSource, FRAME_SECONDS
 from .daily_bio import update_daily_bio
+from .discord_commands import DiscordCommands
 
-_PCM_FRAME_BYTES = 3_840
-_SAMPLES_PER_FRAME = 960
-_MUSIC_BITRATE_KBPS = 512
-_PROCESS_TIMEOUT_SECONDS = 2.0
 _VOICE_MONITOR_SECONDS = 0.25
 _PRESENCE_INTERVAL_SECONDS = 5.0
 _PRESENCE_TEXT_LIMIT = 128
 _LOGGER = logging.getLogger(__name__)
-_HEADER_NAME = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
-
-
-class _MediaStreamError(RuntimeError):
-    """Internal marker for a media-specific FFmpeg failure."""
-
-
-class _FFmpegSource(discord.AudioSource):
-    """Read PCM or unchanged Opus packets with bounded subprocess cleanup."""
-
-    def __init__(
-        self,
-        executable: Path,
-        source: str,
-        headers: tuple[tuple[str, str], ...],
-        *,
-        opus: bool = False,
-        position_seconds: float = 0,
-    ) -> None:
-        arguments = _ffmpeg_arguments(
-            executable, source, headers, opus=opus, position_seconds=position_seconds
-        )
-        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        self._process: subprocess.Popen[bytes] = subprocess.Popen(  # noqa: S603
-            arguments,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            creationflags=creationflags,
-        )
-        if self._process.stdout is None:
-            self._process.kill()
-            raise OSError("FFmpeg did not create an output pipe.")
-        self._stdout: BinaryIO = cast(BinaryIO, self._process.stdout)
-        self._current_error: Exception | None = None
-        self._cleanup_lock = threading.Lock()
-        self._closed = threading.Event()
-        self._packets = OggStream(self._stdout).iter_packets() if opus else None
-        self._has_opus_header = False
-        self.gain_db = 0.0
-
-    @property
-    def current_error(self) -> Exception | None:
-        return self._current_error
-
-    @property
-    def closed(self) -> bool:
-        return self._closed.is_set()
-
-    def read(self) -> bytes:
-        if self._packets is None:
-            data = self._stdout.read(_PCM_FRAME_BYTES)
-            if data:
-                return data.ljust(_PCM_FRAME_BYTES, b"\0")
-        else:
-            try:
-                for packet in self._packets:
-                    if not self._has_opus_header:
-                        if (
-                            not packet.startswith(b"OpusHead")
-                            or len(packet) < 19
-                            or packet[9] not in (1, 2)
-                            or packet[18] != 0
-                        ):
-                            raise _MediaStreamError("Unsupported Opus stream header.")
-                        self.gain_db = struct.unpack_from("<h", packet, 16)[0] / 256
-                        self._has_opus_header = True
-                        continue
-                    if packet.startswith(b"OpusTags"):
-                        continue
-                    return packet
-            except OggError:
-                raise _MediaStreamError("Invalid Opus stream.") from None
-
-        try:
-            return_code: int | None = self._process.wait(timeout=0.2)
-        except subprocess.TimeoutExpired:
-            return_code = self._process.poll()
-        if return_code not in (None, 0):
-            self._current_error = _MediaStreamError("FFmpeg stream failed.")
-        return b""
-
-    def is_opus(self) -> bool:
-        return self._packets is not None
-
-    def cleanup(self) -> None:
-        with self._cleanup_lock:
-            if self._closed.is_set():
-                return
-            try:
-                if self._process.poll() is None:
-                    self._process.kill()
-                try:
-                    self._process.wait(timeout=_PROCESS_TIMEOUT_SECONDS)
-                except subprocess.TimeoutExpired:
-                    self._process.kill()
-                    self._process.wait(timeout=_PROCESS_TIMEOUT_SECONDS)
-            except BaseException:
-                self._stdout.close()
-                raise
-            else:
-                self._stdout.close()
-                self._closed.set()
-
-
-class _VolumeSource(discord.AudioSource):
-    """Copy compatible Opus at unity gain; encode only frames needing changes."""
-
-    def __init__(self, original: _FFmpegSource, volume: float = 1.0) -> None:
-        self.original = original
-        self.volume = volume
-        self._decoder = (
-            discord.opus.Decoder()  # type: ignore[no-untyped-call]
-            if original.is_opus()
-            else None
-        )
-        self._encoder: discord.opus.Encoder | None = None
-        self._pcm = bytearray()
-
-    @property
-    def _current_error(self) -> Exception | None:
-        # discord.py checks this attribute after read() reaches EOF.
-        return self.original.current_error
-
-    def is_opus(self) -> bool:
-        return True
-
-    def read(self) -> bytes:
-        volume = self.volume
-        while len(self._pcm) < _PCM_FRAME_BYTES:
-            packet = self.original.read()
-            if not packet:
-                if not self._pcm:
-                    return b""
-                self._pcm.extend(b"\0" * (_PCM_FRAME_BYTES - len(self._pcm)))
-                break
-            if self._decoder is None:
-                pcm = packet
-            else:
-                # Keep decoding history current even while sending original packets.
-                self._decoder.set_gain(self.original.gain_db)
-                try:
-                    pcm = self._decoder.decode(packet, fec=False)
-                except discord.opus.OpusError:
-                    raise _MediaStreamError("Invalid Opus audio packet.") from None
-                if (
-                    volume == 1.0
-                    and self.original.gain_db == 0.0
-                    and not self._pcm
-                    and len(pcm) == _PCM_FRAME_BYTES
-                ):
-                    return packet
-            self._pcm.extend(pcm)
-
-        pcm = bytes(self._pcm[:_PCM_FRAME_BYTES])
-        del self._pcm[:_PCM_FRAME_BYTES]
-        if self._encoder is None:
-            self._encoder = discord.opus.Encoder(
-                application="audio",
-                bitrate=_MUSIC_BITRATE_KBPS,
-                bandwidth="full",
-                signal_type="music",
-                fec=False,
-            )
-        return self._encoder.encode(audioop.mul(pcm, 2, volume), _SAMPLES_PER_FRAME)
-
-    def cleanup(self) -> None:
-        self.original.cleanup()
 
 
 @dataclass(slots=True)
 class _Playback:
-    source: _VolumeSource
+    source: CrossfadeSource
     track: ResolvedTrack
+    after: Callable[[Exception | None], None]
     cancellation_error: Exception | None = None
 
 
@@ -216,6 +40,11 @@ class _DiscordClient(discord.Client):
     def __init__(self, owner: DiscordVoice, *, intents: discord.Intents) -> None:
         super().__init__(intents=intents)
         self._owner = owner
+        self.commands: DiscordCommands | None = None
+
+    async def setup_hook(self) -> None:
+        if self.commands is not None:
+            await self.commands.register()
 
     async def on_ready(self) -> None:
         self._owner._discord_ready()  # pyright: ignore[reportPrivateUsage]
@@ -261,6 +90,7 @@ class DiscordVoice:
         self._closing = False
         self._voice: discord.VoiceClient | None = None
         self._playback: _Playback | None = None
+        self._preparing: BufferedAudio | None = None
         self._disconnect_handler: Callable[[], None] = lambda: None
         self._connection_generation = 0
         self._expected_disconnects: dict[int, int] = {}
@@ -427,6 +257,11 @@ class DiscordVoice:
     def set_disconnect_handler(self, handler: Callable[[], None]) -> None:
         self._disconnect_handler = handler
 
+    def install_commands(
+        self, access_path: Path, connect: Callable[[int], Awaitable[object]]
+    ) -> None:
+        self._client.commands = DiscordCommands(self._client, access_path, connect)
+
     async def connect(self, channel_id: int) -> None:
         async with self._connection_lock:
             channel = self._client.get_channel(channel_id)
@@ -573,17 +408,18 @@ class DiscordVoice:
         after: Callable[[Exception | None], None],
         *,
         position_seconds: float = 0,
+        paused: bool = False,
     ) -> None:
         voice = self._voice
         if voice is None or not voice.is_connected():
             raise VoiceError("Discord voice is not connected.")
         if not track.stream_url:
             raise TrackError("The audio stream URL is empty.")
-        if self._playback is not None and not self._playback.source.original.closed:
+        if self._playback is not None and not self._playback.source.closed:
             raise VoiceError("Previous audio cleanup is still in progress.")
 
         try:
-            pcm = _FFmpegSource(
+            pcm = FFmpegSource(
                 self._ffmpeg_path,
                 track.stream_url,
                 track.headers,
@@ -598,33 +434,152 @@ class DiscordVoice:
             raise VoiceError("FFmpeg could not be started.") from error
 
         try:
-            source = _VolumeSource(pcm, volume=self._volume)
+            source = CrossfadeSource(
+                BufferedAudio(VolumeSource(pcm)),
+                volume=self._volume,
+                position=position_seconds,
+                paused=paused,
+            )
         except Exception as error:
             pcm.cleanup()
             raise VoiceError("Discord audio processing could not start.") from error
-        playback = _Playback(source=source, track=track)
+        playback = _Playback(source=source, track=track, after=after)
         self._playback = playback
+        _LOGGER.info(
+            "voice.audio_started channel=%s audio_pid=%s duration=%s paused=%s",
+            self.channel_id,
+            pcm.process_id,
+            track.duration_seconds,
+            paused,
+        )
 
         def completed(error: Exception | None) -> None:
+            _LOGGER.info(
+                "voice.audio_completed channel=%s position=%.3f error=%s cancelled=%s",
+                self.channel_id,
+                source.position_seconds,
+                type(error).__name__ if error is not None else "none",
+                playback.cancellation_error is not None,
+            )
             try:
                 source.cleanup()
             except Exception:
-                after(VoiceError("FFmpeg process cleanup failed."))
+                playback.after(VoiceError("FFmpeg process cleanup failed."))
                 return
             reported = playback.cancellation_error
-            if reported is None and isinstance(error, _MediaStreamError):
+            if reported is None and isinstance(error, MediaStreamError):
                 reported = TrackError("The audio stream failed.", retryable=True)
             elif reported is None and error is not None:
                 reported = VoiceError("Discord audio playback failed.")
-            after(reported)
+            playback.after(reported)
 
         try:
             voice.play(source, after=completed)
+            if paused:
+                voice.pause()
         except Exception as error:
             source.cleanup()
             self._playback = None
             raise VoiceError("Discord audio playback could not start.") from error
+        self._set_activity(track, paused=paused)
+
+    @property
+    def transitioning(self) -> bool:
+        return self._playback is not None and self._playback.source.transitioning
+
+    @property
+    def position_seconds(self) -> float | None:
+        playback = self._playback
+        if playback is None or playback.source.closed:
+            return None
+        return playback.source.position_seconds
+
+    async def prepare_next(
+        self, track: ResolvedTrack, seconds: float, on_due: Callable[[], None]
+    ) -> bool:
+        playback = self._playback
+        if self._preparing is not None:
+            raise VoiceError("Previous prepared audio cleanup is incomplete.")
+        if (
+            playback is None
+            or playback.track.duration_seconds is None
+            or not self.connected
+            or self.transitioning
+        ):
+            return False
+        raw = FFmpegSource(
+            self._ffmpeg_path, track.stream_url, track.headers, opus=track.is_opus
+        )
+        try:
+            audio = BufferedAudio(VolumeSource(raw))
+        except BaseException:
+            await asyncio.to_thread(raw.cleanup)
+            raise
+        self._preparing = audio
+        staged = False
+        try:
+            ready = await asyncio.to_thread(
+                audio.wait_ready, max(1, round(seconds / FRAME_SECONDS))
+            )
+            if ready and self._playback is playback:
+                staged = playback.source.stage(
+                    audio,
+                    seconds=seconds,
+                    duration=playback.track.duration_seconds,
+                    on_due=on_due,
+                )
+            _LOGGER.info(
+                "crossfade.buffer_ready audio_pid=%s ready=%s staged=%s seconds=%.3f",
+                raw.process_id,
+                ready,
+                staged,
+                seconds,
+            )
+            return staged
+        finally:
+            if staged:
+                self._preparing = None
+            else:
+                try:
+                    await asyncio.to_thread(audio.cleanup)
+                except Exception as error:
+                    raise VoiceError("Prepared audio cleanup failed.") from error
+                if self._preparing is audio:
+                    self._preparing = None
+
+    async def discard_next(self) -> None:
+        preparing = self._preparing
+        if preparing is not None:
+            await asyncio.to_thread(preparing.cleanup)
+            if self._preparing is preparing:
+                self._preparing = None
+        playback = self._playback
+        if playback is not None:
+            audio = playback.source.discard()
+            if audio is not None:
+                self._preparing = audio
+                await asyncio.to_thread(audio.cleanup)
+                if self._preparing is audio:
+                    self._preparing = None
+
+    def start_transition(
+        self,
+        track: ResolvedTrack,
+        after: Callable[[Exception | None], None],
+        on_faded: Callable[[], None],
+    ) -> bool:
+        playback = self._playback
+        if playback is None:
+            return False
+
+        def activated() -> None:
+            playback.track = track
+            playback.after = after
+
+        if not playback.source.activate(on_faded, activated):
+            return False
         self._set_activity(track)
+        return True
 
     async def stop(self) -> None:
         await self._stop_playback(None)
@@ -638,13 +593,21 @@ class DiscordVoice:
         self._set_activity()
         playback = self._playback
         if playback is None:
+            await self.discard_next()
             return
         playback.cancellation_error = error
+        _LOGGER.info(
+            "voice.audio_stop channel=%s position=%.3f error=%s",
+            self.channel_id,
+            playback.source.position_seconds,
+            type(error).__name__ if error is not None else "none",
+        )
         output = self._voice if voice is None else voice
         if output is not None:
             output.stop()
         try:
             await asyncio.to_thread(playback.source.cleanup)
+            await self.discard_next()
         except Exception as cleanup_error:
             raise VoiceError("FFmpeg process cleanup failed.") from cleanup_error
         if self._playback is playback:
@@ -654,6 +617,8 @@ class DiscordVoice:
         voice = self._voice
         if voice is None or not voice.is_connected():
             raise VoiceError("Discord voice is not connected.")
+        if self._playback is not None:
+            self._playback.source.pause()
         voice.pause()
         if self._playback is not None:
             self._set_activity(self._playback.track, paused=True)
@@ -662,6 +627,8 @@ class DiscordVoice:
         voice = self._voice
         if voice is None or not voice.is_connected():
             raise VoiceError("Discord voice is not connected.")
+        if self._playback is not None:
+            self._playback.source.resume()
         voice.resume()
         if self._playback is not None:
             self._set_activity(self._playback.track)
@@ -671,39 +638,3 @@ class DiscordVoice:
         self._volume = volume
         if self._playback is not None:
             self._playback.source.volume = volume
-
-
-def _ffmpeg_arguments(
-    executable: Path,
-    source: str,
-    headers: tuple[tuple[str, str], ...],
-    *,
-    opus: bool = False,
-    position_seconds: float = 0,
-) -> Sequence[str]:
-    if not isfinite(position_seconds) or position_seconds < 0:
-        raise ValueError("Playback position must be finite and non-negative.")
-    arguments: list[str] = [str(executable), "-nostdin"]
-    if headers:
-        header_lines: list[str] = []
-        for name, value in headers:
-            if not _HEADER_NAME.fullmatch(name) or any(
-                marker in value for marker in ("\r", "\n", "\0")
-            ):
-                raise TrackError("The audio stream contains invalid HTTP headers.")
-            header_lines.append(f"{name}: {value}")
-        arguments.extend(("-headers", "\r\n".join(header_lines) + "\r\n"))
-    if source.startswith(("http://", "https://")):
-        arguments.extend(("-rw_timeout", "15000000"))
-    if position_seconds:
-        arguments.extend(("-ss", str(position_seconds)))
-    arguments.extend(("-i", source, "-map", "0:a:0"))
-    if position_seconds and opus:
-        # Input seeking can retain packets before the target when stream-copying.
-        arguments.extend(("-ss", "0"))
-    if opus:
-        arguments.extend(("-c:a", "copy", "-f", "opus"))
-    else:
-        arguments.extend(("-f", "s16le", "-ar", "48000", "-ac", "2"))
-    arguments.extend(("-loglevel", "warning", "pipe:1"))
-    return arguments

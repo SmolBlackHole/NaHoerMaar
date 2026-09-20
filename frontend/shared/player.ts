@@ -55,6 +55,7 @@ export interface PlayerState {
 	channel_id: string | null;
 	playback_id: string | null;
 	volume: number;
+	crossfade_seconds: number;
 	position_seconds: number;
 	position_updated_at: string | null;
 	last_issue: {
@@ -64,7 +65,10 @@ export interface PlayerState {
 		code: "playback_failed" | "backend_halted";
 		fatal: boolean;
 		reason:
-			"source_unavailable" | "stream_interrupted" | "voice_unavailable" | "backend_halted";
+			| "source_unavailable"
+			| "stream_interrupted"
+			| "voice_unavailable"
+			| "backend_halted";
 	} | null;
 }
 
@@ -242,14 +246,37 @@ export function queueWaits(state: PlayerState | null, now: number): (number | nu
 		state.current?.duration_seconds != null
 			? Math.max(0, state.current.duration_seconds - playbackPosition(state, now))
 			: null;
+	let previousDuration = state.current?.duration_seconds ?? null;
 	return state.upcoming.map((entry) => {
+		if (seconds !== null) {
+			seconds = Math.max(
+				0,
+				seconds -
+					crossfadeDuration(
+						state.crossfade_seconds,
+						previousDuration,
+						entry.duration_seconds,
+					),
+			);
+		}
 		const wait = seconds;
 		seconds =
 			seconds !== null && entry.duration_seconds !== null
 				? seconds + entry.duration_seconds
 				: null;
+		previousDuration = entry.duration_seconds;
 		return wait;
 	});
+}
+
+export function crossfadeDuration(
+	setting: number,
+	outgoing: number | null,
+	incoming: number | null,
+): number {
+	if (!setting || outgoing === null || incoming === null) return 0;
+	if (!Number.isFinite(outgoing) || !Number.isFinite(incoming)) return 0;
+	return Math.max(0, Math.min(setting, outgoing / 2, incoming / 2));
 }
 
 export function formatWait(seconds: number): string {

@@ -9,16 +9,16 @@ import hashlib
 import re
 import secrets
 import time
-import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Protocol, cast
+from typing import Protocol
 
 from ..config import AuthSettings
 from ..domain.accounts import Account
-from ..domain.identity import AuthError, DiscordIdentity, discord_id
+from ..domain.identity import AuthError, DiscordIdentity
 from ..domain.preferences import Appearance
 from ..persistence.accounts import Accounts
+from .access import require_access
 
 SESSION_SECONDS = 7 * 24 * 60 * 60
 SESSION_COOKIE = "nahormaar_session"
@@ -64,23 +64,6 @@ class Auth:
     async def close(self) -> None:
         await asyncio.to_thread(self.accounts.close)
 
-    def _check_access(self, identifier: str) -> None:
-        try:
-            data = tomllib.loads(
-                self.settings.access_path.read_text(encoding="utf-8-sig")
-            )
-            identifiers = data.get("discord_ids")
-            if (
-                set(data) != {"discord_ids"}
-                or not isinstance(identifiers, list)
-                or not all(discord_id(item) for item in cast(list[object], identifiers))
-            ):
-                raise ValueError("Invalid access list.")
-        except (OSError, ValueError) as exc:
-            raise AuthError("access_unavailable", 503) from exc
-        if identifier not in identifiers:
-            raise AuthError("access_denied", 403)
-
     async def begin(self, browser_token: str | None) -> tuple[str, str]:
         browser = (
             browser_token
@@ -121,7 +104,7 @@ class Auth:
         if not code or len(code) > 2048:
             raise AuthError("login_failed")
         identity = await self.provider.identity(code, verifier)
-        await asyncio.to_thread(self._check_access, identity.id)
+        await asyncio.to_thread(require_access, self.settings.access_path, identity.id)
         token, now = secrets.token_urlsafe(32), self.clock()
         await asyncio.to_thread(
             self.accounts.create_session,
@@ -148,7 +131,9 @@ class Auth:
         account, expires_at = result
         if check_access:
             try:
-                await asyncio.to_thread(self._check_access, account.discord_id)
+                await asyncio.to_thread(
+                    require_access, self.settings.access_path, account.discord_id
+                )
             except AuthError as exc:
                 if exc.code == "access_denied":
                     await asyncio.to_thread(self.accounts.revoke, account.profile.id)

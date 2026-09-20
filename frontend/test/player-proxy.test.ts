@@ -164,6 +164,7 @@ describe("local API proxy", () => {
 
 	it.each([
 		["player/seek", { position_seconds: 75, expected_playback_id: "123" }],
+		["player/crossfade", { seconds: 5 }],
 		["profile/appearance", { mode: "light", primaryColor: "amber" }],
 	])("forwards PUT /api/%s", async (path, body) => {
 		const backend = await listen(

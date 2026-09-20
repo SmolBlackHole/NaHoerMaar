@@ -5,10 +5,12 @@
 """Run one bot and its local HTTP API."""
 
 import asyncio
+import copy
 import logging
 import socket
 
 import uvicorn
+from uvicorn.config import LOGGING_CONFIG
 
 from .api import create_app
 
@@ -38,6 +40,15 @@ class LocalServer(uvicorn.Server):
 
 def main() -> None:
     logging.getLogger("uvicorn.access").addFilter(AccessLogFilter())
+    log_config = copy.deepcopy(LOGGING_CONFIG)
+    for formatter in log_config["formatters"].values():
+        formatter["fmt"] = "%(asctime)s pid=%(process)d " + formatter["fmt"]
+        formatter["datefmt"] = "%Y-%m-%dT%H:%M:%S%z"
+    log_config["loggers"]["nahormaar_backend"] = {
+        "handlers": ["default"],
+        "level": "INFO",
+        "propagate": False,
+    }
     shutdown_event = asyncio.Event()
     config = uvicorn.Config(
         create_app(shutdown_event=shutdown_event),
@@ -46,6 +57,7 @@ def main() -> None:
         workers=1,
         proxy_headers=False,
         timeout_graceful_shutdown=5,
+        log_config=log_config,
     )
     LocalServer(config, shutdown_event).run()
 

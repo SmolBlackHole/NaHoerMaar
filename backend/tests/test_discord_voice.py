@@ -29,13 +29,17 @@ from nahormaar_backend.application.audio import (
     VoiceOutput,
 )
 from nahormaar_backend.config import ffmpeg_executable
-from nahormaar_backend.integrations.discord_voice import (
-    DiscordVoice,
+from nahormaar_backend.integrations.audio_sources import (
+    AudioFrame,
     _ffmpeg_arguments,
-    _FFmpegSource,
-    _MediaStreamError,
-    _VolumeSource,
+    FFmpegSource,
+    MediaStreamError,
+    VolumeSource,
 )
+from nahormaar_backend.integrations.audio_mixer import CrossfadeSource
+from nahormaar_backend.integrations.audio_mixer import BufferedAudio
+from nahormaar_backend.integrations.discord_voice import DiscordVoice
+from test_audio_quality import _opus_fixture
 
 
 class FakeVoiceClient:
@@ -211,12 +215,12 @@ def _write_short_tone(path: Path) -> None:
 def test_packaged_ffmpeg_produces_audio_and_applies_volume(tmp_path: Path) -> None:
     tone = tmp_path / "tone.wav"
     _write_tone(tone)
-    full = _VolumeSource(
-        _FFmpegSource(ffmpeg_executable(), str(tone), ()),
+    full = VolumeSource(
+        FFmpegSource(ffmpeg_executable(), str(tone), ()),
         volume=1.0,
     )
-    quiet = _VolumeSource(
-        _FFmpegSource(ffmpeg_executable(), str(tone), ()),
+    quiet = VolumeSource(
+        FFmpegSource(ffmpeg_executable(), str(tone), ()),
         volume=0.25,
     )
     try:
@@ -243,7 +247,7 @@ def test_packaged_ffmpeg_produces_audio_and_applies_volume(tmp_path: Path) -> No
 def test_final_short_pcm_chunk_is_padded_to_one_discord_frame(tmp_path: Path) -> None:
     tone = tmp_path / "short-tone.wav"
     _write_short_tone(tone)
-    source = _FFmpegSource(ffmpeg_executable(), str(tone), ())
+    source = FFmpegSource(ffmpeg_executable(), str(tone), ())
     try:
         frame = source.read()
         assert len(frame) == 3_840
@@ -252,6 +256,73 @@ def test_final_short_pcm_chunk_is_padded_to_one_discord_frame(tmp_path: Path) ->
         assert source.read() == b""
     finally:
         source.cleanup()
+
+
+def test_adapter_promotes_callback_and_reaps_both_sources(tmp_path: Path) -> None:
+    path = _opus_fixture(tmp_path)
+
+    async def scenario() -> None:
+        adapter = _adapter(tmp_path)
+        voice = cast(FakeVoiceClient, cast(Any, adapter._voice))
+        reported: list[str] = []
+        track = ResolvedTrack(str(path), is_opus=True, duration_seconds=1)
+        adapter.play(track, lambda error: reported.append("old"))
+        mixer = cast(CrossfadeSource, voice.source)
+        current = mixer.current
+        due = threading.Event()
+        assert await asyncio.to_thread(current.wait_ready, 50)
+        assert await adapter.prepare_next(track, 0.4, due.set)
+        assert mixer._prepared is not None
+        upcoming = mixer._prepared.audio
+        while not due.is_set():
+            mixer.read()
+        assert adapter.start_transition(
+            track, lambda error: reported.append("new"), lambda: None
+        )
+        assert adapter.transitioning
+        assert mixer.current is upcoming
+        voice.finish()
+        assert reported == ["new"]
+        assert current.source.original.closed and upcoming.source.original.closed
+        assert not current._thread.is_alive() and not upcoming._thread.is_alive()
+        await adapter.stop()
+
+    asyncio.run(scenario())
+
+
+def test_stop_cancels_a_buffer_that_is_not_ready(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = _opus_fixture(tmp_path)
+    started = threading.Event()
+    prepared: list[BufferedAudio] = []
+
+    def blocked_ready(self: BufferedAudio, frames: int) -> bool:
+        prepared.append(self)
+        started.set()
+        with self._condition:
+            self._condition.wait_for(lambda: self._stopped, timeout=2)
+        return False
+
+    monkeypatch.setattr(BufferedAudio, "wait_ready", blocked_ready)
+
+    async def scenario() -> None:
+        adapter = _adapter(tmp_path)
+        track = ResolvedTrack(str(path), is_opus=True, duration_seconds=1)
+        adapter.play(track, lambda error: None)
+        preparation = asyncio.create_task(
+            adapter.prepare_next(track, 0.4, lambda: None)
+        )
+        assert await asyncio.to_thread(started.wait, 1)
+        preparation.cancel()
+        await adapter.stop()
+        with pytest.raises(asyncio.CancelledError):
+            await preparation
+        assert prepared[0].source.original.closed
+        assert not prepared[0]._thread.is_alive()
+        assert adapter._preparing is None
+
+    asyncio.run(scenario())
 
 
 def test_seek_starts_pcm_at_requested_sample(tmp_path: Path) -> None:
@@ -267,12 +338,49 @@ def test_seek_starts_pcm_at_requested_sample(tmp_path: Path) -> None:
     try:
         assert adapter._playback is not None
         assert adapter._playback.source.volume == 0.4
-        assert (
-            adapter._playback.source.original.read()
-            == struct.pack("<hh", 200, 200) * 960
+        assert adapter._playback.source.current.take(timeout=1) == AudioFrame(
+            struct.pack("<hh", 200, 200) * 960
         )
     finally:
         asyncio.run(adapter.stop())
+
+
+def test_restored_pause_is_silent_until_resume(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        tone = tmp_path / "paused-tone.wav"
+        _write_tone(tone)
+        adapter = _adapter(tmp_path)
+        voice = cast(FakeVoiceClient, adapter._voice)
+        try:
+            adapter.play(
+                ResolvedTrack(str(tone)),
+                lambda _: None,
+                position_seconds=0.02,
+                paused=True,
+            )
+            assert voice.paused
+            assert voice.source is not None
+            assert adapter._playback is not None
+            assert adapter._playback.source.current.wait_ready(1)
+            decoder = discord.opus.Decoder()  # type: ignore[no-untyped-call]
+            silent = decoder.decode(voice.source.read(), fec=False)
+            assert (
+                max(abs(sample[0]) for sample in struct.iter_unpack("<h", silent)) == 0
+            )
+            assert adapter.position_seconds == 0.02
+            adapter.resume()
+            assert not voice.paused
+            audio = decoder.decode(voice.source.read(), fec=False)
+            assert max(abs(sample[0]) for sample in struct.iter_unpack("<h", audio)) > 0
+            assert adapter.position_seconds == 0.04
+            adapter.pause()
+            voice.source.read()
+            assert adapter.position_seconds == 0.04
+        finally:
+            await adapter.stop()
+        assert adapter.position_seconds is None
+
+    asyncio.run(scenario())
 
 
 def test_stop_closes_ffmpeg_process_before_returning(tmp_path: Path) -> None:
@@ -281,13 +389,13 @@ def test_stop_closes_ffmpeg_process_before_returning(tmp_path: Path) -> None:
     adapter = _adapter(tmp_path)
     voice = cast(FakeVoiceClient, cast(Any, adapter._voice))
     adapter.play(ResolvedTrack(str(tone)), lambda error: None)
-    source = cast(_VolumeSource, voice.source)
-    process = source.original._process
+    source = cast(CrossfadeSource, voice.source)
+    process = source.current.source.original._process
 
     asyncio.run(adapter.stop())
 
     assert voice.stopped
-    assert source.original.closed
+    assert source.current.source.original.closed
     assert process.poll() is not None
 
 
@@ -300,7 +408,7 @@ def test_natural_completion_cleans_up_before_callback(tmp_path: Path) -> None:
     adapter.play(
         ResolvedTrack(str(tone)),
         lambda error: observed.append(
-            (error, cast(_VolumeSource, voice.source).original.closed)
+            (error, cast(CrossfadeSource, voice.source).closed)
         ),
     )
 
@@ -318,7 +426,7 @@ def test_cleanup_failure_is_reported_to_completion_callback(
     voice = cast(FakeVoiceClient, cast(Any, adapter._voice))
     reported: list[Exception | None] = []
     adapter.play(ResolvedTrack(str(tone)), reported.append)
-    source = cast(_VolumeSource, voice.source)
+    source = cast(CrossfadeSource, voice.source)
     original_cleanup = source.cleanup
 
     def fail_cleanup() -> None:
@@ -337,7 +445,7 @@ def test_cleanup_failure_is_reported_to_completion_callback(
 def test_source_is_closed_only_after_ffmpeg_is_reaped(tmp_path: Path) -> None:
     tone = tmp_path / "tone.wav"
     _write_tone(tone)
-    source = _FFmpegSource(ffmpeg_executable(), str(tone), ())
+    source = FFmpegSource(ffmpeg_executable(), str(tone), ())
     actual_process = source._process
     actual_process.kill()
     actual_process.wait(timeout=2)
@@ -370,7 +478,7 @@ def test_stop_runs_ffmpeg_cleanup_outside_event_loop(
     adapter = _adapter(tmp_path)
     voice = cast(FakeVoiceClient, cast(Any, adapter._voice))
     adapter.play(ResolvedTrack(str(tone)), lambda error: None)
-    source = cast(_VolumeSource, voice.source)
+    source = cast(CrossfadeSource, voice.source)
     original_cleanup = source.cleanup
     cleanup_thread: list[int] = []
 
@@ -403,9 +511,9 @@ def test_failed_voice_play_closes_spawned_process(tmp_path: Path) -> None:
     with pytest.raises(VoiceError, match="could not start"):
         adapter.play(ResolvedTrack(str(tone)), lambda error: None)
 
-    source = cast(_VolumeSource, voice.source)
-    assert source.original.closed
-    assert source.original._process.poll() is not None
+    source = cast(CrossfadeSource, voice.source)
+    assert source.current.source.original.closed
+    assert source.current.source.original._process.poll() is not None
 
 
 def test_media_and_voice_failures_are_classified_without_secrets(
@@ -426,10 +534,8 @@ def test_media_and_voice_failures_are_classified_without_secrets(
     assert signed_value not in str(reported[0])
 
     adapter.play(ResolvedTrack("https://example.invalid/audio"), reported.append)
-    cast(_VolumeSource, voice.source).original._current_error = _MediaStreamError(
-        signed_value
-    )
-    voice.finish(cast(_VolumeSource, voice.source).original.current_error)
+    cast(CrossfadeSource, voice.source)._current_error = MediaStreamError(signed_value)
+    voice.finish(cast(CrossfadeSource, voice.source)._current_error)
     assert isinstance(reported[1], TrackError)
     assert reported[1].retryable
     assert signed_value not in str(reported[1])
@@ -557,9 +663,9 @@ def test_disconnect_stops_paused_audio_before_leaving(tmp_path: Path) -> None:
 
     assert voice.stopped
     assert not voice.connected
-    source = cast(_VolumeSource, voice.source)
-    assert source.original.closed
-    assert source.original._process.poll() is not None
+    source = cast(CrossfadeSource, voice.source)
+    assert source.current.source.original.closed
+    assert source.current.source.original._process.poll() is not None
 
 
 def test_ready_without_any_guild_allows_inviting_the_bot_later(tmp_path: Path) -> None:

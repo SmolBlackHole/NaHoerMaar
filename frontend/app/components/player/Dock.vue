@@ -109,6 +109,19 @@ async function setVolume() {
 	await player.mutate("/api/player/volume", "PUT", { volume: volume.value / 100 });
 	volume.value = Math.round((player.snapshot?.volume ?? 1) * 100);
 }
+const crossfade = ref(0);
+watch(
+	() => player.snapshot?.crossfade_seconds,
+	(value) => {
+		crossfade.value = value ?? 0;
+	},
+	{ immediate: true },
+);
+async function setCrossfade(seconds: number) {
+	crossfade.value = seconds;
+	await player.mutate("/api/player/crossfade", "PUT", { seconds });
+	crossfade.value = player.snapshot?.crossfade_seconds ?? 0;
+}
 </script>
 
 <template>
@@ -195,8 +208,16 @@ async function setVolume() {
 					@pointerenter="hoverSeek"
 					@pointermove="hoverSeek"
 					@pointerleave="hoverPosition = null"
-					@pointerdown="keyboardPreview = false; beginSeek(); hoverSeek($event)"
-					@focus="keyboardPreview = ($event.target as HTMLInputElement).matches(':focus-visible')"
+					@pointerdown="
+						keyboardPreview = false;
+						beginSeek();
+						hoverSeek($event);
+					"
+					@focus="
+						keyboardPreview = ($event.target as HTMLInputElement).matches(
+							':focus-visible',
+						)
+					"
 					@keydown="seekKey"
 					@input="previewSeek"
 					@change="commitSeek"
@@ -208,11 +229,11 @@ async function setVolume() {
 			<span class="w-9">{{ formatTime(current?.duration_seconds ?? null) }}</span>
 		</div>
 		<div class="dock-volume flex items-center gap-3">
-			<UPopover :ui="{ content: 'w-64 p-4' }">
-				<UTooltip text="Volume for everyone in the channel">
+			<UPopover :ui="{ content: 'w-72 max-w-[calc(100vw-2rem)] p-4' }">
+				<UTooltip text="Volume & crossfade">
 					<UButton
 						:icon="icons.volume"
-						aria-label="Bot volume"
+						aria-label="Audio settings"
 						color="neutral"
 						variant="ghost"
 						class="size-10 justify-center"
@@ -237,7 +258,48 @@ async function setVolume() {
 						:aria-valuetext="`${volume} percent`"
 						@change="setVolume"
 					/>
-					<p class="mt-2 text-xs text-muted">For everyone in the channel.</p>
+					<div class="mt-5 space-y-3">
+						<div class="flex items-center justify-between gap-3">
+							<span id="crossfade-label" class="text-sm">Crossfade</span>
+							<USwitch
+								:model-value="crossfade > 0"
+								aria-labelledby="crossfade-label"
+								:disabled="
+									!player.enabled ||
+									player.snapshot?.crossfade_seconds === undefined ||
+									player.isPending('/api/player/crossfade')
+								"
+								@update:model-value="setCrossfade($event ? 5 : 0)"
+							/>
+						</div>
+						<div v-if="crossfade > 0" class="flex items-center gap-3">
+							<input
+								v-model.number="crossfade"
+								type="range"
+								min="3"
+								max="7"
+								step="1"
+								class="volume-slider min-w-0 flex-1"
+								aria-label="Crossfade duration"
+								:aria-valuetext="`${crossfade} seconds`"
+								:disabled="
+									!player.enabled || player.isPending('/api/player/crossfade')
+								"
+								@change="setCrossfade(crossfade)"
+							/>
+							<output class="w-7 text-right text-sm tabular-nums text-muted"
+								>{{ crossfade }}s</output
+							>
+						</div>
+						<p class="text-xs leading-relaxed text-muted">
+							{{
+								crossfade
+									? "Songs overlap at the next natural transition."
+									: "Songs play one after another."
+							}}
+						</p>
+					</div>
+					<p class="mt-4 text-xs text-muted">For everyone in the channel.</p>
 				</template>
 			</UPopover>
 			<label for="bot-volume" class="sr-only">Bot volume for everyone</label>

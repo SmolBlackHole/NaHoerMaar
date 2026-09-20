@@ -21,6 +21,7 @@ class PlaybackEvent(StrEnum):
     STOP = "stop"
     FAIL = "fail"
     FINISHED = "finished"
+    CROSSFADE = "crossfade"
     RECOVER = "recover"
 
 
@@ -73,6 +74,9 @@ _TRANSITIONS: Mapping[PlaybackState, Mapping[PlaybackEvent, _Transition]] = (
             ),
             PlaybackState.PLAYING: MappingProxyType(
                 {
+                    PlaybackEvent.CROSSFADE: _Transition(
+                        PlaybackState.PLAYING, _QueueEffect.ADVANCE
+                    ),
                     PlaybackEvent.FINISHED: _Transition(
                         PlaybackState.LOADING, _QueueEffect.ADVANCE
                     ),
@@ -131,7 +135,7 @@ _TRANSITIONS: Mapping[PlaybackState, Mapping[PlaybackEvent, _Transition]] = (
 def transition(snapshot: PlayerSnapshot, event: PlaybackEvent) -> PlayerSnapshot:
     """Return the next snapshot without mutating state or performing I/O."""
     rule = _TRANSITIONS[snapshot.state].get(event)
-    if rule is None:
+    if rule is None or (event is PlaybackEvent.CROSSFADE and not snapshot.upcoming):
         raise InvalidTransitionError(snapshot.state, event)
 
     current, upcoming, state = snapshot.current, snapshot.upcoming, rule.state

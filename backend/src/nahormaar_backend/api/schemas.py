@@ -101,6 +101,18 @@ class VolumeInput(Input):
     volume: float = Field(ge=0, le=1, strict=True)
 
 
+class CrossfadeInput(Input):
+    seconds: int = Field(ge=0, le=7, strict=True)
+
+    @field_validator("seconds")
+    @classmethod
+    def supported_duration(cls, value: int) -> int:
+        from ..domain.crossfade import validate_crossfade
+
+        validate_crossfade(value)
+        return value
+
+
 class SeekInput(Input):
     position_seconds: float = Field(ge=0, strict=True)
     expected_playback_id: UUID
@@ -170,6 +182,7 @@ class State(BaseModel):
     channel_id: str | None
     playback_id: UUID | None
     volume: float
+    crossfade_seconds: int = 0
     position_seconds: float
     position_updated_at: datetime | None
     last_issue: Issue | None
@@ -194,6 +207,7 @@ class State(BaseModel):
             else None,
             playback_id=status.attempt_id,
             volume=status.volume,
+            crossfade_seconds=player.crossfade_seconds,
             position_seconds=status.position_seconds,
             position_updated_at=status.position_updated_at,
             radio=status.radio,
