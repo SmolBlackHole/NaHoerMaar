@@ -1,39 +1,159 @@
 <script setup lang="ts">
-import { formatTime, formatWait, queueWaits, trackTitle, youtubeVideoId } from "#shared/player";
+import Sortable, { type SortableEvent } from "sortablejs";
+import type { DropdownMenuItem } from "@nuxt/ui";
+import type { ListenerProfile } from "#shared/profile";
+import {
+	formatTime,
+	formatWait,
+	queueMoveTarget,
+	queueWaits,
+	trackTitle,
+	type QueueEntry,
+} from "#shared/player";
 import { usePlayerStore } from "~/stores/player";
+import { useProfileStore } from "~/stores/profile";
 
 const player = usePlayerStore();
+const profile = useProfileStore();
 const { icons } = useTheme();
-const source = ref("");
-const inputError = ref("");
 const feedback = ref("");
-const adding = ref(false);
-const clearing = ref<number | null>(null);
-const dragging = ref<{ id: string; revision: number } | null>(null);
-const dropTarget = ref<string | null>(null);
+const clearing = ref<{
+	revision: number;
+	contributor: ListenerProfile | null;
+	mine: boolean;
+	count: number;
+} | null>(null);
+const mine = computed(
+	() =>
+		player.snapshot?.upcoming.filter(
+			(entry) => !!profile.profile && entry.added_by?.id === profile.profile.id,
+		) ?? [],
+);
+const contributors = computed(() => {
+	const people = new Map<string, { profile: ListenerProfile; count: number }>();
+	for (const entry of player.snapshot?.upcoming ?? []) {
+		const person = entry.added_by;
+		if (!person || person.id === profile.profile?.id) continue;
+		const existing = people.get(person.id);
+		if (existing) existing.count++;
+		else people.set(person.id, { profile: person, count: 1 });
+	}
+	return [...people.values()].sort((a, b) => a.profile.name.localeCompare(b.profile.name));
+});
+const removalItems = computed<DropdownMenuItem[][]>(() => {
+	const groups: DropdownMenuItem[][] = [
+		[
+			{
+				label: `Remove my tracks (${mine.value.length})`,
+				icon: icons.value.user,
+				disabled: !player.enabled || !mine.value.length,
+				onSelect: () => {
+					if (profile.profile) confirmClear(profile.profile);
+				},
+			},
+		],
+	];
+	if (contributors.value.length)
+		groups.push([
+			{ type: "label", label: "Remove by person" },
+			...contributors.value.map(({ profile: person, count }) => ({
+				label: `${person.name} (${count})`,
+				avatar: { src: `/avatars/${person.avatar}.png`, alt: "" },
+				disabled: !player.enabled,
+				onSelect: () => confirmClear(person),
+			})),
+		]);
+	groups.push([
+		{
+			label: `Clear entire queue (${queue.value.length})`,
+			icon: icons.value.trash,
+			color: "error",
+			disabled: !player.enabled || !queue.value.length,
+			onSelect: () => confirmClear(null),
+		},
+	]);
+	return groups;
+});
+const clearTitle = computed(() => {
+	const target = clearing.value;
+	if (!target) return "";
+	const tracks = `${target.count} ${target.count === 1 ? "track" : "tracks"}`;
+	if (target.mine) return `Remove your ${tracks}?`;
+	return target.contributor
+		? `Remove ${tracks} added by ${target.contributor.name}?`
+		: `Clear all ${tracks}?`;
+});
+const clearDescription = computed(() => {
+	const target = clearing.value;
+	const scope = target?.mine
+		? "Only your upcoming tracks will be removed."
+		: target?.contributor
+			? `Only upcoming tracks added by ${target.contributor.name} will be removed.`
+			: "This removes everyone’s upcoming tracks.";
+	return `${scope} The current track keeps playing.`;
+});
+const dragging = shallowRef<{ id: string; revision: number; entries: QueueEntry[] } | null>(null);
+const list = ref<HTMLElement | null>(null);
+const queue = shallowRef<QueueEntry[]>([]);
+const placing = ref<{ id: string; position: number; revision: number; ids: string[] } | null>(null);
+let sortable: Sortable | null = null;
 const { now } = usePlaybackPosition();
 const waits = computed(() =>
 	player.connection === "live" ? queueWaits(player.snapshot, now.value) : [],
 );
-const queue = computed(() => player.snapshot?.upcoming ?? []);
+watch(
+	() => player.snapshot?.upcoming,
+	(entries) => {
+		if (!dragging.value) queue.value = [...(entries ?? [])];
+	},
+	{ immediate: true },
+);
 
-async function add() {
-	inputError.value = "";
-	const submitted = source.value.trim();
-	if (!youtubeVideoId(submitted)) {
-		inputError.value = "Paste a link to a single YouTube video.";
-		return;
-	}
-	adding.value = true;
-	try {
-		if (await player.add(submitted)) {
-			if (source.value.trim() === submitted) source.value = "";
-			feedback.value = "Track added to the queue.";
-		}
-	} finally {
-		adding.value = false;
-	}
-}
+onMounted(() => {
+	watch(
+		list,
+		(element) => {
+			sortable?.destroy();
+			sortable = element
+				? new Sortable(element, {
+						draggable: ".queue-row",
+						handle: ".queue-handle",
+						dataIdAttr: "data-entry-id",
+						animation: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+							? 0
+							: 160,
+						ghostClass: "queue-placeholder",
+						chosenClass: "queue-chosen",
+						fallbackClass: "queue-floating",
+						forceFallback: true,
+						fallbackTolerance: 5,
+						delay: 150,
+						delayOnTouchOnly: true,
+						touchStartThreshold: 4,
+						disabled: !player.enabled,
+						onStart: ({ item }) => {
+							if (!player.snapshot || !item.dataset.entryId) return;
+							placing.value = null;
+							dragging.value = {
+								id: item.dataset.entryId,
+								revision: player.snapshot.queue_revision,
+								entries: [...queue.value],
+							};
+						},
+						onEnd: (event) => {
+							void finishDrag(event);
+						},
+					})
+				: null;
+		},
+		{ immediate: true, flush: "post" },
+	);
+});
+watch(
+	() => player.enabled,
+	(enabled) => sortable?.option("disabled", !enabled),
+);
+onBeforeUnmount(() => sortable?.destroy());
 
 async function move(index: number, direction: -1 | 1) {
 	const entry = queue.value[index];
@@ -43,42 +163,110 @@ async function move(index: number, direction: -1 | 1) {
 		feedback.value = "Queue order updated.";
 }
 
-function startDrag(event: DragEvent, id: string) {
-	if (!player.enabled || !event.dataTransfer || !player.snapshot) {
-		event.preventDefault();
-		return;
+async function finishDrag(event: SortableEvent) {
+	const moving = dragging.value;
+	if (!moving) return;
+	const ids = moving.entries.map((entry) => entry.id);
+	// Restore Vue's DOM order before applying the new reactive order.
+	sortable?.sort(ids);
+	try {
+		if (
+			event.newDraggableIndex === undefined ||
+			event.newDraggableIndex === event.oldDraggableIndex
+		)
+			return;
+		if (player.snapshot?.queue_revision !== moving.revision) {
+			feedback.value = "The queue changed while you were dragging. Try again.";
+			return;
+		}
+		const before = queueMoveTarget(ids, moving.id, event.newDraggableIndex + 1);
+		if (before === undefined) return;
+		const reordered = moving.entries.filter((entry) => entry.id !== moving.id);
+		const entry = moving.entries.find((entry) => entry.id === moving.id)!;
+		reordered.splice(event.newDraggableIndex, 0, entry);
+		queue.value = reordered;
+		if (await player.move(moving.id, before, moving.revision))
+			feedback.value = "Queue order updated.";
+	} finally {
+		dragging.value = null;
+		queue.value = [...(player.snapshot?.upcoming ?? [])];
 	}
-	dragging.value = { id, revision: player.snapshot.queue_revision };
-	event.dataTransfer.effectAllowed = "move";
-	event.dataTransfer.setData("text/plain", id);
 }
 
-async function drop(before: string | null) {
-	const moving = dragging.value;
-	dragging.value = null;
-	dropTarget.value = null;
-	if (moving && moving.id !== before && (await player.move(moving.id, before, moving.revision)))
-		feedback.value = "Queue order updated.";
+function choosePosition(id: string, index: number) {
+	if (!player.snapshot) return;
+	placing.value = {
+		id,
+		position: index + 1,
+		revision: player.snapshot.queue_revision,
+		ids: queue.value.map((entry) => entry.id),
+	};
+}
+
+function focusPosition(event: Event) {
+	if (!placing.value) return;
+	event.preventDefault();
+	void nextTick(() =>
+		list.value?.querySelector<HTMLInputElement>(".queue-position-input")?.focus(),
+	);
+}
+
+async function submitPosition() {
+	const target = placing.value;
+	if (!target) return;
+	if (player.snapshot?.queue_revision !== target.revision) {
+		placing.value = null;
+		feedback.value = "The queue changed. Choose the position again.";
+		return;
+	}
+	const before = queueMoveTarget(target.ids, target.id, Number(target.position));
+	if (before === undefined) return;
+	if (await player.move(target.id, before, target.revision)) {
+		feedback.value = `Moved to position ${target.position}.`;
+		placing.value = null;
+	}
+}
+
+function confirmClear(contributor: ListenerProfile | null) {
+	if (!player.snapshot || !player.enabled) return;
+	const count = contributor
+		? player.snapshot.upcoming.filter((entry) => entry.added_by?.id === contributor.id).length
+		: player.snapshot.upcoming.length;
+	if (!count) return;
+	clearing.value = {
+		revision: player.snapshot.queue_revision,
+		contributor,
+		mine: !!contributor && contributor.id === profile.profile?.id,
+		count,
+	};
 }
 
 async function clearQueue() {
-	const revision = clearing.value;
+	const target = clearing.value;
 	clearing.value = null;
 	if (
-		revision !== null &&
-		(await player.mutate("/api/queue/clear", "POST", { expected_queue_revision: revision }))
+		target &&
+		(await player.mutate("/api/queue/clear", "POST", {
+			expected_queue_revision: target.revision,
+			...(target.contributor ? { contributor_id: target.contributor.id } : {}),
+		}))
 	)
-		feedback.value = "Queue cleared.";
+		feedback.value = target.mine
+			? "Your upcoming tracks were removed."
+			: target.contributor
+				? `Upcoming tracks added by ${target.contributor.name} were removed.`
+				: "Queue cleared.";
 }
 </script>
 
 <template>
 	<section aria-labelledby="queue-heading" class="queue-section min-w-0">
-		<div class="mb-5 flex items-center justify-between gap-3">
+		<PlayerDiscovery />
+		<div class="queue-heading">
 			<div class="flex items-baseline gap-3">
 				<h2
 					id="queue-heading"
-					class="text-xl font-semibold tracking-[-0.025em] text-highlighted"
+					class="text-xl font-semibold tracking-tight text-highlighted"
 				>
 					Up next
 				</h2>
@@ -86,58 +274,23 @@ async function clearQueue() {
 					>{{ queue.length }} {{ queue.length === 1 ? "track" : "tracks" }}</span
 				>
 			</div>
-			<UButton
-				label="Clear queue"
-				:icon="icons.trash"
-				size="sm"
-				color="neutral"
-				variant="ghost"
-				:disabled="!player.enabled || !queue.length"
-				@click="clearing = player.snapshot!.queue_revision"
-			/>
-		</div>
-		<form class="mb-5" @submit.prevent="add">
-			<label for="youtube-link" class="sr-only">Add a track</label>
-			<div class="flex gap-2">
-				<UInput
-					id="youtube-link"
-					v-model="source"
-					type="url"
-					:icon="icons.link"
-					placeholder="Paste a YouTube link"
-					autocomplete="off"
-					class="min-w-0 flex-1"
-					size="xl"
-					variant="subtle"
-					:disabled="!player.enabled"
-					:aria-invalid="!!inputError"
-					aria-describedby="link-help"
-					@update:model-value="
-						inputError = '';
-						feedback = '';
-					"
-				/>
-				<UButton
-					type="submit"
-					label="Add track"
-					:icon="icons.plus"
-					size="lg"
-					color="neutral"
-					variant="soft"
-					class="shrink-0 justify-center"
-					:loading="adding"
-					:disabled="!player.enabled || !source.trim()"
-				/>
-			</div>
-			<p
-				id="link-help"
-				class="mt-2 text-xs"
-				:class="inputError ? 'text-error' : 'sr-only'"
-				:role="inputError ? 'alert' : undefined"
+			<UDropdownMenu
+				:items="removalItems"
+				:content="{ align: 'end' }"
+				:ui="{ item: 'min-h-11', content: 'max-w-[calc(100vw-2rem)]' }"
 			>
-				{{ inputError || "YouTube and YouTube Music video links" }}
-			</p>
-		</form>
+				<UButton
+					label="Remove"
+					:icon="icons.trash"
+					:trailing-icon="icons.chevronDown"
+					color="neutral"
+					variant="ghost"
+					class="min-h-11"
+					:disabled="!player.enabled || !queue.length"
+					aria-label="Remove tracks from the queue"
+				/>
+			</UDropdownMenu>
+		</div>
 		<div
 			v-if="!player.snapshot && player.connection === 'connecting'"
 			class="space-y-3"
@@ -150,28 +303,19 @@ async function clearQueue() {
 			<div class="queue-columns queue-grid text-xs text-muted" aria-hidden="true">
 				<span /><span /><span>Track</span><span>Added by</span><span>Duration</span><span />
 			</div>
-			<ol aria-label="Upcoming tracks" class="queue-list">
+			<ol ref="list" aria-label="Upcoming tracks" class="queue-list">
 				<li
 					v-for="(entry, index) in queue"
 					:key="entry.id"
 					:data-entry-id="entry.id"
 					class="queue-row queue-grid"
-					:class="{ 'drop-target': dropTarget === entry.id }"
-					@dragover.prevent="dragging && (dropTarget = entry.id)"
-					@drop.prevent="drop(entry.id)"
 				>
 					<button
 						type="button"
-						:draggable="player.enabled"
 						:disabled="!player.enabled"
 						:aria-label="'Drag ' + trackTitle(entry) + ' to reorder'"
-						class="queue-handle relative size-8 cursor-grab items-center justify-center text-muted"
+						class="queue-handle relative size-11 cursor-grab items-center justify-center text-muted"
 						tabindex="-1"
-						@dragstart="startDrag($event, entry.id)"
-						@dragend="
-							dragging = null;
-							dropTarget = null;
-						"
 					>
 						<span class="queue-number text-xs tabular-nums">{{
 							String(index + 1).padStart(2, "0")
@@ -196,7 +340,7 @@ async function clearQueue() {
 					<div class="queue-timing text-xs text-muted">
 						<span class="tabular-nums">{{ formatTime(entry.duration_seconds) }}</span>
 						<span
-							v-if="waits[index] != null"
+							v-if="!dragging && waits[index] != null"
 							class="queue-wait"
 							title="Estimated start, assuming the queue stays in this order"
 							>{{ formatWait(waits[index]!) }}</span
@@ -204,6 +348,12 @@ async function clearQueue() {
 					</div>
 					<UDropdownMenu
 						:items="[
+							{
+								label: 'Move to position…',
+								icon: icons.drag,
+								disabled: !player.enabled || queue.length < 2,
+								onSelect: () => choosePosition(entry.id, index),
+							},
 							{
 								label: 'Move up',
 								icon: icons.arrowUp,
@@ -224,16 +374,49 @@ async function clearQueue() {
 								onSelect: () => player.mutate('/api/queue/' + entry.id, 'DELETE'),
 							},
 						]"
-						:content="{ align: 'end' }"
+						:content="{ align: 'end', onCloseAutoFocus: focusPosition }"
 					>
 						<UButton
 							:icon="icons.ellipsis"
 							:aria-label="'Options for ' + trackTitle(entry)"
 							color="neutral"
 							variant="ghost"
-							class="queue-menu size-10 justify-center"
+							class="queue-menu size-11 justify-center"
 						/>
 					</UDropdownMenu>
+					<form
+						v-if="placing?.id === entry.id"
+						class="queue-placement"
+						@submit.prevent="submitPosition"
+						@keydown.esc="placing = null"
+					>
+						<label :for="'position-' + entry.id" class="text-xs text-muted"
+							>Position</label
+						>
+						<input
+							:id="'position-' + entry.id"
+							v-model.number="placing.position"
+							class="queue-position-input"
+							type="number"
+							min="1"
+							:max="placing.ids.length"
+							step="1"
+							required
+							:disabled="!player.enabled"
+						/>
+						<UButton
+							type="submit"
+							label="Move"
+							color="neutral"
+							:disabled="!player.enabled"
+						/>
+						<UButton
+							label="Cancel"
+							color="neutral"
+							variant="ghost"
+							@click="placing = null"
+						/>
+					</form>
 				</li>
 			</ol>
 		</template>
@@ -250,25 +433,19 @@ async function clearQueue() {
 				<p class="mt-2 text-sm text-muted">
 					{{
 						player.connection === "live"
-							? "Drop a link above. We'll take it from there."
+							? "Search for a track or paste a YouTube link above."
 							: "Your queue will appear when the connection is back."
 					}}
 				</p>
 			</div>
 		</div>
-		<div
-			v-if="dragging"
-			class="my-3 rounded-lg border border-dashed border-default p-4 text-center text-sm text-muted"
-			@dragover.prevent
-			@drop.prevent="drop(null)"
-		>
-			Drop here to move to the end
-		</div>
-		<p role="status" aria-live="polite" class="mt-3 text-xs text-muted">{{ feedback }}</p>
+		<p role="status" aria-live="polite" class="queue-feedback text-xs text-muted">
+			{{ feedback }}
+		</p>
 		<UModal
 			:open="clearing !== null"
-			title="Clear the queue?"
-			description="This removes all upcoming tracks. The current track keeps playing."
+			:title="clearTitle"
+			:description="clearDescription"
 			@update:open="!$event && (clearing = null)"
 		>
 			<template #footer>
@@ -279,7 +456,13 @@ async function clearQueue() {
 					@click="clearing = null"
 				/>
 				<UButton
-					label="Clear queue"
+					:label="
+						clearing?.mine
+							? 'Remove my tracks'
+							: clearing?.contributor
+								? 'Remove tracks'
+								: 'Clear entire queue'
+					"
 					color="error"
 					:disabled="!player.enabled"
 					@click="clearQueue"
@@ -291,13 +474,22 @@ async function clearQueue() {
 
 <style scoped>
 .queue-section {
-	max-width: 76rem;
-	margin-inline: auto;
+	width: 100%;
 	padding-top: 0.5rem;
+}
+.queue-heading {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+	margin-bottom: 0.75rem;
+}
+.queue-feedback:not(:empty) {
+	margin-top: 0.75rem;
 }
 .queue-grid {
 	display: grid;
-	grid-template-columns: 2rem 3rem minmax(0, 1fr) 10rem 6rem 2.5rem;
+	grid-template-columns: 2.75rem 3rem minmax(0, 1fr) 10rem 6rem 2.75rem;
 	align-items: center;
 	column-gap: 1rem;
 	padding-inline: 0.5rem;
@@ -315,22 +507,61 @@ async function clearQueue() {
 	border-bottom: 1px solid var(--ui-border);
 }
 .queue-row:hover,
-.queue-row:focus-within,
-.queue-row.drop-target {
+.queue-row:focus-within {
 	background: var(--ui-bg-muted);
 	border-radius: 0.5rem;
 }
 .queue-handle {
 	display: flex;
+	touch-action: none;
 }
 .queue-grip {
 	opacity: 0;
 }
-.queue-row:hover .queue-grip {
-	opacity: 1;
+.queue-placeholder {
+	background: var(--ui-bg-elevated);
+	border-radius: 0.5rem;
 }
-.queue-row:hover .queue-number {
-	opacity: 0;
+.queue-placeholder > * {
+	opacity: 0.2;
+}
+.queue-floating {
+	background: var(--ui-bg-elevated);
+	border-radius: 0.5rem;
+	box-shadow: 0 12px 32px rgb(0 0 0 / 25%);
+	opacity: 0.97 !important;
+}
+.queue-chosen .queue-handle {
+	cursor: grabbing;
+}
+.queue-placement {
+	grid-column: 1 / -1;
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 0.75rem;
+	padding: 0.75rem 0.5rem 0.25rem;
+}
+.queue-position-input {
+	width: 4.5rem;
+	min-height: 2.75rem;
+	padding: 0.5rem;
+	border-radius: 0.375rem;
+	background: var(--ui-bg-elevated);
+	color: var(--ui-text-highlighted);
+	border: 1px solid var(--ui-border);
+}
+.queue-position-input:focus-visible {
+	outline: 2px solid var(--ui-primary);
+	outline-offset: 2px;
+}
+@media (hover: hover) and (pointer: fine) {
+	.queue-row:hover .queue-grip {
+		opacity: 1;
+	}
+	.queue-row:hover .queue-number {
+		opacity: 0;
+	}
 }
 .queue-wait {
 	display: block;
@@ -342,36 +573,47 @@ async function clearQueue() {
 }
 @container workspace (max-width: 1000px) {
 	.queue-grid {
-		grid-template-columns: 1.5rem 3rem minmax(0, 1fr) 7.5rem 5rem 2.5rem;
+		grid-template-columns: 2.75rem 3rem minmax(0, 1fr) 7.5rem 5rem 2.75rem;
 		column-gap: 0.75rem;
 	}
 }
 @container workspace (max-width: 600px) {
 	.queue-grid {
-		grid-template-columns: 2.75rem minmax(0, 1fr) 2.5rem;
-		gap: 0.375rem 0.75rem;
+		grid-template-columns: 2.75rem 2.5rem minmax(0, 1fr) 2.75rem;
+		gap: 0.375rem 0.5rem;
+		padding-inline: 0;
 	}
-	.queue-columns,
-	.queue-handle {
+	.queue-columns {
 		display: none;
 	}
-	.queue-cover {
+	.queue-grip {
+		display: none;
+	}
+	.queue-row:hover .queue-number {
+		opacity: 1;
+	}
+	.queue-handle {
 		grid-column: 1;
 		grid-row: 1 / span 3;
 		align-self: start;
-		width: 2.75rem;
-		height: 2.75rem;
+	}
+	.queue-cover {
+		grid-column: 2;
+		grid-row: 1 / span 3;
+		align-self: start;
+		width: 2.5rem;
+		height: 2.5rem;
 	}
 	.queue-title {
-		grid-column: 2;
+		grid-column: 3;
 		grid-row: 1;
 	}
 	.queue-person {
-		grid-column: 2;
+		grid-column: 3;
 		grid-row: 2;
 	}
 	.queue-timing {
-		grid-column: 2;
+		grid-column: 3;
 		grid-row: 3;
 		display: flex;
 		flex-wrap: wrap;
@@ -384,7 +626,7 @@ async function clearQueue() {
 		font-size: inherit;
 	}
 	.queue-menu {
-		grid-column: 3;
+		grid-column: 4;
 		grid-row: 1 / span 3;
 	}
 }

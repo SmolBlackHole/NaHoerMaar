@@ -76,7 +76,7 @@ class FakeVoice:
         return self._channel_id
 
     def channels(self) -> tuple[VoiceChannelInfo, ...]:
-        return (VoiceChannelInfo(7, "Music", True, True),)
+        return (VoiceChannelInfo(7, "Music", True, True, 1, "Test server"),)
 
     def set_disconnect_handler(self, handler: Callable[[], None]) -> None:
         self._disconnect_handler = handler
@@ -157,7 +157,9 @@ def test_queue_edits_are_persisted_and_status_is_immutable(tmp_path: Path) -> No
             status = controller.status
             assert status.player.upcoming == (third, first)
             assert status.volume == 1.0
-            assert controller.channels() == (VoiceChannelInfo(7, "Music", True, True),)
+            assert controller.channels() == (
+                VoiceChannelInfo(7, "Music", True, True, 1, "Test server"),
+            )
         finally:
             await controller.close()
         with SQLiteStore(database) as store:

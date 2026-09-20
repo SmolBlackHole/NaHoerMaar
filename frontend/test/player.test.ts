@@ -3,6 +3,7 @@ import { createPlayerClient } from "../app/player/client";
 import {
 	canControl,
 	queueWaits,
+	queueMoveTarget,
 	formatWait,
 	playbackPosition,
 	youtubeVideoId,
@@ -22,6 +23,22 @@ const track: QueueEntry = {
 	uploader_url: null,
 	added_by: null,
 };
+
+describe("queue positions", () => {
+	it("moves by entry identity to first, middle and last positions", () => {
+		const ids = ["a", "b", "c", "d"];
+		expect(queueMoveTarget(ids, "d", 1)).toBe("a");
+		expect(queueMoveTarget(ids, "a", 3)).toBe("d");
+		expect(queueMoveTarget(ids, "a", 4)).toBeNull();
+		expect(queueMoveTarget(ids, "b", 2)).toBe("c");
+		expect(ids).toEqual(["a", "b", "c", "d"]);
+	});
+	it("rejects invalid positions and entries without sending an end-of-queue move", () => {
+		for (const position of [0, -1, 5, 1.5, NaN])
+			expect(queueMoveTarget(["a", "b"], "a", position)).toBeUndefined();
+		expect(queueMoveTarget(["a"], "removed", 1)).toBeUndefined();
+	});
+});
 const state = (changes: Partial<PlayerState> = {}): PlayerState => ({
 	revision: 1,
 	queue_revision: 1,
@@ -148,6 +165,26 @@ describe("live player", () => {
 		expect(client.snapshot.value?.volume).toBe(0.8);
 	});
 
+	it("retries a lost batch response with the exact original selection", async () => {
+		const { client, events, mutation } = setup();
+		events[0]!.emit(state());
+		const body = { source_urls: [track.source_url, track.source_url] };
+		mutation.mockRejectedValueOnce(new TypeError("network lost"));
+		expect(await client.mutate("/api/queue/batch", "POST", body)).toBe(false);
+		body.source_urls.pop();
+		expect(await client.mutate("/api/queue/batch", "POST", body)).toBe(false);
+		mutation.mockResolvedValueOnce(
+			Response.json({ code: "ok", replayed: true, snapshot: state({ revision: 2 }) }),
+		);
+		expect(await client.retry()).toBe(true);
+		expect(mutation).toHaveBeenCalledTimes(2);
+		expect(mutation.mock.calls[1]![0]).toBe("/api/queue/batch");
+		expect(mutation.mock.calls[1]![1]!.headers).toEqual(mutation.mock.calls[0]![1]!.headers);
+		expect(JSON.parse(mutation.mock.calls[1]![1]!.body as string)).toEqual({
+			source_urls: [track.source_url, track.source_url],
+		});
+	});
+
 	it("keeps a seek bound to the playback selected before dragging", async () => {
 		const { client, events, mutation } = setup();
 		events[0]!.emit(state({ playback_id: "next-track" }));
@@ -214,6 +251,10 @@ describe("player presentation", () => {
 		).toEqual([null, null, null]);
 		expect(formatWait(40)).toBe("In <1 min");
 		expect(formatWait(140)).toBe("In ~2 min");
+		expect(formatWait(3599)).toBe("In ~01:00 h");
+		expect(formatWait(3600)).toBe("In ~01:00 h");
+		expect(formatWait(4500)).toBe("In ~01:15 h");
+		expect(formatWait(7200)).toBe("In ~02:00 h");
 	});
 	it("holds paused progress and clamps playing progress to the duration", () => {
 		const anchor = "2026-09-19T12:00:00Z";

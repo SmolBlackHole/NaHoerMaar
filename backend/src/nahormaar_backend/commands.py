@@ -19,6 +19,12 @@ class Add:
 
 
 @dataclass(frozen=True, slots=True)
+class AddMany:
+    source_urls: tuple[str, ...]
+    added_by: Contributor | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class Remove:
     entry_id: UUID
 
@@ -33,6 +39,7 @@ class Move:
 @dataclass(frozen=True, slots=True)
 class Clear:
     expected_queue_revision: int
+    contributor_id: UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,12 +70,24 @@ class Disconnect:
 
 
 type Command = (
-    Add | Remove | Move | Clear | Control | Volume | Seek | Connect | Disconnect
+    Add
+    | AddMany
+    | Remove
+    | Move
+    | Clear
+    | Control
+    | Volume
+    | Seek
+    | Connect
+    | Disconnect
 )
 
 
 def fingerprint(command: Command) -> str:
     payload = asdict(command)
+    if isinstance(command, Clear) and command.contributor_id is None:
+        # Existing whole-queue clear receipts keep their fingerprint.
+        payload.pop("contributor_id")
     if isinstance(command, Add) and command.added_by in (None, ANONYMOUS_CONTRIBUTOR):
         # Keep receipts issued before queue attribution replayable.
         payload.pop("added_by")

@@ -128,6 +128,9 @@ class FakeVoiceChannel:
 
 
 class FakeGuild:
+    id = 1
+    name = "Test server"
+
     def __init__(self, channels: list[FakeVoiceChannel]) -> None:
         self.me = object()
         self.voice_channels = channels
@@ -456,8 +459,8 @@ def test_lists_and_joins_regular_voice_channels(
     monkeypatch.setattr(module_discord, "VoiceChannel", FakeVoiceChannel)
 
     assert adapter.channels() == (
-        VoiceChannelInfo(10, "Music", True, True),
-        VoiceChannelInfo(20, "Quiet", False, False),
+        VoiceChannelInfo(10, "Music", True, True, 1, "Test server"),
+        VoiceChannelInfo(20, "Quiet", False, False, 1, "Test server"),
     )
 
     async def connect_and_leave() -> None:

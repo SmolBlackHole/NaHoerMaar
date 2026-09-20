@@ -46,8 +46,8 @@ const links = computed(() => [
 				}"
 				class="navigation-sidebar min-h-0"
 				:ui="{
-					header: 'h-20 px-3',
-					body: 'px-3 pt-2 gap-1',
+					header: 'h-16 px-3',
+					body: 'px-3 pt-0 gap-1',
 					footer: 'shrink-0 flex-col items-stretch px-3 pt-3 pb-4 gap-1',
 				}"
 			>
@@ -85,6 +85,9 @@ const links = computed(() => [
 </template>
 
 <style scoped>
+.music-shell {
+	overflow: clip;
+}
 .music-shell :deep(.navigation-sidebar) {
 	background: var(--room-sidebar);
 	overflow: hidden;

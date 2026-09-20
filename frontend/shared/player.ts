@@ -66,6 +66,8 @@ export interface VoiceChannel {
 	name: string;
 	can_connect: boolean;
 	can_speak: boolean;
+	guild_id: string;
+	guild_name: string;
 }
 
 export interface MutationResult {
@@ -236,5 +238,23 @@ export function queueWaits(state: PlayerState | null, now: number): (number | nu
 }
 
 export function formatWait(seconds: number): string {
-	return seconds < 60 ? "In <1 min" : `In ~${Math.round(seconds / 60)} min`;
+	if (seconds < 60) return "In <1 min";
+	const minutes = Math.round(seconds / 60);
+	if (minutes < 60) return `In ~${minutes} min`;
+	return `In ~${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")} h`;
+}
+
+export function queueMoveTarget(
+	ids: readonly string[],
+	entryId: string,
+	position: number,
+): string | null | undefined {
+	if (
+		!Number.isInteger(position) ||
+		position < 1 ||
+		position > ids.length ||
+		!ids.includes(entryId)
+	)
+		return undefined;
+	return ids.filter((id) => id !== entryId)[position - 1] ?? null;
 }

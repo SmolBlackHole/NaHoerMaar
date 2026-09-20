@@ -10,7 +10,7 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -19,6 +19,9 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from . import api_models as dto
 from . import commands
 from .config import Settings
+from .audio import TrackError
+from .catalog import PlaylistPreview, MediaCatalog
+from .search import CatalogBusy, SearchPage, SearchSource
 from .playback import PlaybackController
 from .runtime import open_runtime
 from .storage import StorageError
@@ -86,6 +89,65 @@ def create_app(
             raise HTTPException(503, detail="Backend is not running.")
         return controller
 
+    async def catalog(
+        active: Annotated[PlaybackController, Depends(player)],
+    ) -> MediaCatalog:
+        if active.catalog is None:
+            raise HTTPException(503, detail="YouTube discovery is not running.")
+        return active.catalog
+
+    @app.exception_handler(CatalogBusy)
+    async def discovery_busy(request: Request, error: CatalogBusy) -> JSONResponse:
+        return JSONResponse(
+            {"detail": str(error)}, status_code=429, headers={"Retry-After": "5"}
+        )
+
+    @app.exception_handler(TrackError)
+    async def discovery_failed(request: Request, error: TrackError) -> JSONResponse:
+        return JSONResponse({"detail": str(error)}, status_code=502)
+
+    @app.get("/api/catalog/search")
+    async def search(
+        q: Annotated[str, Query(min_length=1, max_length=200)],
+        library: Annotated[MediaCatalog, Depends(catalog)],
+        offset: Annotated[int, Query(ge=0, le=90, multiple_of=10)] = 0,
+        source: SearchSource = SearchSource.MUSIC,
+    ) -> SearchPage:
+        if not q.strip():
+            raise HTTPException(422, detail="Enter a title or artist.")
+        return await library.search(q, offset, source)
+
+    @app.post("/api/youtube/playlists", status_code=202)
+    async def preview_playlist(
+        body: dto.PlaylistInput,
+        request_id: RequestID,
+        library: Annotated[MediaCatalog, Depends(catalog)],
+    ) -> PlaylistPreview:
+        try:
+            return library.start_preview(body.source_url.strip(), request_id)
+        except ValueError as exc:
+            raise HTTPException(422, detail=str(exc)) from exc
+
+    @app.get("/api/youtube/playlists/{preview_id}")
+    async def playlist_preview(
+        preview_id: UUID, library: Annotated[MediaCatalog, Depends(catalog)]
+    ) -> PlaylistPreview:
+        try:
+            return library.preview(preview_id)
+        except KeyError as exc:
+            raise HTTPException(
+                410, detail="This playlist preview expired. Open the playlist again."
+            ) from exc
+
+    @app.delete("/api/youtube/playlists/{preview_id}")
+    async def cancel_playlist(
+        preview_id: UUID, library: Annotated[MediaCatalog, Depends(catalog)]
+    ) -> PlaylistPreview:
+        try:
+            return await library.cancel_preview(preview_id)
+        except KeyError as exc:
+            raise HTTPException(410, detail="This playlist preview expired.") from exc
+
     async def subscription(
         active: Annotated[PlaybackController, Depends(player)],
     ) -> AsyncGenerator[AsyncIterator[ServerSentEvent]]:
@@ -140,6 +202,8 @@ def create_app(
                 name=channel.name,
                 can_connect=channel.can_connect,
                 can_speak=channel.can_speak,
+                guild_id=str(channel.guild_id),
+                guild_name=channel.guild_name,
             )
             for channel in active.channels()
         ]
@@ -162,6 +226,25 @@ def create_app(
             request_id,
             commands.Add(
                 body.source_url,
+                body.added_by.to_contributor()
+                if body.added_by
+                else dto.ContributorData.default_contributor(),
+            ),
+            response,
+            active,
+        )
+
+    @app.post("/api/queue/batch")
+    async def add_many(
+        body: dto.BatchInput,
+        response: Response,
+        request_id: RequestID,
+        active: Annotated[PlaybackController, Depends(player)],
+    ) -> dto.MutationResult:
+        return await mutate(
+            request_id,
+            commands.AddMany(
+                body.source_urls,
                 body.added_by.to_contributor()
                 if body.added_by
                 else dto.ContributorData.default_contributor(),
@@ -196,13 +279,16 @@ def create_app(
 
     @app.post("/api/queue/clear")
     async def clear(
-        body: dto.QueueRevisionInput,
+        body: dto.ClearInput,
         response: Response,
         request_id: RequestID,
         active: Annotated[PlaybackController, Depends(player)],
     ) -> dto.MutationResult:
         return await mutate(
-            request_id, commands.Clear(body.expected_queue_revision), response, active
+            request_id,
+            commands.Clear(body.expected_queue_revision, body.contributor_id),
+            response,
+            active,
         )
 
     @app.post("/api/player/{action}")

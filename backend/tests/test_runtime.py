@@ -13,6 +13,7 @@ import pytest
 import nahormaar_backend.runtime as runtime_module
 from nahormaar_backend.audio import VoiceError
 from nahormaar_backend.config import Settings
+from nahormaar_backend.catalog import MediaCatalog
 from nahormaar_backend.runtime import open_runtime
 
 
@@ -30,6 +31,7 @@ class FakeController:
         self.close_calls = 0
         self.worker_closed = False
         self.database: Path | None = None
+        self.catalog: MediaCatalog | None = None
         type(self).instances.append(self)
 
     @classmethod
@@ -40,19 +42,23 @@ class FakeController:
         voice: object,
         *,
         metadata_resolver: object,
+        catalog: MediaCatalog,
     ) -> Self:
-        assert metadata_resolver is resolver
+        assert metadata_resolver is catalog
         del resolver, voice
         error = cls.create_error
         if error is not None:
             raise error
         instance = cls()
         instance.database = database
+        instance.catalog = catalog
         return instance
 
     async def close(self) -> None:
         self.close_calls += 1
         self.worker_closed = True
+        if self.catalog:
+            await self.catalog.close()
         error = type(self).close_error
         if error is not None:
             raise error

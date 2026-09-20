@@ -43,6 +43,8 @@ class VoiceChannelInfo:
     name: str
     can_connect: bool
     can_speak: bool
+    guild_id: int
+    guild_name: str
 
 
 class TrackError(RuntimeError):

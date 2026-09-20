@@ -14,7 +14,7 @@ interface PendingRequest {
 }
 
 const messages: Record<string, string> = {
-	queue_conflict: "The queue changed. The latest order is shown; move the track again if needed.",
+	queue_conflict: "The queue changed. Check the updated queue and try again.",
 	playback_conflict: "The track changed before your action arrived. The player is up to date.",
 	entry_not_found: "That track has already left the queue.",
 	invalid_action: "That action is no longer available. Check the current player state.",
@@ -115,7 +115,7 @@ export function createPlayerClient(
 			if (!response.ok || result.code !== "ok") {
 				error.value =
 					response.status === 422
-						? "Use a link to a single YouTube video. Search and playlists aren't available yet."
+						? "The request is invalid. Queue entries must use single YouTube video links."
 						: (messages[result.code ?? ""] ??
 							"The action was rejected. Refresh the connection and try again.");
 				return false;

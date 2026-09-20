@@ -2,9 +2,9 @@
 
 Parent: [Project README](README.md)
 
-Status: phases 1 and 3 complete. Phase 2 implemented, with live failure and
-disconnect checks still pending. The dashboard controls individual YouTube links;
-search, playlist imports and login remain open.
+Status: phases 1, 3 and 4 complete. Phase 2 implemented, with live failure and
+disconnect checks still pending. Search and playlist imports are available;
+login remains open.
 
 ## Current scope
 
@@ -114,14 +114,17 @@ with the backend without reloading the page.
 
 ## 4. Search, playlists and metadata
 
-- [ ] Accept YouTube video and playlist links, including short links, plus text
+- [x] Accept YouTube video and playlist links, including short links, plus text
   searches. Validate supported sources before extraction
-- [ ] Return search results with title, uploader, duration and thumbnail, and
-  support adding selected results
-- [ ] Detect YouTube playlist links and open a playlist tab. Let users select
+- [x] Return search results with title, uploader, duration and thumbnail, and
+  support adding selected results. Load more in pages of 10, up to 100 results
+- [x] Search YouTube Music songs by default, with an explicit Videos option and
+  separate providers behind a shared search interface
+- [x] Cache search results for five minutes and share identical concurrent lookups
+- [x] Detect YouTube playlist links and open a playlist tab. Let users select
   individual tracks or queue the entire playlist in source order, with unavailable
   entries and import limits shown explicitly
-- [ ] Bound search results, playlist imports and concurrent extraction work.
+- [x] Bound search results, playlist imports and concurrent extraction work.
   Expose import progress, cancellation and partial failures through the API
 - [x] Keep metadata separate from temporary stream URLs. A delayed metadata
   result must not recreate an entry someone has already removed
@@ -132,13 +135,16 @@ missing thumbnails do not abort an otherwise valid import.
 
 ## 5. Control dashboard
 
-- [ ] Build the Nuxt dashboard around the current track, upcoming queue, search
+- [x] Build the Nuxt dashboard around the current track, upcoming queue, search
   and voice channel selection. Let users select search results and preview
   playlists before adding tracks
 - [x] Show thumbnails, song and artist links, duration and playback progress. Use a
   fallback image when artwork is missing or fails to load
 - [x] Add playback controls, volume, queue removal and reordering. Reordering
   works with drag and drop as well as keyboard controls
+- [x] Support touch dragging and moving directly to a numbered queue position,
+  with position numbers visible on phones
+- [x] Show both the Discord server and voice channel in connection controls
 - [x] Show pending actions and explain rejected changes. When the connection
   drops, mark the view as disconnected and disable mutations until state has
   synchronized again
@@ -147,7 +153,8 @@ missing thumbnails do not abort an otherwise valid import.
 - [x] Show who added each track, with their name and avatar saved in the queue and history
 - [x] Give the player a cover-led dark layout, recent artwork and persistent playback
   controls across pages, with light mode and mobile layouts
-- [x] Show approximate queue wait times while playing when preceding durations are known
+- [x] Show approximate queue wait times while playing when preceding durations are known,
+  using hours and minutes for waits of an hour or more
 - [x] Offer full-area Cover and YouTube Video views with native video controls,
   an artwork fallback and no video loading outside the visible Video view
 - [x] Keep a footer with project, license and avatar credits in the sidebar
@@ -177,6 +184,13 @@ Acceptance: allowed users can control the bot together. Logged-out, unlisted and
 removed users cannot control it through direct API requests or retain access to
 live updates. Session expiry is visible in the dashboard.
 
+## Next audio step
+
+- [ ] Add optional crossfade (3 to 7 seconds, off by default), with preloading
+  and audio mixing between tracks
+- [ ] Keep pause, seek, skip and queue edits consistent during transitions,
+  without counting either track twice in playback history
+
 ## Deferred
 
 - [ ] Watch Together in the browser dashboard, with shared video state, synchronized
@@ -187,5 +201,5 @@ live updates. Session expiry is visible in the dashboard.
 
 - Spotify link and playlist import, after YouTube playback works.
 - Multiple Discord servers or simultaneous voice channels.
-- Seeking, shuffle, repeat, saved personal playlists and voting.
+- Shuffle, repeat, saved personal playlists and voting.
 - YouTube livestreams and media that requires a personal YouTube login.

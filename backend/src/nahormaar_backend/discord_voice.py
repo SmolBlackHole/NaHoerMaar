@@ -422,6 +422,8 @@ class DiscordVoice:
                 name=channel.name,
                 can_connect=channel.permissions_for(guild.me).connect,
                 can_speak=channel.permissions_for(guild.me).speak,
+                guild_id=guild.id,
+                guild_name=guild.name,
             )
             for channel in guild.voice_channels
         )

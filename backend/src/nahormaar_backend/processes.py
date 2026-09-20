@@ -113,15 +113,28 @@ async def _watch_descendants(tree: _ProcessTree) -> None:
 
 
 async def _read_limited(
-    stream: asyncio.StreamReader, limit: int, stream_name: str
+    stream: asyncio.StreamReader,
+    limit: int,
+    stream_name: str,
+    on_line: Callable[[bytes], None] | None = None,
 ) -> tuple[str, bytes]:
     chunks: list[bytes] = []
     size = 0
+    pending: bytes = b""
+    chunk: bytes
     while chunk := await stream.read(64 * 1024):
         size += len(chunk)
         if size > limit:
             raise ProcessOutputLimitError(f"Child process {stream_name} limit exceeded")
         chunks.append(chunk)
+        if on_line is not None:
+            pending += chunk
+            while b"\n" in pending:
+                line, pending = pending.split(b"\n", 1)
+                if line.strip():
+                    on_line(line.rstrip(b"\r"))
+    if on_line is not None and pending.strip():
+        on_line(pending.rstrip(b"\r"))
     return stream_name, b"".join(chunks)
 
 
@@ -135,13 +148,18 @@ async def _wait_for_process(
 
 
 async def _collect_output(
-    process: asyncio.subprocess.Process, tree: _ProcessTree, limit: int
+    process: asyncio.subprocess.Process,
+    tree: _ProcessTree,
+    limit: int,
+    on_stdout_line: Callable[[bytes], None] | None = None,
 ) -> ProcessResult:
     if process.stdout is None or process.stderr is None:
         raise RuntimeError("Child process pipes were not created")
 
     all_tasks: set[asyncio.Task[tuple[str, bytes]]] = {
-        asyncio.create_task(_read_limited(process.stdout, limit, "stdout")),
+        asyncio.create_task(
+            _read_limited(process.stdout, limit, "stdout", on_stdout_line)
+        ),
         asyncio.create_task(_read_limited(process.stderr, limit, "stderr")),
         asyncio.create_task(_wait_for_process(process)),
     }
@@ -287,6 +305,7 @@ async def run_process(
     *,
     timeout: float,
     max_output_bytes: int = 2 * 1024 * 1024,
+    on_stdout_line: Callable[[bytes], None] | None = None,
 ) -> ProcessResult:
     """Run one child without a shell and reap its process tree on interruption."""
     if not args:
@@ -323,7 +342,9 @@ async def run_process(
     watcher = asyncio.create_task(_watch_descendants(tree))
     try:
         async with asyncio.timeout(timeout):
-            result = await _collect_output(process, tree, max_output_bytes)
+            result = await _collect_output(
+                process, tree, max_output_bytes, on_stdout_line
+            )
         tree.refresh()
         if tree.descendants_running() or tree.access_denied:
             await _terminate_process_tree(process, tree)

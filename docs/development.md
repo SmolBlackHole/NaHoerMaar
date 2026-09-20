@@ -27,12 +27,29 @@ npm run dev
 ```
 
 Open `http://127.0.0.1:3000` and run the API in a second terminal. Choose a name,
-join a voice channel, add a YouTube video link and press play. On PowerShell
+join a voice channel, add a track and press play. On PowerShell
 systems that block `npm.ps1`, use `npm.cmd run dev`.
 
 The dashboard forwards controls and live updates to `http://127.0.0.1:8000`.
 Set `NUXT_BACKEND_URL` if the backend uses a different port. Controls stay disabled
-until live state arrives. Search and playlist import are not available yet.
+until live state arrives.
+
+In Queue, enter a title or artist to search YouTube Music songs. Choose Videos
+for a YouTube video search, or paste a video link to add it directly. Load more
+returns the next ten results, up to 100. Searches are cached for five minutes.
+Playlist links open a preview with up to 100 entries. Select tracks
+or keep all available entries selected, then add them in playlist order. Cancel
+stops preparation without changing the queue. For links containing both a video
+and a playlist, Add track adds the video; Open playlist instead opens the preview.
+
+Drag a queue entry by its position number, or choose Move to position in its menu.
+The same menu offers Move up and Move down for keyboard use. Wait estimates switch
+to hours and minutes at one hour, for example `In ~01:15 h`.
+
+The Remove menu can clear your tracks, another person's tracks, or the entire
+queue. It shows whose tracks will be removed and how many before confirmation,
+and leaves playback running.
+Ownership follows your browser profile, even if you change its name.
 
 Click or drag the player timeline to seek for everyone in the Discord channel.
 Arrow keys adjust the focused slider. Paused tracks stay paused after seeking.
@@ -63,7 +80,7 @@ Open [the API explorer](http://127.0.0.1:8000/docs) to try the controls. Use
 a video through `POST /api/queue`, then call `POST /api/player/play` with
 `expected_playback_id: null`.
 
-Every mutation needs a UUID in its `Idempotency-Key` header. Generate one with
+Every playback or queue mutation needs a UUID in its `Idempotency-Key` header. Generate one with
 `[guid]::NewGuid().ToString()` in PowerShell. Reuse it only when retrying the same
 request. See the [API contract](api.md) for payloads and conflict handling.
 

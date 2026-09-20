@@ -19,6 +19,7 @@ from .models import (
 )
 from .playback import PlaybackStatus
 from .youtube import video_id
+from .catalog import PLAYLIST_LIMIT
 
 
 class Input(BaseModel):
@@ -55,6 +56,24 @@ class AddInput(Input):
 
 class QueueRevisionInput(Input):
     expected_queue_revision: int = Field(ge=0, strict=True)
+
+
+class ClearInput(QueueRevisionInput):
+    contributor_id: UUID | None = None
+
+
+class BatchInput(Input):
+    source_urls: tuple[str, ...] = Field(min_length=1, max_length=PLAYLIST_LIMIT)
+    added_by: ContributorData | None = None
+
+    @field_validator("source_urls")
+    @classmethod
+    def youtube_videos(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        return tuple(AddInput.youtube_video(value) for value in values)
+
+
+class PlaylistInput(Input):
+    source_url: str = Field(min_length=1, max_length=2048)
 
 
 class MoveInput(QueueRevisionInput):
@@ -169,6 +188,8 @@ class Channel(BaseModel):
     name: str
     can_connect: bool
     can_speak: bool
+    guild_id: str
+    guild_name: str
 
 
 class MutationResult(BaseModel):

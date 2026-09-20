@@ -84,8 +84,11 @@ class Player:
         return self._revisions
 
     def enqueue(self, entry: QueueEntry) -> PlayerSnapshot:
+        return self.enqueue_many((entry,))
+
+    def enqueue_many(self, entries: tuple[QueueEntry, ...]) -> PlayerSnapshot:
         return self._commit(
-            replace(self._snapshot, upcoming=(*self._snapshot.upcoming, entry))
+            replace(self._snapshot, upcoming=(*self._snapshot.upcoming, *entries))
         )
 
     def enrich(self, entry_id: UUID, metadata: TrackMetadata) -> PlayerSnapshot:
@@ -153,8 +156,17 @@ class Player:
 
         return self._commit(replace(self._snapshot, upcoming=tuple(upcoming)))
 
-    def clear(self) -> PlayerSnapshot:
-        return self._commit(replace(self._snapshot, upcoming=()))
+    def clear(self, contributor_id: UUID | None = None) -> PlayerSnapshot:
+        remaining = (
+            tuple(
+                entry
+                for entry in self._snapshot.upcoming
+                if entry.added_by is None or entry.added_by.id != contributor_id
+            )
+            if contributor_id is not None
+            else ()
+        )
+        return self._commit(replace(self._snapshot, upcoming=remaining))
 
     def _apply(self, event: PlaybackEvent) -> PlayerSnapshot:
         return self._commit(transition(self._snapshot, event))

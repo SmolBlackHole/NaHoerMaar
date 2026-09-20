@@ -6,7 +6,6 @@ export const iconMaps = {
 		pause: "i-lucide-pause",
 		skip: "i-lucide-skip-forward",
 		volume: "i-lucide-volume-2",
-		link: "i-lucide-link",
 		// Standard keys (Nuxt UI)
 		arrowDown: "i-lucide-arrow-down",
 		arrowLeft: "i-lucide-arrow-left",
@@ -51,9 +50,7 @@ export const iconMaps = {
 		upload: "i-lucide-upload",
 		warning: "i-lucide-triangle-alert",
 		// Custom keys (app-specific)
-		timer: "i-lucide-timer",
 		chevronsUpDown: "i-lucide-chevrons-up-down",
-		cog: "i-lucide-cog",
 		layoutDashboard: "i-lucide-layout-dashboard",
 		list: "i-lucide-list",
 		logOut: "i-lucide-log-out",
@@ -74,7 +71,6 @@ export const iconMaps = {
 		pause: "i-ph-pause",
 		skip: "i-ph-skip-forward",
 		volume: "i-ph-speaker-high",
-		link: "i-ph-link",
 		// Standard keys (Nuxt UI)
 		arrowDown: "i-ph-arrow-down",
 		arrowLeft: "i-ph-arrow-left",
@@ -119,9 +115,7 @@ export const iconMaps = {
 		upload: "i-ph-upload",
 		warning: "i-ph-warning",
 		// Custom keys (app-specific)
-		timer: "i-ph-timer",
 		chevronsUpDown: "i-ph-caret-up-down",
-		cog: "i-ph-gear",
 		layoutDashboard: "i-ph-layout",
 		list: "i-ph-list",
 		logOut: "i-ph-sign-out",
@@ -142,7 +136,6 @@ export const iconMaps = {
 		pause: "i-tabler-player-pause",
 		skip: "i-tabler-player-skip-forward",
 		volume: "i-tabler-volume",
-		link: "i-tabler-link",
 		// Standard keys (Nuxt UI)
 		arrowDown: "i-tabler-arrow-down",
 		arrowLeft: "i-tabler-arrow-left",
@@ -187,9 +180,7 @@ export const iconMaps = {
 		upload: "i-tabler-upload",
 		warning: "i-tabler-alert-triangle",
 		// Custom keys (app-specific)
-		timer: "i-tabler-hourglass",
 		chevronsUpDown: "i-tabler-arrows-up-down",
-		cog: "i-tabler-settings",
 		layoutDashboard: "i-tabler-layout-dashboard",
 		list: "i-tabler-list",
 		logOut: "i-tabler-logout",
@@ -210,7 +201,6 @@ export const iconMaps = {
 		pause: "i-heroicons-pause-20-solid",
 		skip: "i-heroicons-forward-20-solid",
 		volume: "i-heroicons-speaker-wave-20-solid",
-		link: "i-heroicons-link-20-solid",
 		// Standard keys (Nuxt UI)
 		arrowDown: "i-heroicons-arrow-down-20-solid",
 		arrowLeft: "i-heroicons-arrow-left-20-solid",
@@ -255,9 +245,7 @@ export const iconMaps = {
 		upload: "i-heroicons-arrow-up-tray-20-solid",
 		warning: "i-heroicons-exclamation-triangle-20-solid",
 		// Custom keys (app-specific)
-		timer: "i-heroicons-clock-20-solid",
 		chevronsUpDown: "i-heroicons-chevron-up-down-20-solid",
-		cog: "i-heroicons-cog-8-tooth-20-solid",
 		layoutDashboard: "i-heroicons-squares-2x2-20-solid",
 		list: "i-heroicons-list-bullet-20-solid",
 		logOut: "i-heroicons-arrow-left-on-rectangle-20-solid",

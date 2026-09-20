@@ -29,6 +29,7 @@ from .audio import (
     VoiceOutput,
 )
 from .commands import Outcome, Receipt, Revisions
+from .catalog import PLAYLIST_LIMIT, MediaCatalog
 from .events import Snapshots
 from .fsm import VoiceEvent
 from .models import PlaybackState, PlayerSnapshot, QueueEntry, TrackMetadata
@@ -118,7 +119,9 @@ class PlaybackController:
         voice: VoiceOutput,
         revisions: Revisions,
         metadata_resolver: MetadataResolver | None = None,
+        catalog: MediaCatalog | None = None,
     ) -> None:
+        self.catalog = catalog
         self._worker = worker
         self._snapshot = snapshot
         self._resolver = resolver
@@ -161,13 +164,16 @@ class PlaybackController:
         voice: VoiceOutput,
         *,
         metadata_resolver: MetadataResolver | None = None,
+        catalog: MediaCatalog | None = None,
     ) -> PlaybackController:
         worker = _PlayerWorker()
         opening = asyncio.create_task(worker.open(database))
         try:
             snapshot = await asyncio.shield(opening)
             versions = await worker.call(lambda player: player.revisions)
-            return cls(worker, snapshot, resolver, voice, versions, metadata_resolver)
+            return cls(
+                worker, snapshot, resolver, voice, versions, metadata_resolver, catalog
+            )
         except BaseException:
             await asyncio.shield(worker.close())
             # Retrieve a late initialization error if the caller was cancelled.
@@ -331,9 +337,24 @@ class PlaybackController:
         operation: Callable[[Player], PlayerSnapshot]
         match command:
             case commands.Add(source_url, added_by):
-                entry = QueueEntry(source_url, added_by=added_by)
+                entry = (
+                    self.catalog.queue_entry(source_url, added_by)
+                    if self.catalog
+                    else QueueEntry(source_url, added_by=added_by)
+                )
                 operation = partial(Player.enqueue, entry=entry)
                 outcome = Outcome(entry_id=entry.id)
+            case commands.AddMany(source_urls, added_by):
+                if not 1 <= len(source_urls) <= PLAYLIST_LIMIT:
+                    raise ValueError("Invalid batch size.")
+                entries = tuple(
+                    self.catalog.queue_entry(url, added_by)
+                    if self.catalog
+                    else QueueEntry(url, added_by=added_by)
+                    for url in source_urls
+                )
+                operation = partial(Player.enqueue_many, entries=entries)
+                outcome = Outcome()
             case commands.Remove(entry_id):
                 operation = partial(Player.remove, entry_id=entry_id)
                 outcome = Outcome()
@@ -344,8 +365,8 @@ class PlaybackController:
                     before_entry_id=before_entry_id,
                 )
                 outcome = Outcome()
-            case commands.Clear():
-                operation = Player.clear
+            case commands.Clear(_, contributor_id):
+                operation = partial(Player.clear, contributor_id=contributor_id)
                 outcome = Outcome()
             case commands.Control(action, _):
                 await {
@@ -740,6 +761,8 @@ class PlaybackController:
         if self._metadata_task is not None:
             self._metadata_task.cancel()
             await asyncio.gather(self._metadata_task, return_exceptions=True)
+        if self.catalog is not None:
+            await self.catalog.close()
         async with self._lock:
             try:
                 await self._halt()

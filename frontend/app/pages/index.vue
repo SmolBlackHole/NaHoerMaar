@@ -101,8 +101,6 @@ const connectionLabel = computed(() =>
 <style>
 .music-content {
 	width: 100%;
-	max-width: 90rem;
-	margin-inline: auto;
 }
 .connection-status {
 	display: inline-flex;
@@ -132,7 +130,7 @@ const connectionLabel = computed(() =>
 }
 .music-tab-trigger {
 	flex: initial;
-	padding: 0.625rem 0.125rem 0.875rem;
+	padding: 0.75rem 0.125rem;
 	border-radius: 0;
 	gap: 0.5rem;
 }
@@ -173,8 +171,7 @@ const connectionLabel = computed(() =>
 	z-index: 2;
 }
 .queue-workspace {
-	max-width: 76rem;
-	margin-inline: auto;
+	width: 100%;
 }
 .is-listening :focus-visible {
 	outline-color: #fff;

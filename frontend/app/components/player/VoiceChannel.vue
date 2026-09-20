@@ -14,6 +14,14 @@ watch(
 	{ immediate: true },
 );
 const available = computed(() => player.channels.find((channel) => channel.id === selected.value));
+const channelOptions = computed(() =>
+	player.channels.map((channel) => ({
+		label: channel.name,
+		value: channel.id,
+		description: !channel.can_connect || !channel.can_speak ? "Missing permissions" : undefined,
+		disabled: !channel.can_connect || !channel.can_speak,
+	})),
+);
 const connected = computed(() => player.snapshot?.voice_state === "connected");
 const switching = computed(() => connected.value && selected.value !== player.snapshot?.channel_id);
 const channelName = computed(
@@ -21,6 +29,7 @@ const channelName = computed(
 		player.channels.find((channel) => channel.id === player.snapshot?.channel_id)?.name ??
 		"Discord",
 );
+const guildName = computed(() => player.channels[0]?.guild_name ?? "Discord");
 const status = computed(() => {
 	if (player.connection !== "live")
 		return player.connection === "connecting" ? "Connecting…" : "Offline";
@@ -35,8 +44,8 @@ const status = computed(() => {
 			type="button"
 			class="sidebar-voice"
 			:class="{ 'is-collapsed': collapsed }"
-			:aria-label="`Discord channel: ${channelName}. ${status}`"
-			:title="collapsed ? `${channelName} · ${status}` : 'Manage Discord connection'"
+			:aria-label="`${guildName}, channel: ${channelName}. ${status}`"
+			:title="`${guildName} · ${channelName} · ${status}`"
 		>
 			<UIcon
 				:name="icons.headphones"
@@ -47,7 +56,8 @@ const status = computed(() => {
 				<span class="block truncate text-sm font-medium text-highlighted">{{
 					channelName
 				}}</span>
-				<span role="status" class="mt-0.5 block text-xs text-muted">{{ status }}</span>
+				<span class="mt-0.5 block truncate text-xs text-muted">{{ guildName }}</span>
+				<span role="status" class="sr-only">{{ status }}</span>
 			</span>
 			<UIcon v-if="!collapsed" :name="icons.chevronsUpDown" class="size-4 text-muted" />
 		</button>
@@ -58,7 +68,7 @@ const status = computed(() => {
 			>
 				<div class="flex items-center justify-between gap-2">
 					<h2 :id="`${id}-heading`" class="text-highlighted text-sm font-semibold">
-						Discord channel
+						{{ guildName }}
 					</h2>
 					<UButton
 						:icon="icons.reload"
@@ -71,28 +81,23 @@ const status = computed(() => {
 						@click="player.refreshChannels()"
 					/>
 				</div>
-				<label :for="`${id}-channel`" class="sr-only">Voice channel</label>
-				<select
+				<p role="status" class="text-xs text-muted">{{ status }}</p>
+				<label :for="`${id}-channel`" class="block text-xs text-muted">Voice channel</label>
+				<USelect
 					:id="`${id}-channel`"
 					v-model="selected"
-					class="channel-select w-full rounded-md border border-default bg-default p-2 text-sm"
+					:items="channelOptions"
+					placeholder="Select a channel"
+					:trailing-icon="icons.chevronDown"
+					variant="soft"
+					class="min-h-11 w-full"
+					:ui="{
+						content: 'max-w-[calc(100vw-2rem)]',
+						item: 'min-h-11 items-center',
+						itemLabel: 'whitespace-normal',
+					}"
 					:disabled="!player.enabled || player.channelsLoading"
-				>
-					<option value="" disabled>Select a channel</option>
-					<option
-						v-for="channel in player.channels"
-						:key="channel.id"
-						:value="channel.id"
-						:disabled="!channel.can_connect || !channel.can_speak"
-					>
-						{{ channel.name
-						}}{{
-							!channel.can_connect || !channel.can_speak
-								? " (missing permissions)"
-								: ""
-						}}
-					</option>
-				</select>
+				/>
 				<p v-if="player.channelError" role="status" class="text-error text-sm">
 					Couldn't load channels. Try refreshing.
 				</p>
@@ -158,8 +163,5 @@ const status = computed(() => {
 	justify-content: center;
 	min-height: 2.75rem;
 	padding-inline: 0;
-}
-.channel-select {
-	color: var(--ui-text);
 }
 </style>

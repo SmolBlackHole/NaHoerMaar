@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 
 from .audio import VoiceError
 from .config import Settings
+from .catalog import MediaCatalog
 from .discord_voice import DiscordVoice
 from .playback import PlaybackController
 from .youtube import YouTubeResolver
@@ -19,11 +20,17 @@ from .youtube import YouTubeResolver
 async def open_runtime(settings: Settings) -> AsyncGenerator[PlaybackController, None]:
     voice = DiscordVoice(settings.guild_id, settings.ffmpeg_path)
     resolver = YouTubeResolver(settings.node_path)
+    catalog = MediaCatalog(settings.node_path)
     try:
         controller = await PlaybackController.create(
-            settings.database_path, resolver, voice, metadata_resolver=resolver
+            settings.database_path,
+            resolver,
+            voice,
+            metadata_resolver=catalog,
+            catalog=catalog,
         )
     except BaseException:
+        await asyncio.shield(catalog.close())
         await asyncio.shield(voice.close())
         raise
     closing = False

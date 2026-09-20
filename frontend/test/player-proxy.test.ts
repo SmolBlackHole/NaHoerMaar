@@ -23,6 +23,63 @@ afterEach(async () => {
 });
 
 describe("local API proxy", () => {
+	it("forwards discovery queries, preview lifecycle and atomic imports", async () => {
+		const calls: {
+			url: string | undefined;
+			method: string | undefined;
+			key: string | string[] | undefined;
+			body: string;
+		}[] = [];
+		const backend = await listen(
+			createServer(async (request, response) => {
+				let body = "";
+				for await (const chunk of request) body += chunk;
+				calls.push({
+					url: request.url,
+					method: request.method,
+					key: request.headers["idempotency-key"],
+					body,
+				});
+				response.writeHead(200, { "content-type": "application/json" });
+				response.end("{}");
+			}),
+		);
+		const frontend = await listen(
+			createServer(toNodeListener(createApp().use(playerProxy(() => backend)))),
+		);
+		const id = "c68fe9f1-ac72-4f15-9e7f-445d332b9ca7";
+		for (const [path, method] of [
+			[
+				"catalog/search?q=" +
+					encodeURIComponent("Амура & remix") +
+					"&offset=10&source=youtube_music&ignored=1",
+				"GET",
+			],
+			["youtube/playlists", "POST"],
+			[`youtube/playlists/${id}`, "GET"],
+			[`youtube/playlists/${id}`, "DELETE"],
+			["queue/batch", "POST"],
+		]) {
+			const response = await fetch(`${frontend}/api/${path}`, {
+				method,
+				headers: { "idempotency-key": id, "content-type": "application/json" },
+				body: method === "POST" ? '{"source_urls":["example"]}' : undefined,
+			});
+			expect(response.status).toBe(200);
+		}
+		expect(new URL(calls[0]!.url!, backend).searchParams.get("q")).toBe("Амура & remix");
+		expect(new URL(calls[0]!.url!, backend).searchParams.get("offset")).toBe("10");
+		expect(new URL(calls[0]!.url!, backend).searchParams.get("source")).toBe("youtube_music");
+		expect(calls[0]!.url).not.toContain("ignored");
+		expect(calls.map((call) => call.method)).toEqual(["GET", "POST", "GET", "DELETE", "POST"]);
+		expect(calls[4]).toEqual({
+			url: "/api/queue/batch",
+			method: "POST",
+			key: id,
+			body: '{"source_urls":["example"]}',
+		});
+	});
+
 	it("forwards seek positions and playback targets", async () => {
 		const body = { position_seconds: 75, expected_playback_id: "123" };
 		const backend = await listen(

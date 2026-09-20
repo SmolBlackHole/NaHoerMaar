@@ -12,5 +12,12 @@ export const usePlayerStore = defineStore("player", () => {
 			added_by: { ...profile.profile },
 		});
 	}
-	return { ...client, add };
+	function addMany(sourceUrls: string[]) {
+		if (!profile.profile) return Promise.resolve(false);
+		return client.mutate("/api/queue/batch", "POST", {
+			source_urls: sourceUrls,
+			added_by: { ...profile.profile },
+		});
+	}
+	return { ...client, add, addMany };
 });

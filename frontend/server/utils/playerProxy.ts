@@ -9,10 +9,10 @@ import {
 
 const localHosts = new Set(["127.0.0.1", "localhost", "[::1]"]);
 const routes: Record<string, RegExp> = {
-	GET: /^\/api\/(state|channels|events)$/,
-	POST: /^\/api\/(queue(?:\/clear|\/[a-f0-9-]{36}\/move)?|player\/(play|pause|skip|stop))$/,
+	GET: /^\/api\/(state|channels|events|catalog\/search|youtube\/playlists\/[a-f0-9-]{36})$/,
+	POST: /^\/api\/(queue(?:\/clear|\/batch|\/[a-f0-9-]{36}\/move)?|player\/(play|pause|skip|stop)|youtube\/playlists)$/,
 	PUT: /^\/api\/(player\/(volume|seek)|voice\/channel)$/,
-	DELETE: /^\/api\/(queue\/[a-f0-9-]{36}|voice\/channel)$/,
+	DELETE: /^\/api\/(queue\/[a-f0-9-]{36}|voice\/channel|youtube\/playlists\/[a-f0-9-]{36})$/,
 };
 
 export function playerProxy(backendUrl: () => string) {
@@ -29,6 +29,11 @@ export function playerProxy(backendUrl: () => string) {
 			throw createError({ statusCode: 404, statusMessage: "Unknown player endpoint" });
 
 		const target = new URL(url.pathname, backendUrl());
+		if (url.pathname === "/api/catalog/search") {
+			for (const name of ["q", "offset", "source"])
+				for (const value of url.searchParams.getAll(name))
+					target.searchParams.append(name, value);
+		}
 		const headers = new Headers({ origin: target.origin, "accept-encoding": "identity" });
 		for (const name of ["content-type", "idempotency-key", "last-event-id", "accept"]) {
 			const value = getHeader(event, name);
