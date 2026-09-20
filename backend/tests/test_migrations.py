@@ -10,11 +10,76 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
+from alembic import command
+from alembic.config import Config
+from alembic.autogenerate import compare_metadata
+from alembic.migration import MigrationContext
+from sqlalchemy import MetaData, Table, update
+
+from nahormaar_backend.accounts import Accounts, AccountRow
+from nahormaar_backend.database import Base, database_engine
+from nahormaar_backend.preferences import Appearance
 
 from nahormaar_backend.commands import Outcome, Receipt
 from nahormaar_backend.models import Contributor, QueueEntry
 from nahormaar_backend.player import Player
 from nahormaar_backend.storage import SQLiteStore, StorageError
+
+
+@pytest.mark.parametrize("corrupt", [False, True])
+def test_adopt_v5_preserves_accounts_sessions_history_and_queue(
+    tmp_path: Path, corrupt: bool
+) -> None:
+    path = tmp_path / "v5.sqlite3"
+    with SQLiteStore(path) as store:
+        player = Player(store)
+        player.enqueue(QueueEntry("https://youtu.be/Pqp9fDRp1lw"))
+        player.play()
+        player.mark_playing()
+        snapshot, revisions = store.load(), store.revisions()
+    accounts = Accounts(path)
+    try:
+        account = accounts.create_session(
+            "1", "Listener", "0002", "session-hash", 100, 0, None
+        )
+        accounts.begin_login("state-hash", "browser-hash", "verifier", 0)
+    finally:
+        accounts.close()
+    engine = database_engine(path)
+    try:
+        with engine.begin() as connection:
+            config = Config("alembic.ini")
+            config.attributes["connection"] = connection
+            command.downgrade(config, "0005")
+            Table("alembic_version", MetaData(), autoload_with=connection).drop(
+                connection
+            )
+            connection.exec_driver_sql("PRAGMA user_version = 5")
+            if corrupt:
+                connection.execute(update(AccountRow).values(avatar="invalid"))
+        before = path.read_bytes()
+        if corrupt:
+            with pytest.raises(StorageError):
+                SQLiteStore(path)
+            assert path.read_bytes() == before
+            return
+        for _ in range(2):
+            with SQLiteStore(path) as store:
+                assert store.load() == snapshot
+                assert store.revisions() == revisions
+        accounts = Accounts(path)
+        try:
+            assert accounts.session("session-hash", 1) == (account, 100)
+            assert account.appearance == Appearance()
+            assert accounts.consume_login("state-hash", "browser-hash", 1) == "verifier"
+        finally:
+            accounts.close()
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            assert context.get_current_revision() == "0006"
+            assert compare_metadata(context, Base.metadata) == []
+    finally:
+        engine.dispose()
 
 
 def version_one(path: Path) -> None:
@@ -57,7 +122,10 @@ def test_migrate_v1_recovers_current_preserving_ids_order_and_revisions(
     with SQLiteStore(path) as store:
         assert Player(store).revisions.revision == 1
     with closing(sqlite3.connect(path)) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert (
+            db.execute("SELECT version_num FROM alembic_version").fetchone()[0]
+            == "0006"
+        )
 
 
 @pytest.mark.parametrize(
@@ -186,7 +254,10 @@ def test_migrate_v3_preserves_queue_and_history_or_rolls_back(
             assert snapshot.recently_played[0].entry.added_by is None
             assert store.revisions().revision == 9
         with closing(sqlite3.connect(path)) as db:
-            assert db.execute("PRAGMA user_version").fetchone()[0] == 5
+            assert (
+                db.execute("SELECT version_num FROM alembic_version").fetchone()[0]
+                == "0006"
+            )
 
 
 @pytest.mark.parametrize("corrupt", [False, True])
@@ -206,6 +277,7 @@ def test_v4_auth_migration_preserves_legacy_profiles_without_claiming_them(
             DROP TABLE sessions;
             DROP TABLE login_attempts;
             DROP TABLE accounts;
+            DROP TABLE alembic_version;
             ALTER TABLE requests DROP COLUMN actor_id;
             PRAGMA user_version = 4;
         """)
@@ -221,7 +293,10 @@ def test_v4_auth_migration_preserves_legacy_profiles_without_claiming_them(
         assert store.load() == snapshot
         assert store.revisions() == revisions
     with closing(sqlite3.connect(path)) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert (
+            db.execute("SELECT version_num FROM alembic_version").fetchone()[0]
+            == "0006"
+        )
         assert db.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] == 0
         assert db.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 0
 

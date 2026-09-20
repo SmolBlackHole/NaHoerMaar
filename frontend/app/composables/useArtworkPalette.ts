@@ -7,11 +7,12 @@ import { loadArtworkPalette, type ArtworkPalette } from "~/utils/artworkPalette"
 export function useArtworkPalette() {
 	const player = usePlayerStore();
 	const settings = useSettingsStore();
+	const consent = useConsentStore();
 	const palette = shallowRef<ArtworkPalette | null>(null);
 	const artwork = computed(() => trackArtwork(player.snapshot?.current ?? null));
 	onMounted(() => {
 		watch(
-			() => (settings.settings.artworkColors ? artwork.value : null),
+			() => (consent.youtube && settings.settings.artworkColors ? artwork.value : null),
 			async (url, _previous, onCleanup) => {
 				const controller = new AbortController();
 				onCleanup(() => controller.abort());

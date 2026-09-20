@@ -9,6 +9,7 @@ export function createSessionClient(fetcher: typeof fetch = (...args) => fetch(.
 	const error = ref("");
 	const busy = ref(false);
 	const profile = computed(() => session.value?.profile ?? null);
+	const appearance = computed(() => session.value?.appearance ?? null);
 	const profileComplete = computed(() => session.value?.profile_complete ?? false);
 	const ready = computed(() => status.value !== "checking");
 	let generation = 0;
@@ -142,6 +143,7 @@ export function createSessionClient(fetcher: typeof fetch = (...args) => fetch(.
 		clearTimeout(expiry);
 	}
 	return {
+		appearance,
 		profile,
 		profileComplete,
 		ready,

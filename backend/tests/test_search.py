@@ -7,6 +7,7 @@ import asyncio
 import pytest
 
 from nahormaar_backend import search as module
+from nahormaar_backend import discovery_cache as cache_module
 from nahormaar_backend.audio import TrackError
 from nahormaar_backend.search import (
     CatalogBusy,
@@ -69,7 +70,7 @@ def test_cache_expires_and_evicts_least_recent_query(
 ) -> None:
     async def scenario() -> None:
         clock = [0.0]
-        monkeypatch.setattr(module, "monotonic", lambda: clock[0])
+        monkeypatch.setattr(cache_module, "monotonic", lambda: clock[0])
         monkeypatch.setattr(module, "SEARCH_CACHE_LIMIT", 2)
         provider = Provider()
         catalog = SearchCatalog({SearchSource.MUSIC: provider})
@@ -79,6 +80,7 @@ def test_cache_expires_and_evicts_least_recent_query(
             assert [call[0] for call in provider.calls] == ["a", "b", "c", "b"]
             clock[0] = module.SEARCH_CACHE_TTL + 1
             await catalog.search("b")
+            await asyncio.sleep(0)
             assert len(provider.calls) == 5
         finally:
             await catalog.close()

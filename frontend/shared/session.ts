@@ -1,4 +1,5 @@
 import type { ListenerProfile } from "./profile";
+import type { Appearance } from "./appearance";
 
 export type SessionStatus =
 	| "checking"
@@ -8,6 +9,7 @@ export type SessionStatus =
 	| "unavailable";
 
 export interface ListenerSession {
+	appearance: Appearance;
 	profile: ListenerProfile;
 	profile_complete: boolean;
 	csrf_token: string;

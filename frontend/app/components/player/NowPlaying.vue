@@ -5,12 +5,13 @@ import { usePlayerStore } from "~/stores/player";
 const props = defineProps<{ active: boolean }>();
 const emit = defineEmits<{ queue: [] }>();
 const player = usePlayerStore();
+const consent = useConsentStore();
 const { icons } = useTheme();
 const { currentPosition } = usePlaybackPosition();
 const current = computed(() => player.snapshot?.current ?? null);
 const nextTrack = computed(() => player.snapshot?.upcoming[0] ?? null);
 const videoId = computed(() => (current.value ? youtubeVideoId(current.value.source_url) : null));
-const artwork = computed(() => trackArtwork(current.value));
+const artwork = computed(() => (consent.youtube ? trackArtwork(current.value) : null));
 const preview = ref<"cover" | "video">("cover");
 const videoControls = ref(false);
 const visibility = useDocumentVisibility();
@@ -35,12 +36,25 @@ watch(
 	},
 );
 function showVideo() {
+	if (!consent.youtube) {
+		consent.open = true;
+		return;
+	}
 	preview.value = "video";
 	videoFailed.value = false;
 }
 watch(preview, () => {
 	videoControls.value = false;
 });
+watch(
+	() => consent.youtube,
+	(allowed) => {
+		if (!allowed) {
+			preview.value = "cover";
+			videoReady.value = false;
+		}
+	},
+);
 watch(loadVideo, (visible) => {
 	if (!visible) videoControls.value = false;
 });
@@ -68,7 +82,7 @@ watch(loadVideo, (visible) => {
 				<UIcon :name="icons.headphones" />
 			</div>
 			<PlayerVideo
-				v-if="preview === 'video' && current && !videoFailed && videoId"
+				v-if="consent.youtube && preview === 'video' && current && !videoFailed && videoId"
 				ref="video"
 				:key="player.snapshot?.playback_id ?? videoId"
 				:video-id="videoId"
@@ -109,6 +123,14 @@ watch(loadVideo, (visible) => {
 					Video
 				</button>
 			</div>
+			<button
+				v-if="!consent.youtube"
+				type="button"
+				class="media-tool-button"
+				@click="consent.open = true"
+			>
+				Enable covers &amp; video
+			</button>
 			<div v-if="preview === 'video'" class="flex items-center gap-2">
 				<button
 					v-if="!videoFailed"

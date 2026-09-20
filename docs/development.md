@@ -169,6 +169,31 @@ bot checks for a new day once a minute. Changes to the list take effect the next
 day or after a restart. Failed updates leave playback running and retry after a
 minute.
 
+## Database changes
+
+Update the SQLAlchemy models, then generate and review an Alembic migration:
+
+```powershell
+python -m alembic revision --autogenerate -m "Describe the change"
+```
+
+The backend applies pending migrations on startup. `alembic.ini` points to
+`data/player.sqlite3`; adjust `sqlalchemy.url` when developing against another
+database. Start the backend once before generating a migration for a database
+created before Alembic.
+
+Appearance preferences are saved with the signed-in account. The **Cookies**
+action in the sidebar opens the browser's YouTube consent settings. Covers and
+video previews load only after consent; Discord audio works without it.
+
+## License inventory
+
+The Licenses page lists installed JavaScript and Python packages, fonts, artwork
+and the selected FFmpeg build. Development startup and production builds refresh
+the inventory; run `npm run licenses` to refresh it separately. Packages without
+a bundled license text are marked and link to their source. Run setup first so
+both the Python and Node.js dependencies are available.
+
 ## Run checks
 
 ```powershell

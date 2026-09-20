@@ -26,9 +26,7 @@ async function openQueue() {
 		if (selected.value === "queue") document.getElementById("youtube-link")?.focus();
 	});
 }
-const channel = computed(() =>
-	player.channels.find((item) => item.id === player.snapshot?.channel_id),
-);
+const visibility = useDocumentVisibility();
 const connectionLabel = computed(() =>
 	player.connection === "live"
 		? "Live"
@@ -73,13 +71,11 @@ const connectionLabel = computed(() =>
 							class="sr-only text-muted text-xs sm:not-sr-only"
 							>Updating…</span
 						>
+						<PlayerVoiceChannel compact />
 						<span
-							v-if="channel && player.snapshot?.voice_state === 'connected'"
-							class="text-muted hidden items-center gap-2 text-sm sm:flex"
-						>
-							<UIcon :name="icons.headphones" class="size-4" /> {{ channel.name }}
-						</span>
-						<span class="connection-status" role="status"
+							class="connection-status"
+							:class="{ 'is-visible': visibility === 'visible' }"
+							role="status"
 							><span :class="{ 'is-live': player.connection === 'live' }" />{{
 								connectionLabel
 							}}</span
@@ -126,6 +122,23 @@ const connectionLabel = computed(() =>
 .connection-status > .is-live {
 	background: var(--ui-primary);
 }
+.connection-status.is-visible > .is-live {
+	animation: live-breathe 3.2s ease-in-out infinite;
+}
+@keyframes live-breathe {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.45;
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.connection-status.is-visible > .is-live {
+		animation: none;
+	}
+}
 .music-tab-list {
 	display: flex;
 	align-items: stretch;
@@ -145,6 +158,7 @@ const connectionLabel = computed(() =>
 	font-size: 0.875rem;
 	font-weight: 500;
 	white-space: nowrap;
+	transition: color 140ms ease-out;
 }
 .music-tab-trigger:hover {
 	color: var(--ui-text-highlighted);
@@ -168,6 +182,22 @@ const connectionLabel = computed(() =>
 .music-tab-content {
 	min-width: 0;
 	outline-offset: 4px;
+}
+.music-tab-content[data-state="active"] {
+	animation: player-view-enter 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes player-view-enter {
+	from {
+		opacity: 0.35;
+	}
+	to {
+		opacity: 1;
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.music-tab-content[data-state="active"] {
+		animation: none;
+	}
 }
 .player-page {
 	isolation: isolate;

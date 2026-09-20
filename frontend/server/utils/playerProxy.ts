@@ -10,7 +10,7 @@ import {
 const routes: Record<string, RegExp> = {
 	GET: /^\/api\/(auth\/(session|discord(?:\/callback)?)|state|channels|events|catalog\/search|youtube\/playlists\/[a-f0-9-]{36})$/,
 	POST: /^\/api\/(auth\/logout|queue(?:\/clear|\/batch|\/[a-f0-9-]{36}\/move)?|player\/(play|pause|skip|stop)|youtube\/playlists)$/,
-	PUT: /^\/api\/(profile|player\/(volume|seek)|voice\/channel)$/,
+	PUT: /^\/api\/(profile(?:\/appearance)?|player\/(volume|seek)|voice\/channel)$/,
 	DELETE: /^\/api\/(queue\/[a-f0-9-]{36}|voice\/channel|youtube\/playlists\/[a-f0-9-]{36})$/,
 };
 
@@ -33,7 +33,7 @@ export function playerProxy(backendUrl: () => string, publicOrigin: () => string
 
 		const target = new URL(url.pathname, backendUrl());
 		if (url.pathname === "/api/catalog/search") {
-			for (const name of ["q", "offset", "source"])
+			for (const name of ["q", "offset", "source", "snapshot_id"])
 				for (const value of url.searchParams.getAll(name))
 					target.searchParams.append(name, value);
 		}

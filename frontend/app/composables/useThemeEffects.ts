@@ -1,25 +1,19 @@
-import { useIntervalFn } from "@vueuse/core";
+import { useIntervalFn, usePreferredDark } from "@vueuse/core";
 import { useSettingsStore } from "~/stores/settings";
 
 export function useThemeEffects() {
 	const store = useSettingsStore();
 	const appConfig = useAppConfig();
-	const colorMode = useColorMode();
+	const systemDark = usePreferredDark();
+	const hour = ref(new Date().getHours());
 	const artworkPalette = useArtworkPalette();
-
-	function applyMode() {
-		const hour = new Date().getHours();
-		colorMode.preference =
-			store.settings.mode === "time"
-				? hour >= 7 && hour < 20
-					? "light"
-					: "dark"
-				: store.settings.mode;
-	}
-
-	onMounted(() => {
-		watch(() => store.settings.mode, applyMode, { immediate: true });
-	});
+	const dark = computed(() =>
+		store.settings.mode === "system"
+			? systemDark.value
+			: store.settings.mode === "time"
+				? hour.value < 7 || hour.value >= 20
+				: store.settings.mode === "dark",
+	);
 
 	watch(
 		() => artworkPalette.value?.primary ?? store.settings.primaryColor,
@@ -44,6 +38,10 @@ export function useThemeEffects() {
 	);
 
 	useHead(() => ({
+		htmlAttrs: {
+			class: dark.value ? "dark" : "light",
+			style: `color-scheme: ${dark.value ? "dark" : "light"}`,
+		},
 		style: [
 			{
 				key: "appearance",
@@ -53,6 +51,6 @@ export function useThemeEffects() {
 	}));
 
 	useIntervalFn(() => {
-		if (store.settings.mode === "time") applyMode();
+		hour.value = new Date().getHours();
 	}, 60_000);
 }

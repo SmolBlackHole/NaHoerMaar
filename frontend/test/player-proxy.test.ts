@@ -122,7 +122,7 @@ describe("local API proxy", () => {
 			[
 				"catalog/search?q=" +
 					encodeURIComponent("Амура & remix") +
-					"&offset=10&source=youtube_music&ignored=1",
+					"&offset=10&source=youtube_music&snapshot_id=pinned-version&ignored=1",
 				"GET",
 			],
 			["youtube/playlists", "POST"],
@@ -140,6 +140,9 @@ describe("local API proxy", () => {
 		expect(new URL(calls[0]!.url!, backend).searchParams.get("q")).toBe("Амура & remix");
 		expect(new URL(calls[0]!.url!, backend).searchParams.get("offset")).toBe("10");
 		expect(new URL(calls[0]!.url!, backend).searchParams.get("source")).toBe("youtube_music");
+		expect(new URL(calls[0]!.url!, backend).searchParams.get("snapshot_id")).toBe(
+			"pinned-version",
+		);
 		expect(calls[0]!.url).not.toContain("ignored");
 		expect(calls.map((call) => call.method)).toEqual(["GET", "POST", "GET", "DELETE", "POST"]);
 		expect(calls[4]).toEqual({
@@ -150,13 +153,15 @@ describe("local API proxy", () => {
 		});
 	});
 
-	it("forwards seek positions and playback targets", async () => {
-		const body = { position_seconds: 75, expected_playback_id: "123" };
+	it.each([
+		["player/seek", { position_seconds: 75, expected_playback_id: "123" }],
+		["profile/appearance", { mode: "light", primaryColor: "amber" }],
+	])("forwards PUT /api/%s", async (path, body) => {
 		const backend = await listen(
 			createServer(async (request, response) => {
 				let raw = "";
 				for await (const chunk of request) raw += chunk;
-				expect(request.url).toBe("/api/player/seek");
+				expect(request.url).toBe(`/api/${path}`);
 				expect(request.method).toBe("PUT");
 				response.writeHead(200, { "content-type": "application/json" });
 				response.end(raw);
@@ -174,7 +179,7 @@ describe("local API proxy", () => {
 				),
 			),
 		);
-		const response = await fetch(`${frontend}/api/player/seek`, {
+		const response = await fetch(`${frontend}/api/${path}`, {
 			method: "PUT",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify(body),

@@ -2,8 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createSessionClient, SessionLost } from "../app/auth/client";
 import { createPlayerClient } from "../app/player/client";
 import type { ListenerSession } from "../shared/session";
+import { defaultAppearance } from "../shared/appearance";
 
 const account = (): ListenerSession => ({
+	appearance: { ...defaultAppearance },
 	profile: { id: "first", name: "Alice", avatar: "0002" },
 	profile_complete: true,
 	csrf_token: "session-bound-csrf",

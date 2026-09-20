@@ -73,6 +73,7 @@ const { icons } = useTheme();
 			class="catalog-row catalog-skeleton"
 			aria-hidden="true"
 		>
+			<div v-if="selectable" class="catalog-select"><USkeleton class="size-4" /></div>
 			<USkeleton class="catalog-cover rounded-md" />
 			<div class="catalog-copy">
 				<USkeleton class="h-4 w-3/4" />
@@ -81,17 +82,17 @@ const { icons } = useTheme();
 					<USkeleton class="h-3 w-8" />
 				</div>
 			</div>
-			<div class="grid size-11 shrink-0 place-items-center"><USkeleton class="size-4" /></div>
+			<div v-if="!selectable" class="grid size-11 shrink-0 place-items-center">
+				<USkeleton class="size-4" />
+			</div>
 		</li>
 	</ol>
 </template>
 
 <style scoped>
 .catalog-list {
-	max-height: min(28rem, 48dvh);
-	overflow-y: auto;
-	overscroll-behavior: contain;
-	scrollbar-gutter: stable;
+	display: grid;
+	gap: 0.25rem;
 }
 .catalog-row {
 	display: flex;
@@ -99,15 +100,12 @@ const { icons } = useTheme();
 	align-items: center;
 	gap: 1rem;
 	padding: 0.875rem 0.5rem;
-	border-bottom: 1px solid var(--ui-border);
-}
-.catalog-row:last-child {
-	border-bottom: 0;
+	border-radius: 0.5rem;
+	transition: background-color 140ms ease-out;
 }
 .catalog-row:hover,
 .catalog-row:focus-within {
 	background: var(--ui-bg-muted);
-	border-radius: 0.5rem;
 }
 .catalog-copy {
 	min-width: 0;
@@ -153,7 +151,7 @@ a.catalog-title:hover {
 	display: grid;
 	place-items: center;
 	flex-shrink: 0;
-	width: 2.25rem;
+	width: 2.75rem;
 	min-height: 2.75rem;
 	cursor: pointer;
 }
@@ -177,23 +175,18 @@ a.catalog-title:hover {
 		animation: none;
 	}
 }
-@container workspace (min-width: 1100px) {
-	.search-results {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		column-gap: 2rem;
-	}
-	.search-results .catalog-row:nth-last-child(2):nth-child(odd) {
-		border-bottom: 0;
-	}
-}
-@container workspace (max-width: 600px) {
+@container discovery-results (max-width: 500px) {
 	.catalog-row {
 		gap: 0.625rem;
 		padding-inline: 0;
 	}
-	.catalog-select {
-		width: 1.5rem;
+	.catalog-title {
+		display: -webkit-box;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		white-space: normal;
+		overflow-wrap: anywhere;
 	}
 	.catalog-cover {
 		width: 2.75rem;

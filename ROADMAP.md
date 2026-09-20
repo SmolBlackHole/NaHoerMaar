@@ -2,7 +2,7 @@
 
 Parent: [Project README](README.md)
 
-Status: phases 1, 3 and 4 complete. Live playback failure and disconnect checks
+Status: phases 1, 3, 4 and 5 complete. Live playback failure and disconnect checks
 passed, as did concurrent queue additions in two browser tabs. Phase 6 is
 implemented. Real Discord sign-in, shared-session logout in two tabs and live
 whitelist removal have passed locally. Shared deployment and the visible
@@ -123,7 +123,7 @@ with the backend without reloading the page.
 - [x] Search YouTube Music songs by default, with an explicit Videos option and
   separate providers behind a shared search interface
 - [x] Cache search results for five minutes and share identical concurrent lookups
-- [x] Detect YouTube playlist links and open a playlist tab. Let users select
+- [x] Detect YouTube playlist links and open a playlist preview. Let users select
   individual tracks or queue the entire playlist in source order, with unavailable
   entries and import limits shown explicitly
 - [x] Bound search results, playlist imports and concurrent extraction work.
@@ -159,7 +159,12 @@ missing thumbnails do not abort an otherwise valid import.
   using hours and minutes for waits of an hour or more
 - [x] Offer full-area Cover and YouTube Video views with native video controls,
   an artwork fallback and no video loading outside the visible Video view
-- [x] Keep a footer with project, license and avatar credits in the sidebar
+- [x] Keep a footer with project, license and avatar credits in the sidebar,
+  including searchable dependency licenses and downloadable notices
+- [x] Add short page and Player/Queue transitions that respect reduced motion
+  and preserve the video instance when switching tabs
+- [x] Save appearance settings per account and ask before loading YouTube media,
+  with cookie preferences accessible from the footer
 - [x] Group the last 100 started tracks under the queue with play counts, show five
   songs at first and let users requeue them. Keep skipped tracks, but exclude unplayed removals
 - [x] Make the controls usable on phones. Distinguish an empty queue, loading,
@@ -193,15 +198,15 @@ Concurrent use by separate Discord accounts still needs a live check.
 
 ## Queue and discovery improvements
 
-- [ ] Keep the queue as the main view. Move search results and playlist imports
+- [x] Keep the queue as the main view. Move search results and playlist imports
   into a shared side panel on desktop and a full-screen view on phones, with
   one scrollable result list and a reachable playlist selection action
-- [ ] Reduce list dividers and use spacing, typography and subtle hover states
+- [x] Reduce list dividers and use spacing, typography and subtle hover states
   to separate entries. Keep Recently played secondary to the upcoming queue
-- [ ] Show cached search results, playlist contents and link metadata immediately,
+- [x] Show cached search results, playlist contents and link metadata immediately,
   then refresh them in the background when needed. Share identical lookups and
   bound cache size and refresh frequency
-- [ ] Offer updated results without rearranging the list during selection.
+- [x] Offer updated results without rearranging the list during selection.
   Preserve playlist selections across updates and leave newly discovered tracks
   unselected. Account for removed and changed entries as well as new ones
 - [ ] Mark tracks already in the queue and offer to skip them during playlist
@@ -215,6 +220,15 @@ Concurrent use by separate Discord accounts still needs a live check.
 Acceptance: adding music does not push the queue out of reach. Background refresh
 preserves the current selection and scroll position, and a failed refresh leaves
 cached results visible with a clear indication that they could not be updated.
+
+## YouTube Music radio
+
+- [ ] Start a radio from a song or playlist, with a preview of related tracks
+  before adding them to the queue
+- [ ] Offer automatic replenishment while radio is enabled, giving manually
+  queued tracks priority and limiting repeats
+- [ ] Let users stop radio without stopping the current track. Check which
+  recommendation sources work without a personal YouTube Music login
 
 ## Administration
 

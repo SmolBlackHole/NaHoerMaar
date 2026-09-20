@@ -1,5 +1,6 @@
 <script setup lang="ts">
 defineProps<{ compact?: boolean }>();
+const consent = useConsentStore();
 </script>
 
 <template>
@@ -15,13 +16,7 @@ defineProps<{ compact?: boolean }>();
 			class="hover:text-highlighted hover:underline"
 			>Source</a
 		>
-		<a
-			href="https://github.com/SmolBlackHole/NaHoerMaar/blob/main/LICENSE"
-			target="_blank"
-			rel="noopener noreferrer"
-			class="hover:text-highlighted hover:underline"
-			>License</a
-		>
+		<NuxtLink to="/licenses" class="hover:text-highlighted hover:underline">Licenses</NuxtLink>
 		<a
 			href="https://pixabots.com"
 			title="Avatars by Pixabots"
@@ -30,6 +25,13 @@ defineProps<{ compact?: boolean }>();
 			class="hover:text-highlighted hover:underline"
 			>{{ compact ? "Pixabots" : "Avatars by Pixabots" }}</a
 		>
+		<button
+			type="button"
+			class="hover:text-highlighted hover:underline"
+			@click="consent.open = true"
+		>
+			Cookies
+		</button>
 	</footer>
 </template>
 

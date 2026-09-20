@@ -22,11 +22,7 @@ async function requeue(item: RecentTrack) {
 
 <template>
 	<div>
-		<ol
-			v-if="entries.length"
-			aria-label="Recently played tracks"
-			class="divide-y divide-default"
-		>
+		<ol v-if="entries.length" aria-label="Recently played tracks" class="space-y-1">
 			<li
 				v-for="item in entries"
 				:key="item.id"
@@ -81,6 +77,14 @@ async function requeue(item: RecentTrack) {
 </template>
 
 <style scoped>
+.recent-row {
+	border-radius: 0.5rem;
+	transition: background-color 140ms ease-out;
+}
+.recent-row:hover,
+.recent-row:focus-within {
+	background: var(--ui-bg-muted);
+}
 .recent-mobile-duration {
 	display: none;
 }
@@ -103,6 +107,7 @@ async function requeue(item: RecentTrack) {
 		display: -webkit-box;
 		-webkit-box-orient: vertical;
 		-webkit-line-clamp: 2;
+		line-clamp: 2;
 		white-space: normal;
 		overflow-wrap: anywhere;
 	}

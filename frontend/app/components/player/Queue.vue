@@ -452,6 +452,7 @@ async function clearQueue() {
 		</p>
 		<UModal
 			:open="clearing !== null"
+			:ui="{ footer: 'justify-end' }"
 			:title="clearTitle"
 			:description="clearDescription"
 			@update:open="!$event && (clearing = null)"
@@ -515,12 +516,12 @@ async function clearQueue() {
 .queue-row {
 	min-height: 4.75rem;
 	padding-block: 0.75rem;
-	border-bottom: 1px solid var(--ui-border);
+	border-radius: 0.5rem;
+	transition: background-color 140ms ease-out;
 }
 .queue-row:hover,
 .queue-row:focus-within {
 	background: var(--ui-bg-muted);
-	border-radius: 0.5rem;
 }
 .queue-handle {
 	display: flex;
@@ -580,7 +581,7 @@ async function clearQueue() {
 	font-size: 0.6875rem;
 }
 .queue-empty {
-	border-block: 1px solid var(--ui-border);
+	padding-block: 2rem;
 }
 @container workspace (max-width: 1000px) {
 	.queue-grid {
@@ -630,6 +631,7 @@ async function clearQueue() {
 		display: -webkit-box;
 		-webkit-box-orient: vertical;
 		-webkit-line-clamp: 2;
+		line-clamp: 2;
 		white-space: normal;
 		overflow-wrap: anywhere;
 	}

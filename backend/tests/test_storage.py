@@ -127,8 +127,8 @@ def test_closed_store_does_not_reopen_for_a_player_mutation(tmp_path: Path) -> N
 @pytest.mark.parametrize(
     "statement",
     [
-        "PRAGMA user_version = 99",
-        "PRAGMA user_version = 0",
+        "UPDATE alembic_version SET version_num = 'unknown'",
+        "DELETE FROM alembic_version",
         "CREATE TABLE unrelated (id INTEGER)",
         "ALTER TABLE queue_entries ADD COLUMN unexpected TEXT",
         "DELETE FROM player_state",

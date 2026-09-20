@@ -32,7 +32,12 @@ applies while paused because a pause can race with the final audio frame.
 The `seek` event preserves `playing` or `paused` and leaves the queue unchanged;
 it is invalid in other states.
 
-SQLAlchemy maps queue entries and player state to SQLite. Each persistent change
+SQLAlchemy defines the tables and handles database access; Alembic applies schema
+migrations at startup. Existing databases are adopted using their legacy version
+marker. Migration and stored-data validation share a transaction, so invalid data
+leaves the original database unchanged.
+
+Each persistent player change
 commits in one Session transaction before the Player publishes its new snapshot.
 Failed writes and failed commits leave the previous snapshot intact.
 
@@ -74,20 +79,24 @@ also saves public metadata before the track starts.
 The [media catalog](../backend/src/nahormaar_backend/catalog.py) owns search,
 playlist previews and metadata-only extraction. Discovery runs at most two
 extractors concurrently, with bounded waiting, process output and deadlines.
-Playback resolution runs separately. A bounded ten-minute cache supplies public
-metadata when a result is added; temporary stream URLs are never cached here.
+Playback resolution runs separately. The bounded
+[discovery cache](../backend/src/nahormaar_backend/discovery_cache.py) supplies
+public metadata immediately and shares background refreshes. Temporary stream
+URLs are never cached here.
 
 [Search providers](../backend/src/nahormaar_backend/search.py) return the same
 track fields. YouTube Music uses `ytmusicapi` with the songs filter; video search
-uses `yt-dlp`. Both run in bounded child processes. The shared search cache keeps
-up to 100 results per query for five minutes, holds at most 32 queries, and combines
-identical concurrent requests. Search provider selection does not change how
-audio is resolved for playback.
+uses `yt-dlp`. Both run in bounded child processes. Search pages use a fixed
+snapshot ID, so background updates cannot change pagination midway through
+browsing. Search provider selection does not change how audio is resolved for
+playback. Cache limits and refresh intervals are listed in the
+[discovery API](api.md#find-music).
 
 Playlist previews have four states: `loading`, `ready`, `cancelled` and `failed`.
 They collect up to 100 entries, retaining duplicate videos and known unavailable
-entries. Previews live in memory, expire after ten minutes and can be cancelled
-without touching the queue. Only a confirmed batch reaches the controller. It
+entries. Each preview belongs to one account; source snapshots and extraction
+work can be shared. Cancelling one preview leaves other users' work intact.
+Only a confirmed batch reaches the controller. It
 appends the selection in one transaction with one queue revision and receipt.
 
 For Opus sources, FFmpeg copies the encoded audio into an Ogg stream. At 100%
@@ -129,10 +138,9 @@ FastAPI owns one runtime through its lifespan. HTTP controls and playback
 callbacks share the controller's lock. The API reads complete committed
 snapshots; player endpoints leave database and Discord changes to the controller.
 
-SQLite schema version 5 stores track metadata, contributor profiles, playback
-history, accounts, sessions and pending logins.
-Earlier versions migrate in a transaction, preserving entries, order and existing
-request receipts. `revision` orders visible state
+SQLite stores track metadata, contributor profiles, playback history, accounts,
+appearance preferences, sessions and pending logins.
+`revision` orders visible state
 changes, including runtime-only changes such as volume. `queue_revision` changes
 only when upcoming entries or their order change. Startup advances the global
 revision because the voice connection and other runtime values reset.
@@ -199,10 +207,12 @@ event stream; playback continues.
 
 Queue uses one input for video links, playlist links and text searches. A video
 link with a playlist parameter keeps its single-track action and offers an
-explicit playlist preview. Search and playlist tabs retain their results while
-the queue changes. New searches supersede old responses; closing a playlist
-cancels its preparation. Imports use the same lost-response retry flow as other
-queue edits.
+explicit playlist preview. Search and playlists share a side panel, full-screen
+on phones, with one scrollable list and a fixed import action. Closing the panel
+preserves input, selection and scroll position. New searches supersede old
+responses. Background changes remain pending until the user accepts them;
+playlist selection follows track identity, with ambiguous duplicates left
+unselected. Imports use the same lost-response retry flow as other queue edits.
 
 SortableJS handles queue dragging, including touch input. The dashboard keeps
 the displayed order stable during a drag and submits the revision from its start.

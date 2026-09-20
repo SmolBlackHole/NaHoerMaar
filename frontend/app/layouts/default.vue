@@ -4,6 +4,13 @@ import { useTheme } from "~/composables/useTheme";
 const { icons } = useTheme();
 const open = ref(false);
 const collapsed = ref(false);
+const consent = useConsentStore();
+watch(
+	() => consent.open,
+	(visible) => {
+		if (visible) open.value = false;
+	},
+);
 const links = computed(() => [
 	{
 		label: "Player",

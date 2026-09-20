@@ -145,10 +145,16 @@ def create_app(
         library: Annotated[MediaCatalog, Depends(catalog)],
         offset: Annotated[int, Query(ge=0, le=90, multiple_of=10)] = 0,
         source: SearchSource = SearchSource.MUSIC,
+        snapshot_id: Annotated[str | None, Query(min_length=32, max_length=32)] = None,
     ) -> SearchPage:
         if not q.strip():
             raise HTTPException(422, detail="Enter a title or artist.")
-        return await library.search(q, offset, source)
+        try:
+            return await library.search(q, offset, source, snapshot_id)
+        except KeyError as exc:
+            raise HTTPException(
+                410, detail="These results expired. Refresh the search."
+            ) from exc
 
     @app.post("/api/youtube/playlists", status_code=202)
     async def preview_playlist(

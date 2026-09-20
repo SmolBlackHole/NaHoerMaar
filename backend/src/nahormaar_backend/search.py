@@ -6,17 +6,15 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import math
 import sys
-from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, replace
 from enum import StrEnum
-from time import monotonic
 from typing import Protocol, cast
 
+from .discovery_cache import CatalogBusy as CatalogBusy, SnapshotCache
 from .audio import TrackError
 from .models import TrackMetadata
 from .processes import ProcessResult
@@ -27,10 +25,6 @@ SEARCH_MAX_RESULTS = 100
 SEARCH_CACHE_LIMIT = 32
 SEARCH_CACHE_TTL = 300.0
 SEARCH_PENDING_LIMIT = 8
-
-
-class CatalogBusy(Exception):
-    """Discovery is at capacity; playback has its own resolver."""
 
 
 class SearchSource(StrEnum):
@@ -54,6 +48,10 @@ class CatalogTrack(TrackMetadata):
 class SearchPage:
     entries: tuple[CatalogTrack, ...]
     next_offset: int | None
+    snapshot_id: str
+    latest_snapshot_id: str
+    refreshing: bool = False
+    refresh_error: str | None = None
 
 
 def metadata_object(raw: bytes) -> dict[str, object]:
@@ -209,68 +207,58 @@ class YouTubeMusicSearch:
 
 
 class SearchCatalog:
-    def __init__(self, providers: Mapping[SearchSource, SearchProvider]) -> None:
+    def __init__(
+        self,
+        providers: Mapping[SearchSource, SearchProvider],
+        remember: Callable[[CatalogTrack], None] | None = None,
+    ) -> None:
         self._providers = providers
-        self._cache: OrderedDict[
-            tuple[SearchSource, str], tuple[float, tuple[CatalogTrack, ...]]
-        ] = OrderedDict()
-        self._pending: dict[
-            tuple[SearchSource, str], asyncio.Task[tuple[CatalogTrack, ...]]
-        ] = {}
-        self._closed = False
+        self._remember = remember
+        self._cache = SnapshotCache[tuple[CatalogTrack, ...]](
+            SEARCH_CACHE_LIMIT, SEARCH_CACHE_TTL, SEARCH_PENDING_LIMIT
+        )
 
     async def search(
-        self, query: str, offset: int = 0, source: SearchSource = SearchSource.MUSIC
+        self,
+        query: str,
+        offset: int = 0,
+        source: SearchSource = SearchSource.MUSIC,
+        snapshot_id: str | None = None,
     ) -> SearchPage:
         query = " ".join(query.split())
         if not 1 <= len(query) <= 200:
             raise ValueError("Search must contain 1 to 200 characters.")
         if offset < 0 or offset >= SEARCH_MAX_RESULTS or offset % SEARCH_LIMIT:
             raise ValueError("Invalid search offset.")
-        if self._closed:
+        if self._cache.closed:
             raise CatalogBusy("Music discovery is closed.")
-        key = (source, query.casefold())
-        cached = self._cache.get(key)
-        if cached is not None and cached[0] > monotonic():
-            self._cache.move_to_end(key)
-            tracks = cached[1]
-        else:
-            self._cache.pop(key, None)
-            task = self._pending.get(key)
-            if task is None:
-                if len(self._pending) >= SEARCH_PENDING_LIMIT:
-                    raise CatalogBusy("Music discovery is busy. Try again shortly.")
-                task = asyncio.create_task(self._fetch(key, query))
-                self._pending[key] = task
-                task.add_done_callback(self._consume_failure)
-            tracks = await asyncio.shield(task)
+        key = f"{source}:{query.casefold()}"
+        snapshot = (
+            self._cache.version(key, snapshot_id)
+            if snapshot_id
+            else await self._cache.get(key, lambda: self._fetch(source, query))
+        )
+        latest = self._cache.peek(key) or snapshot
         end = offset + SEARCH_LIMIT
-        return SearchPage(tracks[offset:end], end if len(tracks) > end else None)
-
-    @staticmethod
-    def _consume_failure(task: asyncio.Task[tuple[CatalogTrack, ...]]) -> None:
-        if not task.cancelled():
-            task.exception()
+        return SearchPage(
+            snapshot.value[offset:end],
+            end if len(snapshot.value) > end else None,
+            snapshot.id,
+            latest.id,
+            key in self._cache.pending,
+            self._cache.errors.get(key),
+        )
 
     async def _fetch(
-        self, key: tuple[SearchSource, str], query: str
+        self, source: SearchSource, query: str
     ) -> tuple[CatalogTrack, ...]:
-        try:
-            tracks = (await self._providers[key[0]].search(query, SEARCH_MAX_RESULTS))[
-                :SEARCH_MAX_RESULTS
-            ]
-            self._cache[key] = (monotonic() + SEARCH_CACHE_TTL, tracks)
-            self._cache.move_to_end(key)
-            while len(self._cache) > SEARCH_CACHE_LIMIT:
-                self._cache.popitem(last=False)
-            return tracks
-        finally:
-            self._pending.pop(key, None)
+        tracks = (await self._providers[source].search(query, SEARCH_MAX_RESULTS))[
+            :SEARCH_MAX_RESULTS
+        ]
+        if self._remember:
+            for entry in tracks:
+                self._remember(entry)
+        return tracks
 
     async def close(self) -> None:
-        self._closed = True
-        tasks = list(self._pending.values())
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
-        self._cache.clear()
+        await self._cache.close()

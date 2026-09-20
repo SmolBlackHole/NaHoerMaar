@@ -13,7 +13,7 @@ const visible = computed(() => (expanded.value ? history.value : history.value.s
 		<div class="mb-3 flex items-center justify-between gap-4">
 			<h2
 				id="history-heading"
-				class="text-xl font-semibold tracking-[-0.025em] text-highlighted"
+				class="text-xl font-semibold tracking-tight text-highlighted"
 			>
 				Recently played
 			</h2>
@@ -40,7 +40,6 @@ const visible = computed(() => (expanded.value ? history.value : history.value.s
 .history-section {
 	margin-top: 3rem;
 	padding-top: 2rem;
-	border-top: 1px solid var(--ui-border);
 	scroll-margin-top: 1rem;
 }
 @container workspace (max-width: 600px) {

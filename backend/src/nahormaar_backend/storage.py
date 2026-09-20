@@ -12,13 +12,12 @@ from types import TracebackType
 from typing import cast
 from uuid import UUID
 
+from alembic.util.exc import CommandError
 from sqlalchemy import (
     JSON,
     CheckConstraint,
     ForeignKey,
     delete,
-    insert,
-    inspect,
     select,
     update,
 )
@@ -28,9 +27,8 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 from .commands import Outcome, Receipt, Revisions
 from .models import Contributor, HistoryEntry, PlaybackState, PlayerSnapshot, QueueEntry
 from .database import Base as _Base, database_engine
-from .accounts import ACCOUNT_TABLES
-
-_SCHEMA_VERSION = 5
+from .accounts import Account, AccountRow
+from .migrations import upgrade
 
 
 def _contributor_data(contributor: Contributor | None) -> dict[str, str] | None:
@@ -159,89 +157,12 @@ class SQLiteStore:
     def _prepare_schema(self) -> None:
         try:
             with self._engine.begin() as connection:
-                version = connection.exec_driver_sql("PRAGMA user_version").scalar_one()
-                inspector = inspect(connection)
-                tables = set(inspector.get_table_names())
-                if version == 0 and not tables and not inspector.get_view_names():
-                    _Base.metadata.create_all(connection)
-                    connection.execute(
-                        insert(_PlayerRow).values(id=1, state=PlaybackState.IDLE.value)
-                    )
-                    connection.exec_driver_sql(
-                        f"PRAGMA user_version = {_SCHEMA_VERSION}"
-                    )
-                    return
-
-                expected_tables = set(_Base.metadata.tables)
-                if version < 5:
-                    expected_tables.difference_update(
-                        table.name for table in ACCOUNT_TABLES
-                    )
-                if version == 1:
-                    expected_tables.remove("requests")
-                if version in (1, 2):
-                    expected_tables.remove("playback_history")
-                if (
-                    version not in (1, 2, 3, 4, _SCHEMA_VERSION)
-                    or tables != expected_tables
-                ):
-                    raise ValueError(f"Unsupported player database schema ({version}).")
-                for table in _Base.metadata.sorted_tables:
-                    if table.name not in expected_tables:
-                        continue
-                    columns = [
-                        column["name"] for column in inspector.get_columns(table.name)
-                    ]
-                    expected_columns = list(table.columns.keys())
-                    if version < 5 and table.name == "requests":
-                        expected_columns.remove("actor_id")
-                    if version < 4 and table.name in (
-                        "queue_entries",
-                        "playback_history",
-                    ):
-                        expected_columns.remove("added_by")
-                    if version == 1 and table.name == "player_state":
-                        expected_columns = expected_columns[:-2]
-                    if version in (1, 2) and table.name == "queue_entries":
-                        expected_columns = expected_columns[:-2]
-                    if columns != expected_columns:
-                        raise ValueError(f"Unexpected columns in {table.name}.")
-                if inspector.get_view_names():
-                    raise ValueError("Unexpected database views.")
-                if version == 1:
-                    for name in ("revision", "queue_revision"):
-                        connection.exec_driver_sql(
-                            f"ALTER TABLE player_state ADD COLUMN {name} "
-                            "INTEGER NOT NULL DEFAULT 0"
-                        )
-                    _Base.metadata.tables["requests"].create(connection)
-                if version in (1, 2):
-                    for name in ("artist", "uploader_url"):
-                        connection.exec_driver_sql(
-                            f"ALTER TABLE queue_entries ADD COLUMN {name} VARCHAR"
-                        )
-                    _Base.metadata.tables["playback_history"].create(connection)
-                if version < 4:
-                    connection.exec_driver_sql(
-                        "ALTER TABLE queue_entries ADD COLUMN added_by JSON"
-                    )
-                    if version == 3:
-                        connection.exec_driver_sql(
-                            "ALTER TABLE playback_history ADD COLUMN added_by JSON"
-                        )
-                if version < 5:
-                    if version > 1:
-                        connection.exec_driver_sql(
-                            "ALTER TABLE requests ADD COLUMN actor_id CHAR(32)"
-                        )
-                    _Base.metadata.create_all(connection, tables=list(ACCOUNT_TABLES))
-                    # Validate old data before committing any schema changes.
-                    with Session(bind=connection) as session:
-                        self._load(session)
-                    connection.exec_driver_sql(
-                        f"PRAGMA user_version = {_SCHEMA_VERSION}"
-                    )
-        except (SQLAlchemyError, TypeError, ValueError) as exc:
+                upgrade(connection)
+                with Session(bind=connection) as session:
+                    self._load(session)
+                    for row in session.scalars(select(AccountRow)):
+                        Account.from_row(row)
+        except (SQLAlchemyError, CommandError, TypeError, ValueError) as exc:
             raise StorageError(f"Invalid player database: {exc}") from exc
 
     def load(self) -> PlayerSnapshot:

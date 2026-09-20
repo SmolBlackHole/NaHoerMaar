@@ -31,6 +31,7 @@ coverage/
 .nuxt/
 .output/
 .data/
+frontend/public/licenses/generated/
 
 # C and C++
 .build/

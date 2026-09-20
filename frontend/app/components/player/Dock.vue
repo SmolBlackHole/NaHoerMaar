@@ -254,7 +254,12 @@ async function setVolume() {
 	border-radius: 0.375rem;
 }
 .dock-play {
-	transition: background-color 160ms cubic-bezier(0.16, 1, 0.3, 1);
+	transition:
+		background-color 140ms ease-out,
+		transform 100ms ease-out;
+}
+.dock-play:active:not(:disabled) {
+	transform: scale(0.94);
 }
 .seek-slider {
 	height: 1.75rem;
@@ -340,6 +345,9 @@ async function setVolume() {
 	}
 }
 @media (prefers-reduced-motion: reduce) {
+	.dock-play:active:not(:disabled) {
+		transform: none;
+	}
 	.dock-play {
 		transition: none;
 	}

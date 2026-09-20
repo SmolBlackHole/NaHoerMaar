@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	musicSource,
 	selectedSources,
+	reconcileSelection,
+	type SearchPage,
 	type CatalogTrack,
 	type PlaylistPreview,
 } from "../shared/catalog";
@@ -31,6 +33,9 @@ const preview = (state: PlaylistPreview["state"] = "loading"): PlaylistPreview =
 	limit: 100,
 	truncated: false,
 	error: null,
+	snapshot_id: "original",
+	refreshing: false,
+	refresh_error: null,
 });
 function deferred<T>() {
 	let resolve!: (value: T) => void;
@@ -40,6 +45,132 @@ function deferred<T>() {
 	return { promise, resolve };
 }
 afterEach(() => vi.useRealTimers());
+
+const page = (snapshot: string, changes: Partial<SearchPage> = {}): SearchPage => ({
+	entries: [entry(1, { title: snapshot })],
+	next_offset: 10,
+	snapshot_id: snapshot,
+	latest_snapshot_id: snapshot,
+	refreshing: false,
+	refresh_error: null,
+	...changes,
+});
+
+describe("controlled refresh", () => {
+	it("keeps shown results and pins subsequent pages until an update is accepted", async () => {
+		vi.useFakeTimers();
+		const request = vi
+			.fn<typeof fetch>()
+			.mockResolvedValueOnce(Response.json(page("old")))
+			.mockResolvedValueOnce(Response.json(page("old", { refreshing: true })))
+			.mockResolvedValueOnce(Response.json(page("old", { latest_snapshot_id: "new" })))
+			.mockResolvedValueOnce(Response.json(page("new")))
+			.mockResolvedValueOnce(
+				Response.json(
+					page("old", {
+						entries: [entry(11, { video_id: "second" })],
+						next_offset: null,
+						latest_snapshot_id: "new",
+					}),
+				),
+			);
+		const client = createCatalogClient(request);
+		await client.search("song");
+		await client.search("song");
+		expect(client.results.value[0]?.title).toBe("old");
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(client.results.value[0]?.title).toBe("old");
+		expect(client.searchUpdate.value?.snapshot_id).toBe("new");
+		await client.loadMore();
+		expect(String(request.mock.calls[4]![0])).toContain(
+			"offset=10&source=youtube_music&snapshot_id=old",
+		);
+		expect(client.results.value).toHaveLength(2);
+		client.applySearchUpdate();
+		expect(client.results.value.map((item) => item.title)).toEqual(["new"]);
+		expect(client.nextOffset.value).toBe(10);
+		client.dispose();
+	});
+	it("does not combine an expired result page with a fresh search", async () => {
+		const request = vi
+			.fn<typeof fetch>()
+			.mockResolvedValueOnce(Response.json(page("old")))
+			.mockResolvedValueOnce(
+				Response.json({ detail: "Refresh the search." }, { status: 410 }),
+			)
+			.mockResolvedValueOnce(Response.json(page("new")));
+		const client = createCatalogClient(request);
+		await client.search("song");
+		await client.loadMore();
+		expect(client.searchExpired.value).toBe(true);
+		expect(client.results.value[0]?.title).toBe("old");
+		await client.search("song");
+		client.applySearchUpdate();
+		expect(client.results.value.map((item) => item.title)).toEqual(["new"]);
+		client.dispose();
+	});
+	it("retains the displayed playlist during refresh and import validation", async () => {
+		const old = preview("ready");
+		const updated = {
+			...old,
+			snapshot_id: "updated",
+			entries: [entry(1, { title: "New" }), entry(2)],
+		};
+		const request = vi
+			.fn<typeof fetch>()
+			.mockResolvedValueOnce(Response.json(old))
+			.mockResolvedValueOnce(Response.json(updated))
+			.mockResolvedValueOnce(Response.json(updated));
+		const client = createCatalogClient(request);
+		await client.openPreview(playlist);
+		await client.openPreview(playlist, true);
+		expect(client.preview.value?.entries[0]?.title).toBe(old.entries[0]?.title);
+		expect(client.previewUpdate.value?.entries).toHaveLength(2);
+		expect(await client.validatePreview()).toBe(true);
+		expect(client.preview.value?.snapshot_id).toBe("original");
+		client.applyPreviewUpdate();
+		expect(client.preview.value?.snapshot_id).toBe("updated");
+		client.dispose();
+	});
+	it("matches unique songs after reorder, drops removed songs and leaves new songs unchecked", () => {
+		const old = [
+			entry(1, { video_id: "a" }),
+			entry(2, { video_id: "b" }),
+			entry(3, { video_id: "c" }),
+		];
+		const next = [
+			entry(1, { video_id: "b" }),
+			entry(2, { video_id: "new" }),
+			entry(3, { video_id: "a" }),
+		];
+		expect([...reconcileSelection(old, next, new Set([1, 3]))]).toEqual([3]);
+	});
+	it("keeps duplicate occurrences separate and drops ambiguous partial selections", () => {
+		const duplicates = [entry(1), entry(2)];
+		expect([...reconcileSelection(duplicates, duplicates, new Set([1]))]).toEqual([]);
+		expect([...reconcileSelection(duplicates, duplicates, new Set([1, 2]))]).toEqual([1, 2]);
+		expect([
+			...reconcileSelection(duplicates, [...duplicates, entry(3)], new Set([1, 2])),
+		]).toEqual([]);
+		expect(selectedSources(duplicates, new Set([1, 2]))).toEqual([video, video]);
+	});
+	it("ignores late pages from a replaced search even if the request ignores abort", async () => {
+		const late = deferred<Response>();
+		const request = vi
+			.fn<typeof fetch>()
+			.mockResolvedValueOnce(Response.json(page("old")))
+			.mockReturnValueOnce(late.promise)
+			.mockResolvedValueOnce(Response.json(page("different")));
+		const client = createCatalogClient(request);
+		await client.search("song");
+		const pending = client.loadMore();
+		await client.search("another");
+		late.resolve(Response.json(page("old", { entries: [entry(11)] })));
+		await pending;
+		expect(client.results.value.map((item) => item.title)).toEqual(["different"]);
+		client.dispose();
+	});
+});
 
 describe("music sources", () => {
 	it("keeps mixed video/playlist links as single songs with an explicit playlist option", () => {

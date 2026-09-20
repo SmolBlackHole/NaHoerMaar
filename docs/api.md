@@ -14,13 +14,18 @@ single-use login state and the Discord ID whitelist before issuing a session.
 All other `/api` routes require the `nahormaar_session` cookie, including search,
 playlist previews and SSE. It is HTTP-only, SameSite=Lax, secure on HTTPS and
 expires seven days after sign-in. `GET /api/auth/session` returns `profile`,
-`profile_complete`, `csrf_token` and the Unix timestamp `expires_at`.
+`profile_complete`, `appearance`, `csrf_token` and the Unix timestamp `expires_at`.
 
 For every mutation, send `X-CSRF-Token` from that response and an `Origin` equal
 to `PUBLIC_ORIGIN`. `PUT /api/profile` accepts `name` (1 to 32 characters) and an
 `avatar` from the Pixabot catalog, then returns the updated session response.
 `POST /api/auth/logout` returns 204 and invalidates the session without stopping
-playback. These two routes do not need an idempotency key.
+playback. These routes do not need an idempotency key.
+
+`PUT /api/profile/appearance` saves the signed-in user's display preferences and
+returns the saved values. Send `mode`, `artworkColors`, `primaryColor`,
+`neutralColor`, `fontFamily`, `iconSet` and `textSize`. The OpenAPI schema lists
+the allowed choices. This route requires CSRF protection but no idempotency key.
 
 Missing or expired sessions return 401 (`signed_out`). Unlisted accounts return
 403 (`access_denied`); a missing or invalid whitelist returns 503
@@ -101,16 +106,23 @@ Mutation responses contain `request_id`, `code`, `entry_id` (for additions),
 `GET /api/catalog/search?q=TITLE_OR_ARTIST&offset=0` searches YouTube Music songs
 by default (`source=youtube_music`). Set `source=youtube` to search videos instead.
 It returns an `entries` array of
-up to 10 results and a `next_offset`. Pass that offset to load the next page;
+up to 10 results, a `snapshot_id` and a `next_offset`. Pass the snapshot ID and
+offset to load the next page from the same result set;
 null marks the end. Offsets are multiples of 10 from 0 to 90, allowing up to
 100 results per search. The query must contain 1 to 200 characters.
 
 Each result includes an `index`, `source_url`, public track metadata and an
-`unavailable` reason when the entry cannot be added. The backend caches up to 100
-results per source and query for five minutes, so pages keep the same order during
-that period. The cache holds at most 32 queries; identical concurrent searches
-share one lookup. Failed searches are not cached. Clients should deduplicate by
-video ID because results can change after cache expiry.
+`unavailable` reason when the entry cannot be added. The backend keeps up to 32
+queries in memory. After five minutes, another lookup returns the saved results
+and starts a shared background refresh. A failed refresh keeps the saved snapshot.
+`refreshing` and `refresh_error` describe that work.
+
+While `refreshing` is true, poll with the displayed `snapshot_id`.
+If `latest_snapshot_id` differs, fetch that version separately and offer it to the
+user without changing the displayed list. Subsequent pages must use the accepted
+version. Versions expire after 30 minutes and can be evicted sooner by the cache
+limit; an expired or mismatched version returns 410. Never append an unversioned
+page to an existing list. Clients can deduplicate search results by video ID.
 Unknown metadata fields are null. Search results contain no stream URLs.
 
 Open a playlist with `POST /api/youtube/playlists`, a JSON `source_url` and a UUID
@@ -125,14 +137,28 @@ a unique index even when a video appears more than once. Known unavailable
 entries remain visible with a reason. `error` explains a failure; a `ready`
 preview can contain usable entries alongside a partial-load error.
 
+Playlist contents are shared across previews, but access to each preview remains
+with its owner. Opening a known playlist returns its cached contents immediately
+and refreshes them at most once per minute. A new `snapshot_id` indicates changed
+contents. Keep those changes separate until the user accepts them, then reconcile
+selection by track identity. Duplicate occurrences remain separate; ambiguous
+matches and new tracks stay unselected. A failed or partial refresh leaves the
+previous complete snapshot available, with a `refresh_error`.
+
 Previews contain at most 100 entries. `truncated: true` means more exist beyond
 that limit. Submit selected, available URLs to `POST /api/queue/batch` in preview
 order. Loading a preview never changes the queue.
 
-`DELETE /api/youtube/playlists/{id}` cancels a loading preview and waits for its
-extractor to stop. It needs no request key; repeated cancellation has the same
-effect. Completed previews remain readable for ten minutes. Expired or unknown
+`DELETE /api/youtube/playlists/{id}` cancels that user's loading preview. The
+extractor stops when no other preview needs it. It needs no request key; repeated
+cancellation has the same effect. Completed previews remain readable for ten
+minutes; reopening a completed preview renews that period. Expired or unknown
 IDs return 410, and previews disappear on backend restart.
+
+The catalog retains at most 32 playlists and 1,000 individual tracks in memory.
+Adding a known link uses cached metadata immediately. Stale details refresh
+through the queue's metadata worker after five minutes and only enrich matching
+entries that still exist. Temporary audio URLs use the separate playback resolver.
 
 Discovery allows two extractions at once and up to eight active or waiting jobs.
 Search and metadata extraction have a 30-second deadline; playlists have 60

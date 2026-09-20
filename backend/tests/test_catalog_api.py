@@ -40,6 +40,15 @@ def test_search_defaults_to_music_and_validates_source(
                 == "https://music.youtube.com/watch?v=Pqp9fDRp1lw"
             )
             assert "nahormaar_backend.music_search" in runner.calls[0]
+            version = response.json()["snapshot_id"]
+            pinned = await client.get(
+                "/api/catalog/search", params={"q": "song", "snapshot_id": version}
+            )
+            assert pinned.status_code == 200 and pinned.json()["snapshot_id"] == version
+            expired = await client.get(
+                "/api/catalog/search", params={"q": "song", "snapshot_id": "0" * 32}
+            )
+            assert expired.status_code == 410
             assert (
                 await client.get(
                     "/api/catalog/search", params={"q": "song", "source": "spotify"}

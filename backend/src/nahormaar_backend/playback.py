@@ -421,7 +421,14 @@ class PlaybackController:
                     entry
                     for entry in self._snapshot.upcoming
                     if entry.id not in attempted
-                    and (entry.title is None or entry.duration_seconds is None)
+                    and (
+                        entry.title is None
+                        or entry.duration_seconds is None
+                        or (
+                            self.catalog is not None
+                            and self.catalog.needs_refresh(entry.source_url)
+                        )
+                    )
                 ),
                 None,
             )

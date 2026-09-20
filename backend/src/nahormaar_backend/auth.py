@@ -22,6 +22,7 @@ from authlib.integrations.httpx_client import AsyncOAuth2Client  # type: ignore[
 from authlib.oauth2 import OAuth2Error  # type: ignore[import-untyped]
 
 from .accounts import Account, Accounts
+from .preferences import Appearance
 from .config import ConfigurationError, environment_values
 
 SESSION_SECONDS = 7 * 24 * 60 * 60
@@ -323,4 +324,9 @@ class Auth:
             raise AuthError("invalid_avatar", 422)
         return await asyncio.to_thread(
             self.accounts.update_profile, user.account.profile.id, name, avatar
+        )
+
+    async def appearance(self, user: Authenticated, value: Appearance) -> Appearance:
+        return await asyncio.to_thread(
+            self.accounts.update_appearance, user.account.profile.id, value
         )

@@ -17,11 +17,18 @@ export interface PlaylistPreview {
 	limit: number;
 	truncated: boolean;
 	error: string | null;
+	snapshot_id: string | null;
+	refreshing: boolean;
+	refresh_error: string | null;
 }
 
 export interface SearchPage {
 	entries: CatalogTrack[];
 	next_offset: number | null;
+	snapshot_id: string;
+	latest_snapshot_id: string;
+	refreshing: boolean;
+	refresh_error: string | null;
 }
 
 export type MusicSource =
@@ -87,4 +94,34 @@ export function selectedSources(
 	return entries
 		.filter((item) => selected.has(item.index) && item.source_url && !item.unavailable)
 		.map((item) => item.source_url!);
+}
+
+/** Retain selections only where a refreshed occurrence can be identified safely. */
+export function reconcileSelection(
+	previous: readonly CatalogTrack[],
+	next: readonly CatalogTrack[],
+	selected: ReadonlySet<number>,
+): Set<number> {
+	const groups = (entries: readonly CatalogTrack[]) => {
+		const result = new Map<string, CatalogTrack[]>();
+		for (const item of entries) {
+			const key = item.video_id || item.source_url;
+			if (key) result.set(key, [...(result.get(key) ?? []), item]);
+		}
+		return result;
+	};
+	const before = groups(previous),
+		after = groups(next);
+	const kept = new Set<number>();
+	for (const [key, entries] of after) {
+		const old = before.get(key);
+		if (!old) continue;
+		// Identical duplicates cannot be matched individually after an upstream edit.
+		const allSelected = old.every((item) => selected.has(item.index));
+		if (old.length !== entries.length || (old.length > 1 && !allSelected)) continue;
+		for (const item of entries) {
+			if (allSelected && item.source_url && !item.unavailable) kept.add(item.index);
+		}
+	}
+	return kept;
 }

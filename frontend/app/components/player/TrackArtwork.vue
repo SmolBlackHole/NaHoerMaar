@@ -5,7 +5,8 @@ import { trackArtwork } from "#shared/player";
 const props = defineProps<{ entry: QueueEntry | null; large?: boolean }>();
 const { icons } = useTheme();
 const failed = ref(false);
-const source = computed(() => trackArtwork(props.entry));
+const consent = useConsentStore();
+const source = computed(() => (consent.youtube ? trackArtwork(props.entry) : null));
 watch(source, () => {
 	failed.value = false;
 });

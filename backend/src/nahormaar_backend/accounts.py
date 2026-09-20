@@ -8,11 +8,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import UUID, uuid4
 
-from sqlalchemy import ForeignKey, delete, func, select
+from sqlalchemy import JSON, ForeignKey, delete, func, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from .database import Base, database_engine
 from .models import Contributor
+from .preferences import Appearance
 
 
 class AccountRow(Base):
@@ -23,6 +24,9 @@ class AccountRow(Base):
     name: Mapped[str]
     avatar: Mapped[str]
     profile_complete: Mapped[bool] = mapped_column(default=False)
+    appearance: Mapped[dict[str, object]] = mapped_column(
+        JSON, default=dict, server_default="{}"
+    )
 
 
 class SessionRow(Base):
@@ -42,16 +46,12 @@ class LoginRow(Base):
     expires_at: Mapped[float]
 
 
-ACCOUNT_TABLES = tuple(
-    Base.metadata.tables[name] for name in ("accounts", "sessions", "login_attempts")
-)
-
-
 @dataclass(frozen=True, slots=True)
 class Account:
     profile: Contributor
     discord_id: str
     profile_complete: bool
+    appearance: Appearance
 
     @classmethod
     def from_row(cls, row: AccountRow) -> "Account":
@@ -59,6 +59,7 @@ class Account:
             Contributor(row.id, row.name, row.avatar),
             row.discord_id,
             row.profile_complete,
+            Appearance.model_validate(row.appearance),
         )
 
 
@@ -175,3 +176,11 @@ class Accounts:
                 raise ValueError("Account no longer exists.")
             row.name, row.avatar, row.profile_complete = name, avatar, True
             return Account.from_row(row)
+
+    def update_appearance(self, account_id: UUID, appearance: Appearance) -> Appearance:
+        with Session(self._engine) as session, session.begin():
+            row = session.get(AccountRow, account_id)
+            if row is None:
+                raise ValueError("Account no longer exists.")
+            row.appearance = appearance.model_dump()
+            return appearance

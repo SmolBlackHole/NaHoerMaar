@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
+from .preferences import Appearance
 
 from .auth import (
     Auth,
@@ -102,6 +103,7 @@ def session_data(user: Authenticated) -> dict[str, object]:
         "profile_complete": user.account.profile_complete,
         "csrf_token": user.csrf,
         "expires_at": user.expires_at,
+        "appearance": user.account.appearance.model_dump(),
     }
 
 
@@ -183,5 +185,9 @@ def auth_router(service: Callable[[], Auth]) -> APIRouter:
     async def profile(body: ProfileInput, user: CurrentUser) -> dict[str, object]:
         account = await service().profile(user, body.name, body.avatar)
         return session_data(Authenticated(account, user.expires_at, user.csrf))
+
+    @router.put("/api/profile/appearance")
+    async def appearance(body: Appearance, user: CurrentUser) -> Appearance:
+        return await service().appearance(user, body)
 
     return router

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { usePlayerStore } from "~/stores/player";
 
-defineProps<{ collapsed?: boolean }>();
+defineProps<{ collapsed?: boolean; compact?: boolean }>();
 const player = usePlayerStore();
 const { icons } = useTheme();
 const id = useId();
@@ -76,7 +76,11 @@ const status = computed(() => {
 
 <template>
 	<UPopover
-		:content="{ side: 'top', align: 'start', collisionPadding: 12 }"
+		:content="{
+			side: compact ? 'bottom' : 'top',
+			align: compact ? 'end' : 'start',
+			collisionPadding: 12,
+		}"
 		@update:open="
 			(open) => {
 				if (open && player.connection === 'live') player.refreshChannels();
@@ -86,7 +90,7 @@ const status = computed(() => {
 		<button
 			type="button"
 			class="sidebar-voice"
-			:class="{ 'is-collapsed': collapsed }"
+			:class="{ 'is-collapsed': collapsed, 'is-compact': compact }"
 			:aria-label="`${guildName}, channel: ${channelName}. ${status}`"
 			:title="`${guildName} · ${channelName} · ${status}`"
 		>
@@ -95,14 +99,21 @@ const status = computed(() => {
 				class="size-5 shrink-0"
 				:class="connected && player.connection === 'live' ? 'text-primary' : 'text-muted'"
 			/>
-			<span v-if="!collapsed" class="min-w-0 flex-1 text-left">
+			<span v-if="compact" class="header-channel">{{
+				connected ? channelName : "Connect"
+			}}</span>
+			<span v-else-if="!collapsed" class="min-w-0 flex-1 text-left">
 				<span class="block truncate text-sm font-medium text-highlighted">{{
 					channelName
 				}}</span>
 				<span class="mt-0.5 block truncate text-xs text-muted">{{ guildName }}</span>
 				<span role="status" class="sr-only">{{ status }}</span>
 			</span>
-			<UIcon v-if="!collapsed" :name="icons.chevronsUpDown" class="size-4 text-muted" />
+			<UIcon
+				v-if="!collapsed && !compact"
+				:name="icons.chevronsUpDown"
+				class="size-4 text-muted"
+			/>
 		</button>
 		<template #content>
 			<section
@@ -215,6 +226,9 @@ const status = computed(() => {
 	padding: 0.5rem 0.625rem;
 	border-radius: 0.5rem;
 	cursor: pointer;
+	transition:
+		background-color 140ms ease-out,
+		color 140ms ease-out;
 }
 .sidebar-voice:hover,
 .sidebar-voice[data-state="open"] {
@@ -224,5 +238,23 @@ const status = computed(() => {
 	justify-content: center;
 	min-height: 2.75rem;
 	padding-inline: 0;
+}
+.sidebar-voice.is-compact {
+	width: auto;
+	min-height: 2.75rem;
+	gap: 0.5rem;
+	color: var(--ui-text-muted);
+	font-size: 0.8125rem;
+}
+.header-channel {
+	max-width: 10rem;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+@media (max-width: 640px) {
+	.header-channel {
+		display: none;
+	}
 }
 </style>
