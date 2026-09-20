@@ -6,6 +6,7 @@
 .env
 .env.*
 !.env.example
+access.toml
 
 # Editors and operating systems
 .idea/

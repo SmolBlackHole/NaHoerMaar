@@ -83,12 +83,20 @@ type Command = (
 )
 
 
-def fingerprint(command: Command) -> str:
+def fingerprint(command: Command, *, authenticated: bool = False) -> str:
     payload = asdict(command)
+    if authenticated and isinstance(command, (Add, AddMany)):
+        # Attribution is supplied by the account, not the request. A profile edit
+        # between a request and its retry must not change the request's identity.
+        payload.pop("added_by")
     if isinstance(command, Clear) and command.contributor_id is None:
         # Existing whole-queue clear receipts keep their fingerprint.
         payload.pop("contributor_id")
-    if isinstance(command, Add) and command.added_by in (None, ANONYMOUS_CONTRIBUTOR):
+    if (
+        not authenticated
+        and isinstance(command, Add)
+        and command.added_by in (None, ANONYMOUS_CONTRIBUTOR)
+    ):
         # Keep receipts issued before queue attribution replayable.
         payload.pop("added_by")
     return json.dumps([type(command).__name__, payload], sort_keys=True, default=str)
@@ -106,6 +114,7 @@ class Receipt:
     request_id: UUID
     fingerprint: str
     outcome: Outcome | None = None
+    actor_id: UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -2,9 +2,9 @@
 
 A private Discord music bot controlled entirely through a web dashboard.
 
-In development. Play YouTube videos in Discord, manage the shared queue and
-control playback from the dashboard. Search, playlist imports and login are
-still planned.
+Search YouTube Music, import playlists and control playback in Discord from a
+shared queue. Sign in with Discord; the bot owner decides who can join.
+Still in development.
 See the [roadmap](ROADMAP.md).
 
 ## Development

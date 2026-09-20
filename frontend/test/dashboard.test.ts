@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseProfile, randomAvatar } from "../shared/profile";
-import avatars from "../shared/avatars.json";
+import avatars from "../../backend/src/nahormaar_backend/avatars.json";
 import {
 	groupHistory,
 	listeningStats,

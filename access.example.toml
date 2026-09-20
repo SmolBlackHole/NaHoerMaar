@@ -1,0 +1,2 @@
+# Discord user IDs allowed to open and control the dashboard
+discord_ids = []

@@ -5,16 +5,19 @@
 """Local HTTP controls and committed player snapshots."""
 
 import asyncio
+import json
+from importlib.resources import files
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from typing import Annotated, Literal
+from typing import Annotated, Literal, cast
+from urllib.parse import urlsplit
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from starlette.middleware.trustedhost import TrustedHostMiddleware
-from starlette.types import ASGIApp, Receive, Scope, Send
+from sqlalchemy.exc import SQLAlchemyError
 
 from . import api_models as dto
 from . import commands
@@ -25,37 +28,39 @@ from .search import CatalogBusy, SearchPage, SearchSource
 from .playback import PlaybackController
 from .runtime import open_runtime
 from .storage import StorageError
+from .auth import (
+    Auth,
+    AuthSettings,
+    AuthError,
+    IdentityProvider,
+    ACCESS_CHECK_SECONDS,
+    SESSION_COOKIE,
+)
+from .auth_api import AuthBoundary, CurrentUser, auth_router
 
 type RuntimeFactory = Callable[[], AbstractAsyncContextManager[PlaybackController]]
 type RequestID = Annotated[UUID, Header(alias="Idempotency-Key")]
-
-
-class SameOrigin:
-    def __init__(self, app: ASGIApp) -> None:
-        self.app = app
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] == "http":
-            request = Request(scope)
-            origin = request.headers.get("origin")
-            expected = f"{request.url.scheme}://{request.url.netloc}"
-            if origin is not None and origin != expected:
-                response = JSONResponse({"code": "origin_forbidden"}, status_code=403)
-                await response(scope, receive, send)
-                return
-        await self.app(scope, receive, send)
 
 
 def create_app(
     runtime_factory: RuntimeFactory | None = None,
     *,
     shutdown_event: asyncio.Event | None = None,
+    auth_settings: AuthSettings | None = None,
+    identity_provider: IdentityProvider | None = None,
 ) -> FastAPI:
     controller: PlaybackController | None = None
+    settings = auth_settings or AuthSettings.from_env()
+    authentication: Auth | None = None
+
+    def auth() -> Auth:
+        if authentication is None:
+            raise AuthError("auth_unavailable", 503)
+        return authentication
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
-        nonlocal controller
+        nonlocal controller, authentication
         runtime = (
             runtime_factory()
             if runtime_factory is not None
@@ -63,6 +68,15 @@ def create_app(
         )
         async with runtime as active:
             controller = active
+            avatars = cast(
+                list[str],
+                json.loads(
+                    files("nahormaar_backend")
+                    .joinpath("avatars.json")
+                    .read_text(encoding="utf-8")
+                ),
+            )
+            authentication = Auth(settings, tuple(avatars), provider=identity_provider)
 
             async def stop_streams() -> None:
                 if shutdown_event is not None:
@@ -77,12 +91,31 @@ def create_app(
                 await asyncio.gather(watcher, return_exceptions=True)
                 active.close_events()
                 controller = None
+                await authentication.close()
+                authentication = None
 
     app = FastAPI(title="NaHörMaar", version="0.1.0", lifespan=lifespan)
-    app.add_middleware(SameOrigin)
+    app.add_middleware(AuthBoundary, service=auth)
     app.add_middleware(
-        TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "[::1]"]
+        TrustedHostMiddleware,
+        allowed_hosts=[
+            "127.0.0.1",
+            "localhost",
+            "[::1]",
+            urlsplit(settings.public_origin).hostname or "localhost",
+        ],
     )
+    app.include_router(auth_router(auth))
+
+    @app.exception_handler(SQLAlchemyError)
+    async def account_storage_failed(
+        request: Request, error: SQLAlchemyError
+    ) -> JSONResponse:
+        return JSONResponse({"code": "auth_unavailable"}, status_code=503)
+
+    @app.exception_handler(AuthError)
+    async def auth_failed(request: Request, error: AuthError) -> JSONResponse:
+        return JSONResponse({"code": error.code}, status_code=error.status)
 
     async def player() -> PlaybackController:
         if controller is None:
@@ -119,21 +152,26 @@ def create_app(
 
     @app.post("/api/youtube/playlists", status_code=202)
     async def preview_playlist(
+        user: CurrentUser,
         body: dto.PlaylistInput,
         request_id: RequestID,
         library: Annotated[MediaCatalog, Depends(catalog)],
     ) -> PlaylistPreview:
         try:
-            return library.start_preview(body.source_url.strip(), request_id)
+            return library.start_preview(
+                body.source_url.strip(), request_id, owner_id=user.account.profile.id
+            )
         except ValueError as exc:
             raise HTTPException(422, detail=str(exc)) from exc
 
     @app.get("/api/youtube/playlists/{preview_id}")
     async def playlist_preview(
-        preview_id: UUID, library: Annotated[MediaCatalog, Depends(catalog)]
+        preview_id: UUID,
+        library: Annotated[MediaCatalog, Depends(catalog)],
+        user: CurrentUser,
     ) -> PlaylistPreview:
         try:
-            return library.preview(preview_id)
+            return library.preview(preview_id, owner_id=user.account.profile.id)
         except KeyError as exc:
             raise HTTPException(
                 410, detail="This playlist preview expired. Open the playlist again."
@@ -141,20 +179,43 @@ def create_app(
 
     @app.delete("/api/youtube/playlists/{preview_id}")
     async def cancel_playlist(
-        preview_id: UUID, library: Annotated[MediaCatalog, Depends(catalog)]
+        preview_id: UUID,
+        library: Annotated[MediaCatalog, Depends(catalog)],
+        user: CurrentUser,
     ) -> PlaylistPreview:
         try:
-            return await library.cancel_preview(preview_id)
+            return await library.cancel_preview(
+                preview_id, owner_id=user.account.profile.id
+            )
         except KeyError as exc:
             raise HTTPException(410, detail="This playlist preview expired.") from exc
 
     async def subscription(
+        request: Request,
         active: Annotated[PlaybackController, Depends(player)],
     ) -> AsyncGenerator[AsyncIterator[ServerSentEvent]]:
         async with active.subscribe() as queue:
 
             async def snapshots() -> AsyncIterator[ServerSentEvent]:
-                while (snapshot := await queue.get()) is not None:
+                while True:
+                    try:
+                        await auth().authenticate(request.cookies.get(SESSION_COOKIE))
+                    except AuthError as exc:
+                        yield ServerSentEvent(event="auth", data={"code": exc.code})
+                        return
+                    try:
+                        async with asyncio.timeout(ACCESS_CHECK_SECONDS):
+                            snapshot = await queue.get()
+                    except TimeoutError:
+                        continue
+                    if snapshot is None:
+                        return
+                    # A queued update must still be authorized when it is sent.
+                    try:
+                        await auth().authenticate(request.cookies.get(SESSION_COOKIE))
+                    except AuthError as exc:
+                        yield ServerSentEvent(event="auth", data={"code": exc.code})
+                        return
                     yield ServerSentEvent(
                         event="state",
                         id=str(snapshot.revision),
@@ -176,12 +237,15 @@ def create_app(
         return JSONResponse({"code": "backend_unavailable"}, status_code=503)
 
     async def mutate(
+        user: CurrentUser,
         request_id: UUID,
         command: commands.Command,
         response: Response,
         active: PlaybackController,
     ) -> dto.MutationResult:
-        reply = await active.request(request_id, command)
+        reply = await active.request(
+            request_id, command, actor_id=user.account.profile.id
+        )
         response.status_code = reply.outcome.status_code
         return dto.MutationResult(
             request_id=request_id,
@@ -217,18 +281,18 @@ def create_app(
 
     @app.post("/api/queue")
     async def add(
+        user: CurrentUser,
         body: dto.AddInput,
         response: Response,
         request_id: RequestID,
         active: Annotated[PlaybackController, Depends(player)],
     ) -> dto.MutationResult:
         return await mutate(
+            user,
             request_id,
             commands.Add(
                 body.source_url,
-                body.added_by.to_contributor()
-                if body.added_by
-                else dto.ContributorData.default_contributor(),
+                user.account.profile,
             ),
             response,
             active,
@@ -236,18 +300,18 @@ def create_app(
 
     @app.post("/api/queue/batch")
     async def add_many(
+        user: CurrentUser,
         body: dto.BatchInput,
         response: Response,
         request_id: RequestID,
         active: Annotated[PlaybackController, Depends(player)],
     ) -> dto.MutationResult:
         return await mutate(
+            user,
             request_id,
             commands.AddMany(
                 body.source_urls,
-                body.added_by.to_contributor()
-                if body.added_by
-                else dto.ContributorData.default_contributor(),
+                user.account.profile,
             ),
             response,
             active,
@@ -255,15 +319,19 @@ def create_app(
 
     @app.delete("/api/queue/{entry_id}")
     async def remove(
+        user: CurrentUser,
         entry_id: UUID,
         response: Response,
         request_id: RequestID,
         active: Annotated[PlaybackController, Depends(player)],
     ) -> dto.MutationResult:
-        return await mutate(request_id, commands.Remove(entry_id), response, active)
+        return await mutate(
+            user, request_id, commands.Remove(entry_id), response, active
+        )
 
     @app.post("/api/queue/{entry_id}/move")
     async def move(
+        user: CurrentUser,
         entry_id: UUID,
         body: dto.MoveInput,
         response: Response,
@@ -271,6 +339,7 @@ def create_app(
         active: Annotated[PlaybackController, Depends(player)],
     ) -> dto.MutationResult:
         return await mutate(
+            user,
             request_id,
             commands.Move(entry_id, body.before_entry_id, body.expected_queue_revision),
             response,
@@ -279,12 +348,14 @@ def create_app(
 
     @app.post("/api/queue/clear")
     async def clear(
+        user: CurrentUser,
         body: dto.ClearInput,
         response: Response,
         request_id: RequestID,
         active: Annotated[PlaybackController, Depends(player)],
     ) -> dto.MutationResult:
         return await mutate(
+            user,
             request_id,
             commands.Clear(body.expected_queue_revision, body.contributor_id),
             response,
@@ -293,6 +364,7 @@ def create_app(
 
     @app.post("/api/player/{action}")
     async def control(
+        user: CurrentUser,
         action: Literal["play", "pause", "skip", "stop"],
         body: dto.ControlInput,
         response: Response,
@@ -300,6 +372,7 @@ def create_app(
         active: Annotated[PlaybackController, Depends(player)],
     ) -> dto.MutationResult:
         return await mutate(
+            user,
             request_id,
             commands.Control(action, body.expected_playback_id),
             response,
@@ -308,21 +381,26 @@ def create_app(
 
     @app.put("/api/player/volume")
     async def volume(
+        user: CurrentUser,
         body: dto.VolumeInput,
         response: Response,
         request_id: RequestID,
         active: Annotated[PlaybackController, Depends(player)],
     ) -> dto.MutationResult:
-        return await mutate(request_id, commands.Volume(body.volume), response, active)
+        return await mutate(
+            user, request_id, commands.Volume(body.volume), response, active
+        )
 
     @app.put("/api/player/seek")
     async def seek(
+        user: CurrentUser,
         body: dto.SeekInput,
         response: Response,
         request_id: RequestID,
         active: Annotated[PlaybackController, Depends(player)],
     ) -> dto.MutationResult:
         return await mutate(
+            user,
             request_id,
             commands.Seek(body.position_seconds, body.expected_playback_id),
             response,
@@ -331,21 +409,23 @@ def create_app(
 
     @app.put("/api/voice/channel")
     async def connect(
+        user: CurrentUser,
         body: dto.ChannelInput,
         response: Response,
         request_id: RequestID,
         active: Annotated[PlaybackController, Depends(player)],
     ) -> dto.MutationResult:
         return await mutate(
-            request_id, commands.Connect(int(body.channel_id)), response, active
+            user, request_id, commands.Connect(int(body.channel_id)), response, active
         )
 
     @app.delete("/api/voice/channel")
     async def disconnect(
+        user: CurrentUser,
         response: Response,
         request_id: RequestID,
         active: Annotated[PlaybackController, Depends(player)],
     ) -> dto.MutationResult:
-        return await mutate(request_id, commands.Disconnect(), response, active)
+        return await mutate(user, request_id, commands.Disconnect(), response, active)
 
     return app

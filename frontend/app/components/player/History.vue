@@ -25,6 +25,7 @@ const visible = computed(() => (expanded.value ? history.value : history.value.s
 				variant="ghost"
 				color="neutral"
 				size="sm"
+				class="min-h-11 shrink-0"
 				@click="expanded = !expanded"
 			/>
 		</div>
@@ -41,5 +42,12 @@ const visible = computed(() => (expanded.value ? history.value : history.value.s
 	padding-top: 2rem;
 	border-top: 1px solid var(--ui-border);
 	scroll-margin-top: 1rem;
+}
+@container workspace (max-width: 600px) {
+	.history-section {
+		margin-top: 2rem;
+		padding-top: 0;
+		border-top: 0;
+	}
 }
 </style>

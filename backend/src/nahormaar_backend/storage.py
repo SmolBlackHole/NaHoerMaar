@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import sqlite3
 from datetime import datetime
 from pathlib import Path
 from types import TracebackType
@@ -15,25 +14,23 @@ from uuid import UUID
 
 from sqlalchemy import (
     JSON,
-    URL,
     CheckConstraint,
     ForeignKey,
-    create_engine,
     delete,
-    event,
     insert,
     inspect,
     select,
     update,
 )
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
-from sqlalchemy.pool import ConnectionPoolEntry
+from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from .commands import Outcome, Receipt, Revisions
 from .models import Contributor, HistoryEntry, PlaybackState, PlayerSnapshot, QueueEntry
+from .database import Base as _Base, database_engine
+from .accounts import ACCOUNT_TABLES
 
-_SCHEMA_VERSION = 4
+_SCHEMA_VERSION = 5
 
 
 def _contributor_data(contributor: Contributor | None) -> dict[str, str] | None:
@@ -61,10 +58,6 @@ def _contributor(data: object) -> Contributor | None:
     ):
         raise ValueError("Invalid stored contributor.")
     return Contributor(UUID(identifier), name, avatar)
-
-
-class _Base(DeclarativeBase):
-    pass
 
 
 class _QueueEntryRow(_Base):
@@ -123,33 +116,18 @@ class _RequestRow(_Base):
     code: Mapped[str | None]
     status_code: Mapped[int | None]
     entry_id: Mapped[UUID | None]
+    actor_id: Mapped[UUID | None]
 
 
 class StorageError(RuntimeError):
     """The player database could not be opened, read or committed."""
 
 
-def _enable_foreign_keys(
-    connection: sqlite3.Connection, record: ConnectionPoolEntry
-) -> None:
-    # SQLite ignores this PRAGMA inside a transaction.
-    connection.autocommit = True
-    try:
-        cursor = connection.execute("PRAGMA foreign_keys = ON")
-        cursor.close()
-    finally:
-        connection.autocommit = False
-
-
 class SQLiteStore:
     """Own a SQLAlchemy engine for one synchronous Player."""
 
     def __init__(self, path: Path, *, timeout: float = 5.0) -> None:
-        self._engine = create_engine(
-            URL.create("sqlite+pysqlite", database=str(path)),
-            connect_args={"autocommit": False, "timeout": timeout},
-        )
-        event.listen(self._engine, "connect", _enable_foreign_keys)
+        self._engine = database_engine(path, timeout)
         self._closed = False
         try:
             self._prepare_schema()
@@ -195,12 +173,16 @@ class SQLiteStore:
                     return
 
                 expected_tables = set(_Base.metadata.tables)
+                if version < 5:
+                    expected_tables.difference_update(
+                        table.name for table in ACCOUNT_TABLES
+                    )
                 if version == 1:
                     expected_tables.remove("requests")
                 if version in (1, 2):
                     expected_tables.remove("playback_history")
                 if (
-                    version not in (1, 2, 3, _SCHEMA_VERSION)
+                    version not in (1, 2, 3, 4, _SCHEMA_VERSION)
                     or tables != expected_tables
                 ):
                     raise ValueError(f"Unsupported player database schema ({version}).")
@@ -211,6 +193,8 @@ class SQLiteStore:
                         column["name"] for column in inspector.get_columns(table.name)
                     ]
                     expected_columns = list(table.columns.keys())
+                    if version < 5 and table.name == "requests":
+                        expected_columns.remove("actor_id")
                     if version < 4 and table.name in (
                         "queue_entries",
                         "playback_history",
@@ -245,6 +229,12 @@ class SQLiteStore:
                         connection.exec_driver_sql(
                             "ALTER TABLE playback_history ADD COLUMN added_by JSON"
                         )
+                if version < 5:
+                    if version > 1:
+                        connection.exec_driver_sql(
+                            "ALTER TABLE requests ADD COLUMN actor_id CHAR(32)"
+                        )
+                    _Base.metadata.create_all(connection, tables=list(ACCOUNT_TABLES))
                     # Validate old data before committing any schema changes.
                     with Session(bind=connection) as session:
                         self._load(session)
@@ -411,9 +401,13 @@ class SQLiteStore:
                         if row.code is not None and row.status_code is not None
                         else None
                     )
-                    return Receipt(row.id, row.fingerprint, outcome)
+                    return Receipt(row.id, row.fingerprint, outcome, row.actor_id)
                 session.add(
-                    _RequestRow(id=receipt.request_id, fingerprint=receipt.fingerprint)
+                    _RequestRow(
+                        id=receipt.request_id,
+                        fingerprint=receipt.fingerprint,
+                        actor_id=receipt.actor_id,
+                    )
                 )
                 return None
         except SQLAlchemyError as exc:

@@ -2,18 +2,20 @@
 
 Parent: [Project README](README.md)
 
-Status: phases 1, 3 and 4 complete. Phase 2 implemented, with live failure and
-disconnect checks still pending. Search and playlist imports are available;
-login remains open.
+Status: phases 1, 3 and 4 complete. Live playback failure and disconnect checks
+passed, as did concurrent queue additions in two browser tabs. Phase 6 is
+implemented. Real Discord sign-in, shared-session logout in two tabs and live
+whitelist removal have passed locally. Shared deployment and the visible
+presence check remain open.
 
 ## Current scope
 
-- One Discord server, one shared queue and one active voice channel
+- Server selection from the bot's joined servers, one shared queue and one active voice channel
 - YouTube links, search and playlists, controlled entirely through a Nuxt
   dashboard. No Discord chat or slash commands
 - The queue survives restarts. Playback resumes only after someone starts it
 - Several people can add, remove and reorder tracks at the same time
-- Login and a whitelist come after playback and the dashboard work
+- Discord login and a configured whitelist control dashboard access
 
 ## Proposed design
 
@@ -58,7 +60,7 @@ effects. Tests cover an empty queue, repeated videos and an interrupted track.
 
 ## 2. YouTube streaming and Discord voice
 
-- [x] Connect the bot to the configured server. List available voice channels,
+- [x] Discover the bot's servers and their available voice channels automatically,
   join a selected channel and leave it on request. Report missing permissions
   and connection failures
 - [x] Resolve a YouTube audio stream with `yt-dlp`, feed it to FFmpeg and send
@@ -149,7 +151,7 @@ missing thumbnails do not abort an otherwise valid import.
   drops, mark the view as disconnected and disable mutations until state has
   synchronized again
 - [x] Restore the Overview with statistics from playback history
-- [x] Choose a browser profile name and a random Pixabot avatar, with profile editing
+- [x] Choose an account name and a random Pixabot avatar, with profile editing
 - [x] Show who added each track, with their name and avatar saved in the queue and history
 - [x] Give the player a cover-led dark layout, recent artwork and persistent playback
   controls across pages, with light mode and mobile layouts
@@ -169,20 +171,25 @@ queue. Refreshing or closing either browser leaves playback intact.
 
 ## 6. Login, whitelist and shared use
 
-- [ ] Add [Discord OAuth2 login](https://docs.discord.com/developers/topics/oauth2)
+- [x] Add [Discord OAuth2 login](https://docs.discord.com/developers/topics/oauth2)
   with server-side sessions and a whitelist of Discord user IDs
-- [ ] Check access in the backend for API requests and live updates. Logging in
+- [x] Check access in the backend for API requests and live updates. Logging in
   does not grant access unless the account is whitelisted
-- [ ] Initially, every whitelisted user can control playback and edit the whole
+- [x] Initially, every whitelisted user can control playback and edit the whole
   queue. Manage the whitelist through configuration
-- [ ] Record who added an entry using the authenticated Discord identity. Entries
+- [x] Record who added an entry using the authenticated Discord identity. Entries
   created during local development may have no author
-- [ ] Support logout, session expiry and whitelist removal. Use HTTP-only session
+- [x] Support logout, session expiry and whitelist removal. Use HTTP-only session
   cookies and protect state-changing requests against cross-site submission
 
 Acceptance: allowed users can control the bot together. Logged-out, unlisted and
 removed users cannot control it through direct API requests or retain access to
 live updates. Session expiry is visible in the dashboard.
+
+Verified locally with a real Discord account through the configured dashboard
+origin: sign-in, saved profile, logout across two tabs and whitelist removal
+while idle. Removal revoked the session in 1.6 seconds and cleared the dashboard.
+Concurrent use by separate Discord accounts still needs a live check.
 
 ## Next audio step
 
@@ -193,6 +200,9 @@ live updates. Session expiry is visible in the dashboard.
 
 ## Deferred
 
+- [ ] Give each Discord server its own persistent queue, player, history and
+  volume, with simultaneous playback across servers
+- [ ] Scope access rules, dashboard actions and live updates to the selected server
 - [ ] Watch Together in the browser dashboard, with shared video state, synchronized
   playback and a way to recover after reconnecting. No Discord screen sharing
 - [ ] Decide how to distinguish music from video for Watch Together. Consider
@@ -200,6 +210,5 @@ live updates. Session expiry is visible in the dashboard.
   preserve an explicit choice when that guess is wrong
 
 - Spotify link and playlist import, after YouTube playback works.
-- Multiple Discord servers or simultaneous voice channels.
 - Shuffle, repeat, saved personal playlists and voting.
 - YouTube livestreams and media that requires a personal YouTube login.

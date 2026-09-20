@@ -12,7 +12,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from nahormaar_backend.commands import Outcome, Receipt
-from nahormaar_backend.models import QueueEntry
+from nahormaar_backend.models import Contributor, QueueEntry
 from nahormaar_backend.player import Player
 from nahormaar_backend.storage import SQLiteStore, StorageError
 
@@ -57,7 +57,7 @@ def test_migrate_v1_recovers_current_preserving_ids_order_and_revisions(
     with SQLiteStore(path) as store:
         assert Player(store).revisions.revision == 1
     with closing(sqlite3.connect(path)) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 5
 
 
 @pytest.mark.parametrize(
@@ -186,7 +186,44 @@ def test_migrate_v3_preserves_queue_and_history_or_rolls_back(
             assert snapshot.recently_played[0].entry.added_by is None
             assert store.revisions().revision == 9
         with closing(sqlite3.connect(path)) as db:
-            assert db.execute("PRAGMA user_version").fetchone()[0] == 4
+            assert db.execute("PRAGMA user_version").fetchone()[0] == 5
+
+
+@pytest.mark.parametrize("corrupt", [False, True])
+def test_v4_auth_migration_preserves_legacy_profiles_without_claiming_them(
+    tmp_path: Path, corrupt: bool
+) -> None:
+    path = tmp_path / "v4.sqlite3"
+    contributor = Contributor(uuid4(), "Legacy listener", "0002")
+    with SQLiteStore(path) as store:
+        player = Player(store)
+        player.enqueue(QueueEntry("https://youtu.be/Pqp9fDRp1lw", added_by=contributor))
+        player.play()
+        player.mark_playing()
+        snapshot, revisions = store.load(), store.revisions()
+    with closing(sqlite3.connect(path, autocommit=True)) as db:
+        db.executescript("""
+            DROP TABLE sessions;
+            DROP TABLE login_attempts;
+            DROP TABLE accounts;
+            ALTER TABLE requests DROP COLUMN actor_id;
+            PRAGMA user_version = 4;
+        """)
+        if corrupt:
+            db.execute("UPDATE player_state SET state = 'invalid'")
+    before = path.read_bytes()
+    if corrupt:
+        with pytest.raises(StorageError):
+            SQLiteStore(path)
+        assert path.read_bytes() == before
+        return
+    with SQLiteStore(path) as store:
+        assert store.load() == snapshot
+        assert store.revisions() == revisions
+    with closing(sqlite3.connect(path)) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert db.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 0
 
 
 @pytest.mark.parametrize("commit", [False, True])

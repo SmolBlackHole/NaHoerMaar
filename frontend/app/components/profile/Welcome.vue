@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useProfileStore } from "~/stores/profile";
+const profile = useProfileStore();
 const { icons } = useTheme();
 </script>
 
@@ -20,7 +22,18 @@ const { icons } = useTheme();
 				</p>
 				<ProfileForm />
 				<p class="text-muted mt-5 text-xs leading-relaxed">
-					Your name and avatar are saved in this browser.
+					Your name and avatar follow your Discord account.
+				</p>
+				<UButton
+					label="Sign out"
+					variant="link"
+					color="neutral"
+					class="mt-4 px-0"
+					:loading="profile.busy"
+					@click="profile.signOut"
+				/>
+				<p v-if="profile.error" role="alert" class="text-error mt-3 text-sm">
+					{{ profile.error }}
 				</p>
 			</section>
 		</div>

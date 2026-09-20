@@ -263,7 +263,7 @@ async function clearQueue() {
 	<section aria-labelledby="queue-heading" class="queue-section min-w-0">
 		<PlayerDiscovery />
 		<div class="queue-heading">
-			<div class="flex items-baseline gap-3">
+			<div class="queue-heading-label flex items-baseline gap-3">
 				<h2
 					id="queue-heading"
 					class="text-xl font-semibold tracking-tight text-highlighted"
@@ -336,15 +336,23 @@ async function clearQueue() {
 							<PlayerArtistLink :entry="entry" />
 						</p>
 					</div>
-					<PlayerContributor :contributor="entry.added_by" compact class="queue-person" />
-					<div class="queue-timing text-xs text-muted">
-						<span class="tabular-nums">{{ formatTime(entry.duration_seconds) }}</span>
-						<span
-							v-if="!dragging && waits[index] != null"
-							class="queue-wait"
-							title="Estimated start, assuming the queue stays in this order"
-							>{{ formatWait(waits[index]!) }}</span
-						>
+					<div class="queue-details">
+						<PlayerContributor
+							:contributor="entry.added_by"
+							compact
+							class="queue-person"
+						/>
+						<div class="queue-timing text-xs text-muted">
+							<span class="tabular-nums">{{
+								formatTime(entry.duration_seconds)
+							}}</span>
+							<span
+								v-if="!dragging && waits[index] != null"
+								class="queue-wait"
+								title="Estimated start, assuming the queue stays in this order"
+								>{{ formatWait(waits[index]!) }}</span
+							>
+						</div>
 					</div>
 					<UDropdownMenu
 						:items="[
@@ -487,6 +495,9 @@ async function clearQueue() {
 .queue-feedback:not(:empty) {
 	margin-top: 0.75rem;
 }
+.queue-details {
+	display: contents;
+}
 .queue-grid {
 	display: grid;
 	grid-template-columns: 2.75rem 3rem minmax(0, 1fr) 10rem 6rem 2.75rem;
@@ -578,10 +589,17 @@ async function clearQueue() {
 	}
 }
 @container workspace (max-width: 600px) {
+	.queue-heading-label {
+		flex-wrap: wrap;
+		gap: 0.125rem 0.75rem;
+	}
 	.queue-grid {
-		grid-template-columns: 2.75rem 2.5rem minmax(0, 1fr) 2.75rem;
-		gap: 0.375rem 0.5rem;
+		grid-template-columns: 2.75rem 2.75rem minmax(0, 1fr) 2.75rem;
+		gap: 0.5rem;
 		padding-inline: 0;
+	}
+	.queue-row {
+		padding-block: 1rem;
 	}
 	.queue-columns {
 		display: none;
@@ -594,30 +612,43 @@ async function clearQueue() {
 	}
 	.queue-handle {
 		grid-column: 1;
-		grid-row: 1 / span 3;
+		grid-row: 1;
 		align-self: start;
 	}
 	.queue-cover {
 		grid-column: 2;
-		grid-row: 1 / span 3;
+		grid-row: 1;
 		align-self: start;
-		width: 2.5rem;
-		height: 2.5rem;
+		width: 2.75rem;
+		height: 2.75rem;
 	}
 	.queue-title {
-		grid-column: 3;
+		grid-column: 3 / -1;
 		grid-row: 1;
 	}
-	.queue-person {
-		grid-column: 3;
+	.queue-title > a {
+		display: -webkit-box;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
+		white-space: normal;
+		overflow-wrap: anywhere;
+	}
+	.queue-details {
+		grid-column: 2 / 4;
 		grid-row: 2;
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 0.5rem 0.875rem;
+		min-width: 0;
+	}
+	.queue-person {
+		max-width: 100%;
 	}
 	.queue-timing {
-		grid-column: 3;
-		grid-row: 3;
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.75rem;
+		gap: 0.25rem 0.75rem;
 		text-align: left;
 	}
 	.queue-wait {
@@ -627,7 +658,7 @@ async function clearQueue() {
 	}
 	.queue-menu {
 		grid-column: 4;
-		grid-row: 1 / span 3;
+		grid-row: 2;
 	}
 }
 </style>

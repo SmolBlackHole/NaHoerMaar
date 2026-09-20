@@ -53,7 +53,7 @@ async def run(channel_id: int | None, urls: list[str], controls: bool) -> None:
         if channel_id is None:
             for channel in controller.channels():
                 print(
-                    f"{channel.id}  {channel.name}  "
+                    f"{channel.id}  {channel.guild_name} / {channel.name}  "
                     f"connect={channel.can_connect} speak={channel.can_speak}"
                 )
             return

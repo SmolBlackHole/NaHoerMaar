@@ -7,6 +7,7 @@
 import os
 import shutil
 import subprocess
+import sys
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -17,6 +18,14 @@ from dotenv import dotenv_values
 
 class ConfigurationError(ValueError):
     pass
+
+
+def environment_values(environ: Mapping[str, str] | None = None) -> Mapping[str, str]:
+    if environ is not None:
+        return environ
+    return {
+        key: value for key, value in dotenv_values(".env").items() if value is not None
+    } | dict(os.environ)
 
 
 def ffmpeg_executable(override: str | None = None) -> Path:
@@ -32,6 +41,9 @@ def ffmpeg_executable(override: str | None = None) -> Path:
 
 
 def executable_version(executable: Path, option: str = "--version") -> str:
+    creation_flags = 0
+    if sys.platform == "win32":
+        creation_flags = subprocess.CREATE_NO_WINDOW
     try:
         result = subprocess.run(  # noqa: S603 - a resolved executable, no shell
             (str(executable), option),
@@ -39,7 +51,7 @@ def executable_version(executable: Path, option: str = "--version") -> str:
             capture_output=True,
             text=True,
             timeout=10,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            creationflags=creation_flags,
         )
         return result.stdout.splitlines()[0]
     except (OSError, subprocess.SubprocessError, IndexError) as exc:
@@ -49,33 +61,16 @@ def executable_version(executable: Path, option: str = "--version") -> str:
 @dataclass(frozen=True, slots=True)
 class Settings:
     token: str = field(repr=False)
-    guild_id: int
     database_path: Path
     ffmpeg_path: Path
     node_path: Path
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> "Settings":
-        values: Mapping[str, str]
-        if environ is None:
-            values = {
-                key: value
-                for key, value in dotenv_values(".env").items()
-                if value is not None
-            } | dict(os.environ)
-        else:
-            values = environ
+        values = environment_values(environ)
         token = values.get("DISCORD_TOKEN", "").strip()
         if not token:
             raise ConfigurationError("Set DISCORD_TOKEN in the local environment.")
-        try:
-            guild_id = int(values.get("DISCORD_GUILD_ID", ""))
-        except ValueError as exc:
-            raise ConfigurationError(
-                "DISCORD_GUILD_ID must be a positive integer."
-            ) from exc
-        if guild_id <= 0:
-            raise ConfigurationError("DISCORD_GUILD_ID must be a positive integer.")
         node = shutil.which(values.get("NODE_PATH") or "node")
         if node is None:
             raise ConfigurationError(
@@ -92,7 +87,7 @@ class Settings:
         ffmpeg = ffmpeg_executable(values.get("FFMPEG_PATH"))
         executable_version(ffmpeg, "-version")
         database = Path(values.get("DATABASE_PATH") or "data/player.sqlite3").resolve()
-        return cls(token, guild_id, database, ffmpeg, node_path)
+        return cls(token, database, ffmpeg, node_path)
 
 
 if __name__ == "__main__":

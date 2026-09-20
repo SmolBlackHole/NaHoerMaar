@@ -5,6 +5,28 @@ Parent: [Development guide](development.md)
 The local API runs at `http://127.0.0.1:8000`. Its interactive reference is at
 `/docs`, with an OpenAPI schema at `/openapi.json`.
 
+## Sign in and keep access
+
+Open `GET /api/auth/discord` through the dashboard origin to sign in. Discord
+returns to `/api/auth/discord/callback`; the backend checks the browser-bound,
+single-use login state and the Discord ID whitelist before issuing a session.
+
+All other `/api` routes require the `nahormaar_session` cookie, including search,
+playlist previews and SSE. It is HTTP-only, SameSite=Lax, secure on HTTPS and
+expires seven days after sign-in. `GET /api/auth/session` returns `profile`,
+`profile_complete`, `csrf_token` and the Unix timestamp `expires_at`.
+
+For every mutation, send `X-CSRF-Token` from that response and an `Origin` equal
+to `PUBLIC_ORIGIN`. `PUT /api/profile` accepts `name` (1 to 32 characters) and an
+`avatar` from the Pixabot catalog, then returns the updated session response.
+`POST /api/auth/logout` returns 204 and invalidates the session without stopping
+playback. These two routes do not need an idempotency key.
+
+Missing or expired sessions return 401 (`signed_out`). Unlisted accounts return
+403 (`access_denied`); a missing or invalid whitelist returns 503
+(`access_unavailable`). Session storage failures return 503 (`auth_unavailable`).
+Clients must clear private state and stop live updates when access is lost.
+
 ## Read state
 
 `GET /api/state` returns the current track, upcoming entries, playback and voice
@@ -13,13 +35,13 @@ Titles, artists, uploader links, duration and thumbnails arrive asynchronously;
 unavailable fields remain null. Discord channel IDs are strings; queue and
 playback IDs are UUIDs.
 
-Each entry includes `added_by`, either null or the browser profile's `id` (UUID),
-`name` (1 to 32 characters) and `avatar` (four hexadecimal characters). Send that
-object alongside `source_url` when adding a track. The profile is saved with the
-entry and its playback history. Requeuing records the person adding it again.
-Additions without a profile are attributed to `Anonymous`; older entries can
-still have null attribution.
-Browser profiles are self-chosen names, not authenticated Discord identities.
+Each entry includes `added_by`, either null or the contributor's `id` (UUID),
+`name` (1 to 32 characters) and `avatar` (four hexadecimal characters). This field
+appears only in responses: the backend assigns it from the authenticated account.
+Supplying `added_by` when adding tracks is rejected. The profile is saved with
+the entry and its playback history; later profile edits leave those snapshots
+unchanged. Requeuing records the person adding it again. Legacy contributors,
+including null attribution, remain intact and are not linked to new accounts.
 
 `recently_played` contains up to 100 starts, newest first. Each item has its own
 `id`, a timezone-aware `played_at` timestamp and an `entry` with track metadata.
@@ -27,8 +49,10 @@ Skipped tracks remain in history; unplayed removals do not enter it. Pause/resum
 and seeking or automatic stream retries do not add another start. Requeue a history item
 through `POST /api/queue` with its source URL.
 
-`GET /api/channels` lists voice channels with `can_connect` and `can_speak` flags.
-Each channel includes its server's `guild_id` (string) and `guild_name`.
+`GET /api/channels` lists voice channels from all available servers the bot has
+joined, with `can_connect` and `can_speak` flags. Each channel includes its
+server's `guild_id` (string) and `guild_name`. The dashboard refreshes this list
+when the Discord selector opens. Only one voice connection is active at a time.
 
 ## Send controls
 
@@ -53,12 +77,12 @@ bodies use JSON. The supported operations are:
 
 Moving before `null` puts the entry last. Remove, move and clear affect upcoming
 entries. Use skip or stop for the current track. Both add endpoints accept video
-URLs. Batch adds accept 1 to 100 URLs and an optional `added_by` profile, append
+URLs. Batch adds accept 1 to 100 URLs, append
 the entire block in order, and commit it with one queue revision. Repeated URLs
 create distinct entries. Invalid input rejects the whole batch. `entry_id` is null
 for batch responses; the snapshot contains the added entries.
 
-To clear one person's upcoming entries, include their browser profile UUID as
+To clear one person's upcoming entries, include their contributor UUID as
 `contributor_id` in `POST /api/queue/clear`. The filter matches IDs, not names.
 Omitting it or sending null clears everyone's upcoming entries. Both operations
 commit once, check `expected_queue_revision`, and preserve the current track and
@@ -91,7 +115,8 @@ Unknown metadata fields are null. Search results contain no stream URLs.
 
 Open a playlist with `POST /api/youtube/playlists`, a JSON `source_url` and a UUID
 `Idempotency-Key`. The response is HTTP 202 with a preview whose `id` matches that
-key. Repeating the same request returns the existing preview. Video links with a
+key. Repeating the same request from the same account returns the existing preview.
+Only its owner can read or cancel it. Video links with a
 `list` parameter also work here; `POST /api/queue` still adds only their video.
 
 Poll `GET /api/youtube/playlists/{id}` for progress. A preview moves from `loading`
@@ -133,7 +158,8 @@ seeking, starting another track or retrying extraction creates a new one.
 If a response is lost, retry with the same request ID and payload. The outcome
 is retained across restarts, and `replayed` is true on a retry. Its snapshot is
 fresh, so a replay does not roll the display back. Reusing an ID with different
-content returns 409 with `code: "idempotency_conflict"`.
+content or from another account returns 409 with `code: "idempotency_conflict"`.
+Renaming your profile does not change the identity of a retry.
 
 A request left unfinished by a process exit returns 409 with
 `code: "interrupted"`. Inspect its snapshot before deciding to send a new request
@@ -153,6 +179,11 @@ Every connection starts with the current snapshot, including reconnects with
 
 Slow clients may skip intermediate snapshots. The latest one contains the full
 state. Closing a browser has no effect on playback.
+
+Access is checked before each snapshot and every two seconds while idle. Logout,
+expiry or whitelist removal sends an `auth` event with an error `code` and closes
+the stream within five seconds. Close the client `EventSource` on this event so
+it does not keep reconnecting with an invalid session.
 
 While playing, estimate progress from `position_seconds` plus elapsed time since
 `position_updated_at`. Hold that position while paused and use the new anchor

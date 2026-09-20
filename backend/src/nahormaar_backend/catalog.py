@@ -68,6 +68,7 @@ class PlaylistPreview:
 @dataclass(slots=True)
 class _PreviewJob:
     snapshot: PlaylistPreview
+    owner_id: UUID
     expires_at: float = field(default_factory=lambda: monotonic() + PREVIEW_TTL)
     task: asyncio.Task[None] | None = None
 
@@ -205,26 +206,31 @@ class MediaCatalog:
             if job.snapshot.state is not PreviewState.LOADING and job.expires_at <= now:
                 del self._previews[identifier]
 
-    def start_preview(self, source: str, identifier: UUID) -> PlaylistPreview:
+    def start_preview(
+        self, source: str, identifier: UUID, *, owner_id: UUID
+    ) -> PlaylistPreview:
         playlist = playlist_id(source)
         if playlist is None:
             raise ValueError("Use a YouTube playlist link.")
         source = f"https://www.youtube.com/playlist?list={playlist}"
         self._prune()
         if existing := self._previews.get(identifier):
-            if existing.snapshot.source_url != source:
+            if existing.owner_id != owner_id or existing.snapshot.source_url != source:
                 raise ValueError("This preview ID is already in use.")
             return existing.snapshot
         if self._closed or len(self._previews) >= PREVIEW_LIMIT:
             raise CatalogBusy("Too many playlist previews. Try again shortly.")
-        job = _PreviewJob(PlaylistPreview(identifier, source))
+        job = _PreviewJob(PlaylistPreview(identifier, source), owner_id)
         self._previews[identifier] = job
         job.task = asyncio.create_task(self._load_preview(job))
         return job.snapshot
 
-    def preview(self, identifier: UUID) -> PlaylistPreview:
+    def preview(self, identifier: UUID, *, owner_id: UUID) -> PlaylistPreview:
         self._prune()
-        return self._previews[identifier].snapshot
+        job = self._previews[identifier]
+        if job.owner_id != owner_id:
+            raise KeyError(identifier)
+        return job.snapshot
 
     async def _load_preview(self, job: _PreviewJob) -> None:
         def received(raw: bytes) -> None:
@@ -277,8 +283,10 @@ class MediaCatalog:
             job.snapshot = replace(job.snapshot, state=state, error=error)
             job.expires_at = monotonic() + PREVIEW_TTL
 
-    async def cancel_preview(self, identifier: UUID) -> PlaylistPreview:
-        self.preview(identifier)
+    async def cancel_preview(
+        self, identifier: UUID, *, owner_id: UUID
+    ) -> PlaylistPreview:
+        self.preview(identifier, owner_id=owner_id)
         job = self._previews[identifier]
         if job.snapshot.state is PreviewState.LOADING:
             job.snapshot = replace(job.snapshot, state=PreviewState.CANCELLED)

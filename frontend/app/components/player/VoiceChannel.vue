@@ -6,21 +6,52 @@ const player = usePlayerStore();
 const { icons } = useTheme();
 const id = useId();
 const selected = ref("");
+const selectedGuild = ref("");
+const activeChannel = computed(() =>
+	player.channels.find((channel) => channel.id === player.snapshot?.channel_id),
+);
+const guildOptions = computed(() =>
+	Array.from(
+		new Map(player.channels.map((channel) => [channel.guild_id, channel.guild_name])),
+	).map(([value, label]) => ({ value, label })),
+);
 watch(
-	() => player.snapshot?.channel_id,
-	(value) => {
-		selected.value = value ?? "";
+	[() => player.snapshot?.channel_id, () => player.channels],
+	([channelId], previous) => {
+		const active = activeChannel.value;
+		if (active && (!selectedGuild.value || channelId !== previous?.[0])) {
+			selectedGuild.value = active.guild_id;
+			selected.value = active.id;
+		}
+		if (!guildOptions.value.some((guild) => guild.value === selectedGuild.value)) {
+			selectedGuild.value =
+				guildOptions.value.length === 1 ? guildOptions.value[0]!.value : "";
+		}
+		if (
+			!player.channels.some(
+				(channel) =>
+					channel.id === selected.value && channel.guild_id === selectedGuild.value,
+			)
+		)
+			selected.value = "";
 	},
 	{ immediate: true },
 );
+function chooseGuild(value: string) {
+	selectedGuild.value = value;
+	selected.value = activeChannel.value?.guild_id === value ? activeChannel.value.id : "";
+}
 const available = computed(() => player.channels.find((channel) => channel.id === selected.value));
 const channelOptions = computed(() =>
-	player.channels.map((channel) => ({
-		label: channel.name,
-		value: channel.id,
-		description: !channel.can_connect || !channel.can_speak ? "Missing permissions" : undefined,
-		disabled: !channel.can_connect || !channel.can_speak,
-	})),
+	player.channels
+		.filter((channel) => channel.guild_id === selectedGuild.value)
+		.map((channel) => ({
+			label: channel.name,
+			value: channel.id,
+			description:
+				!channel.can_connect || !channel.can_speak ? "Missing permissions" : undefined,
+			disabled: !channel.can_connect || !channel.can_speak,
+		})),
 );
 const connected = computed(() => player.snapshot?.voice_state === "connected");
 const switching = computed(() => connected.value && selected.value !== player.snapshot?.channel_id);
@@ -29,7 +60,12 @@ const channelName = computed(
 		player.channels.find((channel) => channel.id === player.snapshot?.channel_id)?.name ??
 		"Discord",
 );
-const guildName = computed(() => player.channels[0]?.guild_name ?? "Discord");
+const guildName = computed(
+	() =>
+		activeChannel.value?.guild_name ??
+		guildOptions.value.find((guild) => guild.value === selectedGuild.value)?.label ??
+		"Choose a server",
+);
 const status = computed(() => {
 	if (player.connection !== "live")
 		return player.connection === "connecting" ? "Connecting…" : "Offline";
@@ -39,7 +75,14 @@ const status = computed(() => {
 </script>
 
 <template>
-	<UPopover :content="{ side: 'top', align: 'start', collisionPadding: 12 }">
+	<UPopover
+		:content="{ side: 'top', align: 'start', collisionPadding: 12 }"
+		@update:open="
+			(open) => {
+				if (open && player.connection === 'live') player.refreshChannels();
+			}
+		"
+	>
 		<button
 			type="button"
 			class="sidebar-voice"
@@ -68,7 +111,7 @@ const status = computed(() => {
 			>
 				<div class="flex items-center justify-between gap-2">
 					<h2 :id="`${id}-heading`" class="text-highlighted text-sm font-semibold">
-						{{ guildName }}
+						Discord
 					</h2>
 					<UButton
 						:icon="icons.reload"
@@ -82,6 +125,23 @@ const status = computed(() => {
 					/>
 				</div>
 				<p role="status" class="text-xs text-muted">{{ status }}</p>
+				<label :for="`${id}-guild`" class="block text-xs text-muted">Server</label>
+				<USelect
+					:id="`${id}-guild`"
+					:model-value="selectedGuild"
+					:items="guildOptions"
+					placeholder="Select a server"
+					:trailing-icon="icons.chevronDown"
+					variant="soft"
+					class="min-h-11 w-full"
+					:ui="{
+						content: 'max-w-[calc(100vw-2rem)]',
+						item: 'min-h-11 items-center',
+						itemLabel: 'whitespace-normal',
+					}"
+					:disabled="!player.enabled || player.channelsLoading || !guildOptions.length"
+					@update:model-value="chooseGuild"
+				/>
 				<label :for="`${id}-channel`" class="block text-xs text-muted">Voice channel</label>
 				<USelect
 					:id="`${id}-channel`"
@@ -96,7 +156,7 @@ const status = computed(() => {
 						item: 'min-h-11 items-center',
 						itemLabel: 'whitespace-normal',
 					}"
-					:disabled="!player.enabled || player.channelsLoading"
+					:disabled="!player.enabled || player.channelsLoading || !selectedGuild"
 				/>
 				<p v-if="player.channelError" role="status" class="text-error text-sm">
 					Couldn't load channels. Try refreshing.
@@ -109,7 +169,8 @@ const status = computed(() => {
 					"
 					class="text-muted text-sm"
 				>
-					No voice channels available.
+					No voice channels available. Invite the bot to a server with a voice channel,
+					then refresh.
 				</p>
 				<p v-if="switching" class="text-muted text-xs">
 					Changing channels stops playback. The track stays in the queue.

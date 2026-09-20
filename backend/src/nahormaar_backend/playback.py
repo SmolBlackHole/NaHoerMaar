@@ -294,9 +294,17 @@ class PlaybackController:
         self._position_updated_at = datetime.now(UTC)
 
     async def request(
-        self, request_id: UUID, command: commands.Command
+        self,
+        request_id: UUID,
+        command: commands.Command,
+        *,
+        actor_id: UUID | None = None,
     ) -> CommandReply:
-        receipt = Receipt(request_id, commands.fingerprint(command))
+        receipt = Receipt(
+            request_id,
+            commands.fingerprint(command, authenticated=actor_id is not None),
+            actor_id=actor_id,
+        )
         outcome = Outcome()
         replayed = False
 
@@ -304,7 +312,10 @@ class PlaybackController:
             nonlocal outcome, replayed
             existing = await self._worker.call(lambda player: player.reserve(receipt))
             if existing is not None:
-                replayed = existing.fingerprint == receipt.fingerprint
+                replayed = (
+                    existing.actor_id == actor_id
+                    and existing.fingerprint == receipt.fingerprint
+                )
                 outcome = (
                     existing.outcome or Outcome("interrupted", 409)
                     if replayed

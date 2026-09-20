@@ -230,24 +230,26 @@ class _DiscordClient(discord.Client):
         if (
             self.user is not None
             and member.id == self.user.id
-            and member.guild.id == self._owner.guild_id
             and after.channel is None
+            and before.channel is not None
         ):
-            previous_channel_id = (
-                before.channel.id if before.channel is not None else None
-            )
+            previous_channel_id = before.channel.id
             if not self._owner._consume_expected_disconnect(  # pyright: ignore[reportPrivateUsage]
                 previous_channel_id
             ):
-                await self._owner._discord_voice_disconnected()  # pyright: ignore[reportPrivateUsage]
+                await self._owner._discord_voice_disconnected(previous_channel_id)  # pyright: ignore[reportPrivateUsage]
+
+    async def on_guild_remove(self, guild: discord.Guild) -> None:
+        voice = self._owner._voice  # pyright: ignore[reportPrivateUsage]
+        if voice is not None and voice.guild.id == guild.id:
+            await self._owner._discord_voice_disconnected(voice.channel.id)  # pyright: ignore[reportPrivateUsage]
 
 
 class DiscordVoice:
-    """Voice output for one configured Discord guild."""
+    """One active voice connection across the bot's joined Discord servers."""
 
-    def __init__(self, guild_id: int, ffmpeg_path: Path, volume: float = 1.0) -> None:
+    def __init__(self, ffmpeg_path: Path, volume: float = 1.0) -> None:
         self._validate_volume(volume)
-        self.guild_id = guild_id
         self._ffmpeg_path = ffmpeg_path
         self._volume = volume
         intents = discord.Intents.none()
@@ -336,15 +338,9 @@ class DiscordVoice:
         await self._ready.wait()
         if self._startup_error is not None:
             raise self._startup_error
-        if self._client.get_guild(self.guild_id) is None:
-            raise VoiceError("The configured Discord guild is unavailable.")
 
     def _discord_ready(self) -> None:
         self._sent_activity = None
-        if self._client.get_guild(self.guild_id) is None:
-            self._startup_error = VoiceError(
-                "The configured Discord guild is unavailable."
-            )
         self._ready.set()
 
     def _set_activity(
@@ -409,22 +405,23 @@ class DiscordVoice:
         finally:
             await self._client.close()
 
-    def _guild(self) -> discord.Guild | None:
-        return self._client.get_guild(self.guild_id)
-
     def channels(self) -> tuple[VoiceChannelInfo, ...]:
-        guild = self._guild()
-        if guild is None:
-            return ()
         return tuple(
             VoiceChannelInfo(
                 id=channel.id,
                 name=channel.name,
-                can_connect=channel.permissions_for(guild.me).connect,
+                can_connect=(
+                    channel.permissions_for(guild.me).view_channel
+                    and channel.permissions_for(guild.me).connect
+                ),
                 can_speak=channel.permissions_for(guild.me).speak,
                 guild_id=guild.id,
                 guild_name=guild.name,
             )
+            for guild in sorted(
+                self._client.guilds, key=lambda guild: (guild.name.casefold(), guild.id)
+            )
+            if not guild.unavailable
             for channel in guild.voice_channels
         )
 
@@ -433,16 +430,16 @@ class DiscordVoice:
 
     async def connect(self, channel_id: int) -> None:
         async with self._connection_lock:
-            guild = self._guild()
-            if guild is None:
-                raise VoiceError("The configured Discord guild is unavailable.")
-            channel = guild.get_channel(channel_id)
-            if not isinstance(channel, discord.VoiceChannel):
+            channel = self._client.get_channel(channel_id)
+            if (
+                not isinstance(channel, discord.VoiceChannel)
+                or channel.guild.unavailable
+            ):
                 raise VoiceError(
-                    "The selected voice channel is unavailable in the configured guild."
+                    "The selected voice channel is unavailable. Refresh the channel list."
                 )
-            permissions = channel.permissions_for(guild.me)
-            if not permissions.connect:
+            permissions = channel.permissions_for(channel.guild.me)
+            if not permissions.view_channel or not permissions.connect:
                 raise VoiceError(
                     "The bot cannot connect to the selected voice channel."
                 )
@@ -454,10 +451,11 @@ class DiscordVoice:
                 if current is not None and current.is_connected():
                     if current.channel.id == channel_id:
                         return
-                    await self._cancel_monitor()
-                    await current.move_to(channel)
-                    self._start_monitor(current)
-                    return
+                    if current.guild.id == channel.guild.id:
+                        await self._cancel_monitor()
+                        await current.move_to(channel)
+                        self._start_monitor(current)
+                        return
 
                 if current is not None:
                     await self._disconnect_voice(current, report_loss=False)
@@ -533,10 +531,12 @@ class DiscordVoice:
             self._expected_disconnects[channel_id] = count - 1
         return True
 
-    async def _discord_voice_disconnected(self) -> None:
+    async def _discord_voice_disconnected(self, channel_id: int | None = None) -> None:
         async with self._connection_lock:
             voice = self._voice
-            if voice is not None:
+            if voice is not None and (
+                channel_id is None or voice.channel.id == channel_id
+            ):
                 await self._disconnect_voice(voice, report_loss=True)
 
     def _start_monitor(self, voice: discord.VoiceClient) -> None:

@@ -5,11 +5,23 @@
 """Run one bot and its local HTTP API."""
 
 import asyncio
+import logging
 import socket
 
 import uvicorn
 
 from .api import create_app
+
+
+class AccessLogFilter(logging.Filter):
+    """OAuth callback query strings contain one-use credentials."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple) and len(record.args) == 5:
+            client, method, path, protocol, status = record.args
+            if isinstance(path, str) and path.startswith("/api/auth/"):
+                record.args = (client, method, path.split("?", 1)[0], protocol, status)
+        return True
 
 
 class LocalServer(uvicorn.Server):
@@ -25,6 +37,7 @@ class LocalServer(uvicorn.Server):
 
 
 def main() -> None:
+    logging.getLogger("uvicorn.access").addFilter(AccessLogFilter())
     shutdown_event = asyncio.Event()
     config = uvicorn.Config(
         create_app(shutdown_event=shutdown_event),

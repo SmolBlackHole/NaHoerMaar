@@ -9,7 +9,7 @@
 		"node": ">=24.11.0"
 	},
 	"scripts": {
-		"dev": "nuxt dev --host 127.0.0.1",
+		"dev": "nuxt dev --host 127.0.0.1 --port 3012 --dotenv ../.env",
 		"build": "nuxt build",
 		"preview": "nuxt preview --host 127.0.0.1",
 		"postinstall": "nuxt prepare",
@@ -30,6 +30,7 @@
 		"h3": "^1.15.11",
 		"nuxt": "^4.5.2",
 		"pinia": "^3.0.4",
+		"reka-ui": "2.10.4",
 		"sortablejs": "^1.15.7",
 		"tailwindcss": "^4.3.3",
 		"vue": "^3.5.42",

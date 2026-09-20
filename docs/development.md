@@ -26,8 +26,8 @@ also needs the system Opus library (`libopus0` on Debian/Ubuntu,
 npm run dev
 ```
 
-Open `http://127.0.0.1:3000` and run the API in a second terminal. Choose a name,
-join a voice channel, add a track and press play. On PowerShell
+Open `http://localhost:3012` and run the API in a second terminal. Sign in with
+Discord, choose a name, join a voice channel, add a track and press play. On PowerShell
 systems that block `npm.ps1`, use `npm.cmd run dev`.
 
 The dashboard forwards controls and live updates to `http://127.0.0.1:8000`.
@@ -49,7 +49,7 @@ to hours and minutes at one hour, for example `In ~01:15 h`.
 The Remove menu can clear your tracks, another person's tracks, or the entire
 queue. It shows whose tracks will be removed and how many before confirmation,
 and leaves playback running.
-Ownership follows your browser profile, even if you change its name.
+Ownership follows your account, even if you change its name or use another device.
 
 Click or drag the player timeline to seek for everyone in the Discord channel.
 Arrow keys adjust the focused slider. Paused tracks stay paused after seeking.
@@ -65,9 +65,39 @@ until you choose Show all.
 
 ## Configure Discord
 
-Copy `.env.example` to `.env` and set `DISCORD_TOKEN` and `DISCORD_GUILD_ID`.
-Environment variables override `.env` values. Invite the bot to that server with
-View Channel, Connect and Speak permissions for the test voice channel.
+Copy `.env.example` to `.env` and set `DISCORD_TOKEN`.
+Environment variables override `.env` values. Invite the bot with View Channel,
+Connect and Speak permissions for the voice channels you want to use.
+
+Open the Discord selector in the sidebar to choose a server and voice channel.
+It discovers the bot's servers automatically, including new invitations, without
+a restart or a guild ID in the configuration. Switching channels stops playback
+and returns the current track to the queue. Start it again when ready.
+
+For dashboard sign-in, set these additional values in `.env`:
+
+```dotenv
+DISCORD_CLIENT_ID=YOUR_APPLICATION_ID
+DISCORD_CLIENT_SECRET=YOUR_CLIENT_SECRET
+PUBLIC_ORIGIN=http://localhost:3012
+```
+
+In the application's OAuth2 settings, register
+`http://localhost:3012/api/auth/discord/callback` as a redirect URI. Use the same
+host and port when opening the dashboard. The bot token and OAuth client secret
+are different credentials.
+
+Copy `access.example.toml` to `access.toml` and add the Discord user IDs allowed
+to use the bot as quoted strings in `discord_ids`. Enable Discord's Developer
+Mode to copy a user's ID. All listed users can control playback and edit the
+whole queue. Changes take effect without a restart; removing someone closes
+their live updates within five seconds. A missing or invalid access file blocks
+access. Both `.env` and `access.toml` stay out of Git.
+
+Sessions last seven days and survive backend restarts. Names and avatars belong
+to the account and work across devices. An old browser profile can suggest a
+name and avatar at first sign-in, but its past queue entries are not reassigned.
+Signing out affects other tabs using that session and leaves music playing.
 
 ## Run the API
 
@@ -75,21 +105,21 @@ View Channel, Connect and Speak permissions for the test voice channel.
 .venv\Scripts\python.exe -m nahormaar_backend
 ```
 
-Open [the API explorer](http://127.0.0.1:8000/docs) to try the controls. Use
-`GET /api/channels` to find a channel, connect with `PUT /api/voice/channel`, add
-a video through `POST /api/queue`, then call `POST /api/player/play` with
-`expected_playback_id: null`.
+The [API explorer](http://127.0.0.1:8000/docs) describes the endpoints. Use the
+dashboard for playback checks: API calls require its session cookie, and mutations
+also require its CSRF token and configured origin.
 
 Every playback or queue mutation needs a UUID in its `Idempotency-Key` header. Generate one with
 `[guid]::NewGuid().ToString()` in PowerShell. Reuse it only when retrying the same
 request. See the [API contract](api.md) for payloads and conflict handling.
 
 The server binds to `127.0.0.1:8000` and runs one bot instance. Keep one worker;
-multiple workers would each start a bot and own a different player. Browser
-profiles are local names and avatars, not access control. Discord login and the
-whitelist are still pending, so shared deployment is not supported yet. Both the
-API and the dashboard proxy accept only local hosts and reject requests from
-other origins.
+multiple workers would each start a bot and own a different player. Keep FastAPI
+internal and route dashboard requests through Nuxt. `PUBLIC_ORIGIN` fixes the
+allowed browser origin and OAuth redirect; forwarded host headers do not override
+it. The dev command reads the root `.env`. A deployed Nuxt server needs the same
+value in its environment, with HTTPS for secure cookies. Deployment remains a
+separate step.
 
 Ctrl+C closes the HTTP event streams, stops audio and disconnects the bot. The
 queue survives and waits for a manual start after restarting the backend.
@@ -121,11 +151,11 @@ The script uses `data/live-test.sqlite3` and replaces that test queue on each
 playback run. The normal runtime uses `DATABASE_PATH`, defaulting to
 `data/player.sqlite3`.
 
-Two consecutive tracks and the playback controls have been tested in Discord.
-Live checks for an unavailable track, an unexpected voice disconnect and the
-visible presence remain open. During the disconnect check, audio must stop and
-the interrupted entry must return to the queue. Repeat playback acceptance on
-the deployment host before shared use.
+Two consecutive tracks, playback controls, an unavailable track and an unexpected
+voice disconnect have been tested in Discord. The disconnect stopped audio,
+returned the interrupted track to the queue and left no FFmpeg child running.
+Visible presence still needs a manual check. Repeat playback acceptance on the
+deployment host before shared use.
 
 ## Daily bio
 

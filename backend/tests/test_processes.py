@@ -4,7 +4,6 @@
 
 import asyncio
 import math
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -65,7 +64,7 @@ def test_windows_children_are_hidden_and_isolated() -> None:
     import nahormaar_backend.processes as process_module
 
     flags = process_module._creation_flags()  # pyright: ignore[reportPrivateUsage]
-    if os.name == "nt":
+    if sys.platform == "win32":
         assert flags & subprocess.CREATE_NEW_PROCESS_GROUP
         assert flags & subprocess.CREATE_NO_WINDOW
     else:

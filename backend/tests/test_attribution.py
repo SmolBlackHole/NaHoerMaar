@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from nahormaar_backend.commands import Add, Outcome, Receipt, fingerprint
+from nahormaar_backend.auth import SESSION_COOKIE, csrf_token
 from nahormaar_backend.models import (
     ANONYMOUS_CONTRIBUTOR,
     Contributor,
@@ -23,22 +24,30 @@ from test_api import VIDEO, Harness, headers, mutation
 
 def test_concurrent_contributors_survive_retries_and_restart(tmp_path: Path) -> None:
     harness = Harness(tmp_path / "player.sqlite3")
-    alice = {"id": str(UUID(int=1)), "name": "Alice", "avatar": "00af"}
-    bob = {"id": str(UUID(int=2)), "name": "Bob", "avatar": "10bd"}
+    bob_headers = {
+        "Cookie": f"{SESSION_COOKIE}={'b' * 43}",
+        "X-CSRF-Token": csrf_token("b" * 43),
+    }
 
     async def scenario() -> None:
         key = headers()
         async with harness.client() as client:
+            harness.account("2", "b" * 43, "Bob")
+            assert (
+                await client.put(
+                    "/api/profile", json={"name": "Alice", "avatar": "0002"}
+                )
+            ).status_code == 200
             replies = await asyncio.gather(
                 client.post(
                     "/api/queue",
-                    json={"source_url": VIDEO, "added_by": alice},
+                    json={"source_url": VIDEO},
                     headers=key,
                 ),
                 client.post(
                     "/api/queue",
-                    json={"source_url": VIDEO, "added_by": bob},
-                    headers=headers(),
+                    json={"source_url": VIDEO},
+                    headers=headers() | bob_headers,
                 ),
             )
             added = mutation(replies[0])
@@ -46,7 +55,7 @@ def test_concurrent_contributors_survive_retries_and_restart(tmp_path: Path) -> 
             replay = mutation(
                 await client.post(
                     "/api/queue",
-                    json={"source_url": VIDEO, "added_by": alice},
+                    json={"source_url": VIDEO},
                     headers=key,
                 )
             )
@@ -59,8 +68,8 @@ def test_concurrent_contributors_survive_retries_and_restart(tmp_path: Path) -> 
             conflict = mutation(
                 await client.post(
                     "/api/queue",
-                    json={"source_url": VIDEO, "added_by": bob},
-                    headers=key,
+                    json={"source_url": VIDEO},
+                    headers=key | bob_headers,
                 ),
                 409,
             )
@@ -74,7 +83,7 @@ def test_concurrent_contributors_survive_retries_and_restart(tmp_path: Path) -> 
             replay = mutation(
                 await client.post(
                     "/api/queue",
-                    json={"source_url": VIDEO, "added_by": alice},
+                    json={"source_url": VIDEO},
                     headers=key,
                 )
             )
@@ -145,7 +154,9 @@ def test_unattributed_requests_keep_existing_fingerprints() -> None:
     assert fingerprint(Add(VIDEO, ANONYMOUS_CONTRIBUTOR)) == fingerprint(Add(VIDEO))
 
 
-def test_existing_anonymous_api_receipt_replays_after_upgrade(tmp_path: Path) -> None:
+def test_existing_anonymous_receipt_cannot_be_claimed_after_upgrade(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "player.sqlite3"
     url = "https://www.youtube.com/watch?v=Pqp9fDRp1lw"
     entry = QueueEntry(url)
@@ -167,9 +178,10 @@ def test_existing_anonymous_api_receipt_replays_after_upgrade(tmp_path: Path) ->
                     "/api/queue",
                     json={"source_url": url},
                     headers={"Idempotency-Key": str(request_id)},
-                )
+                ),
+                409,
             )
-            assert replay.replayed and replay.entry_id == entry.id
+            assert not replay.replayed and replay.code == "idempotency_conflict"
             assert len(replay.snapshot.upcoming) == 1
             new = mutation(
                 await client.post(
@@ -177,6 +189,6 @@ def test_existing_anonymous_api_receipt_replays_after_upgrade(tmp_path: Path) ->
                 )
             )
             contributor = new.snapshot.upcoming[-1].added_by
-            assert contributor is not None and contributor.name == "Anonymous"
+            assert contributor is not None and contributor.name == "Andrey"
 
     asyncio.run(scenario())

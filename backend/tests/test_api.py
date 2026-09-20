@@ -4,6 +4,7 @@
 
 import asyncio
 import socket
+import time
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -15,6 +16,8 @@ import uvicorn
 from fastapi import FastAPI
 
 from nahormaar_backend.api import create_app
+from nahormaar_backend.accounts import Accounts, Account
+from nahormaar_backend.auth import AuthSettings, SESSION_COOKIE, csrf_token, digest
 from nahormaar_backend.__main__ import LocalServer
 from nahormaar_backend.api_models import Channel, MutationResult, State
 from nahormaar_backend.audio import ResolvedTrack
@@ -24,6 +27,9 @@ from test_commands import wait_for
 from test_playback import ControlledResolver, FakeVoice
 
 VIDEO = "https://music.youtube.com/watch?v=Pqp9fDRp1lw"
+TEST_TOKEN = "a" * 43
+TEST_ORIGIN = "http://127.0.0.1:8000"
+AUTH_HEADERS = {"Origin": TEST_ORIGIN, "X-CSRF-Token": csrf_token(TEST_TOKEN)}
 
 
 class Harness:
@@ -34,6 +40,29 @@ class Harness:
         self.controller: PlaybackController | None = None
         self.starts = 0
         self.stops = 0
+        self.auth_settings = AuthSettings(
+            TEST_ORIGIN, "123", "test-secret", path, path.with_suffix(".toml")
+        )
+        self.auth_settings.access_path.write_text(
+            'discord_ids = ["1", "2"]', encoding="utf-8"
+        )
+
+    def account(
+        self, identifier: str = "1", token: str = TEST_TOKEN, name: str = "Andrey"
+    ) -> Account:
+        accounts = Accounts(self.path)
+        try:
+            return accounts.create_session(
+                identifier,
+                name,
+                "0002",
+                digest(token),
+                time.time() + 3600,
+                time.time(),
+                digest(token),
+            )
+        finally:
+            accounts.close()
 
     @asynccontextmanager
     async def runtime(self) -> AsyncGenerator[PlaybackController]:
@@ -41,6 +70,7 @@ class Harness:
         self.controller = await PlaybackController.create(
             self.path, self.resolver, self.voice
         )
+        self.account()
         try:
             yield self.controller
         finally:
@@ -49,12 +79,14 @@ class Harness:
 
     @asynccontextmanager
     async def client(self) -> AsyncGenerator[httpx.AsyncClient]:
-        app = create_app(self.runtime)
+        app = create_app(self.runtime, auth_settings=self.auth_settings)
         async with (
             app.router.lifespan_context(app),
             httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=app),
                 base_url="http://127.0.0.1:8000",
+                cookies={SESSION_COOKIE: TEST_TOKEN},
+                headers=AUTH_HEADERS,
             ) as client,
         ):
             yield client
@@ -398,10 +430,16 @@ def test_sse_two_clients_reconnect_and_shutdown_with_open_stream(
         shutdown_event = asyncio.Event()
         async with (
             running_server(
-                create_app(harness.runtime, shutdown_event=shutdown_event),
+                create_app(
+                    harness.runtime,
+                    shutdown_event=shutdown_event,
+                    auth_settings=harness.auth_settings,
+                ),
                 shutdown_event,
             ) as (url, server, task),
-            httpx.AsyncClient(base_url=url) as client,
+            httpx.AsyncClient(
+                base_url=url, cookies={SESSION_COOKIE: TEST_TOKEN}, headers=AUTH_HEADERS
+            ) as client,
         ):
             async with (
                 client.stream("GET", "/api/events") as first,
@@ -409,7 +447,7 @@ def test_sse_two_clients_reconnect_and_shutdown_with_open_stream(
             ):
                 assert first.status_code == second.status_code == 200
                 assert "text/event-stream" in first.headers["content-type"]
-                assert first.headers["cache-control"] == "no-cache"
+                assert first.headers["cache-control"] == "no-store"
                 first_lines, second_lines = first.aiter_lines(), second.aiter_lines()
                 initial = await next_state(first_lines)
                 assert await next_state(second_lines) == initial
@@ -438,10 +476,16 @@ def test_sse_subscription_includes_update_racing_connection(tmp_path: Path) -> N
         shutdown_event = asyncio.Event()
         async with (
             running_server(
-                create_app(harness.runtime, shutdown_event=shutdown_event),
+                create_app(
+                    harness.runtime,
+                    shutdown_event=shutdown_event,
+                    auth_settings=harness.auth_settings,
+                ),
                 shutdown_event,
             ) as (url, _, _),
-            httpx.AsyncClient(base_url=url) as client,
+            httpx.AsyncClient(
+                base_url=url, cookies={SESSION_COOKIE: TEST_TOKEN}, headers=AUTH_HEADERS
+            ) as client,
         ):
             assert harness.controller is not None
             addition = asyncio.create_task(

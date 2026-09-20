@@ -48,7 +48,6 @@ def test_environment_overrides_dotenv_and_resolves_paths(
         "\n".join(
             (
                 "DISCORD_TOKEN=file-token",
-                "DISCORD_GUILD_ID=10",
                 "DATABASE_PATH=file.sqlite3",
                 "NODE_PATH=file-node",
                 "FFMPEG_PATH=file-ffmpeg",
@@ -57,7 +56,6 @@ def test_environment_overrides_dotenv_and_resolves_paths(
         encoding="utf-8",
     )
     monkeypatch.setenv("DISCORD_TOKEN", "env-token")
-    monkeypatch.setenv("DISCORD_GUILD_ID", "20")
     monkeypatch.setenv("DATABASE_PATH", "env.sqlite3")
     monkeypatch.setenv("NODE_PATH", "env-node")
     monkeypatch.setenv("FFMPEG_PATH", "env-ffmpeg")
@@ -65,7 +63,6 @@ def test_environment_overrides_dotenv_and_resolves_paths(
     settings = Settings.from_env()
 
     assert settings.token == "env-token"  # noqa: S105 - synthetic test credential
-    assert settings.guild_id == 20
     assert settings.database_path == (tmp_path / "env.sqlite3").resolve()
     assert settings.node_path == (tmp_path / "node.exe").resolve()
     assert settings.ffmpeg_path == tmp_path / "ffmpeg.exe"
@@ -79,7 +76,6 @@ def test_explicit_environment_is_isolated_and_token_is_redacted(
     settings = Settings.from_env(
         {
             "DISCORD_TOKEN": "explicit-secret",
-            "DISCORD_GUILD_ID": "42",
             "DATABASE_PATH": str(tmp_path / "explicit.sqlite3"),
             "NODE_PATH": "node",
         }
@@ -95,12 +91,8 @@ def test_explicit_environment_is_isolated_and_token_is_redacted(
 @pytest.mark.parametrize(
     ("environment", "message"),
     [
-        ({"DISCORD_GUILD_ID": "1"}, "DISCORD_TOKEN"),
-        ({"DISCORD_TOKEN": "   ", "DISCORD_GUILD_ID": "1"}, "DISCORD_TOKEN"),
-        ({"DISCORD_TOKEN": "token"}, "positive integer"),
-        ({"DISCORD_TOKEN": "token", "DISCORD_GUILD_ID": "abc"}, "positive integer"),
-        ({"DISCORD_TOKEN": "token", "DISCORD_GUILD_ID": "0"}, "positive integer"),
-        ({"DISCORD_TOKEN": "token", "DISCORD_GUILD_ID": "-1"}, "positive integer"),
+        ({}, "DISCORD_TOKEN"),
+        ({"DISCORD_TOKEN": "   "}, "DISCORD_TOKEN"),
     ],
 )
 def test_missing_or_invalid_identity_settings_are_rejected(
@@ -113,7 +105,7 @@ def test_missing_or_invalid_identity_settings_are_rejected(
 def test_missing_and_old_node_overrides_are_rejected(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    base = {"DISCORD_TOKEN": "token", "DISCORD_GUILD_ID": "1"}
+    base = {"DISCORD_TOKEN": "token"}
 
     def missing_executable(executable: str) -> str | None:
         del executable

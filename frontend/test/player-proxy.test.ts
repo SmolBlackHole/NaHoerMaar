@@ -23,6 +23,67 @@ afterEach(async () => {
 });
 
 describe("local API proxy", () => {
+	it("preserves callback redirects and both cookies behind the configured HTTPS origin", async () => {
+		const calls: string[] = [];
+		const backend = await listen(
+			createServer((request, response) => {
+				calls.push(request.url!);
+				expect(request.headers["x-forwarded-host"]).toBeUndefined();
+				response.writeHead(303, {
+					location: "/",
+					"set-cookie": [
+						"nahormaar_session=new; Path=/api; Secure; HttpOnly; SameSite=Lax",
+						"nahormaar_login=; Max-Age=0; Path=/api/auth",
+					],
+					"cache-control": "no-store",
+				});
+				response.end();
+			}),
+		);
+		const frontend = await listen(
+			createServer(
+				toNodeListener(
+					createApp().use(
+						playerProxy(
+							() => backend,
+							() => "https://music.example.test",
+						),
+					),
+				),
+			),
+		);
+		const result = await new Promise<{
+			status?: number;
+			location?: string;
+			cookies?: string[];
+		}>((resolve, reject) => {
+			const request = httpRequest(
+				`${frontend}/api/auth/discord/callback?state=bound&code=one-use&ignored=1`,
+				{
+					headers: {
+						host: "music.example.test",
+						"sec-fetch-site": "cross-site",
+						"x-forwarded-host": "untrusted.invalid",
+					},
+				},
+				(response) => {
+					response.resume();
+					resolve({
+						status: response.statusCode,
+						location: response.headers.location,
+						cookies: response.headers["set-cookie"],
+					});
+				},
+			);
+			request.on("error", reject);
+			request.end();
+		});
+		expect(result.status).toBe(303);
+		expect(result.location).toBe("/");
+		expect(result.cookies).toHaveLength(2);
+		expect(result.cookies?.[0]).toContain("Secure; HttpOnly; SameSite=Lax");
+		expect(calls).toEqual(["/api/auth/discord/callback?state=bound&code=one-use"]);
+	});
 	it("forwards discovery queries, preview lifecycle and atomic imports", async () => {
 		const calls: {
 			url: string | undefined;
@@ -44,8 +105,17 @@ describe("local API proxy", () => {
 				response.end("{}");
 			}),
 		);
-		const frontend = await listen(
-			createServer(toNodeListener(createApp().use(playerProxy(() => backend)))),
+		const frontend: string = await listen(
+			createServer(
+				toNodeListener(
+					createApp().use(
+						playerProxy(
+							() => backend,
+							() => frontend,
+						),
+					),
+				),
+			),
 		);
 		const id = "c68fe9f1-ac72-4f15-9e7f-445d332b9ca7";
 		for (const [path, method] of [
@@ -92,8 +162,17 @@ describe("local API proxy", () => {
 				response.end(raw);
 			}),
 		);
-		const frontend = await listen(
-			createServer(toNodeListener(createApp().use(playerProxy(() => backend)))),
+		const frontend: string = await listen(
+			createServer(
+				toNodeListener(
+					createApp().use(
+						playerProxy(
+							() => backend,
+							() => frontend,
+						),
+					),
+				),
+			),
 		);
 		const response = await fetch(`${frontend}/api/player/seek`, {
 			method: "PUT",
@@ -104,7 +183,7 @@ describe("local API proxy", () => {
 		expect(await response.json()).toEqual(body);
 	});
 
-	it("forwards mutation bodies, IDs and conflicts without forwarding browser cookies", async () => {
+	it("forwards mutation bodies, IDs and conflicts while forwarding only session cookies", async () => {
 		let forwarded: { origin?: string; key?: string; cookie?: string; body: string } | undefined;
 		const backend = await listen(
 			createServer(async (request, response) => {
@@ -120,24 +199,29 @@ describe("local API proxy", () => {
 				response.end(JSON.stringify({ code: "queue_conflict" }));
 			}),
 		);
-		const app = createApp().use(playerProxy(() => backend));
-		const frontend = await listen(createServer(toNodeListener(app)));
+		const app = createApp().use(
+			playerProxy(
+				() => backend,
+				() => frontend,
+			),
+		);
+		const frontend: string = await listen(createServer(toNodeListener(app)));
 		const response = await fetch(`${frontend}/api/queue/clear`, {
 			method: "POST",
 			headers: {
 				origin: frontend,
 				"content-type": "application/json",
 				"idempotency-key": "test-key",
-				cookie: "private=local",
+				cookie: "private=local; nahormaar_session=session-token",
 			},
 			body: JSON.stringify({ expected_queue_revision: 3 }),
 		});
 		expect(response.status).toBe(409);
 		expect(await response.json()).toEqual({ code: "queue_conflict" });
 		expect(forwarded).toEqual({
-			origin: backend,
+			origin: frontend,
 			key: "test-key",
-			cookie: undefined,
+			cookie: "nahormaar_session=session-token",
 			body: '{"expected_queue_revision":3}',
 		});
 	});
@@ -145,12 +229,15 @@ describe("local API proxy", () => {
 	it("keeps the existing local origin boundary and rejects unknown routes", async () => {
 		let calls = 0;
 		const app = createApp().use(
-			playerProxy(() => {
-				calls++;
-				return "http://127.0.0.1:1";
-			}),
+			playerProxy(
+				() => {
+					calls++;
+					return "http://127.0.0.1:1";
+				},
+				() => frontend,
+			),
 		);
-		const frontend = await listen(createServer(toNodeListener(app)));
+		const frontend: string = await listen(createServer(toNodeListener(app)));
 		for (const headers of [
 			{ origin: "https://example.org" },
 			{ "sec-fetch-site": "cross-site" },
@@ -185,8 +272,17 @@ describe("local API proxy", () => {
 				response.once("close", disconnected);
 			}),
 		);
-		const frontend = await listen(
-			createServer(toNodeListener(createApp().use(playerProxy(() => backend)))),
+		const frontend: string = await listen(
+			createServer(
+				toNodeListener(
+					createApp().use(
+						playerProxy(
+							() => backend,
+							() => frontend,
+						),
+					),
+				),
+			),
 		);
 		const abort = new AbortController();
 		const response = await fetch(`${frontend}/api/events`, { signal: abort.signal });
@@ -206,8 +302,17 @@ describe("local API proxy", () => {
 				disconnectBackend = () => response.destroy();
 			}),
 		);
-		const frontend = await listen(
-			createServer(toNodeListener(createApp().use(playerProxy(() => backend)))),
+		const frontend: string = await listen(
+			createServer(
+				toNodeListener(
+					createApp().use(
+						playerProxy(
+							() => backend,
+							() => frontend,
+						),
+					),
+				),
+			),
 		);
 		const abort = new AbortController();
 		const response = await fetch(`${frontend}/api/events`, { signal: abort.signal });

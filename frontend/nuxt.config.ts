@@ -2,7 +2,10 @@ export default defineNuxtConfig({
 	modules: ["@nuxt/ui", "@vueuse/nuxt", "@pinia/nuxt"],
 	css: ["~/assets/css/main.css"],
 	colorMode: { preference: "dark", fallback: "dark" },
-	runtimeConfig: { backendUrl: "http://127.0.0.1:8000" },
+	runtimeConfig: {
+		backendUrl: "http://127.0.0.1:8000",
+		publicOrigin: process.env.PUBLIC_ORIGIN || "http://localhost:3012",
+	},
 	vite: {
 		build: {
 			rolldownOptions: { makeAbsoluteExternalsRelative: false },

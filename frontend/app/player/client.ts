@@ -29,6 +29,7 @@ const messages: Record<string, string> = {
 export function createPlayerClient(
 	request: typeof fetch = (...args) => fetch(...args),
 	openEvents: (url: string) => EventSource = (url) => new EventSource(url),
+	auth?: { lost: (code: string) => void; check: () => Promise<void> },
 ) {
 	const snapshot = shallowRef<PlayerState | null>(null);
 	const connection = ref<"connecting" | "live" | "offline">("connecting");
@@ -48,6 +49,7 @@ export function createPlayerClient(
 	);
 	let events: EventSource | undefined;
 	let disposed = false;
+	let generation = 0;
 
 	function accept(state: PlayerState) {
 		if (!snapshot.value || state.revision >= snapshot.value.revision) snapshot.value = state;
@@ -56,17 +58,20 @@ export function createPlayerClient(
 	async function refreshChannels() {
 		if (channelsLoading.value) return;
 		channelsLoading.value = true;
+		const version = generation;
 		try {
 			const response = await request("/api/channels", {
 				signal: AbortSignal.timeout(15_000),
 			});
 			if (!response.ok) throw new Error("channels unavailable");
-			channels.value = (await response.json()) as VoiceChannel[];
+			const values = (await response.json()) as VoiceChannel[];
+			if (version !== generation) return;
+			channels.value = values;
 			channelError.value = false;
 		} catch {
-			channelError.value = true;
+			if (version === generation) channelError.value = true;
 		} finally {
-			channelsLoading.value = false;
+			if (version === generation) channelsLoading.value = false;
 		}
 	}
 
@@ -94,11 +99,26 @@ export function createPlayerClient(
 			}
 		});
 		stream.onerror = () => {
-			if (events === stream && !disposed) connection.value = "offline";
+			if (events === stream && !disposed) {
+				connection.value = "offline";
+				void auth?.check();
+			}
 		};
+		stream.addEventListener("auth", (event) => {
+			if (events !== stream || disposed) return;
+			dispose();
+			let code = "signed_out";
+			try {
+				code = JSON.parse((event as MessageEvent).data).code;
+			} catch {
+				/* Close on malformed auth events too. */
+			}
+			auth?.lost(code);
+		});
 	}
 
 	async function send(command: PendingRequest): Promise<boolean> {
+		const version = generation;
 		pending.value = true;
 		error.value = null;
 		try {
@@ -109,6 +129,7 @@ export function createPlayerClient(
 				signal: AbortSignal.timeout(30_000),
 			});
 			const result = (await response.json()) as Partial<MutationResult>;
+			if (version !== generation) return false;
 			if (result.snapshot) accept(result.snapshot);
 			if (response.status >= 500 && !result.snapshot) throw new Error("unknown outcome");
 			uncertain.value = null;
@@ -122,11 +143,12 @@ export function createPlayerClient(
 			}
 			return true;
 		} catch {
+			if (version !== generation) return false;
 			uncertain.value = command;
 			error.value = "The response was lost. Check the result to safely finish this action.";
 			return false;
 		} finally {
-			pending.value = false;
+			if (version === generation) pending.value = false;
 		}
 	}
 
@@ -167,10 +189,18 @@ export function createPlayerClient(
 	}
 
 	function dispose() {
+		generation++;
 		disposed = true;
 		events?.close();
 		events = undefined;
 		connection.value = "offline";
+		snapshot.value = null;
+		channels.value = [];
+		channelsLoading.value = false;
+		channelError.value = false;
+		uncertain.value = null;
+		error.value = null;
+		pending.value = false;
 	}
 
 	return {

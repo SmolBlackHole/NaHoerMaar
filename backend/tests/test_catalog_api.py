@@ -97,7 +97,6 @@ def test_batch_is_atomic_ordered_and_replayed_after_restart(
     key = headers()
     body = {
         "source_urls": [VIDEO, "https://youtu.be/bWHJbIm1TAA", VIDEO],
-        "added_by": {"id": str(uuid4()), "name": "Andrey", "avatar": "0001"},
     }
 
     async def scenario() -> None:

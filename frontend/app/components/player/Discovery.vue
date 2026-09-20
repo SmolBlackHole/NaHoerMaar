@@ -2,10 +2,18 @@
 import { musicSource, selectedSources, type CatalogTrack } from "#shared/catalog";
 import { createCatalogClient } from "~/player/catalog";
 import { usePlayerStore } from "~/stores/player";
+import { useProfileStore } from "~/stores/profile";
 
 const player = usePlayerStore();
 const { icons } = useTheme();
-const library = createCatalogClient();
+const profile = useProfileStore();
+const library = createCatalogClient(profile.request);
+watch(
+	() => profile.status,
+	(status) => {
+		if (status !== "authenticated") library.dispose();
+	},
+);
 const {
 	results,
 	query,

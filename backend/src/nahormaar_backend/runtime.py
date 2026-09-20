@@ -18,7 +18,7 @@ from .youtube import YouTubeResolver
 
 @asynccontextmanager
 async def open_runtime(settings: Settings) -> AsyncGenerator[PlaybackController, None]:
-    voice = DiscordVoice(settings.guild_id, settings.ffmpeg_path)
+    voice = DiscordVoice(settings.ffmpeg_path)
     resolver = YouTubeResolver(settings.node_path)
     catalog = MediaCatalog(settings.node_path)
     try:

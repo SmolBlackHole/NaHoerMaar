@@ -69,8 +69,7 @@ class FakeVoice:
     mode: ClassVar[str] = "running"
     close_error: ClassVar[Exception | None] = None
 
-    def __init__(self, guild_id: int, ffmpeg_path: Path) -> None:
-        self.guild_id = guild_id
+    def __init__(self, ffmpeg_path: Path) -> None:
         self.ffmpeg_path = ffmpeg_path
         self.started = asyncio.Event()
         self.closed = asyncio.Event()
@@ -96,7 +95,7 @@ class FakeVoice:
     async def wait_until_ready(self) -> None:
         await self.started.wait()
         if type(self).mode == "ready":
-            raise VoiceError("Configured guild is unavailable.")
+            raise VoiceError("Discord gateway is unavailable.")
         if type(self).mode == "authentication":
             raise VoiceError("Discord authentication failed.")
 
@@ -111,7 +110,6 @@ class FakeVoice:
 def _settings(tmp_path: Path) -> Settings:
     return Settings(
         token="test-token",  # noqa: S106 - synthetic test credential
-        guild_id=123,
         database_path=tmp_path / "player.sqlite3",
         ffmpeg_path=tmp_path / "ffmpeg.exe",
         node_path=tmp_path / "node.exe",
@@ -165,7 +163,7 @@ def test_runtime_uses_one_discord_client_task_on_the_current_loop(
     ("mode", "expected"),
     [
         ("authentication", "authentication failed"),
-        ("ready", "guild is unavailable"),
+        ("ready", "gateway is unavailable"),
         ("early-exit", "stopped before startup"),
     ],
 )

@@ -11,7 +11,6 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .models import (
-    ANONYMOUS_CONTRIBUTOR,
     Contributor,
     PlaybackState,
     QueueEntry,
@@ -36,14 +35,9 @@ class ContributorData(Input):
     def to_contributor(self) -> Contributor:
         return Contributor(self.id, self.name, self.avatar)
 
-    @staticmethod
-    def default_contributor() -> Contributor:
-        return ANONYMOUS_CONTRIBUTOR
-
 
 class AddInput(Input):
     source_url: str = Field(max_length=2048)
-    added_by: ContributorData | None = None
 
     @field_validator("source_url")
     @classmethod
@@ -64,7 +58,6 @@ class ClearInput(QueueRevisionInput):
 
 class BatchInput(Input):
     source_urls: tuple[str, ...] = Field(min_length=1, max_length=PLAYLIST_LIMIT)
-    added_by: ContributorData | None = None
 
     @field_validator("source_urls")
     @classmethod

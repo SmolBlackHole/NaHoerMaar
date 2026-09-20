@@ -30,20 +30,23 @@ async function requeue(item: RecentTrack) {
 			<li
 				v-for="item in entries"
 				:key="item.id"
-				class="flex flex-wrap items-center gap-3 py-4"
+				class="recent-row flex flex-wrap items-center gap-3 py-4"
 			>
-				<PlayerTrackArtwork :entry="item.entry" />
-				<div class="min-w-0 flex-1 basis-32">
+				<PlayerTrackArtwork :entry="item.entry" class="recent-cover" />
+				<div class="recent-track min-w-0 flex-1 basis-32">
 					<a
 						:href="item.entry.source_url"
 						target="_blank"
 						rel="noopener noreferrer"
-						class="text-highlighted block truncate text-sm font-medium hover:underline"
+						class="recent-title text-highlighted block truncate text-sm font-medium hover:underline"
 						:title="trackTitle(item.entry)"
 						>{{ trackTitle(item.entry) }}</a
 					>
-					<p class="text-muted mt-1 flex items-center gap-3 text-xs">
+					<p class="recent-details text-muted mt-1 flex items-center gap-3 text-xs">
 						<PlayerArtistLink :entry="item.entry" class="truncate" />
+						<span class="recent-mobile-duration shrink-0 tabular-nums">{{
+							formatTime(item.entry.duration_seconds)
+						}}</span>
 						<span
 							v-if="item.play_count > 1"
 							class="shrink-0 tabular-nums"
@@ -52,7 +55,7 @@ async function requeue(item: RecentTrack) {
 						>
 					</p>
 				</div>
-				<span class="text-muted text-xs tabular-nums">{{
+				<span class="recent-duration text-muted text-xs tabular-nums">{{
 					formatTime(item.entry.duration_seconds)
 				}}</span>
 				<time
@@ -66,13 +69,61 @@ async function requeue(item: RecentTrack) {
 					variant="ghost"
 					:aria-label="`Queue ${trackTitle(item.entry)} again`"
 					:title="`Queue ${trackTitle(item.entry)} again`"
-					class="ml-auto size-10 shrink-0 justify-center"
+					class="recent-add ml-auto size-11 shrink-0 justify-center"
 					:disabled="!player.enabled"
 					@click="requeue(item)"
 				/>
 			</li>
 		</ol>
 		<p v-else class="py-6 text-sm text-muted">Tracks appear here once they start playing.</p>
-		<p role="status" class="text-muted min-h-6 text-xs">{{ feedback }}</p>
+		<p role="status" class="recent-feedback text-muted text-xs">{{ feedback }}</p>
 	</div>
 </template>
+
+<style scoped>
+.recent-mobile-duration {
+	display: none;
+}
+.recent-feedback:not(:empty) {
+	margin-top: 0.75rem;
+}
+@container workspace (max-width: 600px) {
+	.recent-row {
+		display: grid;
+		grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem;
+		gap: 0.75rem;
+		align-items: start;
+		padding-block: 1rem;
+	}
+	.recent-cover {
+		width: 2.75rem;
+		height: 2.75rem;
+	}
+	.recent-title {
+		display: -webkit-box;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
+		white-space: normal;
+		overflow-wrap: anywhere;
+	}
+	.recent-details {
+		flex-wrap: wrap;
+		gap: 0.25rem 0.75rem;
+		margin-top: 0.375rem;
+	}
+	.recent-details > a,
+	.recent-details > span:first-child {
+		flex-basis: 100%;
+	}
+	.recent-mobile-duration {
+		display: inline;
+	}
+	.recent-duration,
+	.recent-row > time {
+		display: none;
+	}
+	.recent-add {
+		align-self: center;
+	}
+}
+</style>

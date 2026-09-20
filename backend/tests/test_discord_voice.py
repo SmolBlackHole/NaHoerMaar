@@ -15,6 +15,7 @@ import subprocess
 import threading
 import time
 from typing import Any, cast
+from types import SimpleNamespace
 import wave
 
 import discord
@@ -40,7 +41,10 @@ from nahormaar_backend.discord_voice import (
 
 class FakeVoiceClient:
     def __init__(self, channel_id: int = 10) -> None:
-        self.channel = FakeChannelReference(channel_id)
+        self.channel: FakeChannelReference | FakeVoiceChannel = FakeChannelReference(
+            channel_id
+        )
+        self.guild = FakeGuild([])
         self.source: discord.AudioSource | None = None
         self.after: Callable[[Exception | None], None] | None = None
         self.connected = True
@@ -101,9 +105,12 @@ class FakeChannelReference:
 
 
 class FakePermissions:
-    def __init__(self, *, connect: bool = True, speak: bool = True) -> None:
+    def __init__(
+        self, *, connect: bool = True, speak: bool = True, view_channel: bool = True
+    ) -> None:
         self.connect = connect
         self.speak = speak
+        self.view_channel = view_channel
 
 
 class FakeVoiceChannel:
@@ -117,6 +124,7 @@ class FakeVoiceChannel:
         self.name = name
         self._permissions = permissions or FakePermissions()
         self.voice = FakeVoiceClient(channel_id)
+        self.guild: FakeGuild
 
     def permissions_for(self, member: object) -> FakePermissions:
         del member
@@ -128,12 +136,21 @@ class FakeVoiceChannel:
 
 
 class FakeGuild:
-    id = 1
-    name = "Test server"
-
-    def __init__(self, channels: list[FakeVoiceChannel]) -> None:
+    def __init__(
+        self,
+        channels: list[FakeVoiceChannel],
+        guild_id: int = 1,
+        name: str = "Test server",
+    ) -> None:
+        self.id = guild_id
+        self.name = name
+        self.unavailable = False
         self.me = object()
         self.voice_channels = channels
+        for channel in channels:
+            channel.guild = self
+            channel.voice.guild = self
+            channel.voice.channel = channel
 
     def get_channel(self, channel_id: int) -> FakeVoiceChannel | None:
         return next(
@@ -143,17 +160,23 @@ class FakeGuild:
 
 
 class FakeDiscordClient:
-    def __init__(self, guild: FakeGuild | None) -> None:
-        self.guild = guild
+    def __init__(self, *guilds: FakeGuild) -> None:
+        self.guilds = list(guilds)
 
-    def get_guild(self, guild_id: int) -> FakeGuild | None:
-        del guild_id
-        return self.guild
+    def get_channel(self, channel_id: int) -> FakeVoiceChannel | None:
+        return next(
+            (
+                channel
+                for guild in self.guilds
+                for channel in guild.voice_channels
+                if channel.id == channel_id
+            ),
+            None,
+        )
 
 
 def _adapter(tmp_path: Path, volume: float = 1.0) -> DiscordVoice:
     adapter = DiscordVoice(
-        guild_id=1,
         ffmpeg_path=ffmpeg_executable(),
         volume=volume,
     )
@@ -540,11 +563,98 @@ def test_disconnect_stops_paused_audio_before_leaving(tmp_path: Path) -> None:
     assert source.original._process.poll() is not None
 
 
-def test_wait_until_ready_reports_missing_configured_guild(tmp_path: Path) -> None:
+def test_ready_without_any_guild_allows_inviting_the_bot_later(tmp_path: Path) -> None:
     adapter = _adapter(tmp_path)
-    adapter._ready.set()
-    with pytest.raises(VoiceError, match="configured Discord guild"):
-        asyncio.run(asyncio.wait_for(adapter.wait_until_ready(), timeout=1))
+    adapter._discord_ready()
+    asyncio.run(asyncio.wait_for(adapter.wait_until_ready(), timeout=1))
+    assert adapter.channels() == ()
+
+
+def test_channel_discovery_tracks_joined_and_removed_guilds(tmp_path: Path) -> None:
+    adapter = _adapter(tmp_path)
+    client = FakeDiscordClient()
+    adapter._client = cast(Any, client)
+    first = FakeGuild([FakeVoiceChannel(10, "General")], 1, "First server")
+    second = FakeGuild([FakeVoiceChannel(20, "General")], 2, "Second server")
+    assert adapter.channels() == ()
+    client.guilds.extend([second, first])
+    assert [
+        (channel.id, channel.guild_id, channel.guild_name)
+        for channel in adapter.channels()
+    ] == [(10, 1, "First server"), (20, 2, "Second server")]
+    first.unavailable = True
+    assert [channel.id for channel in adapter.channels()] == [20]
+    client.guilds.remove(second)
+    assert adapter.channels() == ()
+
+
+def test_switching_guilds_closes_old_voice_and_ignores_late_disconnects(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = FakeVoiceChannel(10, "General")
+    second = FakeVoiceChannel(20, "General")
+    first_guild = FakeGuild([first], 1)
+    second_guild = FakeGuild([second], 2)
+    adapter = _adapter(tmp_path)
+    gateway = adapter._client
+    gateway._connection.user = cast(discord.ClientUser, SimpleNamespace(id=99))
+    adapter._voice = None
+    adapter._client = cast(Any, FakeDiscordClient(first_guild, second_guild))
+    monkeypatch.setattr(
+        cast(Any, discord_voice_module).discord, "VoiceChannel", FakeVoiceChannel
+    )
+    losses: list[str] = []
+    adapter.set_disconnect_handler(lambda: losses.append("lost"))
+    original_connect = second.connect
+
+    async def connect_second(**kwargs: object) -> FakeVoiceClient:
+        assert not first.voice.connected
+        return await original_connect(**kwargs)
+
+    monkeypatch.setattr(second, "connect", connect_second)
+
+    async def scenario() -> None:
+        await adapter.connect(10)
+        await adapter.connect(20)
+        assert adapter.channel_id == 20
+        member = cast(discord.Member, SimpleNamespace(id=99, guild=first_guild))
+        before = cast(discord.VoiceState, SimpleNamespace(channel=first))
+        after = cast(discord.VoiceState, SimpleNamespace(channel=None))
+        await gateway.on_voice_state_update(member, before, after)
+        await gateway.on_voice_state_update(member, before, after)
+        await gateway.on_guild_remove(cast(discord.Guild, first_guild))
+        assert adapter.channel_id == 20
+        assert losses == []
+        await gateway.on_guild_remove(cast(discord.Guild, second_guild))
+        assert not adapter.connected
+        assert not second.voice.connected
+        assert losses == ["lost"]
+
+    asyncio.run(scenario())
+
+
+def test_inaccessible_or_stale_channels_cannot_be_joined(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    hidden = FakeVoiceChannel(10, "Hidden", FakePermissions(view_channel=False))
+    muted = FakeVoiceChannel(20, "Muted", FakePermissions(speak=False))
+    guild = FakeGuild([hidden, muted])
+    adapter = _adapter(tmp_path)
+    adapter._voice = None
+    adapter._client = cast(Any, FakeDiscordClient(guild))
+    monkeypatch.setattr(
+        cast(Any, discord_voice_module).discord, "VoiceChannel", FakeVoiceChannel
+    )
+    assert not adapter.channels()[0].can_connect
+    with pytest.raises(VoiceError, match="cannot connect"):
+        asyncio.run(adapter.connect(10))
+    with pytest.raises(VoiceError, match="cannot speak"):
+        asyncio.run(adapter.connect(20))
+    with pytest.raises(VoiceError, match="unavailable"):
+        asyncio.run(adapter.connect(999))
+    guild.unavailable = True
+    with pytest.raises(VoiceError, match="unavailable"):
+        asyncio.run(adapter.connect(10))
 
 
 def test_activity_tracks_audio_controls_without_changing_the_audio_source(
@@ -630,38 +740,59 @@ class FakePresenceClient(FakeDiscordClient):
 def test_presence_coalesces_changes_resends_after_reconnect_and_closes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(discord_voice_module, "_PRESENCE_INTERVAL_SECONDS", 0.02)
+    interval = 0.02
+    monkeypatch.setattr(discord_voice_module, "_PRESENCE_INTERVAL_SECONDS", interval)
 
     async def scenario() -> None:
+        real_sleep = asyncio.sleep
+        sleep_requests: asyncio.Queue[float] = asyncio.Queue()
+        ticks: asyncio.Queue[None] = asyncio.Queue()
+
+        async def controlled_sleep(delay: float) -> None:
+            if delay == interval:
+                sleep_requests.put_nowait(delay)
+                await ticks.get()
+            else:
+                await real_sleep(delay)
+
+        async def wait_for_interval() -> None:
+            async with asyncio.timeout(2):
+                assert await sleep_requests.get() == interval
+
+        async def next_interval() -> None:
+            ticks.put_nowait(None)
+            await wait_for_interval()
+
+        monkeypatch.setattr(asyncio, "sleep", controlled_sleep)
         adapter = _adapter(tmp_path)
         client = FakePresenceClient(adapter)
         adapter._client = cast(discord_voice_module._DiscordClient, client)
         task = asyncio.create_task(adapter.start("test-token"))
         try:
-            await client.wait_for_attempts(1)
+            await wait_for_interval()
+            assert len(client.attempts) == 1
             assert client.attempts[0][1].to_dict().get("state") == "Bereit für Musik"
             for title in ("First", "Skipped", "Current"):
                 adapter._set_activity(ResolvedTrack("unused", title=title))
-            await client.wait_for_attempts(2)
+            assert len(client.attempts) == 1
+            await next_interval()
+            assert len(client.attempts) == 2
             assert client.attempts[1][1].to_dict()["name"] == "Current"
-            await asyncio.sleep(0.05)
+            await next_interval()
             assert len(client.attempts) == 2
             client.ready = False
             adapter._set_activity(ResolvedTrack("unused", title="After reconnect"))
-            await asyncio.sleep(0.05)
+            await next_interval()
             assert len(client.attempts) == 2
             client.ready = True
             adapter._discord_ready()
-            await client.wait_for_attempts(3)
+            assert len(client.attempts) == 2
+            await next_interval()
+            assert len(client.attempts) == 3
             adapter._discord_ready()
-            await client.wait_for_attempts(4)
+            await next_interval()
+            assert len(client.attempts) == 4
             assert client.attempts[2][1].to_dict() == client.attempts[3][1].to_dict()
-            assert all(
-                later[0] - earlier[0] >= 0.02
-                for earlier, later in zip(
-                    client.attempts, client.attempts[1:], strict=False
-                )
-            )
         finally:
             presence = adapter._presence_task
             bio = adapter._bio_task

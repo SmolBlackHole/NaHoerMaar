@@ -15,21 +15,24 @@ const saved = ref(false);
 		<template #body>
 			<section class="mx-auto w-full max-w-md py-4 sm:py-10">
 				<h1 class="text-highlighted mb-3 text-2xl font-semibold">Name and avatar</h1>
-				<p class="text-muted mb-8 text-sm">This profile belongs to this browser.</p>
+				<p class="text-muted mb-8 text-sm">
+					Your name and avatar follow your Discord account.
+				</p>
 				<ProfileForm v-if="profile.profile" @saved="saved = true" />
 				<p v-if="saved" role="status" class="text-success mt-4 text-sm">Profile saved.</p>
-				<p v-if="profile.storageUnavailable" role="status" class="text-muted mt-4 text-sm">
-					Browser storage is unavailable. Your profile lasts until this page closes.
-				</p>
 				<div class="mt-10 border-t border-default pt-6">
 					<UButton
-						label="Leave this profile"
+						label="Sign out"
 						:icon="icons.logOut"
 						color="neutral"
 						variant="outline"
 						@click="profile.signOut"
+						:loading="profile.busy"
 					/>
 					<p class="text-muted mt-3 text-xs">Music keeps playing in Discord.</p>
+					<p v-if="profile.error" role="alert" class="text-error mt-3 text-sm">
+						{{ profile.error }}
+					</p>
 				</div>
 			</section>
 		</template>

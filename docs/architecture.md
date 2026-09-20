@@ -55,6 +55,12 @@ database; Discord runs on the asyncio event loop. Each playback attempt has its
 own ID. Late extraction results and completion callbacks are ignored once that
 attempt has been stopped, skipped or replaced.
 
+The Discord adapter discovers joined servers and their voice channels from
+Discord's guild cache. No guild ID is configured. All servers share the same
+queue, with one active voice connection. Switching servers disconnects the old
+channel before joining the new one and waits for a manual playback start.
+Late disconnect events from the old channel cannot close the new connection.
+
 The [YouTube resolver](../backend/src/nahormaar_backend/youtube.py) runs `yt-dlp`
 in a cancellable child process with a 30-second deadline. It resolves one finite,
 public video immediately before playback and selects the best available audio.
@@ -121,9 +127,10 @@ accepted operations until they finish, even if their awaiting caller is cancelle
 
 FastAPI owns one runtime through its lifespan. HTTP controls and playback
 callbacks share the controller's lock. The API reads complete committed
-snapshots and never writes to the database or Discord directly.
+snapshots; player endpoints leave database and Discord changes to the controller.
 
-SQLite schema version 4 stores track metadata, contributor profiles and playback history.
+SQLite schema version 5 stores track metadata, contributor profiles, playback
+history, accounts, sessions and pending logins.
 Earlier versions migrate in a transaction, preserving entries, order and existing
 request receipts. `revision` orders visible state
 changes, including runtime-only changes such as volume. `queue_revision` changes
@@ -136,8 +143,9 @@ finished track cannot consume its successor.
 
 Each mutation reserves its request ID before it runs. Queue edits commit their
 outcome in the same transaction as the queue and revisions. Retrying an ID with
-the same command returns its stored outcome and a fresh snapshot; reusing it for
-another command fails. Receipts have no automatic expiry.
+the same command from the same account returns its stored outcome and a fresh
+snapshot; reusing it for another command or account fails. Receipts have no
+automatic expiry.
 
 Discord effects cannot share a SQLite transaction. If the process exits before
 their outcome is saved, recovery marks the request as interrupted. It does not
@@ -156,11 +164,32 @@ transitions. Displaying elapsed time needs no per-second database writes.
 
 See the [API contract](api.md) for requests, responses and conflict handling.
 
+## Accounts and access
+
+FastAPI owns Discord OAuth2, requesting only `identify`. Authlib handles the
+authorization-code exchange with PKCE. A pending login stores hashed state and
+a browser binding; consuming it is atomic and it expires after ten minutes.
+Discord tokens are used to read the user ID and are not retained.
+
+SQLAlchemy stores accounts and seven-day sessions in the player database using
+separate, short transactions. The browser receives an opaque HTTP-only cookie;
+the database stores its hash. Each account has a stable internal UUID, Discord
+ID, chosen name and Pixabot avatar. Migrating older databases preserves queue
+and history attribution without claiming those contributors for a new account.
+
+An API boundary checks the session and the current `access.toml` whitelist for
+every request, including discovery and live updates. Mutations also require the
+configured origin and a session-bound CSRF token. SSE rechecks access before
+each snapshot and every two seconds while idle. Logout or revoked access closes
+the stream but never controls playback. Playlist previews belong to their creator.
+
 ## Dashboard
 
 The Nuxt dashboard controls playback, volume, voice channels and the shared queue.
 Its server forwards HTTP requests and SSE to FastAPI on localhost. The proxy
-keeps the API's local-host and same-origin restrictions.
+checks the configured public origin, forwards session cookies and CSRF headers,
+and relays OAuth redirects without following them. Forwarded host headers cannot
+choose a redirect or backend destination.
 
 The browser accepts snapshots by revision and disables mutations while
 disconnected. Reorder and clear use the displayed queue revision; playback
@@ -199,8 +228,10 @@ Recently played groups matching video IDs and shows their playback count within
 the stored 100 starts. Each group uses its latest entry and timestamp; the raw
 history remains available for activity statistics.
 
-Browser profiles store a name and a Pixabot avatar locally. They do not authenticate
-API access. Discord login and the whitelist remain planned. The Overview uses
-the retained playback history, not lifetime listening statistics.
+The dashboard waits for a valid session before connecting to player state.
+Session loss clears private state and disables controls; other tabs refresh their
+session on logout or profile changes. Old locally stored names and avatars are
+first-login suggestions only. The Overview uses retained playback history,
+not lifetime listening statistics.
 
 See the [roadmap](../ROADMAP.md) for upcoming work.

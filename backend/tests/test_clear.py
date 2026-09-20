@@ -5,7 +5,7 @@
 import asyncio
 from dataclasses import replace
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -78,18 +78,11 @@ def test_profile_clear_is_atomic_conflict_checked_and_replayable(
         async with harness.client() as client:
 
             async def add(profile_id: str) -> None:
-                mutation(
-                    await client.post(
-                        "/api/queue",
-                        headers=headers(),
-                        json={
-                            "source_url": VIDEO,
-                            "added_by": {
-                                "id": profile_id,
-                                "name": "Same name",
-                                "avatar": "0001",
-                            },
-                        },
+                assert harness.controller is not None
+                await harness.controller.enqueue(
+                    QueueEntry(
+                        VIDEO,
+                        added_by=Contributor(UUID(profile_id), "Same name", "0002"),
                     )
                 )
 

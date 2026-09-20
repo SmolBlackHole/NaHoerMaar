@@ -3,13 +3,27 @@ import { useProfileStore } from "~/stores/profile";
 const emit = defineEmits<{ saved: [] }>();
 const profile = useProfileStore();
 const { icons } = useTheme();
-const name = ref(profile.profile?.name ?? "");
-const avatar = ref(profile.profile?.avatar ?? profile.randomAvatar());
+const name = ref("");
+const avatar = ref(profile.randomAvatar());
 const error = ref("");
 const inputId = useId();
-function save() {
-	if (profile.save(name.value, avatar.value)) emit("saved");
-	else error.value = "Choose a name between 1 and 32 characters.";
+watch(
+	() => profile.profile?.id,
+	() => {
+		const suggestion = !profile.profileComplete ? profile.suggestion : null;
+		name.value = suggestion?.name ?? profile.profile?.name ?? "";
+		avatar.value = suggestion?.avatar ?? profile.profile?.avatar ?? profile.randomAvatar();
+		error.value = "";
+	},
+	{ immediate: true },
+);
+async function save() {
+	if (!name.value.trim() || name.value.trim().length > 32) {
+		error.value = "Choose a name between 1 and 32 characters.";
+		return;
+	}
+	if (await profile.save(name.value.trim(), avatar.value)) emit("saved");
+	else error.value = profile.error;
 }
 </script>
 
@@ -54,11 +68,12 @@ function save() {
 		</div>
 		<UButton
 			type="submit"
-			:label="profile.profile ? 'Save profile' : 'Enter the player'"
+			:label="profile.profileComplete ? 'Save profile' : 'Enter the player'"
 			:trailing-icon="icons.arrowRight"
 			size="xl"
 			block
 			:disabled="!name.trim()"
+			:loading="profile.busy"
 		/>
 	</form>
 </template>

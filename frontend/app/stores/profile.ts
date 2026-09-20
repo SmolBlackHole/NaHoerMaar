@@ -1,43 +1,50 @@
 import { defineStore } from "pinia";
-import { PROFILE_KEY, parseProfile, randomAvatar, type ListenerProfile } from "#shared/profile";
+import { PROFILE_KEY, parseProfile, randomAvatar } from "#shared/profile";
+import { createSessionClient } from "~/auth/client";
 
 export const useProfileStore = defineStore("profile", () => {
-	const profile = ref<ListenerProfile | null>(null);
-	const ready = ref(false);
-	const storageUnavailable = ref(false);
-
-	function restore() {
-		try {
-			profile.value = parseProfile(localStorage.getItem(PROFILE_KEY));
-		} catch {
-			storageUnavailable.value = true;
-		}
-		ready.value = true;
+	const client = createSessionClient();
+	const suggestion = ref<{ name: string; avatar: string } | null>(null);
+	let channel: BroadcastChannel | undefined;
+	let listening = false;
+	function refresh() {
+		void client.restore();
 	}
-
-	function save(name: string, avatar: string) {
-		const next = parseProfile(
-			JSON.stringify({ id: profile.value?.id ?? crypto.randomUUID(), name, avatar }),
-		);
-		if (!next) return false;
-		profile.value = next;
-		try {
-			localStorage.setItem(PROFILE_KEY, JSON.stringify(next));
-			storageUnavailable.value = false;
-		} catch {
-			storageUnavailable.value = true;
+	async function restore() {
+		if (!listening && import.meta.client) {
+			listening = true;
+			try {
+				const old = parseProfile(localStorage.getItem(PROFILE_KEY));
+				if (old) suggestion.value = { name: old.name, avatar: old.avatar };
+			} catch {
+				/* A legacy profile is only an optional suggestion. */
+			}
+			if (typeof BroadcastChannel !== "undefined") {
+				channel = new BroadcastChannel("nahormaar-account");
+				channel.onmessage = refresh;
+			}
+			window.addEventListener("focus", refresh);
 		}
-		return true;
+		await client.restore();
 	}
-
-	function signOut() {
-		profile.value = null;
+	async function save(name: string, avatar: string) {
+		if (!(await client.save(name, avatar))) return false;
+		suggestion.value = null;
 		try {
 			localStorage.removeItem(PROFILE_KEY);
 		} catch {
-			storageUnavailable.value = true;
+			/* Optional legacy storage. */
 		}
+		channel?.postMessage("profile");
+		return true;
 	}
-
-	return { profile, ready, storageUnavailable, restore, save, signOut, randomAvatar };
+	async function signOut() {
+		if (await client.signOut()) channel?.postMessage("logout");
+	}
+	onScopeDispose(() => {
+		client.dispose();
+		channel?.close();
+		if (import.meta.client) window.removeEventListener("focus", refresh);
+	});
+	return { ...client, suggestion, restore, save, signOut, randomAvatar };
 });

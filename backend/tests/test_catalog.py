@@ -175,18 +175,23 @@ def test_playlist_progress_limit_and_idempotent_start(
         catalog = MediaCatalog(Path("node"))
         key = uuid4()
         try:
-            assert catalog.start_preview(PLAYLIST, key).state is PreviewState.LOADING
+            assert (
+                catalog.start_preview(PLAYLIST, key, owner_id=key).state
+                is PreviewState.LOADING
+            )
             await runner.started.wait()
-            progress = catalog.preview(key)
+            progress = catalog.preview(key, owner_id=key)
             assert len(progress.entries) == 100 and progress.truncated
             assert progress.title == "My playlist"
             assert [entry.index for entry in progress.entries] == list(range(1, 101))
-            assert catalog.start_preview(PLAYLIST, key) == progress
+            assert catalog.start_preview(PLAYLIST, key, owner_id=key) == progress
             assert len(runner.calls) == 1
             with pytest.raises(ValueError):
-                catalog.start_preview(PLAYLIST + "different", key)
+                catalog.start_preview(PLAYLIST + "different", key, owner_id=key)
             runner.release.set()
-            await wait_for(lambda: catalog.preview(key).state is PreviewState.READY)
+            await wait_for(
+                lambda: catalog.preview(key, owner_id=key).state is PreviewState.READY
+            )
             assert "--playlist-items" in runner.calls[0]
             assert "1:101" in runner.calls[0]
         finally:
@@ -202,17 +207,17 @@ def test_cancel_and_shutdown_reap_discovery(monkeypatch: pytest.MonkeyPatch) -> 
         monkeypatch.setattr(module, "run_process", runner)
         catalog = MediaCatalog(Path("node"))
         key = uuid4()
-        catalog.start_preview(PLAYLIST, key)
+        catalog.start_preview(PLAYLIST, key, owner_id=key)
         await runner.started.wait()
-        stopped = await catalog.cancel_preview(key)
+        stopped = await catalog.cancel_preview(key, owner_id=key)
         assert runner.cancelled and stopped.state is PreviewState.CANCELLED
-        assert await catalog.cancel_preview(key) == stopped
+        assert await catalog.cancel_preview(key, owner_id=key) == stopped
         second = uuid4()
-        catalog.start_preview(PLAYLIST, second)
+        catalog.start_preview(PLAYLIST, second, owner_id=key)
         await asyncio.sleep(0)
         await catalog.close()
         with pytest.raises(KeyError):
-            catalog.preview(second)
+            catalog.preview(second, owner_id=key)
 
     asyncio.run(scenario())
 
@@ -225,11 +230,13 @@ def test_partial_failure_keeps_loaded_tracks(monkeypatch: pytest.MonkeyPatch) ->
         catalog = MediaCatalog(Path("node"))
         key = uuid4()
         try:
-            catalog.start_preview(PLAYLIST, key)
+            catalog.start_preview(PLAYLIST, key, owner_id=key)
             await wait_for(
-                lambda: catalog.preview(key).state is not PreviewState.LOADING
+                lambda: (
+                    catalog.preview(key, owner_id=key).state is not PreviewState.LOADING
+                )
             )
-            result = catalog.preview(key)
+            result = catalog.preview(key, owner_id=key)
             assert result.state is PreviewState.READY and result.error
             assert len(result.entries) == 1
             with pytest.raises(TrackError):
@@ -246,12 +253,36 @@ def test_preview_expires(monkeypatch: pytest.MonkeyPatch) -> None:
         catalog = MediaCatalog(Path("node"))
         key = uuid4()
         try:
-            catalog.start_preview(PLAYLIST, key)
-            await wait_for(lambda: catalog.preview(key).state is PreviewState.READY)
+            catalog.start_preview(PLAYLIST, key, owner_id=key)
+            await wait_for(
+                lambda: catalog.preview(key, owner_id=key).state is PreviewState.READY
+            )
             now = monotonic()
             monkeypatch.setattr(module, "monotonic", lambda: now + 601)
             with pytest.raises(KeyError):
-                catalog.preview(key)
+                catalog.preview(key, owner_id=key)
+        finally:
+            await catalog.close()
+
+    asyncio.run(scenario())
+
+
+def test_preview_is_owned_by_the_authenticated_account(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def scenario() -> None:
+        monkeypatch.setattr(module, "run_process", Runner())
+        catalog = MediaCatalog(Path("node"))
+        key, owner, other = uuid4(), uuid4(), uuid4()
+        try:
+            catalog.start_preview(PLAYLIST, key, owner_id=owner)
+            with pytest.raises(ValueError):
+                catalog.start_preview(PLAYLIST, key, owner_id=other)
+            with pytest.raises(KeyError):
+                catalog.preview(key, owner_id=other)
+            with pytest.raises(KeyError):
+                await catalog.cancel_preview(key, owner_id=other)
+            assert catalog.preview(key, owner_id=owner).state is PreviewState.LOADING
         finally:
             await catalog.close()
 

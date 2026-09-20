@@ -1,4 +1,4 @@
-import avatars from "./avatars.json";
+import avatars from "../../backend/src/nahormaar_backend/avatars.json";
 
 export interface ListenerProfile {
 	id: string;
