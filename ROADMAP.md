@@ -223,12 +223,33 @@ cached results visible with a clear indication that they could not be updated.
 
 ## YouTube Music radio
 
-- [ ] Start a radio from a song or playlist, with a preview of related tracks
+- [x] Start a radio from a song or playlist, with a preview of related tracks
   before adding them to the queue
-- [ ] Offer automatic replenishment while radio is enabled, giving manually
+- [x] Offer automatic replenishment while radio is enabled, giving manually
   queued tracks priority and limiting repeats
-- [ ] Let users stop radio without stopping the current track. Check which
+- [x] Let users stop radio without stopping the current track. Check which
   recommendation sources work without a personal YouTube Music login
+
+Radio keeps three upcoming tracks ready. Queue entries and history retain their
+radio origin and initiator. Stop, disconnect, clearing the entire queue and a
+backend restart disable replenishment; pausing suspends it. Ending radio alone
+leaves the current track and upcoming queue intact.
+
+## Lyrics for the current track
+
+- [ ] Add an optional lyrics view for the currently playing song, preferring
+  timed lyrics and falling back to plain text when timestamps are unavailable
+- [ ] Evaluate [LRCLIB](https://github.com/tranxuanthang/lrclib), a free service
+  with a public API for synchronized lyrics. Check coverage, attribution and
+  usage/caching terms before choosing a provider. Prefer the existing HTTP client
+  unless a maintained library meaningfully simplifies lookup or timed-text parsing
+- [ ] Match by track title, artist, duration and album where available. Distinguish
+  remixes and live versions, and allow choosing another match when metadata is ambiguous
+- [ ] Follow the backend playback position, including pause, resume, seek and
+  track changes. Let users scroll manually and return to the current line
+- [ ] Cache matches and temporary misses with bounded retention and refresh rules.
+  Distinguish instrumental tracks, missing lyrics and provider failures without
+  delaying playback or showing the previous song's lyrics
 
 ## Administration
 
@@ -279,6 +300,33 @@ responsibilities of the reorganized modules.
 - [ ] When storage needs an alternative implementation, define a persistence
   contract including its errors, so application services can use either backend
 
+## Track likes and dislikes
+
+- [ ] Let each user like or dislike a track, change their reaction or remove it
+- [ ] Show reaction counts and who reacted, with names and avatars available on demand
+- [ ] Persist reactions with SQLAlchemy against stable track and user identities,
+  independently of queue entries and recent history, so requeueing a song keeps its reactions
+- [ ] Include reactions in personal statistics and recaps. Keep automatic skipping
+  and recommendation filtering as separate decisions, and define whether reactions
+  are shared across servers before adding independent server sessions
+
+## Saved playlists and source synchronization
+
+- [ ] Create personal playlists and shared server playlists with saved track order,
+  ownership and editing permissions. Add server ownership alongside independent server sessions
+- [ ] Import a local copy or keep a playlist linked to its YouTube Music, YouTube
+  or Spotify source. Store the provider, playlist ID and reusable track metadata
+  with SQLAlchemy; resolve temporary audio URLs only when playing
+- [ ] Show cached contents immediately, refresh on opening and before adding tracks
+  to the queue, and offer optional periodic synchronization with bounded request frequency
+- [ ] Reconcile added, removed and reordered tracks while preserving intentional
+  duplicates. Show the last successful sync and keep the saved contents when the
+  source is unavailable or access has changed
+- [ ] Preserve the user's selection during refresh. Synchronization updates the saved
+  playlist without changing tracks already queued or playing
+- [ ] Define how local edits interact with source synchronization before implementation,
+  with an explicit way to detach a linked playlist and keep it as a local copy
+
 ## Playback statistics and recap
 
 - [ ] Extend the Overview with bot-wide and per-user statistics, selectable time
@@ -322,5 +370,5 @@ listening time have distinct meanings, and each recap states its covered period.
   preserve an explicit choice when that guess is wrong
 
 - Spotify link and playlist import, after YouTube playback works.
-- Shuffle, repeat, saved personal playlists and voting.
+- Shuffle, repeat and voting.
 - YouTube livestreams and media that requires a personal YouTube login.

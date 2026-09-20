@@ -77,6 +77,22 @@ class Disconnect:
     pass
 
 
+@dataclass(frozen=True, slots=True)
+class StartRadio:
+    preview_id: UUID
+    expected_session_id: UUID | None
+
+
+@dataclass(frozen=True, slots=True)
+class StopRadio:
+    expected_session_id: UUID
+
+
+@dataclass(frozen=True, slots=True)
+class RetryRadio:
+    expected_session_id: UUID
+
+
 type Command = (
     Add
     | AddMany
@@ -89,6 +105,9 @@ type Command = (
     | Seek
     | Connect
     | Disconnect
+    | StartRadio
+    | StopRadio
+    | RetryRadio
 )
 
 

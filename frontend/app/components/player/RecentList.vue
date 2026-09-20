@@ -48,6 +48,12 @@ async function requeue(item: RecentTrack) {
 						>
 					</p>
 				</div>
+				<span
+					v-if="item.entry.origin === 'radio'"
+					class="recent-radio text-xs text-muted"
+					:title="`Radio started by ${item.entry.added_by?.name ?? 'a listener'}`"
+					>Radio · {{ item.entry.added_by?.name }}</span
+				>
 				<span class="recent-duration text-muted text-xs tabular-nums">{{
 					formatTime(item.entry.duration_seconds)
 				}}</span>
@@ -56,18 +62,21 @@ async function requeue(item: RecentTrack) {
 					class="text-muted hidden text-xs tabular-nums lg:block lg:w-36"
 					>{{ playedAt(item.played_at) }}</time
 				>
-				<UButton
-					:icon="icons.plus"
-					color="neutral"
-					variant="ghost"
-					:aria-label="`Queue ${trackTitle(item.entry)} again`"
-					:title="`Queue ${trackTitle(item.entry)} again`"
-					class="recent-add ml-auto size-11 shrink-0 justify-center"
-					:disabled="!player.enabled"
-					:loading="player.isAdding(item.entry.source_url)"
-					:aria-busy="player.isAdding(item.entry.source_url)"
-					@click="requeue(item)"
-				/>
+				<div class="recent-actions flex items-center ml-auto">
+					<UButton
+						:icon="icons.plus"
+						color="neutral"
+						variant="ghost"
+						:aria-label="`Queue ${trackTitle(item.entry)} again`"
+						:title="`Queue ${trackTitle(item.entry)} again`"
+						class="recent-add ml-auto size-11 shrink-0 justify-center"
+						:disabled="!player.enabled"
+						:loading="player.isAdding(item.entry.source_url)"
+						:aria-busy="player.isAdding(item.entry.source_url)"
+						@click="requeue(item)"
+					/>
+					<PlayerRadioAction :entry="item.entry" />
+				</div>
 			</li>
 		</ol>
 		<p v-else class="py-6 text-sm text-muted">Tracks appear here once they start playing.</p>
@@ -90,7 +99,7 @@ async function requeue(item: RecentTrack) {
 @container workspace (max-width: 600px) {
 	.recent-row {
 		display: grid;
-		grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem;
+		grid-template-columns: 2.75rem minmax(0, 1fr) auto;
 		gap: 0.75rem;
 		align-items: start;
 		padding-block: 1rem;
@@ -106,6 +115,14 @@ async function requeue(item: RecentTrack) {
 		line-clamp: 2;
 		white-space: normal;
 		overflow-wrap: anywhere;
+	}
+	.recent-actions {
+		grid-column: 3;
+		grid-row: 1;
+		align-self: center;
+	}
+	.recent-radio {
+		grid-column: 2;
 	}
 	.recent-details {
 		flex-wrap: wrap;

@@ -96,8 +96,24 @@ class Player:
         return self.enqueue_many((entry,))
 
     def enqueue_many(self, entries: tuple[QueueEntry, ...]) -> PlayerSnapshot:
+        upcoming = self._snapshot.upcoming
+        index = (
+            next(
+                (
+                    index
+                    for index, item in enumerate(upcoming)
+                    if item.origin == "radio"
+                ),
+                len(upcoming),
+            )
+            if entries and all(item.origin == "manual" for item in entries)
+            else len(upcoming)
+        )
         return self._commit(
-            replace(self._snapshot, upcoming=(*self._snapshot.upcoming, *entries))
+            replace(
+                self._snapshot,
+                upcoming=(*upcoming[:index], *entries, *upcoming[index:]),
+            )
         )
 
     def enrich(self, entry_id: UUID, metadata: TrackMetadata) -> PlayerSnapshot:

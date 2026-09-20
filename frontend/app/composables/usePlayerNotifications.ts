@@ -18,6 +18,26 @@ export function usePlayerNotifications() {
 	let connectionToastId: string | number | undefined;
 	const actionTitle = (result: MutationResult, n: number, verb: string) =>
 		`${result.actor?.name || "You"} ${verb} ${n === 1 ? "a track" : `${n} tracks`}`;
+	watch(
+		() => player.snapshot?.radio,
+		(radio, previous) => {
+			if (
+				!radio?.event_id ||
+				!previous ||
+				radio.event_id === previous.event_id ||
+				seen.has(radio.event_id)
+			)
+				return;
+			seen.add(radio.event_id);
+			toast.add({
+				id: `radio-${radio.event_id}`,
+				title: radio.actor
+					? `${radio.actor.name} ${radio.action === "stopped" ? "ended" : radio.action === "retried" ? "retried" : "started"} the radio`
+					: "Radio ended",
+				description: radio.seed?.title,
+			});
+		},
+	);
 	function trackDescription(entries: QueueEntry[], skipped = 0, loading = false) {
 		const names = entries
 			.slice(0, 2)
@@ -170,27 +190,29 @@ export function usePlayerNotifications() {
 			if (!issue || seen.has(issue.id)) return;
 			seen.add(issue.id);
 			const entry = issue.entry;
+			const reason = issue.fatal
+				? "The bot needs a restart before playback can continue."
+				: issue.reason === "stream_interrupted"
+					? "The audio stream stopped, and retrying didn't help."
+					: entry
+						? "The audio source couldn't be opened."
+						: "Rejoin a voice channel and press play to continue.";
 			toast.add({
 				id: `playback-${issue.id}`,
 				title: issue.fatal
 					? "Playback stopped"
 					: entry
-						? `${trackTitle(entry)} was skipped`
+						? "Track skipped"
 						: "Discord connection lost",
-				description: issue.fatal
-					? "The bot needs a restart before playback can continue."
-					: issue.reason === "stream_interrupted"
-						? "The audio stream stopped again after a retry. You can add the track again."
-						: entry
-							? "The source is unavailable or could not be opened. You can try adding the track again."
-							: "Rejoin a voice channel and press play to continue.",
+				description: entry ? `${trackTitle(entry)}\n${reason}` : reason,
+				ui: { description: "whitespace-pre-line" },
 				color: issue.fatal ? "error" : "warning",
 				duration: 10000,
 				actions:
 					entry && !issue.fatal
 						? [
 								{
-									label: "Requeue",
+									label: "Add to queue again",
 									disabled: !player.enabled,
 									onClick: () => {
 										void player.add(entry.source_url);
@@ -275,7 +297,10 @@ export function usePlayerNotifications() {
 		}
 		undoTimers.clear();
 		pendingTitles.clear();
-		for (const issue of seen) toast.remove(`playback-${issue}`);
+		for (const issue of seen) {
+			toast.remove(`playback-${issue}`);
+			toast.remove(`radio-${issue}`);
+		}
 		seen.clear();
 		if (errorToastId !== undefined) toast.remove(errorToastId);
 		if (connectionToastId !== undefined) toast.remove(connectionToastId);

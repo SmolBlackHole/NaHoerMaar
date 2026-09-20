@@ -155,6 +155,7 @@ class SQLiteStore:
                     artist=row.artist,
                     uploader_url=row.uploader_url,
                     added_by=_contributor(row.added_by),
+                    origin=row.origin,
                 )
             )
 
@@ -184,6 +185,7 @@ class SQLiteStore:
                         artist=item.artist,
                         uploader_url=item.uploader_url,
                         added_by=_contributor(item.added_by),
+                        origin=item.origin,
                     ),
                 )
             )
@@ -224,6 +226,7 @@ class SQLiteStore:
                         artist=entry.artist,
                         uploader_url=entry.uploader_url,
                         added_by=_contributor_data(entry.added_by),
+                        origin=entry.origin,
                     )
                     for position, entry in enumerate(entries)
                 )
@@ -243,6 +246,7 @@ class SQLiteStore:
                         artist=item.entry.artist,
                         uploader_url=item.entry.uploader_url,
                         added_by=_contributor_data(item.entry.added_by),
+                        origin=item.entry.origin,
                     )
                     for position, item in enumerate(snapshot.recently_played)
                 )

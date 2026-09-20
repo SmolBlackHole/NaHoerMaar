@@ -11,6 +11,7 @@ from uuid import UUID, uuid4
 
 from ..domain.commands import Outcome
 from ..domain.models import PlayerSnapshot, QueueEntry
+from ..domain.radio import RadioStatus
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,6 +37,7 @@ class PlaybackStatus:
     queue_revision: int = 0
     position_seconds: float = 0
     position_updated_at: datetime | None = None
+    radio: RadioStatus = field(default_factory=RadioStatus)
 
 
 @dataclass(frozen=True, slots=True)

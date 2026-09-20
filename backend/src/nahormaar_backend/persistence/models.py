@@ -27,6 +27,7 @@ class QueueEntryRow(Base):
     artist: Mapped[str | None]
     uploader_url: Mapped[str | None]
     added_by: Mapped[dict[str, str] | None] = mapped_column(JSON)
+    origin: Mapped[str] = mapped_column(default="manual", server_default="manual")
 
 
 class HistoryRow(Base):
@@ -45,6 +46,7 @@ class HistoryRow(Base):
     artist: Mapped[str | None]
     uploader_url: Mapped[str | None]
     added_by: Mapped[dict[str, str] | None] = mapped_column(JSON)
+    origin: Mapped[str] = mapped_column(default="manual", server_default="manual")
 
 
 class PlayerRow(Base):

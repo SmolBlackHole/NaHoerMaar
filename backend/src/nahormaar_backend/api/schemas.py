@@ -19,6 +19,7 @@ from ..domain.models import (
     VoiceState,
 )
 from ..integrations.youtube import video_id
+from ..domain.radio import RadioStatus
 
 
 class Input(BaseModel):
@@ -74,6 +75,20 @@ class PlaylistInput(Input):
     source_url: str = Field(min_length=1, max_length=2048)
 
 
+class RadioPreviewInput(PlaylistInput):
+    kind: Literal["track", "playlist"]
+    title: str = Field(default="YouTube Music", max_length=300)
+
+
+class RadioStartInput(Input):
+    preview_id: UUID
+    expected_session_id: UUID | None
+
+
+class RadioSessionInput(Input):
+    expected_session_id: UUID
+
+
 class MoveInput(QueueRevisionInput):
     before_entry_id: UUID | None
 
@@ -115,6 +130,7 @@ class Entry(BaseModel):
     artist: str | None
     uploader_url: str | None
     added_by: ContributorData | None
+    origin: Literal["manual", "radio"] = "manual"
 
     @classmethod
     def from_entry(cls, entry: QueueEntry) -> "Entry":
@@ -157,6 +173,7 @@ class State(BaseModel):
     position_seconds: float
     position_updated_at: datetime | None
     last_issue: Issue | None
+    radio: RadioStatus = RadioStatus()
 
     @classmethod
     def from_status(cls, status: PlaybackStatus) -> "State":
@@ -179,6 +196,7 @@ class State(BaseModel):
             volume=status.volume,
             position_seconds=status.position_seconds,
             position_updated_at=status.position_updated_at,
+            radio=status.radio,
             last_issue=Issue(
                 id=issue.id,
                 entry_id=issue.entry_id,

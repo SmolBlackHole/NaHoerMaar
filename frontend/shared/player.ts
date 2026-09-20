@@ -1,4 +1,5 @@
 import type { ListenerProfile } from "./profile";
+import type { RadioStatus } from "./radio";
 
 export type PlaybackState = "idle" | "loading" | "playing" | "paused" | "error";
 export type PlaybackAction = "play" | "pause" | "skip" | "stop";
@@ -14,6 +15,7 @@ export interface QueueEntry {
 	artist: string | null;
 	uploader_url: string | null;
 	added_by: ListenerProfile | null;
+	origin: "manual" | "radio";
 }
 
 export interface HistoryEntry {
@@ -42,6 +44,7 @@ export function groupHistory(history: readonly HistoryEntry[]): RecentTrack[] {
 }
 
 export interface PlayerState {
+	radio: RadioStatus;
 	revision: number;
 	queue_revision: number;
 	state: PlaybackState;
@@ -61,10 +64,7 @@ export interface PlayerState {
 		code: "playback_failed" | "backend_halted";
 		fatal: boolean;
 		reason:
-			| "source_unavailable"
-			| "stream_interrupted"
-			| "voice_unavailable"
-			| "backend_halted";
+			"source_unavailable" | "stream_interrupted" | "voice_unavailable" | "backend_halted";
 	} | null;
 }
 

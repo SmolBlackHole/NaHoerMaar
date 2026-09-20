@@ -28,6 +28,7 @@ from .routes.auth import auth_router
 from .routes.discovery import discovery_router
 from .routes.player import player_router
 from .routes.queue import queue_router
+from .routes.radio import radio_router
 
 type RuntimeFactory = Callable[[], AbstractAsyncContextManager[PlaybackController]]
 
@@ -98,5 +99,6 @@ def create_app(
     app.include_router(events_router(services))
     app.include_router(queue_router(services))
     app.include_router(player_router(services))
+    app.include_router(radio_router(services))
     install_error_handlers(app)
     return app

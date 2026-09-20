@@ -27,6 +27,8 @@ from ..domain.models import (
     TrackMetadata,
 )
 from ..domain.undo import Removal, UndoUnavailable
+from ..domain.radio import RadioEvent, RadioState, RadioStatus, radio_transition
+from ..domain.catalog import CatalogTrack
 from ..integrations.youtube import video_id
 from ..persistence.player_store import StorageError
 from .audio import (
@@ -42,6 +44,7 @@ from .catalog import PLAYLIST_LIMIT, MediaCatalog
 from .events import Snapshots
 from .metadata import QueueMetadata
 from .player import Player
+from .radio import RADIO_BUFFER, RADIO_POOL_LIMIT, RadioCatalog
 from .status import CommandReply, PlaybackIssue, PlaybackStatus
 from .worker import PlayerWorker
 
@@ -56,8 +59,15 @@ class PlaybackController:
         revisions: Revisions,
         metadata_resolver: MetadataResolver | None = None,
         catalog: MediaCatalog | None = None,
+        radio_catalog: RadioCatalog | None = None,
     ) -> None:
         self.catalog = catalog
+        self.radio_catalog = radio_catalog
+        self._radio = RadioStatus()
+        self._radio_pool: tuple[CatalogTrack, ...] = ()
+        self._radio_removed: set[str] = set()
+        self._radio_task: asyncio.Task[None] | None = None
+        self._radio_tasks: set[asyncio.Task[None]] = set()
         self._worker = worker
         self._snapshot = snapshot
         self._resolver = resolver
@@ -107,6 +117,7 @@ class PlaybackController:
         *,
         metadata_resolver: MetadataResolver | None = None,
         catalog: MediaCatalog | None = None,
+        radio_catalog: RadioCatalog | None = None,
     ) -> PlaybackController:
         worker = PlayerWorker()
         opening = asyncio.create_task(worker.open(database))
@@ -114,7 +125,14 @@ class PlaybackController:
             snapshot = await asyncio.shield(opening)
             versions = await worker.call(lambda player: player.revisions)
             return cls(
-                worker, snapshot, resolver, voice, versions, metadata_resolver, catalog
+                worker,
+                snapshot,
+                resolver,
+                voice,
+                versions,
+                metadata_resolver,
+                catalog,
+                radio_catalog,
             )
         except BaseException:
             await asyncio.shield(worker.close())
@@ -139,6 +157,7 @@ class PlaybackController:
             self._revisions.queue_revision,
             self._position_seconds,
             self._position_updated_at,
+            self._radio,
         )
 
     async def read_status(self) -> PlaybackStatus:
@@ -219,6 +238,7 @@ class PlaybackController:
         if status != self._published:
             self._published = status
             self._events.publish(status)
+        self._schedule_radio()
 
     def _update_position(self) -> None:
         previous = self._published
@@ -285,6 +305,11 @@ class PlaybackController:
         return CommandReply(outcome, await self.read_status(), replayed)
 
     async def _dispatch(self, command: commands.Command, receipt: Receipt) -> Outcome:
+        if isinstance(
+            command, (commands.StartRadio, commands.StopRadio, commands.RetryRadio)
+        ):
+            if command.expected_session_id != self._radio.session_id:
+                return Outcome("radio_conflict", 409)
         if isinstance(command, (commands.Move, commands.Clear)):
             if command.expected_queue_revision != self._revisions.queue_revision:
                 return Outcome("queue_conflict", 409)
@@ -293,6 +318,39 @@ class PlaybackController:
                 return Outcome("playback_conflict", 409)
         operation: Callable[[Player], PlayerSnapshot]
         match command:
+            case commands.StartRadio(preview_id, _):
+                if self.radio_catalog is None or receipt.actor is None:
+                    raise ValueError("Radio is unavailable.")
+                try:
+                    preview = self.radio_catalog.get(preview_id, receipt.actor_id)
+                except ValueError:
+                    return Outcome("radio_preview_expired", 410)
+                self._stop_radio()
+                self._radio = RadioStatus(
+                    radio_transition(self._radio.state, RadioEvent.START),
+                    uuid4(),
+                    preview.seed,
+                    receipt.actor,
+                    event_id=uuid4(),
+                    action="started",
+                    actor=receipt.actor,
+                )
+                self._radio_pool = preview.entries
+                self._radio_removed.clear()
+                return Outcome(actor=receipt.actor)
+            case commands.StopRadio(_):
+                self._stop_radio(receipt.actor)
+                return Outcome(actor=receipt.actor)
+            case commands.RetryRadio(_):
+                self._radio = replace(
+                    self._radio,
+                    state=radio_transition(self._radio.state, RadioEvent.RETRY),
+                    error=None,
+                    event_id=uuid4(),
+                    action="retried",
+                    actor=receipt.actor,
+                )
+                return Outcome(actor=receipt.actor)
             case commands.Add(source_url, added_by):
                 entry = self._queue_entry(source_url, added_by)
                 operation = partial(Player.enqueue, entry=entry)
@@ -354,6 +412,8 @@ class PlaybackController:
                     "skip": self._skip,
                     "stop": self._stop,
                 }[action]()
+                if action == "stop":
+                    self._radio = replace(self._radio, actor=receipt.actor)
                 return Outcome()
             case commands.Volume(volume):
                 self._set_volume(volume)
@@ -366,6 +426,7 @@ class PlaybackController:
                 return Outcome()
             case commands.Disconnect():
                 await self._leave()
+                self._radio = replace(self._radio, actor=receipt.actor)
                 return Outcome()
         if isinstance(command, (commands.Remove, commands.Clear)):
             removed = {
@@ -407,7 +468,181 @@ class PlaybackController:
                 replace(receipt, outcome=outcome), operation
             )
         )
+        if isinstance(command, (commands.Remove, commands.Clear)):
+            self._remember_radio_removals(outcome.entries)
+        if isinstance(command, commands.Clear) and command.contributor_id is None:
+            self._stop_radio(receipt.actor)
         return outcome
+
+    def _stop_radio(self, actor: Contributor | None = None) -> None:
+        if self._radio.state is not RadioState.OFF:
+            self._radio = replace(
+                self._radio,
+                state=radio_transition(self._radio.state, RadioEvent.STOP),
+                session_id=None,
+                error=None,
+                event_id=uuid4(),
+                action="stopped",
+                actor=actor,
+            )
+        self._radio_pool = ()
+        task, self._radio_task = self._radio_task, None
+        if task is not None:
+            task.cancel()
+
+    def _remember_radio_removals(self, entries: tuple[QueueEntry, ...]) -> None:
+        if self._radio.state is not RadioState.OFF:
+            self._radio_removed.update(
+                entry.video_id or video_id(entry.source_url) or entry.source_url
+                for entry in entries
+            )
+
+    def _schedule_radio(self) -> None:
+        if (
+            self._closing
+            or self._faulted
+            or self._radio_task is not None
+            or self._radio.state is not RadioState.ACTIVE
+            or self._snapshot.state is PlaybackState.PAUSED
+            or len(self._snapshot.upcoming) >= RADIO_BUFFER
+        ):
+            return
+        task = asyncio.create_task(self._fill_radio())
+        self._radio_task = task
+        self._radio_tasks.add(task)
+
+        def done(completed: asyncio.Task[None]) -> None:
+            self._radio_tasks.discard(completed)
+            if self._radio_task is completed:
+                self._radio_task = None
+            if not completed.cancelled():
+                completed.exception()
+            self._schedule_radio()
+
+        task.add_done_callback(done)
+
+    async def _radio_enqueue(self) -> int:
+        active = self._snapshot.upcoming + (
+            (self._snapshot.current,) if self._snapshot.current else ()
+        )
+        excluded = self._radio_removed | {
+            entry.video_id or video_id(entry.source_url) or entry.source_url
+            for entry in (
+                *active,
+                *(item.entry for item in self._snapshot.recently_played),
+            )
+        }
+        entries: list[QueueEntry] = []
+        remaining: list[CatalogTrack] = []
+        for track in self._radio_pool:
+            if (
+                not track.video_id
+                or not track.source_url
+                or track.unavailable
+                or track.video_id in excluded
+            ):
+                continue
+            excluded.add(track.video_id)
+            if len(self._snapshot.upcoming) + len(entries) < RADIO_BUFFER:
+                entries.append(
+                    QueueEntry(
+                        track.source_url,
+                        **{
+                            field.name: getattr(track, field.name)
+                            for field in fields(TrackMetadata)
+                        },
+                        added_by=self._radio.initiator,
+                        origin="radio",
+                    )
+                )
+            else:
+                remaining.append(track)
+        if entries:
+            await self._change(lambda player: player.enqueue_many(tuple(entries)))
+        self._radio_pool = tuple(remaining)
+        return len(entries)
+
+    async def _fill_radio(self) -> None:
+        session = self._radio.session_id
+        seed = self._radio.seed
+        fetch = False
+        continuing = self._snapshot.state in (
+            PlaybackState.PLAYING,
+            PlaybackState.LOADING,
+        )
+
+        async def prepare() -> None:
+            nonlocal fetch
+            if (
+                session != self._radio.session_id
+                or self._radio.state is not RadioState.ACTIVE
+                or self._snapshot.state is PlaybackState.PAUSED
+            ):
+                return
+            await self._radio_enqueue()
+            if len(self._snapshot.upcoming) < RADIO_BUFFER:
+                self._radio = replace(
+                    self._radio,
+                    state=radio_transition(self._radio.state, RadioEvent.FETCH),
+                )
+                fetch = True
+
+        await asyncio.shield(self._submit(prepare))
+        if not fetch or seed is None or self.radio_catalog is None:
+            return
+        error: str | None = None
+        tracks: tuple[CatalogTrack, ...] = ()
+        try:
+            async with asyncio.timeout(35):
+                tracks = await self.radio_catalog.provider.recommend(
+                    seed, RADIO_POOL_LIMIT
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            error = "Radio could not load more tracks. Try again."
+
+        async def finish() -> None:
+            if (
+                session != self._radio.session_id
+                or self._radio.state is not RadioState.LOADING
+            ):
+                return
+            if error:
+                self._radio = replace(
+                    self._radio,
+                    state=radio_transition(self._radio.state, RadioEvent.FAIL),
+                    error=error,
+                )
+                return
+            self._radio_pool = tracks[:RADIO_POOL_LIMIT]
+            if self._snapshot.state is PlaybackState.PAUSED:
+                self._radio = replace(
+                    self._radio,
+                    state=radio_transition(self._radio.state, RadioEvent.READY),
+                )
+                return
+            added = await self._radio_enqueue()
+            exhausted = not added and len(self._snapshot.upcoming) < RADIO_BUFFER
+            self._radio = replace(
+                self._radio,
+                state=radio_transition(
+                    self._radio.state,
+                    RadioEvent.FAIL if exhausted else RadioEvent.READY,
+                ),
+                error="No new recommendations available. Try again later."
+                if exhausted
+                else None,
+            )
+            if (
+                continuing
+                and self._snapshot.current is None
+                and self._snapshot.upcoming
+                and self._voice.connected
+            ):
+                await self._play()
+
+        await asyncio.shield(self._submit(finish))
 
     def _queue_entry(self, source_url: str, added_by: Contributor | None) -> QueueEntry:
         entry = (
@@ -416,6 +651,17 @@ class PlaybackController:
             else QueueEntry(source_url, added_by=added_by)
         )
         identifier = video_id(source_url)
+        if identifier and self.radio_catalog:
+            metadata = self.radio_catalog.metadata(identifier)
+            if metadata:
+                entry = replace(
+                    entry,
+                    **{
+                        field.name: getattr(metadata, field.name)
+                        for field in fields(TrackMetadata)
+                        if getattr(metadata, field.name) is not None
+                    },
+                )
         known = (
             ((self._snapshot.current,) if self._snapshot.current else ())
             + self._snapshot.upcoming
@@ -457,7 +703,11 @@ class PlaybackController:
 
     async def remove(self, entry_id: UUID) -> PlayerSnapshot:
         async def action() -> None:
+            removed = tuple(
+                entry for entry in self._snapshot.upcoming if entry.id == entry_id
+            )
             await self._change(lambda player: player.remove(entry_id))
+            self._remember_radio_removals(removed)
 
         return await asyncio.shield(self._submit(action))
 
@@ -474,6 +724,7 @@ class PlaybackController:
     async def clear(self) -> PlayerSnapshot:
         async def action() -> None:
             await self._change(Player.clear)
+            self._stop_radio()
 
         return await asyncio.shield(self._submit(action))
 
@@ -486,7 +737,9 @@ class PlaybackController:
     async def _connect(self, channel_id: int) -> None:
         if self._voice.connected and self._voice.channel_id == channel_id:
             return
-        await self._leave()
+        await self._halt()
+        await self._change(lambda player: player.voice(VoiceEvent.DISCONNECT))
+        await self._voice.disconnect()
         await self._change(lambda player: player.voice(VoiceEvent.CONNECT))
         await self._voice.connect(channel_id)
         await self._change(lambda player: player.voice(VoiceEvent.CONNECTED))
@@ -495,6 +748,7 @@ class PlaybackController:
         return await asyncio.shield(self._submit(self._leave))
 
     async def _leave(self) -> None:
+        self._stop_radio()
         await self._halt()
         await self._change(lambda player: player.voice(VoiceEvent.DISCONNECT))
         await self._voice.disconnect()
@@ -543,6 +797,7 @@ class PlaybackController:
 
     async def _stop(self) -> None:
         await self._change(Player.stop)
+        self._stop_radio()
         await self._halt()
 
     async def set_volume(self, volume: float) -> PlayerSnapshot:
@@ -734,6 +989,7 @@ class PlaybackController:
         self._submit(action)
 
     async def _fault(self, message: str, *, persist_failure: bool = True) -> None:
+        self._stop_radio()
         self._faulted = True
         entry = self._snapshot.current
         if persist_failure and self._snapshot.state in (
@@ -777,6 +1033,10 @@ class PlaybackController:
 
     async def _close(self) -> None:
         errors: list[Exception] = []
+        self._stop_radio()
+        await asyncio.gather(*tuple(self._radio_tasks), return_exceptions=True)
+        if self.radio_catalog is not None:
+            await self.radio_catalog.close()
         if self._metadata is not None:
             await self._metadata.close()
         if self.catalog is not None:

@@ -48,6 +48,10 @@ the entry and its playback history; later profile edits leave those snapshots
 unchanged. Requeuing records the person adding it again. Legacy contributors,
 including null attribution, remain intact and are not linked to new accounts.
 
+Entries also carry `origin: "manual" | "radio"`. Automatic radio entries retain
+the profile that started the radio in `added_by`. Origin and attribution survive
+history, undo and restarts. Requeuing a track manually creates a manual entry.
+
 `recently_played` contains up to 100 starts, newest first. Each item has its own
 `id`, a timezone-aware `played_at` timestamp and an `entry` with track metadata.
 Skipped tracks remain in history; unplayed removals do not enter it. Pause/resume
@@ -83,8 +87,10 @@ bodies use JSON. The supported operations are:
 
 Moving before `null` puts the entry last. Remove, move and clear affect upcoming
 entries. Use skip or stop for the current track. Both add endpoints accept video
-URLs. Batch adds accept 1 to 100 URLs, append
-the entire block in order, and commit it with one queue revision. Repeated URLs
+URLs. Batch adds accept 1 to 100 URLs, insert
+the entire block in order, and commit it with one queue revision. Manual additions
+go before the first automatic radio entry, or last when none remain. Existing
+entries keep their order, including explicit moves. Repeated URLs
 create distinct entries. Invalid input rejects the whole batch. `entry_id` is null
 for batch responses; the snapshot contains the added entries. Set
 `skip_duplicates: true` to omit videos already playing, queued or repeated within
@@ -193,6 +199,34 @@ Search and metadata extraction have a 30-second deadline; playlists have 60
 seconds. Slot waiting counts toward an outer deadline of 35 or 65 seconds.
 Capacity errors return 429 with `Retry-After: 5`; extraction errors return 502.
 Playback uses a separate resolver and does not wait for a discovery slot.
+
+## Radio
+
+`POST /api/radio/preview` accepts `kind` (`track` or `playlist`), `source_url`
+and an optional `title`. Send a UUID `Idempotency-Key`. It returns an account-owned
+preview with `id`, `seed` and up to 25 `entries`. Song and playlist radios use
+YouTube Music recommendations without a personal login. Previewing changes
+neither the queue nor playback. Individual results can use the normal add endpoint.
+
+`POST /api/radio/start` accepts `preview_id` and `expected_session_id` (null when
+radio is off). `POST /api/radio/stop` and `POST /api/radio/retry` accept the active
+`expected_session_id`. These controls use the same request keys, CSRF checks and
+mutation responses as player controls. Stale sessions return 409 (`radio_conflict`);
+missing, expired or another account's previews return 410 (`radio_preview_expired`).
+Previews expire after ten minutes and can be evicted earlier by the 32-preview limit.
+
+The shared `radio` state appears in HTTP snapshots and SSE: `state` is `off`,
+`active`, `loading` or `waiting`, alongside `session_id`, `seed`, `initiator` and
+`error`. `event_id`, `action` and `actor` identify the latest start, stop or retry
+for notifications. Reconnecting clients should display state without replaying
+old notifications.
+
+Radio fills the upcoming queue to three tracks. It excludes current and queued
+videos, the last 100 playback starts and tracks removed during this radio session.
+Provider failures or exhausted recommendations enter `waiting`; retry is explicit.
+Pause suspends replenishment. Starting radio never joins a channel or starts audio.
+Ending radio preserves queued tracks and playback. Stop, disconnect and clear-all
+disable radio. A backend restart also leaves radio off while restoring the queue.
 
 ## Handle conflicts and retries
 

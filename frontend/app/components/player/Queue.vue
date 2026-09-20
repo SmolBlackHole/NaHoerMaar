@@ -14,6 +14,7 @@ import { usePlayerStore } from "~/stores/player";
 import { useProfileStore } from "~/stores/profile";
 
 const player = usePlayerStore();
+const radio = useRadioStore();
 const profile = useProfileStore();
 const { icons } = useTheme();
 const toast = useToast();
@@ -260,6 +261,7 @@ async function clearQueue() {
 <template>
 	<section aria-labelledby="queue-heading" class="queue-section min-w-0">
 		<PlayerDiscovery />
+		<PlayerRadioStatus />
 		<div class="queue-heading">
 			<div class="queue-heading-label flex items-baseline gap-3">
 				<h2
@@ -339,6 +341,7 @@ async function clearQueue() {
 					<div class="queue-details">
 						<PlayerContributor
 							:contributor="entry.added_by"
+							:origin="entry.origin"
 							compact
 							class="queue-person"
 						/>
@@ -356,6 +359,17 @@ async function clearQueue() {
 					</div>
 					<UDropdownMenu
 						:items="[
+							{
+								label: 'Radio from this track',
+								icon: icons.radio,
+								disabled: !player.enabled,
+								onSelect: () =>
+									radio.open({
+										kind: 'track',
+										source_url: entry.source_url,
+										title: trackTitle(entry),
+									}),
+							},
 							{
 								label: 'Move to position…',
 								icon: icons.drag,

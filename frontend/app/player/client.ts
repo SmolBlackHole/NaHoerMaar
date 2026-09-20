@@ -14,6 +14,8 @@ export interface PendingRequest {
 }
 
 const messages: Record<string, string> = {
+	radio_conflict: "The radio changed. Check the current radio and try again.",
+	radio_preview_expired: "This radio preview expired. Open it again before starting.",
 	undo_unavailable: "Undo has expired or was already used. The queue is unchanged.",
 	queue_conflict: "The queue changed. Check the updated queue and try again.",
 	playback_conflict: "The track changed before your action arrived. The player is up to date.",

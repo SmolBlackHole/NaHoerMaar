@@ -6,6 +6,7 @@ import { usePlayerStore } from "~/stores/player";
 useThemeEffects();
 usePlayerNotifications();
 const player = usePlayerStore();
+const radio = useRadioStore();
 const profile = useProfileStore();
 const settings = useSettingsStore();
 const toast = useToast();
@@ -14,6 +15,7 @@ watch(
 		profile.status === "authenticated" && profile.profileComplete ? profile.profile?.id : null,
 	(signedIn) => {
 		player.dispose();
+		radio.dispose();
 		if (signedIn) player.connect();
 	},
 	{ flush: "sync", immediate: true },

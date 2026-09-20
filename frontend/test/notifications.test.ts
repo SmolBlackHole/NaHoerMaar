@@ -19,6 +19,7 @@ const track: QueueEntry = {
 	artist: null,
 	uploader_url: null,
 	added_by: null,
+	origin: "manual",
 };
 const state: PlayerState = {
 	revision: 1,
@@ -34,6 +35,16 @@ const state: PlayerState = {
 	position_seconds: 0,
 	position_updated_at: null,
 	last_issue: null,
+	radio: {
+		state: "off",
+		session_id: null,
+		seed: null,
+		initiator: null,
+		error: null,
+		event_id: null,
+		action: null,
+		actor: null,
+	},
 };
 const scopes: ReturnType<typeof effectScope>[] = [];
 afterEach(() => {
@@ -77,7 +88,7 @@ describe("player notifications", () => {
 		const issue: NonNullable<PlayerState["last_issue"]> = {
 			id: "failure-1",
 			entry_id: track.id,
-			entry: track,
+			entry: { ...track, title: "You’re here that’s the thing" },
 			fatal: false,
 			code: "playback_failed",
 			reason: "source_unavailable",
@@ -85,7 +96,10 @@ describe("player notifications", () => {
 		player.snapshot = { ...state, last_issue: issue };
 		await nextTick();
 		expect(toast.add).toHaveBeenCalledOnce();
-		expect(toast.toasts.value[0]?.title).toContain("A track");
+		expect(toast.toasts.value[0]?.title).toBe("Track skipped");
+		expect(toast.toasts.value[0]?.description).toBe(
+			"You’re here that’s the thing\nThe audio source couldn't be opened.",
+		);
 		await toast.toasts.value[0]?.actions?.[0]?.onClick?.(new Event("click") as MouseEvent);
 		expect(player.add).toHaveBeenCalledWith(track.source_url);
 		player.connection = "connecting";
@@ -219,7 +233,9 @@ describe("player notifications", () => {
 		};
 		await nextTick();
 		expect(toast.toasts.value[0]?.title).toBe("Andrey added 2 tracks");
-		expect(toast.toasts.value[0]?.description).toBe("A track · Another track · 3 duplicates skipped");
+		expect(toast.toasts.value[0]?.description).toBe(
+			"A track · Another track · 3 duplicates skipped",
+		);
 		player.uncertain = { id: "lost", path: "/api/queue", method: "POST" };
 		player.error = "Response lost";
 		await nextTick();
@@ -235,10 +251,19 @@ describe("player notifications", () => {
 		const unknown = { ...track, title: null };
 		player.snapshot = { ...state, upcoming: [unknown] };
 		const result: MutationResult = {
-			request_id: "add", code: "ok", entry_id: track.id, replayed: false,
-			snapshot: player.snapshot, added_count: 1, skipped_count: 0, removed_count: 0,
-			restored_count: 0, undo_id: null, undo_expires_at: null,
-			actor: { id: "author", name: "Andrey", avatar: "0001" }, entries: [unknown],
+			request_id: "add",
+			code: "ok",
+			entry_id: track.id,
+			replayed: false,
+			snapshot: player.snapshot,
+			added_count: 1,
+			skipped_count: 0,
+			removed_count: 0,
+			restored_count: 0,
+			undo_id: null,
+			undo_expires_at: null,
+			actor: { id: "author", name: "Andrey", avatar: "0001" },
+			entries: [unknown],
 		};
 		player.completed = { request: { id: "add", path: "/api/queue", method: "POST" }, result };
 		await nextTick();
@@ -249,7 +274,10 @@ describe("player notifications", () => {
 		expect(toast.add).toHaveBeenCalledOnce();
 		expect(toast.toasts.value[0]?.description).toBe("A track");
 		player.snapshot = { ...state, upcoming: [unknown] };
-		player.completed = { request: { id: "second", path: "/api/queue", method: "POST" }, result: { ...result, request_id: "second" } };
+		player.completed = {
+			request: { id: "second", path: "/api/queue", method: "POST" },
+			result: { ...result, request_id: "second" },
+		};
 		await nextTick();
 		toast.toasts.value[1]!.open = false;
 		player.snapshot = { ...state, revision: 3 };

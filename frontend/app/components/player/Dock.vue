@@ -115,7 +115,7 @@ async function setVolume() {
 	<section class="player-dock" aria-label="Playback controls">
 		<div class="dock-track flex min-w-0 items-center gap-3">
 			<PlayerTrackArtwork :entry="current" class="dock-cover" />
-			<div class="min-w-0">
+			<div class="min-w-0 flex-1">
 				<NuxtLink
 					to="/"
 					class="block truncate text-sm font-semibold text-highlighted hover:underline"
@@ -128,6 +128,7 @@ async function setVolume() {
 					>
 				</p>
 			</div>
+			<PlayerRadioAction v-if="current" :entry="current" labelled />
 		</div>
 		<div class="dock-transport flex items-center justify-center gap-3">
 			<UTooltip text="Stop and return track to queue">

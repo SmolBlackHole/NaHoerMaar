@@ -22,6 +22,7 @@ const track: QueueEntry = {
 	artist: null,
 	uploader_url: null,
 	added_by: null,
+	origin: "manual",
 };
 
 describe("queue positions", () => {
@@ -53,6 +54,16 @@ const state = (changes: Partial<PlayerState> = {}): PlayerState => ({
 	position_seconds: 0,
 	position_updated_at: null,
 	last_issue: null,
+	radio: {
+		state: "off",
+		session_id: null,
+		seed: null,
+		initiator: null,
+		error: null,
+		event_id: null,
+		action: null,
+		actor: null,
+	},
 	...changes,
 });
 

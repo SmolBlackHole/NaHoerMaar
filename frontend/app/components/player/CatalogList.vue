@@ -75,6 +75,10 @@ const player = usePlayerStore();
 				:aria-busy="!!item.source_url && player.isAdding(item.source_url)"
 				@click="emit('add', item)"
 			/>
+			<PlayerRadioAction
+				v-if="!selectable && item.source_url && !item.unavailable"
+				:entry="catalogEntry(item)"
+			/>
 		</li>
 		<li
 			v-for="index in loading ? 10 : loadingMore ? 4 : 0"
@@ -93,6 +97,9 @@ const player = usePlayerStore();
 			</div>
 			<div v-if="!selectable" class="grid size-11 shrink-0 place-items-center">
 				<USkeleton class="size-4" />
+			</div>
+			<div v-if="!selectable" class="grid size-11 shrink-0 place-items-center">
+				<USkeleton class="h-1 w-4" />
 			</div>
 		</li>
 	</ol>

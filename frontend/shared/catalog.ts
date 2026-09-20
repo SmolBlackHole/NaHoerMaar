@@ -27,7 +27,10 @@ export function importCounts(
 
 export type SearchSource = "youtube_music" | "youtube";
 
-export interface CatalogTrack extends Omit<QueueEntry, "id" | "source_url" | "added_by"> {
+export interface CatalogTrack extends Omit<
+	QueueEntry,
+	"id" | "source_url" | "added_by" | "origin"
+> {
 	index: number;
 	source_url: string | null;
 	unavailable: string | null;
@@ -109,6 +112,7 @@ export function catalogEntry(track: CatalogTrack): QueueEntry {
 		id: `catalog-${track.index}`,
 		source_url: track.source_url ?? "",
 		added_by: null,
+		origin: "manual",
 	};
 }
 

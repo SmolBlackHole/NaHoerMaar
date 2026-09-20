@@ -11,13 +11,17 @@ import { usePlayerStore } from "~/stores/player";
 import { useProfileStore } from "~/stores/profile";
 
 const player = usePlayerStore();
+const radio = useRadioStore();
 const { icons } = useTheme();
 const profile = useProfileStore();
 const library = createCatalogClient(profile.request);
 watch(
 	() => profile.status,
 	(status) => {
-		if (status !== "authenticated") library.dispose();
+		if (status !== "authenticated") {
+			library.dispose();
+			radio.dispose();
+		}
 	},
 );
 const {
@@ -64,6 +68,26 @@ const submitting = computed(
 const loadingPlaylist = computed(
 	() => !previewError.value && (previewPending.value || preview.value?.state === "loading"),
 );
+watch(
+	() => radio.version,
+	() => {
+		if (!radio.source) return;
+		view.value = "radio";
+		panelOpen.value = true;
+		library.setActive(false);
+		resetScroll();
+	},
+);
+async function startRadio() {
+	if (!radio.preview) return;
+	if (
+		await player.mutate("/api/radio/start", "POST", {
+			preview_id: radio.preview.id,
+			expected_session_id: player.snapshot?.radio?.session_id ?? null,
+		})
+	)
+		panelOpen.value = false;
+}
 
 watch(searchSource, () => {
 	if (query.value) {
@@ -179,14 +203,15 @@ function applyUpdate() {
 	} else library.applySearchUpdate();
 }
 function restoreFocus() {
-	if (!panelOpen.value) launcher.value?.querySelector("input")?.focus({ preventScroll: true });
+	if (!panelOpen.value && view.value !== "radio")
+		launcher.value?.querySelector("input")?.focus({ preventScroll: true });
 }
 function restoreScroll() {
 	if (scrollArea.value) scrollArea.value.scrollTop = scrollTop;
 }
 watch(panelOpen, (open) => {
 	if (!open) scrollTop = scrollArea.value?.scrollTop ?? scrollTop;
-	library.setActive(open);
+	library.setActive(open && view.value !== "radio");
 });
 onBeforeUnmount(library.dispose);
 </script>
@@ -205,7 +230,7 @@ onBeforeUnmount(library.dispose);
 			/>
 		</div>
 		<UButton
-			v-if="query || previewUrl"
+			v-if="query || previewUrl || radio.source"
 			label="Back to results"
 			color="neutral"
 			variant="link"
@@ -214,7 +239,13 @@ onBeforeUnmount(library.dispose);
 		/>
 		<USlideover
 			v-model:open="panelOpen"
-			:title="view === 'playlist' ? preview?.title || 'Playlist' : 'Find music'"
+			:title="
+				view === 'radio'
+					? 'Radio'
+					: view === 'playlist'
+						? preview?.title || 'Playlist'
+						: 'Find music'
+			"
 			:unmount-on-hide="false"
 			:close="{ class: 'size-11 justify-center' }"
 			:ui="{
@@ -235,163 +266,257 @@ onBeforeUnmount(library.dispose);
 					class="hover:underline"
 					>{{ preview?.title || "YouTube playlist" }}</a
 				>
-				<span v-else>Find music</span>
+				<span v-else>{{ view === "radio" ? "Radio" : "Find music" }}</span>
 			</template>
 			<template #body>
-				<div class="panel-search">
-					<PlayerDiscoveryInput
-						v-model="source"
-						v-model:provider="searchSource"
-						:connected="player.connection === 'live'"
+				<div
+					v-if="view === 'radio'"
+					class="panel-results px-4 sm:px-6"
+					:aria-busy="radio.loading"
+				>
+					<p class="text-lg font-medium text-highlighted mb-2">
+						{{ radio.source?.title }}
+					</p>
+					<p class="text-sm text-muted mb-5">
+						Similar tracks from YouTube Music. Your queue and current track stay in
+						place.
+					</p>
+					<div v-if="radio.error" class="discovery-message" role="alert">
+						<span>{{ radio.error }}</span>
+						<UButton
+							label="Try again"
+							:icon="icons.reload"
+							color="neutral"
+							variant="ghost"
+							class="min-h-11"
+							:disabled="!player.enabled"
+							@click="radio.source && radio.open(radio.source)"
+						/>
+					</div>
+					<PlayerCatalogList
+						v-else
+						:entries="radio.preview?.entries ?? []"
+						:loading="radio.loading"
 						:enabled="player.enabled"
-						:error="inputError"
-						:loading="submitting"
-						@submit="submit"
-						@playlist="openPlaylist"
+						@add="addResult"
 					/>
-				</div>
-				<div class="panel-update" aria-live="polite">
-					<UButton
-						v-if="view === 'search' ? searchUpdate : previewUpdate"
-						label="Show updated results"
-						:icon="icons.reload"
-						color="neutral"
-						variant="ghost"
-						:disabled="importing || player.pending || previewPending || loadingMore"
-						class="min-h-11"
-						@click="applyUpdate"
-					/>
-					<p v-else-if="refreshError" class="text-sm text-muted">{{ refreshError }}</p>
 					<p
-						v-else-if="refreshing && (results.length || preview?.state === 'ready')"
-						class="text-xs text-muted"
+						v-if="radio.preview && !radio.preview.entries.length"
+						class="py-6 text-sm text-muted"
 					>
-						Checking for updates…
+						No recommendations available for this {{ radio.source?.kind }}. Try another
+						starting point.
 					</p>
 				</div>
-				<div ref="scrollArea" class="panel-results">
-					<div v-if="view === 'search'" :aria-busy="searching || loadingMore">
-						<p v-if="query" class="mb-3 text-sm text-muted">
-							Results for “{{ query }}”
-						</p>
-						<p v-if="searching" role="status" class="sr-only">
-							Searching
-							{{ searchSource === "youtube_music" ? "YouTube Music" : "YouTube" }}…
-						</p>
-						<PlayerCatalogList
-							v-if="searching || results.length"
-							:entries="results"
-							:loading="searching && !results.length"
-							:loading-more="loadingMore"
+				<template v-else>
+					<div class="panel-search">
+						<PlayerDiscoveryInput
+							v-model="source"
+							v-model:provider="searchSource"
+							:connected="player.connection === 'live'"
 							:enabled="player.enabled"
-							@add="addResult"
+							:error="inputError"
+							:loading="submitting"
+							@submit="submit"
+							@playlist="openPlaylist"
 						/>
-						<p v-else-if="!searchError" class="py-6 text-sm text-muted">
-							{{
-								query
-									? "No tracks found. Try another title or artist."
-									: "Search for a title or artist above."
-							}}
-						</p>
-						<div v-if="searchError" role="alert" class="discovery-message">
-							<span>{{ searchError }}</span>
-							<UButton
-								label="Try again"
-								color="neutral"
-								variant="ghost"
-								:disabled="player.connection !== 'live'"
-								@click="
-									results.length && !searchExpired
-										? library.loadMore()
-										: library.search(query)
-								"
-							/>
-						</div>
-						<div v-if="results.length" class="discovery-footer">
-							<p role="status" class="text-xs text-muted tabular-nums">
-								{{ results.length }}
-								{{ results.length === 1 ? "result" : "results" }}
-							</p>
-							<UButton
-								v-if="nextOffset !== null && !searchError"
-								label="Load more"
-								:icon="icons.arrowDown"
-								:loading="loadingMore"
-								:disabled="loadingMore || player.connection !== 'live'"
-								color="neutral"
-								variant="ghost"
-								class="min-h-11"
-								@click="library.loadMore()"
-							/>
-						</div>
 					</div>
-					<div v-else :aria-busy="loadingPlaylist">
-						<div class="playlist-heading">
-							<div class="min-w-0">
-								<p role="status" class="mt-1 text-xs text-muted">
-									{{
-										loadingPlaylist
-											? `${preview?.entries.length ?? 0} tracks loaded`
-											: preview?.state === "cancelled"
-												? "Playlist loading cancelled"
-												: `${preview?.entries.length ?? 0} tracks`
-									}}
-								</p>
-							</div>
-							<UButton
-								v-if="loadingPlaylist"
-								label="Cancel"
-								:disabled="previewPending"
-								color="neutral"
-								variant="ghost"
-								@click="library.cancelPreview()"
-							/>
-							<UButton
-								v-else-if="
-									previewError ||
-									preview?.state === 'cancelled' ||
-									preview?.state === 'failed'
-								"
-								label="Reload playlist"
-								color="neutral"
-								variant="ghost"
-								@click="openPlaylist(previewUrl)"
-							/>
-						</div>
+					<div class="panel-update" aria-live="polite">
+						<UButton
+							v-if="view === 'search' ? searchUpdate : previewUpdate"
+							label="Show updated results"
+							:icon="icons.reload"
+							color="neutral"
+							variant="ghost"
+							:disabled="importing || player.pending || previewPending || loadingMore"
+							class="min-h-11"
+							@click="applyUpdate"
+						/>
+						<p v-else-if="refreshError" class="text-sm text-muted">
+							{{ refreshError }}
+						</p>
 						<p
-							v-if="previewError || preview?.error"
-							role="alert"
-							class="my-3 text-sm text-error"
+							v-else-if="refreshing && (results.length || preview?.state === 'ready')"
+							class="text-xs text-muted"
 						>
-							{{ previewError || preview?.error }}
-						</p>
-						<p v-if="preview?.truncated" class="my-3 text-sm text-muted">
-							Showing the first {{ preview.limit }} entries. The rest of this playlist
-							will not be imported.
-						</p>
-
-						<PlayerCatalogList
-							v-if="preview?.entries.length || loadingPlaylist"
-							:entries="preview?.entries ?? []"
-							:loading="loadingPlaylist && !preview?.entries.length"
-							selectable
-							:selected="selected"
-							:enabled="
-								preview?.state === 'ready' &&
-								!importing &&
-								!player.pending &&
-								!previewPending
-							"
-							@toggle="toggle"
-						/>
-						<p v-else-if="preview?.state === 'ready'" class="py-6 text-sm text-muted">
-							This playlist has no tracks available.
+							Checking for updates…
 						</p>
 					</div>
-				</div>
+					<div ref="scrollArea" class="panel-results">
+						<div v-if="view === 'search'" :aria-busy="searching || loadingMore">
+							<p v-if="query" class="mb-3 text-sm text-muted">
+								Results for “{{ query }}”
+							</p>
+							<p v-if="searching" role="status" class="sr-only">
+								Searching
+								{{
+									searchSource === "youtube_music" ? "YouTube Music" : "YouTube"
+								}}…
+							</p>
+							<PlayerCatalogList
+								v-if="searching || results.length"
+								:entries="results"
+								:loading="searching && !results.length"
+								:loading-more="loadingMore"
+								:enabled="player.enabled"
+								@add="addResult"
+							/>
+							<p v-else-if="!searchError" class="py-6 text-sm text-muted">
+								{{
+									query
+										? "No tracks found. Try another title or artist."
+										: "Search for a title or artist above."
+								}}
+							</p>
+							<div v-if="searchError" role="alert" class="discovery-message">
+								<span>{{ searchError }}</span>
+								<UButton
+									label="Try again"
+									color="neutral"
+									variant="ghost"
+									:disabled="player.connection !== 'live'"
+									@click="
+										results.length && !searchExpired
+											? library.loadMore()
+											: library.search(query)
+									"
+								/>
+							</div>
+							<div v-if="results.length" class="discovery-footer">
+								<p role="status" class="text-xs text-muted tabular-nums">
+									{{ results.length }}
+									{{ results.length === 1 ? "result" : "results" }}
+								</p>
+								<UButton
+									v-if="nextOffset !== null && !searchError"
+									label="Load more"
+									:icon="icons.arrowDown"
+									:loading="loadingMore"
+									:disabled="loadingMore || player.connection !== 'live'"
+									color="neutral"
+									variant="ghost"
+									class="min-h-11"
+									@click="library.loadMore()"
+								/>
+							</div>
+						</div>
+						<div v-else :aria-busy="loadingPlaylist">
+							<div class="playlist-heading">
+								<div class="min-w-0">
+									<p role="status" class="mt-1 text-xs text-muted">
+										{{
+											loadingPlaylist
+												? `${preview?.entries.length ?? 0} tracks loaded`
+												: preview?.state === "cancelled"
+													? "Playlist loading cancelled"
+													: `${preview?.entries.length ?? 0} tracks`
+										}}
+									</p>
+								</div>
+								<UButton
+									v-if="preview?.state === 'ready'"
+									label="Radio from playlist"
+									:icon="icons.radio"
+									variant="ghost"
+									color="neutral"
+									class="min-h-11"
+									:disabled="!player.enabled"
+									@click="
+										radio.open({
+											kind: 'playlist',
+											source_url: previewUrl,
+											title: preview.title || 'YouTube playlist',
+										})
+									"
+								/>
+								<UButton
+									v-if="loadingPlaylist"
+									label="Cancel"
+									:disabled="previewPending"
+									color="neutral"
+									variant="ghost"
+									@click="library.cancelPreview()"
+								/>
+								<UButton
+									v-else-if="
+										previewError ||
+										preview?.state === 'cancelled' ||
+										preview?.state === 'failed'
+									"
+									label="Reload playlist"
+									color="neutral"
+									variant="ghost"
+									@click="openPlaylist(previewUrl)"
+								/>
+							</div>
+							<p
+								v-if="previewError || preview?.error"
+								role="alert"
+								class="my-3 text-sm text-error"
+							>
+								{{ previewError || preview?.error }}
+							</p>
+							<p v-if="preview?.truncated" class="my-3 text-sm text-muted">
+								Showing the first {{ preview.limit }} entries. The rest of this
+								playlist will not be imported.
+							</p>
+
+							<PlayerCatalogList
+								v-if="preview?.entries.length || loadingPlaylist"
+								:entries="preview?.entries ?? []"
+								:loading="loadingPlaylist && !preview?.entries.length"
+								selectable
+								:selected="selected"
+								:enabled="
+									preview?.state === 'ready' &&
+									!importing &&
+									!player.pending &&
+									!previewPending
+								"
+								@toggle="toggle"
+							/>
+							<p
+								v-else-if="preview?.state === 'ready'"
+								class="py-6 text-sm text-muted"
+							>
+								This playlist has no tracks available.
+							</p>
+						</div>
+					</div>
+				</template>
 			</template>
-			<template v-if="view === 'playlist' && preview?.state === 'ready'" #footer>
-				<div class="w-full space-y-3">
+			<template
+				v-if="view === 'radio' || (view === 'playlist' && preview?.state === 'ready')"
+				#footer
+			>
+				<div
+					v-if="view === 'radio'"
+					class="flex w-full flex-wrap items-center justify-between gap-3"
+				>
+					<p class="text-xs text-muted">
+						{{
+							player.snapshot?.radio?.state && player.snapshot.radio.state !== "off"
+								? "Replaces the active radio. Queued tracks stay."
+								: "Keeps three tracks ready. Your requests play first."
+						}}
+					</p>
+					<UButton
+						:label="
+							player.snapshot?.radio?.state && player.snapshot.radio.state !== 'off'
+								? 'Replace radio'
+								: 'Start radio'
+						"
+						:icon="icons.radio"
+						color="primary"
+						class="min-h-11 ml-auto"
+						:disabled="
+							!player.enabled || radio.loading || !radio.preview?.entries.length
+						"
+						:loading="player.isPending('/api/radio/start')"
+						@click="startRadio"
+					/>
+				</div>
+				<div v-else class="w-full space-y-3">
 					<div class="flex flex-wrap items-center justify-between gap-2">
 						<UCheckbox
 							v-model="skipDuplicates"

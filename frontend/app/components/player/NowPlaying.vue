@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { trackArtwork, trackTitle, youtubeVideoId } from "#shared/player";
 import { usePlayerStore } from "~/stores/player";
+import { loadArtworkCrop, type ArtworkCrop } from "~/utils/artworkCrop";
 
 const props = defineProps<{ active: boolean }>();
 const emit = defineEmits<{ queue: [] }>();
@@ -15,6 +16,9 @@ const artwork = computed(() => (consent.youtube ? trackArtwork(current.value) : 
 const preview = ref<"cover" | "video">("cover");
 const videoControls = ref(false);
 const visibility = useDocumentVisibility();
+const reducedMotion = usePreferredReducedMotion();
+const motionPaused = ref(false);
+const artworkCrop = shallowRef<ArtworkCrop | null>(null);
 const videoFailed = ref(false);
 const artworkFailed = ref(false);
 const videoReady = ref(false);
@@ -26,6 +30,30 @@ const loadVideo = computed(
 watch(artwork, () => {
 	artworkFailed.value = false;
 });
+onMounted(() => {
+	watch(
+		artwork,
+		async (url, _previous, onCleanup) => {
+			artworkCrop.value = null;
+			if (!url) return;
+			const controller = new AbortController();
+			onCleanup(() => controller.abort());
+			const crop = await loadArtworkCrop(url, controller.signal);
+			if (!controller.signal.aborted) artworkCrop.value = crop;
+		},
+		{ immediate: true, flush: "sync" },
+	);
+});
+const coverVisible = computed(() => preview.value === "cover" || videoFailed.value);
+const coverMoving = computed(
+	() =>
+		props.active &&
+		visibility.value === "visible" &&
+		coverVisible.value &&
+		player.snapshot?.state === "playing" &&
+		!motionPaused.value &&
+		reducedMotion.value !== "reduce",
+);
 watch(
 	() => player.snapshot?.playback_id,
 	() => {
@@ -70,14 +98,30 @@ watch(loadVideo, (visible) => {
 		}"
 	>
 		<div class="media-stage">
-			<img
+			<div
 				v-if="artwork && !artworkFailed"
-				:src="artwork"
-				alt=""
-				referrerpolicy="no-referrer"
-				class="media-backdrop"
-				@error="artworkFailed = true"
-			/>
+				:key="artwork"
+				class="media-artwork"
+				:class="{ 'is-moving': coverMoving }"
+			>
+				<img
+					:src="artwork"
+					alt=""
+					referrerpolicy="no-referrer"
+					class="media-backdrop"
+					:class="{ 'is-cropped': artworkCrop }"
+					:style="
+						artworkCrop
+							? {
+									'--artwork-ratio': artworkCrop.ratio,
+									'--artwork-width': artworkCrop.width,
+									'--artwork-height': artworkCrop.height,
+								}
+							: undefined
+					"
+					@error="artworkFailed = true"
+				/>
+			</div>
 			<div v-else class="media-placeholder" aria-hidden="true">
 				<UIcon :name="icons.headphones" />
 			</div>
@@ -123,6 +167,16 @@ watch(loadVideo, (visible) => {
 					Video
 				</button>
 			</div>
+			<button
+				v-if="coverVisible && artwork && !artworkFailed && reducedMotion !== 'reduce'"
+				type="button"
+				class="media-tool-button"
+				:aria-label="motionPaused ? 'Resume cover motion' : 'Pause cover motion'"
+				@click="motionPaused = !motionPaused"
+			>
+				<UIcon :name="motionPaused ? icons.play : icons.pause" />
+				{{ motionPaused ? "Resume motion" : "Pause motion" }}
+			</button>
 			<button
 				v-if="!consent.youtube"
 				type="button"
@@ -180,6 +234,7 @@ watch(loadVideo, (visible) => {
 				<PlayerContributor
 					v-if="current?.added_by"
 					:contributor="current.added_by"
+					:origin="current.origin"
 					class="media-contributor"
 				/>
 				<h2
@@ -275,6 +330,26 @@ watch(loadVideo, (visible) => {
 	background: #17191c;
 	pointer-events: none;
 }
+.media-artwork {
+	position: absolute;
+	inset: 0;
+	animation: cover-drift 60s ease-in-out infinite alternate;
+	animation-play-state: paused;
+}
+.media-artwork.is-moving {
+	animation-play-state: running;
+}
+@keyframes cover-drift {
+	0% {
+		transform: translate(-1.2%, 0.6%) scale(1.06);
+	}
+	45% {
+		transform: translate(1.5%, -1.2%) scale(1.16);
+	}
+	100% {
+		transform: translate(-0.6%, 1.2%) scale(1.09);
+	}
+}
 .media-backdrop {
 	position: absolute;
 	inset: 0;
@@ -282,6 +357,21 @@ watch(loadVideo, (visible) => {
 	height: 100%;
 	object-fit: cover;
 	object-position: center;
+}
+.media-backdrop.is-cropped {
+	inset: auto;
+	left: 50%;
+	top: 50%;
+	width: max(
+		calc(100cqw / var(--artwork-width)),
+		calc(100cqh * var(--artwork-ratio) / var(--artwork-height))
+	);
+	height: max(
+		calc(100cqh / var(--artwork-height)),
+		calc(100cqw / var(--artwork-ratio) / var(--artwork-width))
+	);
+	max-width: none;
+	transform: translate(-50%, -50%);
 }
 .media-details {
 	display: grid;
@@ -485,6 +575,14 @@ watch(loadVideo, (visible) => {
 	opacity: 0.5;
 	cursor: default;
 }
+@container workspace (min-width: 901px) {
+	.media-toolbar {
+		margin-top: 0.75rem;
+	}
+	.media-details {
+		padding-bottom: 0;
+	}
+}
 @container workspace (max-width: 1000px) {
 	.media-title {
 		font-size: 2.75rem;
@@ -550,6 +648,9 @@ watch(loadVideo, (visible) => {
 	}
 }
 @media (prefers-reduced-motion: reduce) {
+	.media-artwork {
+		animation: none;
+	}
 	.media-preview-switch button,
 	.media-tool-button {
 		transition: none;

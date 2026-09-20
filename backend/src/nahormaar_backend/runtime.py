@@ -11,9 +11,12 @@ from contextlib import asynccontextmanager
 from .application.audio import VoiceError
 from .application.catalog import MediaCatalog
 from .application.playback import PlaybackController
+from .application.radio import RadioCatalog
 from .config import Settings
 from .integrations.discord_voice import DiscordVoice
 from .integrations.youtube import YouTubeResolver
+from .integrations.discovery import DiscoveryExtractor
+from .integrations.youtube_radio import YouTubeMusicRadio
 
 
 @asynccontextmanager
@@ -21,6 +24,8 @@ async def open_runtime(settings: Settings) -> AsyncGenerator[PlaybackController,
     voice = DiscordVoice(settings.ffmpeg_path)
     resolver = YouTubeResolver(settings.node_path)
     catalog = MediaCatalog(settings.node_path)
+    radio_extractor = DiscoveryExtractor(settings.node_path)
+    radio = RadioCatalog(YouTubeMusicRadio(radio_extractor.execute))
     try:
         controller = await PlaybackController.create(
             settings.database_path,
@@ -28,8 +33,11 @@ async def open_runtime(settings: Settings) -> AsyncGenerator[PlaybackController,
             voice,
             metadata_resolver=catalog,
             catalog=catalog,
+            radio_catalog=radio,
         )
     except BaseException:
+        await asyncio.shield(radio.close())
+        await asyncio.shield(radio_extractor.close())
         await asyncio.shield(catalog.close())
         await asyncio.shield(voice.close())
         raise
@@ -53,6 +61,10 @@ async def open_runtime(settings: Settings) -> AsyncGenerator[PlaybackController,
             errors: list[Exception] = []
             try:
                 await controller.close()
+            except Exception as exc:
+                errors.append(exc)
+            try:
+                await radio_extractor.close()
             except Exception as exc:
                 errors.append(exc)
             try:

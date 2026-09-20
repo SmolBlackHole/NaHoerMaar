@@ -65,8 +65,11 @@ class QueueEntry:
     artist: str | None = None
     uploader_url: str | None = None
     added_by: Contributor | None = None
+    origin: str = "manual"
 
     def __post_init__(self) -> None:
+        if self.origin not in {"manual", "radio"}:
+            raise ValueError("Invalid queue entry origin.")
         if not self.source_url.strip():
             raise ValueError("A queue entry needs a source URL.")
         if self.duration_seconds is not None and (

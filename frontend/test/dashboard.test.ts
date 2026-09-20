@@ -20,6 +20,7 @@ const entry: QueueEntry = {
 	duration_seconds: 180,
 	thumbnail_url: null,
 	added_by: null,
+	origin: "manual",
 };
 
 describe("browser profile", () => {
