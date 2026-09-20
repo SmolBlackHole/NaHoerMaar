@@ -191,12 +191,104 @@ origin: sign-in, saved profile, logout across two tabs and whitelist removal
 while idle. Removal revoked the session in 1.6 seconds and cleared the dashboard.
 Concurrent use by separate Discord accounts still needs a live check.
 
+## Queue and discovery improvements
+
+- [ ] Keep the queue as the main view. Move search results and playlist imports
+  into a shared side panel on desktop and a full-screen view on phones, with
+  one scrollable result list and a reachable playlist selection action
+- [ ] Reduce list dividers and use spacing, typography and subtle hover states
+  to separate entries. Keep Recently played secondary to the upcoming queue
+- [ ] Show cached search results, playlist contents and link metadata immediately,
+  then refresh them in the background when needed. Share identical lookups and
+  bound cache size and refresh frequency
+- [ ] Offer updated results without rearranging the list during selection.
+  Preserve playlist selections across updates and leave newly discovered tracks
+  unselected. Account for removed and changed entries as well as new ones
+- [ ] Mark tracks already in the queue and offer to skip them during playlist
+  imports, while still allowing intentional repeats
+- [ ] Undo individual removals and queue clears, restoring entries and their
+  order without overwriting changes made by other users
+- [ ] Replace the playback notice bar with Nuxt UI's toaster. Show the affected
+  track, a useful error reason and a retry action where appropriate, and avoid
+  repeating the same notification after every state update
+
+Acceptance: adding music does not push the queue out of reach. Background refresh
+preserves the current selection and scroll position, and a failed refresh leaves
+cached results visible with a clear indication that they could not be updated.
+
+## Administration
+
+- [ ] Add owner and administrator roles with backend-enforced access to
+  dashboard whitelist management
+- [ ] Select Discord server members by name when granting access, with user-ID
+  entry available when member lookup is unavailable
+- [ ] Record which administrator granted or revoked access and when. Define
+  whether administrators can manage all grants or only their own before implementation
+
 ## Next audio step
 
 - [ ] Add optional crossfade (3 to 7 seconds, off by default), with preloading
   and audio mixing between tracks
 - [ ] Keep pause, seek, skip and queue edits consistent during transitions,
   without counting either track twice in playback history
+
+## Unattended playback
+
+- [ ] Define what happens when the voice channel becomes empty: pause or leave
+  after a configurable grace period, preserving the queue and cancelling the
+  pending action if someone returns
+- [ ] Add a sleep timer with a visible remaining time and a cancel action
+
+## Backend cleanup
+
+- [ ] Organize backend modules by responsibility: domain models and FSM,
+  application services/controllers, API views and schemas, events, media
+  integrations, caching and persistence
+- [ ] Keep routes and response serialization separate from application logic.
+  HTTP requests and playback callbacks must use the same state-changing operations
+- [ ] Separate domain events from SSE delivery, preserving committed revisions,
+  reconnect snapshots and access checks
+- [ ] Give search, playlist and metadata caches explicit ownership and consistent
+  rules for freshness, background refresh, concurrent lookups and size limits.
+  Keep temporary stream URLs separate from reusable metadata
+- [ ] Group SQLAlchemy mappings, migrations and database access. Separate stored
+  records from domain and API models, with explicit transaction boundaries for
+  player state, history and accounts
+
+Acceptance: the public API, FSM transitions, session handling and restart behavior
+stay unchanged. Existing databases still migrate correctly, and tests follow the
+responsibilities of the reorganized modules.
+
+## Playback statistics and recap
+
+- [ ] Extend the Overview with bot-wide and per-user statistics, selectable time
+  periods and a personal recap inspired by Spotify Wrapped and YouTube Music Recap
+- [ ] Count accepted queue additions per user. Show most-requested and
+  most-played tracks and artists separately, along with unique tracks and artists
+- [ ] Measure actual playback minutes for the bot and for each user's requests,
+  accounting for pauses, seeks, skips and failures. Define personal listening
+  time separately; requesting a song does not prove that someone heard it
+- [ ] Show activity over time and longest active-day streaks, with explicit
+  rules for qualifying activity and timezones
+- [ ] Add playful time comparisons, such as books someone could have read or
+  kilometres they could have walked, with visible assumptions and approximate values
+- [ ] Persist the data needed for statistics independently of the last 100
+  recently played entries. Use stable track, artist and user identities where
+  available, and handle missing artist metadata without counting uploaders as artists
+- [ ] Show when collection began and where older data is incomplete. Decide
+  retention and who can view another user's personal statistics before implementation
+
+Acceptance: totals survive restarts and history pruning. Retried requests and
+playback callbacks do not inflate counts. Request counts, playback counts and
+listening time have distinct meanings, and each recap states its covered period.
+
+## Deployment and recovery
+
+- [ ] Provide a documented deployment path with HTTPS, persistent data and
+  automatic process restart after a crash, preserving manual playback resumption
+- [ ] Schedule database backups and define retention and a restore procedure
+- [ ] Test restoration into a fresh instance, including queue order, account
+  profiles and available playback statistics, with credentials configured separately
 
 ## Deferred
 
