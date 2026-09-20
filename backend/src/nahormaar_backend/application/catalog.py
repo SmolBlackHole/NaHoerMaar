@@ -19,12 +19,12 @@ from ..domain.catalog import CatalogTrack, SearchPage, SearchSource
 from ..domain.models import Contributor, QueueEntry, TrackMetadata
 from ..integrations.discovery import DiscoveryExtractor
 from ..integrations.youtube import playlist_id, video_id
+from ..integrations.youtube_metadata import metadata_text
 from ..integrations.youtube_search import (
     YouTubeMusicSearch,
     YouTubeVideoSearch,
     catalog_track,
     metadata_object,
-    metadata_text,
 )
 from .audio import TrackError
 from .search import SearchCatalog

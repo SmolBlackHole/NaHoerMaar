@@ -7,9 +7,7 @@
 from __future__ import annotations
 
 import json
-import math
 import re
-import sys
 from collections.abc import Mapping
 from pathlib import Path
 from typing import cast
@@ -22,6 +20,8 @@ from .processes import (
     ProcessTimeoutError,
     run_process,
 )
+from .youtube_metadata import track_metadata
+from .ytdlp import ytdlp_arguments
 
 _VIDEO_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
 _YOUTUBE_HOSTS = {
@@ -149,13 +149,10 @@ def _resolved_track(result: ProcessResult) -> ResolvedTrack:
     if value.get("_type") == "playlist":
         raise TrackError("Only single YouTube videos are supported.")
 
-    duration = value.get("duration")
+    metadata = track_metadata(value)
     live_status = value.get("live_status")
     if (
-        isinstance(duration, bool)
-        or not isinstance(duration, (int, float))
-        or not math.isfinite(duration)
-        or duration <= 0
+        metadata.duration_seconds is None
         or value.get("is_live") is True
         or live_status in {"is_live", "is_upcoming", "post_live", "was_live"}
     ):
@@ -175,23 +172,17 @@ def _resolved_track(result: ProcessResult) -> ResolvedTrack:
         or parsed_stream.password is not None
     ):
         raise TrackError("YouTube returned no playable audio stream.")
-    title = value.get("track") or value.get("title")
-    uploader = value.get("uploader")
-    artist = value.get("artist")
-    identifier = value.get("id")
-    thumbnail = value.get("thumbnail")
-    uploader_url = value.get("channel_url") or value.get("uploader_url")
     return ResolvedTrack(
         stream_url,
         _parse_headers(value.get("http_headers")),
         value.get("acodec") == "opus",
-        title=title if isinstance(title, str) else None,
-        uploader=uploader if isinstance(uploader, str) else None,
-        video_id=identifier if isinstance(identifier, str) else None,
-        duration_seconds=float(duration),
-        thumbnail_url=thumbnail if isinstance(thumbnail, str) else None,
-        artist=artist if isinstance(artist, str) else None,
-        uploader_url=uploader_url if isinstance(uploader_url, str) else None,
+        title=metadata.title,
+        uploader=metadata.uploader,
+        video_id=metadata.video_id,
+        duration_seconds=metadata.duration_seconds,
+        thumbnail_url=metadata.thumbnail_url,
+        artist=metadata.artist,
+        uploader_url=metadata.uploader_url,
     )
 
 
@@ -206,32 +197,17 @@ class YouTubeResolver:
         if video_id(source_url) is None:
             raise TrackError("Only single YouTube video URLs are supported.")
 
-        args = (
-            sys.executable,
-            "-m",
-            "yt_dlp",
-            "--ignore-config",
-            "--no-cache-dir",
-            "--no-plugin-dirs",
-            "--no-playlist",
-            "--no-js-runtimes",
-            "--js-runtimes",
-            f"node:{self._node_path}",
-            "--no-remote-components",
-            "--extractor-retries",
-            "0",
-            "--retries",
-            "0",
-            "--fragment-retries",
-            "0",
-            "--color",
-            "never",
-            "--format",
-            "bestaudio/best",
-            "--dump-single-json",
-            "--simulate",
-            "--",
+        args = ytdlp_arguments(
+            self._node_path,
             source_url,
+            (
+                "--no-playlist",
+                "--fragment-retries",
+                "0",
+                "--format",
+                "bestaudio/best",
+                "--dump-single-json",
+            ),
         )
         try:
             result = await run_process(args, timeout=self._timeout)

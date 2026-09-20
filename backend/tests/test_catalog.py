@@ -135,6 +135,113 @@ def test_search_limits_metadata_and_cache(monkeypatch: pytest.MonkeyPatch) -> No
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize(
+    ("operation", "options"),
+    [
+        ("search", ("--flat-playlist", "--dump-single-json")),
+        (
+            "metadata",
+            (
+                "--no-playlist",
+                "--dump-single-json",
+                "--ignore-no-formats-error",
+                "--extractor-args",
+                "youtube:player_skip=js;skip=hls,dash",
+            ),
+        ),
+        (
+            "playlist",
+            (
+                "--yes-playlist",
+                "--flat-playlist",
+                "--lazy-playlist",
+                "--dump-json",
+                "--ignore-errors",
+                "--playlist-items",
+                "1:101",
+            ),
+        ),
+    ],
+)
+def test_installed_ytdlp_accepts_discovery_arguments_offline(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    operation: str,
+    options: tuple[str, ...],
+) -> None:
+    node_path = tmp_path / "node runtime" / "node.exe"
+    calls = 0
+
+    async def check_arguments(
+        args: Sequence[str | os.PathLike[str]],
+        *,
+        timeout: float,
+        on_stdout_line: Callable[[bytes], None] | None = None,
+    ) -> ProcessResult:
+        nonlocal calls
+        calls += 1
+        command = [os.fspath(arg) for arg in args]
+        assert tuple(command[-len(options) - 2 : -2]) == options
+        assert command[-2] == "--"
+        assert (
+            command[-1]
+            == {
+                "search": "ytsearch100:Амура",
+                "metadata": VIDEO,
+                "playlist": "https://www.youtube.com/playlist?list=PL12345678901234",
+            }[operation]
+        )
+        for flag in (
+            "--ignore-config",
+            "--no-cache-dir",
+            "--no-plugin-dirs",
+            "--no-remote-components",
+            "--no-js-runtimes",
+            "--simulate",
+        ):
+            assert command.count(flag) == 1
+        assert command[command.index("--js-runtimes") + 1] == f"node:{node_path}"
+        assert command[command.index("--color") + 1] == "never"
+        for option in ("--extractor-retries", "--retries"):
+            assert command[command.index(option) + 1] == "0"
+        assert "--format" not in command and "--fragment-retries" not in command
+        assert timeout == (60 if operation == "playlist" else 30)
+        command.insert(command.index("--"), "--list-extractors")
+        result = await run_process(command, timeout=timeout)
+        assert result.returncode == 0, result.stderr.decode("utf-8", errors="replace")
+        if on_stdout_line:
+            on_stdout_line(json.dumps(item(), ensure_ascii=False).encode())
+        response = item() if operation == "metadata" else {"entries": [item()]}
+        return ProcessResult(0, json.dumps(response).encode(), b"")
+
+    async def scenario() -> None:
+        monkeypatch.setattr(extractor_module, "run_process", check_arguments)
+        catalog = MediaCatalog(node_path)
+        try:
+            if operation == "search":
+                result = await catalog.search("Амура", source=SearchSource.VIDEOS)
+                assert result.entries[0].title == item()["title"]
+            elif operation == "metadata":
+                metadata = await catalog.metadata(VIDEO)
+                assert metadata.title == item()["title"]
+            else:
+                key = uuid4()
+                catalog.start_preview(PLAYLIST, key, owner_id=key)
+                async with asyncio.timeout(65):
+                    while (
+                        catalog.preview(key, owner_id=key).state is PreviewState.LOADING
+                    ):
+                        await asyncio.sleep(0.01)
+                preview = catalog.preview(key, owner_id=key)
+                assert preview.state is PreviewState.READY and not preview.error
+                assert preview.entries[0].title == item()["title"]
+            assert calls == 1
+        finally:
+            await catalog.close()
+
+    asyncio.run(scenario())
+
+
 def test_search_pages_keep_positions_and_stop_at_end(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

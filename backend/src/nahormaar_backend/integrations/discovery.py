@@ -5,7 +5,6 @@
 """Bounded, cancellable processes used by media discovery."""
 
 import asyncio
-import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -17,6 +16,7 @@ from .processes import (
     ProcessTimeoutError,
     run_process,
 )
+from .ytdlp import ytdlp_arguments
 
 DISCOVERY_CONCURRENCY = 2
 DISCOVERY_PENDING_LIMIT = 8
@@ -37,28 +37,7 @@ class DiscoveryExtractor:
         timeout: float = 30,
         on_line: Callable[[bytes], None] | None = None,
     ) -> ProcessResult:
-        args = (
-            sys.executable,
-            "-m",
-            "yt_dlp",
-            "--ignore-config",
-            "--no-cache-dir",
-            "--no-plugin-dirs",
-            "--no-remote-components",
-            "--no-js-runtimes",
-            "--js-runtimes",
-            f"node:{self._node_path}",
-            "--extractor-retries",
-            "0",
-            "--retries",
-            "0",
-            "--color",
-            "never",
-            "--simulate",
-            *options,
-            "--",
-            source,
-        )
+        args = ytdlp_arguments(self._node_path, source, options)
         return await self.execute(args, timeout=timeout, on_line=on_line)
 
     async def execute(

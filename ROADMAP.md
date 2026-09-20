@@ -273,6 +273,12 @@ Acceptance: the public API, FSM transitions, session handling and restart behavi
 stay unchanged. Existing databases still migrate correctly, and tests follow the
 responsibilities of the reorganized modules.
 
+- [ ] When additional media backends need to be supported, introduce narrow
+  ports/protocols for source identification and resolution, and move concrete
+  adapter construction out of application services
+- [ ] When storage needs an alternative implementation, define a persistence
+  contract including its errors, so application services can use either backend
+
 ## Playback statistics and recap
 
 - [ ] Extend the Overview with bot-wide and per-user statistics, selectable time

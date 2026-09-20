@@ -69,8 +69,18 @@ def test_resolver_returns_stream_and_headers_without_downloading(
     assert captured[-1] == _VIDEO_URL
     assert captured[captured.index("--js-runtimes") + 1] == f"node:{node_path}"
     assert "--no-playlist" in captured
+    assert "--ignore-config" in captured
+    assert "--no-cache-dir" in captured
     assert "--no-plugin-dirs" in captured
+    assert "--no-remote-components" in captured
+    assert "--no-js-runtimes" in captured
+    assert captured[captured.index("--format") + 1] == "bestaudio/best"
+    for option in ("--extractor-retries", "--retries", "--fragment-retries"):
+        assert captured[captured.index(option) + 1] == "0"
+    assert captured[captured.index("--color") + 1] == "never"
+    assert "--dump-single-json" in captured
     assert "--simulate" in captured
+    assert captured[-2] == "--"
 
 
 @pytest.mark.parametrize("missing", [None, 42])
