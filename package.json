@@ -19,11 +19,10 @@
 		"test": "npm run test --workspaces"
 	},
 	"overrides": {
-		"fontless": {
-			"esbuild": "^0.28.2"
-		}
+		"esbuild": "^0.28.2"
 	},
 	"devDependencies": {
+		"fontless": "0.2.1",
 		"license-checker-rseidelsohn": "5.0.1"
 	}
 }

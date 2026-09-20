@@ -40,6 +40,12 @@ jobs:
                   cache: npm
                   cache-dependency-path: package-lock.json
 
+            - name: Install Linux audio dependencies
+              if: runner.os == 'Linux'
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install --no-install-recommends -y libopus0
+
             - name: Set up project
               run: python scripts/dev.py setup
 
