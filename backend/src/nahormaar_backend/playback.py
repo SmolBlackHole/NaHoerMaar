@@ -11,11 +11,12 @@ import logging
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, fields, replace
 from datetime import UTC, datetime
 from functools import partial
 from math import isfinite
 from pathlib import Path
+from typing import Literal
 from uuid import UUID, uuid4
 
 from . import commands
@@ -32,9 +33,17 @@ from .commands import Outcome, Receipt, Revisions
 from .catalog import PLAYLIST_LIMIT, MediaCatalog
 from .events import Snapshots
 from .fsm import VoiceEvent
-from .models import PlaybackState, PlayerSnapshot, QueueEntry, TrackMetadata
+from .models import (
+    Contributor,
+    PlaybackState,
+    PlayerSnapshot,
+    QueueEntry,
+    TrackMetadata,
+)
 from .player import Player
 from .storage import SQLiteStore, StorageError
+from .undo import Removal, UndoUnavailable
+from .youtube import video_id
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +51,11 @@ class PlaybackIssue:
     entry_id: UUID | None
     message: str
     fatal: bool = False
+    id: UUID = field(default_factory=uuid4)
+    entry: QueueEntry | None = None
+    reason: Literal["source_unavailable", "stream_interrupted", "voice_unavailable"] = (
+        "voice_unavailable"
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -299,11 +313,13 @@ class PlaybackController:
         command: commands.Command,
         *,
         actor_id: UUID | None = None,
+        actor: Contributor | None = None,
     ) -> CommandReply:
         receipt = Receipt(
             request_id,
             commands.fingerprint(command, authenticated=actor_id is not None),
             actor_id=actor_id,
+            actor=actor,
         )
         outcome = Outcome()
         replayed = False
@@ -326,6 +342,8 @@ class PlaybackController:
                 outcome = await self._dispatch(command, receipt)
             except KeyError:
                 outcome = Outcome("entry_not_found", 404)
+            except UndoUnavailable:
+                outcome = Outcome("undo_unavailable", 410)
             except ValueError:
                 outcome = Outcome("invalid_action", 409)
             except VoiceError as exc:
@@ -348,27 +366,49 @@ class PlaybackController:
         operation: Callable[[Player], PlayerSnapshot]
         match command:
             case commands.Add(source_url, added_by):
-                entry = (
-                    self.catalog.queue_entry(source_url, added_by)
-                    if self.catalog
-                    else QueueEntry(source_url, added_by=added_by)
-                )
+                entry = self._queue_entry(source_url, added_by)
                 operation = partial(Player.enqueue, entry=entry)
-                outcome = Outcome(entry_id=entry.id)
-            case commands.AddMany(source_urls, added_by):
+                outcome = Outcome(entry_id=entry.id, added_count=1, entries=(entry,))
+            case commands.AddMany(source_urls, added_by, skip_duplicates):
                 if not 1 <= len(source_urls) <= PLAYLIST_LIMIT:
                     raise ValueError("Invalid batch size.")
-                entries = tuple(
-                    self.catalog.queue_entry(url, added_by)
-                    if self.catalog
-                    else QueueEntry(url, added_by=added_by)
-                    for url in source_urls
-                )
+                selected: list[str] = list(source_urls)
+                if skip_duplicates:
+                    active = self._snapshot.upcoming + (
+                        (self._snapshot.current,) if self._snapshot.current else ()
+                    )
+                    seen = {
+                        video_id(entry.source_url) or entry.source_url
+                        for entry in active
+                    }
+                    selected = []
+                    for url in source_urls:
+                        identifier = video_id(url) or url
+                        if identifier not in seen:
+                            selected.append(url)
+                            seen.add(identifier)
+                entries = tuple(self._queue_entry(url, added_by) for url in selected)
                 operation = partial(Player.enqueue_many, entries=entries)
-                outcome = Outcome()
+                outcome = Outcome(
+                    added_count=len(entries),
+                    skipped_count=len(source_urls) - len(entries),
+                    entries=entries,
+                )
             case commands.Remove(entry_id):
                 operation = partial(Player.remove, entry_id=entry_id)
                 outcome = Outcome()
+            case commands.Undo(undo_id):
+                removal = await self._worker.call(
+                    lambda player: player.removal(undo_id, receipt.actor_id)
+                )
+                receipt = replace(receipt, consume_undo=undo_id)
+                operation = partial(Player.restore_removal, removal=removal)
+                outcome = Outcome(
+                    restored_count=removal.count,
+                    entries=tuple(
+                        entry for group in removal.groups for entry in group.entries
+                    ),
+                )
             case commands.Move(entry_id, before_entry_id, _):
                 operation = partial(
                     Player.move_before,
@@ -399,12 +439,76 @@ class PlaybackController:
             case commands.Disconnect():
                 await self._leave()
                 return Outcome()
+        if isinstance(command, (commands.Remove, commands.Clear)):
+            removed = {
+                entry.id
+                for entry in self._snapshot.upcoming
+                if (
+                    isinstance(command, commands.Remove)
+                    and entry.id == command.entry_id
+                )
+                or (
+                    isinstance(command, commands.Clear)
+                    and (
+                        command.contributor_id is None
+                        or (
+                            entry.added_by is not None
+                            and entry.added_by.id == command.contributor_id
+                        )
+                    )
+                )
+            }
+            outcome = replace(
+                outcome,
+                removed_count=len(removed),
+                entries=tuple(
+                    entry for entry in self._snapshot.upcoming if entry.id in removed
+                ),
+            )
+            if removed and receipt.actor_id is not None:
+                removal = Removal.capture(
+                    self._snapshot.upcoming, removed, receipt.actor_id
+                )
+                receipt = replace(receipt, removal=removal)
+                outcome = replace(
+                    outcome, undo_id=removal.id, undo_expires_at=removal.expires_at
+                )
+        outcome = replace(outcome, actor=receipt.actor)
         await self._change(
             lambda player: player.apply_request(
                 replace(receipt, outcome=outcome), operation
             )
         )
         return outcome
+
+    def _queue_entry(self, source_url: str, added_by: Contributor | None) -> QueueEntry:
+        entry = (
+            self.catalog.queue_entry(source_url, added_by)
+            if self.catalog
+            else QueueEntry(source_url, added_by=added_by)
+        )
+        identifier = video_id(source_url)
+        known = (
+            ((self._snapshot.current,) if self._snapshot.current else ())
+            + self._snapshot.upcoming
+            + tuple(item.entry for item in self._snapshot.recently_played)
+        )
+        for candidate in known:
+            if (
+                identifier
+                and (candidate.video_id or video_id(candidate.source_url)) == identifier
+            ):
+                entry = replace(
+                    entry,
+                    **{
+                        field.name: getattr(candidate, field.name)
+                        for field in fields(TrackMetadata)
+                        if getattr(entry, field.name) is None
+                    },
+                )
+                if entry.title and entry.duration_seconds is not None:
+                    break
+        return entry
 
     async def _change(self, operation: Callable[[Player], PlayerSnapshot]) -> None:
         self._snapshot = await self._worker.call(operation)
@@ -696,7 +800,15 @@ class PlaybackController:
         if entry is None:
             return
         retry = error.retryable and not self._retried
-        self._last_issue = PlaybackIssue(entry.id, str(error))
+        if not retry:
+            self._last_issue = PlaybackIssue(
+                entry.id,
+                str(error),
+                entry=entry,
+                reason="stream_interrupted"
+                if error.retryable
+                else "source_unavailable",
+            )
         await self._change(Player.fail)
         await self._halt()
         await self._change(Player.play if retry else Player.skip)

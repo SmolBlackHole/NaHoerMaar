@@ -71,6 +71,7 @@ bodies use JSON. The supported operations are:
 | `DELETE /api/queue/{entry_id}`    | No body                                                                           |
 | `POST /api/queue/{entry_id}/move` | `{"before_entry_id": null, "expected_queue_revision": 3}`                         |
 | `POST /api/queue/clear`           | `{"expected_queue_revision": 3}`                                                  |
+| `POST /api/queue/undo`            | `{"undo_id": "REMOVAL_UUID"}`                                                      |
 | `POST /api/player/play`           | `{"expected_playback_id": null}` when idle; the current playback ID when resuming |
 | `POST /api/player/pause`          | `{"expected_playback_id": "CURRENT_PLAYBACK_UUID"}`                               |
 | `POST /api/player/skip`           | `{"expected_playback_id": "CURRENT_PLAYBACK_UUID"}`                               |
@@ -85,13 +86,35 @@ entries. Use skip or stop for the current track. Both add endpoints accept video
 URLs. Batch adds accept 1 to 100 URLs, append
 the entire block in order, and commit it with one queue revision. Repeated URLs
 create distinct entries. Invalid input rejects the whole batch. `entry_id` is null
-for batch responses; the snapshot contains the added entries.
+for batch responses; the snapshot contains the added entries. Set
+`skip_duplicates: true` to omit videos already playing, queued or repeated within
+the batch. Matching uses YouTube video IDs across URL variants and runs when the
+batch is inserted. The default is false. Replies include `added_count` and
+`skipped_count`, including when a request is replayed.
 
 To clear one person's upcoming entries, include their contributor UUID as
 `contributor_id` in `POST /api/queue/clear`. The filter matches IDs, not names.
 Omitting it or sending null clears everyone's upcoming entries. Both operations
 commit once, check `expected_queue_revision`, and preserve the current track and
 playback history.
+
+Removal replies include `removed_count`, `undo_id` and `undo_expires_at` when
+entries were removed. The acting user has 12 seconds to send the undo ID to
+`POST /api/queue/undo` with a new idempotency key. Undo restores the original entry
+IDs, metadata and authors near their surviving neighbors. If those neighbors are
+gone or reversed, entries are appended in their original order. Playback, history
+and subsequent edits stay intact. After clearing the entire queue, later additions
+remain ahead of restored entries.
+
+Undo is single-use and returns `restored_count`. Expired, consumed or another
+user's undo IDs return HTTP 410 with `code: "undo_unavailable"`. A retry with the
+same idempotency key replays the original outcome without restoring twice.
+
+Add, remove, clear and undo replies include `actor` (the acting user's profile)
+and `entries` (the affected tracks). These are stored with the operation result,
+so retries retain the original names and metadata even after profile edits or
+removal from the queue. Older receipts can have no actor or entries. New tracks
+may still have pending metadata; subsequent state updates provide their titles.
 
 Seeking moves the shared Discord audio to an absolute position in seconds.
 The position must be at least zero and less than the current track's duration.
@@ -100,6 +123,11 @@ Only playing and paused tracks can seek; a paused track stays paused.
 Mutation responses contain `request_id`, `code`, `entry_id` (for additions),
 `replayed` and a fresh `snapshot`. Successful operations use HTTP 200 and
 `code: "ok"`.
+
+Playback issues have a stable `id`, the affected `entry` when available, and a
+public `reason`: `source_unavailable`, `stream_interrupted`, `voice_unavailable`
+or `backend_halted`. Use the issue ID to suppress repeated notifications across
+snapshots and reconnects. Internal exception text and stream URLs are not exposed.
 
 ## Find music
 

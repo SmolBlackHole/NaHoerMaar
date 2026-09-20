@@ -16,7 +16,7 @@ import { useProfileStore } from "~/stores/profile";
 const player = usePlayerStore();
 const profile = useProfileStore();
 const { icons } = useTheme();
-const feedback = ref("");
+const toast = useToast();
 const clearing = ref<{
 	revision: number;
 	contributor: ListenerProfile | null;
@@ -159,8 +159,7 @@ async function move(index: number, direction: -1 | 1) {
 	const entry = queue.value[index];
 	if (!entry || !player.snapshot) return;
 	const before = queue.value[index + (direction === -1 ? -1 : 2)]?.id ?? null;
-	if (await player.move(entry.id, before, player.snapshot.queue_revision))
-		feedback.value = "Queue order updated.";
+	await player.move(entry.id, before, player.snapshot.queue_revision);
 }
 
 async function finishDrag(event: SortableEvent) {
@@ -176,7 +175,11 @@ async function finishDrag(event: SortableEvent) {
 		)
 			return;
 		if (player.snapshot?.queue_revision !== moving.revision) {
-			feedback.value = "The queue changed while you were dragging. Try again.";
+			toast.add({
+				title: "The queue changed while you were dragging",
+				description: "Try moving the track again.",
+				color: "warning",
+			});
 			return;
 		}
 		const before = queueMoveTarget(ids, moving.id, event.newDraggableIndex + 1);
@@ -185,8 +188,7 @@ async function finishDrag(event: SortableEvent) {
 		const entry = moving.entries.find((entry) => entry.id === moving.id)!;
 		reordered.splice(event.newDraggableIndex, 0, entry);
 		queue.value = reordered;
-		if (await player.move(moving.id, before, moving.revision))
-			feedback.value = "Queue order updated.";
+		await player.move(moving.id, before, moving.revision);
 	} finally {
 		dragging.value = null;
 		queue.value = [...(player.snapshot?.upcoming ?? [])];
@@ -216,13 +218,16 @@ async function submitPosition() {
 	if (!target) return;
 	if (player.snapshot?.queue_revision !== target.revision) {
 		placing.value = null;
-		feedback.value = "The queue changed. Choose the position again.";
+		toast.add({
+			title: "The queue changed",
+			description: "Choose the position again.",
+			color: "warning",
+		});
 		return;
 	}
 	const before = queueMoveTarget(target.ids, target.id, Number(target.position));
 	if (before === undefined) return;
 	if (await player.move(target.id, before, target.revision)) {
-		feedback.value = `Moved to position ${target.position}.`;
 		placing.value = null;
 	}
 }
@@ -244,18 +249,11 @@ function confirmClear(contributor: ListenerProfile | null) {
 async function clearQueue() {
 	const target = clearing.value;
 	clearing.value = null;
-	if (
-		target &&
-		(await player.mutate("/api/queue/clear", "POST", {
+	if (target)
+		await player.mutate("/api/queue/clear", "POST", {
 			expected_queue_revision: target.revision,
 			...(target.contributor ? { contributor_id: target.contributor.id } : {}),
-		}))
-	)
-		feedback.value = target.mine
-			? "Your upcoming tracks were removed."
-			: target.contributor
-				? `Upcoming tracks added by ${target.contributor.name} were removed.`
-				: "Queue cleared.";
+		});
 }
 </script>
 
@@ -281,6 +279,8 @@ async function clearQueue() {
 			>
 				<UButton
 					label="Remove"
+					:loading="player.isPending('/api/queue/clear')"
+					:aria-busy="player.isPending('/api/queue/clear')"
 					:icon="icons.trash"
 					:trailing-icon="icons.chevronDown"
 					color="neutral"
@@ -386,6 +386,10 @@ async function clearQueue() {
 					>
 						<UButton
 							:icon="icons.ellipsis"
+							:loading="
+								player.isPending('/api/queue/' + entry.id) ||
+								player.isPending('/api/queue/' + entry.id + '/move')
+							"
 							:aria-label="'Options for ' + trackTitle(entry)"
 							color="neutral"
 							variant="ghost"
@@ -415,6 +419,7 @@ async function clearQueue() {
 						<UButton
 							type="submit"
 							label="Move"
+							:loading="player.isPending('/api/queue/' + entry.id + '/move')"
 							color="neutral"
 							:disabled="!player.enabled"
 						/>
@@ -447,9 +452,6 @@ async function clearQueue() {
 				</p>
 			</div>
 		</div>
-		<p role="status" aria-live="polite" class="queue-feedback text-xs text-muted">
-			{{ feedback }}
-		</p>
 		<UModal
 			:open="clearing !== null"
 			:ui="{ footer: 'justify-end' }"
@@ -492,9 +494,6 @@ async function clearQueue() {
 	justify-content: space-between;
 	gap: 0.75rem;
 	margin-bottom: 0.75rem;
-}
-.queue-feedback:not(:empty) {
-	margin-top: 0.75rem;
 }
 .queue-details {
 	display: contents;

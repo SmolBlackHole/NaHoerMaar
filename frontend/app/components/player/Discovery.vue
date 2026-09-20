@@ -3,6 +3,7 @@ import {
 	musicSource,
 	selectedSources,
 	reconcileSelection,
+	importCounts,
 	type CatalogTrack,
 } from "#shared/catalog";
 import { createCatalogClient } from "~/player/catalog";
@@ -47,11 +48,19 @@ let scrollTop = 0;
 const view = ref("search");
 const selected = ref(new Set<number>());
 const importing = ref(false);
+const skipDuplicates = ref(false);
 const parsed = computed(() => musicSource(source.value));
 const choices = computed(
 	() => preview.value?.entries.filter((item) => item.source_url && !item.unavailable) ?? [],
 );
 const selection = computed(() => selectedSources(preview.value?.entries ?? [], selected.value));
+const counts = computed(() => importCounts(selection.value, player.snapshot, skipDuplicates.value));
+const submitting = computed(
+	() =>
+		searching.value ||
+		previewPending.value ||
+		(parsed.value.kind === "video" && player.isAdding(parsed.value.url)),
+);
 const loadingPlaylist = computed(
 	() => !previewError.value && (previewPending.value || preview.value?.state === "loading"),
 );
@@ -114,25 +123,12 @@ async function submit() {
 	const submitted = source.value;
 	if (await player.add(value.url)) {
 		if (source.value === submitted) source.value = "";
-		toast.add({ title: "Track added to the queue" });
-	} else
-		toast.add({
-			title: "Could not add the track",
-			description: player.error || undefined,
-			color: "error",
-		});
+	}
 }
 
 async function addResult(item: CatalogTrack) {
 	if (!item.source_url || item.unavailable) return;
-	if (await player.add(item.source_url))
-		toast.add({ title: "Added to queue", description: item.title || "Track" });
-	else
-		toast.add({
-			title: "Could not add the track",
-			description: player.error || undefined,
-			color: "error",
-		});
+	await player.add(item.source_url);
 }
 
 function toggle(index: number) {
@@ -156,20 +152,13 @@ async function importSelection() {
 		const urls = [...selection.value];
 		const importedPreview = preview.value.id;
 		const importedSelection = selected.value;
+		const skip = skipDuplicates.value;
 		if (!(await library.validatePreview()) || preview.value?.id !== importedPreview) return;
-		if (await player.addMany(urls)) {
+		if (await player.addMany(urls, skip)) {
 			if (preview.value?.id === importedPreview && selected.value === importedSelection)
 				selected.value = new Set();
-			toast.add({
-				title: `${urls.length} ${urls.length === 1 ? "track" : "tracks"} added to the queue`,
-			});
 			if (preview.value?.id === importedPreview) panelOpen.value = false;
-		} else
-			toast.add({
-				title: "Could not import the selection",
-				description: player.error || undefined,
-				color: "error",
-			});
+		}
 	} finally {
 		importing.value = false;
 	}
@@ -210,6 +199,7 @@ onBeforeUnmount(library.dispose);
 				:connected="player.connection === 'live'"
 				:enabled="player.enabled"
 				:error="inputError"
+				:loading="submitting"
 				@submit="submit"
 				@playlist="openPlaylist"
 			/>
@@ -229,7 +219,7 @@ onBeforeUnmount(library.dispose);
 			:close="{ class: 'size-11 justify-center' }"
 			:ui="{
 				content: 'w-full max-w-none sm:max-w-2xl ring-0 discovery-panel',
-				header: 'border-0 px-4 sm:px-6',
+				header: 'h-(--ui-header-height) shrink-0 border-0 px-4 sm:px-6',
 				body: 'p-0 sm:p-0 flex min-h-0 flex-col',
 				footer: 'border-0 p-4 sm:p-6',
 			}"
@@ -255,6 +245,7 @@ onBeforeUnmount(library.dispose);
 						:connected="player.connection === 'live'"
 						:enabled="player.enabled"
 						:error="inputError"
+						:loading="submitting"
 						@submit="submit"
 						@playlist="openPlaylist"
 					/>
@@ -400,34 +391,55 @@ onBeforeUnmount(library.dispose);
 				</div>
 			</template>
 			<template v-if="view === 'playlist' && preview?.state === 'ready'" #footer>
-				<div v-if="preview?.state === 'ready' && choices.length" class="playlist-selection">
-					<UButton
-						:label="selection.length === choices.length ? 'Deselect all' : 'Select all'"
-						color="neutral"
-						variant="ghost"
-						class="min-h-11"
-						:disabled="importing || previewPending"
-						@click="selectAll"
-					/>
-					<span class="text-xs text-muted tabular-nums"
-						>{{ selection.length }} selected</span
+				<div class="w-full space-y-3">
+					<div class="flex flex-wrap items-center justify-between gap-2">
+						<UCheckbox
+							v-model="skipDuplicates"
+							label="Skip duplicates"
+							:disabled="importing"
+						/>
+						<span
+							v-if="skipDuplicates && counts.skipped"
+							class="text-xs text-muted"
+							role="status"
+							>{{ counts.skipped }} already playing, queued or selected twice</span
+						>
+					</div>
+					<div
+						v-if="preview?.state === 'ready' && choices.length"
+						class="playlist-selection"
 					>
-					<UButton
-						:label="`Add ${selection.length || ''} ${selection.length === 1 ? 'track' : 'tracks'}`"
-						:icon="icons.plus"
-						color="primary"
-						variant="solid"
-						class="ml-auto min-h-11"
-						:disabled="
-							!player.enabled ||
-							!selection.length ||
-							!!previewError ||
-							previewPending ||
-							importing
-						"
-						:loading="player.pending || importing"
-						@click="importSelection"
-					/>
+						<UButton
+							:label="
+								selection.length === choices.length ? 'Deselect all' : 'Select all'
+							"
+							color="neutral"
+							variant="ghost"
+							class="min-h-11"
+							:disabled="importing || previewPending"
+							@click="selectAll"
+						/>
+						<span class="text-xs text-muted tabular-nums"
+							>{{ selection.length }} selected</span
+						>
+						<UButton
+							:label="`Add ${counts.added} ${counts.added === 1 ? 'track' : 'tracks'}`"
+							:icon="icons.plus"
+							color="primary"
+							variant="solid"
+							class="ml-auto min-h-11"
+							:disabled="
+								!player.enabled ||
+								!counts.added ||
+								!!previewError ||
+								previewPending ||
+								importing
+							"
+							:loading="importing"
+							:aria-busy="importing"
+							@click="importSelection"
+						/>
+					</div>
 				</div>
 			</template>
 		</USlideover>
@@ -438,7 +450,7 @@ onBeforeUnmount(library.dispose);
 	margin-bottom: 1.75rem;
 }
 .panel-search {
-	padding: 0 1rem 1rem;
+	padding: 0.5rem 1rem 1rem;
 	flex-shrink: 0;
 }
 .panel-update {

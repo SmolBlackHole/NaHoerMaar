@@ -26,14 +26,6 @@ async function openQueue() {
 		if (selected.value === "queue") document.getElementById("youtube-link")?.focus();
 	});
 }
-const visibility = useDocumentVisibility();
-const connectionLabel = computed(() =>
-	player.connection === "live"
-		? "Live"
-		: player.connection === "connecting"
-			? "Connecting"
-			: "Disconnected",
-);
 </script>
 
 <template>
@@ -65,34 +57,37 @@ const connectionLabel = computed(() =>
 						</TabsList>
 					</template>
 					<template #right>
-						<span
-							v-if="player.pending"
-							role="status"
-							class="sr-only text-muted text-xs sm:not-sr-only"
-							>Updating…</span
-						>
 						<PlayerVoiceChannel compact />
-						<span
-							class="connection-status"
-							:class="{ 'is-visible': visibility === 'visible' }"
-							role="status"
-							><span :class="{ 'is-live': player.connection === 'live' }" />{{
-								connectionLabel
-							}}</span
-						>
+						<PlayerConnection />
 					</template>
 				</UDashboardNavbar>
 			</template>
 			<template #body>
-				<TabsContent value="player" class="music-tab-content">
-					<PlayerNowPlaying :active="selected === 'player'" @queue="openQueue" />
-				</TabsContent>
-				<TabsContent value="queue" class="music-tab-content">
-					<div class="queue-workspace">
-						<PlayerQueue />
-						<PlayerHistory />
-					</div>
-				</TabsContent>
+				<Transition name="player-view" :duration="{ enter: 200, leave: 0 }">
+					<TabsContent
+						v-show="selected === 'player'"
+						force-mount
+						value="player"
+						class="music-tab-content"
+						:inert="selected !== 'player'"
+					>
+						<PlayerNowPlaying :active="selected === 'player'" @queue="openQueue" />
+					</TabsContent>
+				</Transition>
+				<Transition name="player-view" :duration="{ enter: 200, leave: 0 }">
+					<TabsContent
+						v-show="selected === 'queue'"
+						force-mount
+						value="queue"
+						class="music-tab-content"
+						:inert="selected !== 'queue'"
+					>
+						<div class="queue-workspace">
+							<PlayerQueue />
+							<PlayerHistory />
+						</div>
+					</TabsContent>
+				</Transition>
 			</template>
 		</UDashboardPanel>
 	</TabsRoot>
@@ -105,39 +100,6 @@ const connectionLabel = computed(() =>
 	flex: 1;
 	min-width: 0;
 	min-height: 0;
-}
-.connection-status {
-	display: inline-flex;
-	align-items: center;
-	gap: 0.5rem;
-	font-size: 0.75rem;
-	color: var(--ui-text-muted);
-}
-.connection-status > span {
-	width: 0.375rem;
-	height: 0.375rem;
-	border-radius: 50%;
-	background: var(--ui-text-dimmed);
-}
-.connection-status > .is-live {
-	background: var(--ui-primary);
-}
-.connection-status.is-visible > .is-live {
-	animation: live-breathe 3.2s ease-in-out infinite;
-}
-@keyframes live-breathe {
-	0%,
-	100% {
-		opacity: 1;
-	}
-	50% {
-		opacity: 0.45;
-	}
-}
-@media (prefers-reduced-motion: reduce) {
-	.connection-status.is-visible > .is-live {
-		animation: none;
-	}
 }
 .music-tab-list {
 	display: flex;
@@ -183,20 +145,18 @@ const connectionLabel = computed(() =>
 	min-width: 0;
 	outline-offset: 4px;
 }
-.music-tab-content[data-state="active"] {
-	animation: player-view-enter 180ms cubic-bezier(0.16, 1, 0.3, 1);
+.player-view-enter-active {
+	transition: opacity 200ms ease-out;
 }
-@keyframes player-view-enter {
-	from {
-		opacity: 0.35;
-	}
-	to {
-		opacity: 1;
-	}
+.player-view-enter-from {
+	opacity: 0;
+}
+.player-view-leave-active {
+	display: none !important;
 }
 @media (prefers-reduced-motion: reduce) {
-	.music-tab-content[data-state="active"] {
-		animation: none;
+	.player-view-enter-active {
+		transition: none;
 	}
 }
 .player-page {

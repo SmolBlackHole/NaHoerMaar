@@ -6,10 +6,12 @@
 
 import json
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from .models import ANONYMOUS_CONTRIBUTOR, Contributor
+from .models import ANONYMOUS_CONTRIBUTOR, Contributor, QueueEntry
+from .undo import Removal
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,11 +24,17 @@ class Add:
 class AddMany:
     source_urls: tuple[str, ...]
     added_by: Contributor | None = None
+    skip_duplicates: bool = False
 
 
 @dataclass(frozen=True, slots=True)
 class Remove:
     entry_id: UUID
+
+
+@dataclass(frozen=True, slots=True)
+class Undo:
+    undo_id: UUID
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +81,7 @@ type Command = (
     Add
     | AddMany
     | Remove
+    | Undo
     | Move
     | Clear
     | Control
@@ -85,6 +94,8 @@ type Command = (
 
 def fingerprint(command: Command, *, authenticated: bool = False) -> str:
     payload = asdict(command)
+    if isinstance(command, AddMany) and not command.skip_duplicates:
+        payload.pop("skip_duplicates")
     if authenticated and isinstance(command, (Add, AddMany)):
         # Attribution is supplied by the account, not the request. A profile edit
         # between a request and its retry must not change the request's identity.
@@ -107,6 +118,14 @@ class Outcome:
     code: str = "ok"
     status_code: int = 200
     entry_id: UUID | None = None
+    added_count: int = 0
+    skipped_count: int = 0
+    removed_count: int = 0
+    restored_count: int = 0
+    undo_id: UUID | None = None
+    undo_expires_at: datetime | None = None
+    actor: Contributor | None = None
+    entries: tuple[QueueEntry, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,6 +134,9 @@ class Receipt:
     fingerprint: str
     outcome: Outcome | None = None
     actor_id: UUID | None = None
+    removal: Removal | None = None
+    consume_undo: UUID | None = None
+    actor: Contributor | None = None
 
 
 @dataclass(frozen=True, slots=True)

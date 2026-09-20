@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from nahormaar_backend.api_models import State
 from nahormaar_backend.audio import (
     ResolvedTrack,
     TrackError,
@@ -362,6 +363,7 @@ def test_transient_failure_retries_once_with_fresh_attempt_then_skips(
             retry_attempt = controller.status.attempt_id
             assert initial_attempt is not None and retry_attempt != initial_attempt
             assert resolver.calls[:2] == [first.source_url, first.source_url]
+            assert controller.status.last_issue is None
 
             resolver.fail(1, "still temporary", retryable=True)
             await _wait_until(lambda: len(resolver.requests) == 3)
@@ -373,6 +375,15 @@ def test_transient_failure_retries_once_with_fresh_attempt_then_skips(
             assert controller.snapshot.current == second
             assert controller.status.last_issue is not None
             assert controller.status.last_issue.entry_id == first.id
+            public_issue = State.from_status(controller.status).last_issue
+            assert public_issue is not None and public_issue.entry is not None
+            assert public_issue.entry.id == first.id
+            assert public_issue.reason == "stream_interrupted"
+            assert "still temporary" not in public_issue.model_dump_json()
+            assert (
+                State.from_status(await controller.read_status()).last_issue
+                == public_issue
+            )
         finally:
             await controller.close()
 
@@ -394,6 +405,9 @@ def test_permanent_failure_skips_without_retry(tmp_path: Path) -> None:
             await _wait_until(lambda: len(resolver.requests) == 2)
             assert resolver.calls == [first.source_url, second.source_url]
             assert controller.snapshot.current == second
+            assert controller.status.last_issue is not None
+            assert controller.status.last_issue.entry == first
+            assert controller.status.last_issue.reason == "source_unavailable"
         finally:
             await controller.close()
 

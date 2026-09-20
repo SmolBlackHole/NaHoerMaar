@@ -250,7 +250,10 @@ def create_app(
         active: PlaybackController,
     ) -> dto.MutationResult:
         reply = await active.request(
-            request_id, command, actor_id=user.account.profile.id
+            request_id,
+            command,
+            actor_id=user.account.profile.id,
+            actor=user.account.profile,
         )
         response.status_code = reply.outcome.status_code
         return dto.MutationResult(
@@ -259,6 +262,20 @@ def create_app(
             entry_id=reply.outcome.entry_id,
             replayed=reply.replayed,
             snapshot=dto.State.from_status(reply.status),
+            added_count=reply.outcome.added_count,
+            skipped_count=reply.outcome.skipped_count,
+            removed_count=reply.outcome.removed_count,
+            restored_count=reply.outcome.restored_count,
+            undo_id=reply.outcome.undo_id,
+            undo_expires_at=reply.outcome.undo_expires_at,
+            actor=(
+                dto.ContributorData.model_validate(reply.outcome.actor)
+                if reply.outcome.actor is not None
+                else None
+            ),
+            entries=tuple(
+                dto.Entry.from_entry(entry) for entry in reply.outcome.entries
+            ),
         )
 
     @app.get("/api/channels")
@@ -318,6 +335,7 @@ def create_app(
             commands.AddMany(
                 body.source_urls,
                 user.account.profile,
+                body.skip_duplicates,
             ),
             response,
             active,
@@ -366,6 +384,18 @@ def create_app(
             commands.Clear(body.expected_queue_revision, body.contributor_id),
             response,
             active,
+        )
+
+    @app.post("/api/queue/undo")
+    async def undo(
+        user: CurrentUser,
+        body: dto.UndoInput,
+        response: Response,
+        request_id: RequestID,
+        active: Annotated[PlaybackController, Depends(player)],
+    ) -> dto.MutationResult:
+        return await mutate(
+            user, request_id, commands.Undo(body.undo_id), response, active
         )
 
     @app.post("/api/player/{action}")

@@ -4,7 +4,6 @@ import { usePlayerStore } from "~/stores/player";
 defineProps<{ entries: RecentTrack[] }>();
 const player = usePlayerStore();
 const { icons } = useTheme();
-const feedback = ref("");
 function playedAt(value: string) {
 	return new Intl.DateTimeFormat(undefined, {
 		month: "short",
@@ -14,9 +13,7 @@ function playedAt(value: string) {
 	}).format(new Date(value));
 }
 async function requeue(item: RecentTrack) {
-	feedback.value = "";
-	if (await player.add(item.entry.source_url))
-		feedback.value = `${trackTitle(item.entry)} added to the queue.`;
+	await player.add(item.entry.source_url);
 }
 </script>
 
@@ -67,17 +64,19 @@ async function requeue(item: RecentTrack) {
 					:title="`Queue ${trackTitle(item.entry)} again`"
 					class="recent-add ml-auto size-11 shrink-0 justify-center"
 					:disabled="!player.enabled"
+					:loading="player.isAdding(item.entry.source_url)"
+					:aria-busy="player.isAdding(item.entry.source_url)"
 					@click="requeue(item)"
 				/>
 			</li>
 		</ol>
 		<p v-else class="py-6 text-sm text-muted">Tracks appear here once they start playing.</p>
-		<p role="status" class="recent-feedback text-muted text-xs">{{ feedback }}</p>
 	</div>
 </template>
 
 <style scoped>
 .recent-row {
+	padding-inline-start: 0.75rem;
 	border-radius: 0.5rem;
 	transition: background-color 140ms ease-out;
 }
@@ -87,9 +86,6 @@ async function requeue(item: RecentTrack) {
 }
 .recent-mobile-duration {
 	display: none;
-}
-.recent-feedback:not(:empty) {
-	margin-top: 0.75rem;
 }
 @container workspace (max-width: 600px) {
 	.recent-row {

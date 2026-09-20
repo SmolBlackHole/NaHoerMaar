@@ -3,11 +3,15 @@ import {
 	musicSource,
 	selectedSources,
 	reconcileSelection,
+	queuePresence,
+	importCounts,
+	catalogEntry,
 	type SearchPage,
 	type CatalogTrack,
 	type PlaylistPreview,
 } from "../shared/catalog";
 import { createCatalogClient } from "../app/player/catalog";
+import type { PlayerState } from "../shared/player";
 
 const video = "https://www.youtube.com/watch?v=Pqp9fDRp1lw";
 const playlist = "https://www.youtube.com/playlist?list=PL12345678901234";
@@ -45,6 +49,37 @@ function deferred<T>() {
 	return { promise, resolve };
 }
 afterEach(() => vi.useRealTimers());
+
+describe("duplicate awareness", () => {
+	const state = {
+		current: catalogEntry(entry()),
+		upcoming: [
+			catalogEntry(
+				entry(2, { source_url: "https://youtu.be/bWHJbIm1TAA", video_id: "bWHJbIm1TAA" }),
+			),
+		],
+	} as PlayerState;
+	it("matches video IDs across Music, YouTube and short links without comparing titles", () => {
+		expect(queuePresence("https://music.youtube.com/watch?v=Pqp9fDRp1lw&list=abc", state)).toBe(
+			"Now playing",
+		);
+		expect(queuePresence("https://youtube.com/watch?v=bWHJbIm1TAA", state)).toBe(
+			"Already queued",
+		);
+		expect(queuePresence("https://youtu.be/GCYGuZGE6DA", state)).toBeNull();
+	});
+	it("counts queue, current and batch duplicates only when explicitly enabled", () => {
+		const urls = [
+			video,
+			"https://youtu.be/bWHJbIm1TAA",
+			"https://youtu.be/GCYGuZGE6DA",
+			"https://music.youtube.com/watch?v=GCYGuZGE6DA",
+		];
+		expect(importCounts(urls, state, false)).toEqual({ added: 4, skipped: 0 });
+		expect(importCounts(urls, state, true)).toEqual({ added: 1, skipped: 3 });
+		expect(urls).toHaveLength(4);
+	});
+});
 
 const page = (snapshot: string, changes: Partial<SearchPage> = {}): SearchPage => ({
 	entries: [entry(1, { title: snapshot })],

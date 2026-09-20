@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 SmolBlackHole
+#
 # SPDX-License-Identifier: MPL-2.0
 
 """Validated appearance choices saved with each listener account."""

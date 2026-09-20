@@ -92,6 +92,8 @@ describe("live player", () => {
 		expect(client.enabled.value).toBe(false);
 		events[0]!.onopen?.();
 		expect(client.enabled.value).toBe(false);
+		events[0]!.emit(state({ revision: 6 }));
+		expect(client.connection.value).toBe("connecting");
 		events[0]!.emit(state({ revision: 8, volume: 0.4 }));
 		expect(client.enabled.value).toBe(true);
 		expect(client.snapshot.value?.volume).toBe(0.4);
@@ -137,7 +139,12 @@ describe("live player", () => {
 		expect(mutation).toHaveBeenCalledTimes(1);
 		events[0]!.emit(state({ revision: 2, playback_id: "next-playback" }));
 		mutation.mockResolvedValue(
-			Response.json({ code: "ok", replayed: true, snapshot: state({ revision: 2 }) }),
+			Response.json({
+				request_id: client.uncertain.value!.id,
+				code: "ok",
+				replayed: true,
+				snapshot: state({ revision: 2 }),
+			}),
 		);
 		expect(await client.retry()).toBe(true);
 		const first = mutation.mock.calls[0]![1]!;
@@ -159,9 +166,19 @@ describe("live player", () => {
 		);
 		const action = client.mutate("/api/player/volume", "PUT", { volume: 0.3 });
 		expect(client.pending.value).toBe(true);
+		expect(client.isPending("/api/player/volume", "PUT")).toBe(true);
+		expect(client.isPending("/api/queue")).toBe(false);
 		events[0]!.emit(state({ revision: 3, volume: 0.8 }));
-		resolve(Response.json({ code: "ok", snapshot: state({ revision: 2, volume: 0.3 }) }));
+		resolve(
+			Response.json({
+				request_id: client.activeRequest.value!.id,
+				code: "ok",
+				snapshot: state({ revision: 2, volume: 0.3 }),
+			}),
+		);
 		await action;
+		expect(client.activeRequest.value).toBeNull();
+		expect(client.completed.value?.result.code).toBe("ok");
 		expect(client.snapshot.value?.volume).toBe(0.8);
 	});
 
@@ -174,7 +191,12 @@ describe("live player", () => {
 		body.source_urls.pop();
 		expect(await client.mutate("/api/queue/batch", "POST", body)).toBe(false);
 		mutation.mockResolvedValueOnce(
-			Response.json({ code: "ok", replayed: true, snapshot: state({ revision: 2 }) }),
+			Response.json({
+				request_id: client.uncertain.value!.id,
+				code: "ok",
+				replayed: true,
+				snapshot: state({ revision: 2 }),
+			}),
 		);
 		expect(await client.retry()).toBe(true);
 		expect(mutation).toHaveBeenCalledTimes(2);

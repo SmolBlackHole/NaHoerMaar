@@ -129,6 +129,7 @@ describe("local API proxy", () => {
 			[`youtube/playlists/${id}`, "GET"],
 			[`youtube/playlists/${id}`, "DELETE"],
 			["queue/batch", "POST"],
+			["queue/undo", "POST"],
 		]) {
 			const response = await fetch(`${frontend}/api/${path}`, {
 				method,
@@ -144,7 +145,15 @@ describe("local API proxy", () => {
 			"pinned-version",
 		);
 		expect(calls[0]!.url).not.toContain("ignored");
-		expect(calls.map((call) => call.method)).toEqual(["GET", "POST", "GET", "DELETE", "POST"]);
+		expect(calls.map((call) => call.method)).toEqual([
+			"GET",
+			"POST",
+			"GET",
+			"DELETE",
+			"POST",
+			"POST",
+		]);
+		expect(calls[5]?.url).toBe("/api/queue/undo");
 		expect(calls[4]).toEqual({
 			url: "/api/queue/batch",
 			method: "POST",

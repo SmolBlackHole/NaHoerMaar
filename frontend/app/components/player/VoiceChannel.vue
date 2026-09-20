@@ -131,6 +131,7 @@ const status = computed(() => {
 						variant="ghost"
 						size="sm"
 						:loading="player.channelsLoading"
+						:aria-busy="player.channelsLoading"
 						:disabled="player.connection !== 'live'"
 						@click="player.refreshChannels()"
 					/>
@@ -193,7 +194,14 @@ const status = computed(() => {
 						:icon="icons.headphones"
 						color="neutral"
 						variant="outline"
-						:loading="player.snapshot?.voice_state === 'connecting'"
+						:loading="
+							player.isPending('/api/voice/channel', 'PUT') ||
+							player.snapshot?.voice_state === 'connecting'
+						"
+						:aria-busy="
+							player.isPending('/api/voice/channel', 'PUT') ||
+							player.snapshot?.voice_state === 'connecting'
+						"
 						:disabled="
 							!player.enabled || !available?.can_connect || !available?.can_speak
 						"
@@ -204,6 +212,8 @@ const status = computed(() => {
 					<UButton
 						v-if="connected"
 						label="Leave"
+						:loading="player.isPending('/api/voice/channel', 'DELETE')"
+						:aria-busy="player.isPending('/api/voice/channel', 'DELETE')"
 						:icon="icons.logOut"
 						color="neutral"
 						variant="ghost"

@@ -9,10 +9,12 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 from types import TracebackType
+from time import time
 from typing import cast
 from uuid import UUID
 
 from alembic.util.exc import CommandError
+from pydantic import TypeAdapter
 from sqlalchemy import (
     JSON,
     CheckConstraint,
@@ -29,6 +31,10 @@ from .models import Contributor, HistoryEntry, PlaybackState, PlayerSnapshot, Qu
 from .database import Base as _Base, database_engine
 from .accounts import Account, AccountRow
 from .migrations import upgrade
+from .undo import Removal, UndoUnavailable
+
+_OUTCOME = TypeAdapter(Outcome)
+_REMOVAL = TypeAdapter(Removal)
 
 
 def _contributor_data(contributor: Contributor | None) -> dict[str, str] | None:
@@ -115,6 +121,16 @@ class _RequestRow(_Base):
     status_code: Mapped[int | None]
     entry_id: Mapped[UUID | None]
     actor_id: Mapped[UUID | None]
+    details: Mapped[dict[str, object] | None] = mapped_column(JSON)
+
+
+class _UndoRow(_Base):
+    __tablename__ = "queue_undo"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    actor_id: Mapped[UUID]
+    expires_at: Mapped[float] = mapped_column(index=True)
+    payload: Mapped[dict[str, object]] = mapped_column(JSON)
 
 
 class StorageError(RuntimeError):
@@ -315,10 +331,15 @@ class SQLiteStore:
         """Return an existing receipt, or commit a reservation before any effect."""
         try:
             with self._session() as session, session.begin():
+                session.execute(delete(_UndoRow).where(_UndoRow.expires_at <= time()))
                 row = session.get(_RequestRow, receipt.request_id)
                 if row is not None:
                     outcome = (
-                        Outcome(row.code, row.status_code, row.entry_id)
+                        (
+                            _OUTCOME.validate_python(row.details)
+                            if row.details
+                            else Outcome(row.code, row.status_code, row.entry_id)
+                        )
                         if row.code is not None and row.status_code is not None
                         else None
                     )
@@ -339,9 +360,41 @@ class SQLiteStore:
         row = session.get(_RequestRow, receipt.request_id)
         if row is None or receipt.outcome is None:
             raise StorageError("Cannot finish an unreserved control request.")
+        if row.code is not None:
+            return
+        if receipt.consume_undo is not None:
+            undo = session.get(_UndoRow, receipt.consume_undo)
+            if (
+                undo is None
+                or undo.actor_id != receipt.actor_id
+                or undo.expires_at <= time()
+            ):
+                raise UndoUnavailable()
+            session.delete(undo)
+        if receipt.removal is not None:
+            removal = receipt.removal
+            session.add(
+                _UndoRow(
+                    id=removal.id,
+                    actor_id=removal.actor_id,
+                    expires_at=removal.expires_at.timestamp(),
+                    payload=_REMOVAL.dump_python(removal, mode="json"),
+                )
+            )
         row.code = receipt.outcome.code
         row.status_code = receipt.outcome.status_code
         row.entry_id = receipt.outcome.entry_id
+        row.details = _OUTCOME.dump_python(receipt.outcome, mode="json")
+
+    def removal(self, undo_id: UUID, actor_id: UUID | None) -> Removal:
+        try:
+            with self._session() as session:
+                row = session.get(_UndoRow, undo_id)
+                if row is None or row.actor_id != actor_id or row.expires_at <= time():
+                    raise UndoUnavailable()
+                return _REMOVAL.validate_python(row.payload)
+        except SQLAlchemyError as exc:
+            raise StorageError("Cannot read queue undo.") from exc
 
     def finish(self, receipt: Receipt) -> None:
         try:

@@ -49,6 +49,8 @@ to hours and minutes at one hour, for example `In ~01:15 h`.
 The Remove menu can clear your tracks, another person's tracks, or the entire
 queue. It shows whose tracks will be removed and how many before confirmation,
 and leaves playback running.
+The removal toast offers Undo for 12 seconds. It restores the removed entries
+without reverting anyone else's later changes.
 Ownership follows your account, even if you change its name or use another device.
 
 Click or drag the player timeline to seek for everyone in the Discord channel.

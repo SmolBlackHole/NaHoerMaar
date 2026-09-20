@@ -209,11 +209,11 @@ Concurrent use by separate Discord accounts still needs a live check.
 - [x] Offer updated results without rearranging the list during selection.
   Preserve playlist selections across updates and leave newly discovered tracks
   unselected. Account for removed and changed entries as well as new ones
-- [ ] Mark tracks already in the queue and offer to skip them during playlist
+- [x] Mark tracks already in the queue and offer to skip them during playlist
   imports, while still allowing intentional repeats
-- [ ] Undo individual removals and queue clears, restoring entries and their
+- [x] Undo individual removals and queue clears, restoring entries and their
   order without overwriting changes made by other users
-- [ ] Replace the playback notice bar with Nuxt UI's toaster. Show the affected
+- [x] Replace the playback notice bar with Nuxt UI's toaster. Show the affected
   track, a useful error reason and a retry action where appropriate, and avoid
   repeating the same notification after every state update
 

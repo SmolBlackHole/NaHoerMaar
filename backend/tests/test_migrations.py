@@ -76,7 +76,7 @@ def test_adopt_v5_preserves_accounts_sessions_history_and_queue(
             accounts.close()
         with engine.connect() as connection:
             context = MigrationContext.configure(connection)
-            assert context.get_current_revision() == "0006"
+            assert context.get_current_revision() == "0007"
             assert compare_metadata(context, Base.metadata) == []
     finally:
         engine.dispose()
@@ -124,7 +124,7 @@ def test_migrate_v1_recovers_current_preserving_ids_order_and_revisions(
     with closing(sqlite3.connect(path)) as db:
         assert (
             db.execute("SELECT version_num FROM alembic_version").fetchone()[0]
-            == "0006"
+            == "0007"
         )
 
 
@@ -256,7 +256,7 @@ def test_migrate_v3_preserves_queue_and_history_or_rolls_back(
         with closing(sqlite3.connect(path)) as db:
             assert (
                 db.execute("SELECT version_num FROM alembic_version").fetchone()[0]
-                == "0006"
+                == "0007"
             )
 
 
@@ -278,6 +278,8 @@ def test_v4_auth_migration_preserves_legacy_profiles_without_claiming_them(
             DROP TABLE login_attempts;
             DROP TABLE accounts;
             DROP TABLE alembic_version;
+            DROP TABLE queue_undo;
+            ALTER TABLE requests DROP COLUMN details;
             ALTER TABLE requests DROP COLUMN actor_id;
             PRAGMA user_version = 4;
         """)
@@ -295,7 +297,7 @@ def test_v4_auth_migration_preserves_legacy_profiles_without_claiming_them(
     with closing(sqlite3.connect(path)) as db:
         assert (
             db.execute("SELECT version_num FROM alembic_version").fetchone()[0]
-            == "0006"
+            == "0007"
         )
         assert db.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] == 0
         assert db.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 0

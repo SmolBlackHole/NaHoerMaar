@@ -14,10 +14,11 @@ export const usePlayerStore = defineStore("player", () => {
 			source_url: sourceUrl,
 		});
 	}
-	function addMany(sourceUrls: string[]) {
+	function addMany(sourceUrls: string[], skipDuplicates = false) {
 		if (!profile.profile) return Promise.resolve(false);
 		return client.mutate("/api/queue/batch", "POST", {
 			source_urls: sourceUrls,
+			skip_duplicates: skipDuplicates,
 		});
 	}
 	return { ...client, add, addMany };

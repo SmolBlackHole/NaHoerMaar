@@ -25,21 +25,24 @@ const consent = useConsentStore();
 						Profile saved.
 					</p>
 					<div class="mt-10 border-t border-default pt-6">
-						<UButton
-							label="Cookie settings"
-							color="neutral"
-							variant="ghost"
-							class="mb-4"
-							@click="consent.open = true"
-						/>
-						<UButton
-							label="Sign out"
-							:icon="icons.logOut"
-							color="neutral"
-							variant="outline"
-							@click="profile.signOut"
-							:loading="profile.busy"
-						/>
+						<div class="flex flex-wrap items-center gap-3">
+							<UButton
+								label="Cookie settings"
+								color="neutral"
+								variant="ghost"
+								class="min-h-11"
+								@click="consent.open = true"
+							/>
+							<UButton
+								label="Sign out"
+								:icon="icons.logOut"
+								color="neutral"
+								variant="outline"
+								class="min-h-11"
+								@click="profile.signOut"
+								:loading="profile.busy"
+							/>
+						</div>
 						<p class="text-muted mt-3 text-xs">Music keeps playing in Discord.</p>
 						<p v-if="profile.error" role="alert" class="text-error mt-3 text-sm">
 							{{ profile.error }}

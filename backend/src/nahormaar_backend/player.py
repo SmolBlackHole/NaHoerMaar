@@ -19,6 +19,7 @@ from .models import (
     TrackMetadata,
 )
 from .storage import SQLiteStore
+from .undo import Removal
 
 
 class Player:
@@ -60,6 +61,14 @@ class Player:
 
     def recover_requests(self) -> None:
         self._store.interrupt_requests()
+
+    def removal(self, undo_id: UUID, actor_id: UUID | None) -> Removal:
+        return self._store.removal(undo_id, actor_id)
+
+    def restore_removal(self, removal: Removal) -> PlayerSnapshot:
+        return self._commit(
+            replace(self._snapshot, upcoming=removal.restore(self._snapshot.upcoming))
+        )
 
     def apply_request(
         self, receipt: Receipt, operation: Callable[["Player"], PlayerSnapshot]

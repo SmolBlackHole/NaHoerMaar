@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 SmolBlackHole
+#
 # SPDX-License-Identifier: MPL-2.0
 
 """Collect installed Python notices and the selected FFmpeg build's license."""
@@ -39,7 +40,7 @@ def collect() -> list[dict[str, str]]:
         capture_output=True,
         encoding="utf-8",
     )
-    packages = []
+    packages: list[dict[str, str]] = []
     for item in json.loads(result.stdout):
         texts = [item.get("LicenseText"), item.get("NoticeText")]
         packages.append(
@@ -74,7 +75,7 @@ def collect() -> list[dict[str, str]]:
             "text": ffmpeg.stdout,
         }
     )
-    opus_notice = Path(distribution("discord.py").locate_file("discord/bin/COPYING"))
+    opus_notice = Path(str(distribution("discord.py").locate_file("discord/bin/COPYING")))
     if opus_notice.is_file():
         packages.append(
             {

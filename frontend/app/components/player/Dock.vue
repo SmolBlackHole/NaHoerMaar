@@ -8,6 +8,8 @@ const { position } = usePlaybackPosition();
 const current = computed(() => player.snapshot?.current ?? null);
 const seekTarget = ref<string | null>(null);
 const seekDraft = ref<{ position: number; playbackId: string } | null>(null);
+const hoverPosition = ref<number | null>(null);
+const keyboardPreview = ref(false);
 const seekEnabled = computed(
 	() =>
 		player.enabled &&
@@ -27,6 +29,27 @@ const timelinePosition = computed(() =>
 const timelineFill = computed(
 	() => `${Math.min(100, (timelinePosition.value / (seekMaximum.value || 1)) * 100)}%`,
 );
+const seekPreview = computed(() => {
+	if (!seekEnabled.value) return null;
+	if (seekDraft.value || keyboardPreview.value) return timelinePosition.value;
+	return hoverPosition.value;
+});
+function hoverSeek(event: PointerEvent) {
+	if (!seekEnabled.value || event.pointerType === "touch") return;
+	keyboardPreview.value = false;
+	const slider = event.currentTarget as HTMLInputElement;
+	const { left, width } = slider.getBoundingClientRect();
+	const thumb = parseFloat(getComputedStyle(slider).getPropertyValue("--seek-thumb-size"));
+	const fraction = Math.max(0, Math.min(1, (event.clientX - left - thumb / 2) / (width - thumb)));
+	hoverPosition.value = Math.round(fraction * seekMaximum.value);
+}
+function cancelSeek() {
+	seekDraft.value = null;
+	seekTarget.value = null;
+	hoverPosition.value = null;
+	keyboardPreview.value = false;
+}
+watch(() => player.snapshot?.playback_id, cancelSeek);
 function beginSeek() {
 	seekTarget.value = seekEnabled.value ? (player.snapshot?.playback_id ?? null) : null;
 }
@@ -50,9 +73,11 @@ function seekKey(event: KeyboardEvent) {
 			"PageUp",
 			"PageDown",
 		].includes(event.key)
-	)
+	) {
+		keyboardPreview.value = true;
 		beginSeek();
-	if (event.key === "Escape") seekDraft.value = null;
+	}
+	if (event.key === "Escape") cancelSeek();
 }
 async function commitSeek() {
 	const draft = seekDraft.value;
@@ -109,6 +134,7 @@ async function setVolume() {
 				<UButton
 					:icon="icons.stop"
 					aria-label="Stop playback"
+					:loading="player.isPending('/api/player/stop')"
 					color="neutral"
 					variant="ghost"
 					class="size-10 justify-center"
@@ -122,7 +148,11 @@ async function setVolume() {
 				size="xl"
 				class="dock-play size-10 justify-center rounded-full"
 				color="neutral"
-				:loading="player.snapshot?.state === 'loading'"
+				:loading="
+					player.snapshot?.state === 'loading' ||
+					player.isPending('/api/player/play') ||
+					player.isPending('/api/player/pause')
+				"
 				:disabled="!player.enabled || !canControl(player.snapshot, action)"
 				@click="player.control(action)"
 			/>
@@ -130,6 +160,7 @@ async function setVolume() {
 				<UButton
 					:icon="icons.skip"
 					aria-label="Skip track"
+					:loading="player.isPending('/api/player/skip')"
 					color="neutral"
 					variant="ghost"
 					class="size-10 justify-center"
@@ -140,26 +171,38 @@ async function setVolume() {
 		</div>
 		<div class="dock-timeline flex items-center gap-3 text-[0.6875rem] tabular-nums text-muted">
 			<span class="w-9 text-right">{{ formatTime(timelinePosition) }}</span>
-			<input
+			<div
 				v-if="current?.duration_seconds"
-				type="range"
-				class="seek-slider min-w-0 flex-1"
-				min="0"
-				:max="seekMaximum"
-				step="1"
-				:value="timelinePosition"
-				:style="{ '--seek-progress': timelineFill }"
-				:disabled="!seekEnabled"
-				aria-label="Playback position"
-				:aria-valuetext="`${formatTime(timelinePosition)} of ${formatTime(current.duration_seconds)}`"
-				title="Seek for everyone in the channel"
-				@pointerdown="beginSeek"
-				@keydown="seekKey"
-				@input="previewSeek"
-				@change="commitSeek"
-				@pointercancel="seekDraft = null"
-				@blur="seekDraft = null"
-			/>
+				class="seek-control min-w-0 flex-1"
+				:style="{ '--seek-preview': (seekPreview ?? 0) / (seekMaximum || 1) }"
+			>
+				<span v-if="seekPreview !== null" class="seek-preview" aria-hidden="true">{{
+					formatTime(seekPreview)
+				}}</span>
+				<input
+					type="range"
+					class="seek-slider"
+					min="0"
+					:max="seekMaximum"
+					step="1"
+					:value="timelinePosition"
+					:style="{ '--seek-progress': timelineFill }"
+					:disabled="!seekEnabled"
+					aria-label="Playback position"
+					:aria-valuetext="`${formatTime(timelinePosition)} of ${formatTime(current.duration_seconds)}`"
+					aria-description="Seek for everyone in the channel"
+					@pointerenter="hoverSeek"
+					@pointermove="hoverSeek"
+					@pointerleave="hoverPosition = null"
+					@pointerdown="keyboardPreview = false; beginSeek(); hoverSeek($event)"
+					@focus="keyboardPreview = ($event.target as HTMLInputElement).matches(':focus-visible')"
+					@keydown="seekKey"
+					@input="previewSeek"
+					@change="commitSeek"
+					@pointercancel="cancelSeek"
+					@blur="cancelSeek"
+				/>
+			</div>
 			<div v-else class="h-1 min-w-0 flex-1 rounded-full bg-accented" />
 			<span class="w-9">{{ formatTime(current?.duration_seconds ?? null) }}</span>
 		</div>
@@ -261,7 +304,34 @@ async function setVolume() {
 .dock-play:active:not(:disabled) {
 	transform: scale(0.94);
 }
+.seek-control {
+	--seek-thumb-size: 12px;
+	position: relative;
+}
+.seek-preview {
+	position: absolute;
+	bottom: calc(100% + 0.25rem);
+	left: clamp(
+		1.75rem,
+		calc(var(--seek-preview) * (100% - var(--seek-thumb-size)) + var(--seek-thumb-size) / 2),
+		calc(100% - 1.75rem)
+	);
+	transform: translateX(-50%);
+	z-index: 1;
+	padding: 0.25rem 0.5rem;
+	border: 1px solid var(--ui-border-accented);
+	border-radius: 0.375rem;
+	background: var(--ui-bg-elevated);
+	color: var(--ui-text-highlighted);
+	font-size: 0.75rem;
+	font-weight: 500;
+	line-height: 1.25rem;
+	white-space: nowrap;
+	pointer-events: none;
+}
 .seek-slider {
+	display: block;
+	width: 100%;
 	height: 1.75rem;
 	appearance: none;
 	background: transparent;
@@ -288,15 +358,15 @@ async function setVolume() {
 }
 .seek-slider::-webkit-slider-thumb {
 	appearance: none;
-	width: 0.75rem;
-	height: 0.75rem;
+	width: var(--seek-thumb-size);
+	height: var(--seek-thumb-size);
 	margin-top: -4.5px;
 	border-radius: 50%;
 	background: var(--ui-primary);
 }
 .seek-slider::-moz-range-thumb {
-	width: 0.75rem;
-	height: 0.75rem;
+	width: var(--seek-thumb-size);
+	height: var(--seek-thumb-size);
 	border: 0;
 	border-radius: 50%;
 	background: var(--ui-primary);

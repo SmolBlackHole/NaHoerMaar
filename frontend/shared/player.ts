@@ -55,9 +55,16 @@ export interface PlayerState {
 	position_seconds: number;
 	position_updated_at: string | null;
 	last_issue: {
+		id: string;
 		entry_id: string | null;
+		entry: QueueEntry | null;
 		code: "playback_failed" | "backend_halted";
 		fatal: boolean;
+		reason:
+			| "source_unavailable"
+			| "stream_interrupted"
+			| "voice_unavailable"
+			| "backend_halted";
 	} | null;
 }
 
@@ -76,6 +83,14 @@ export interface MutationResult {
 	entry_id: string | null;
 	replayed: boolean;
 	snapshot: PlayerState;
+	added_count: number;
+	skipped_count: number;
+	removed_count: number;
+	restored_count: number;
+	undo_id: string | null;
+	undo_expires_at: string | null;
+	actor: ListenerProfile | null;
+	entries: QueueEntry[];
 }
 
 export function youtubeVideoId(source: string): string | null {

@@ -1,5 +1,45 @@
 <script setup lang="ts">
 import { useTheme } from "~/composables/useTheme";
+import { useThemeEffects } from "~/composables/useThemeEffects";
+import { usePlayerStore } from "~/stores/player";
+
+useThemeEffects();
+usePlayerNotifications();
+const player = usePlayerStore();
+const profile = useProfileStore();
+const settings = useSettingsStore();
+const toast = useToast();
+watch(
+	() =>
+		profile.status === "authenticated" && profile.profileComplete ? profile.profile?.id : null,
+	(signedIn) => {
+		player.dispose();
+		if (signedIn) player.connect();
+	},
+	{ flush: "sync", immediate: true },
+);
+watch(
+	() => settings.error,
+	(description) => {
+		if (description)
+			toast.add({
+				id: "appearance-save",
+				title: "Appearance not saved",
+				description,
+				color: "warning",
+				actions: [
+					{
+						label: "Retry",
+						onClick: () => {
+							void settings.retry();
+						},
+					},
+				],
+			});
+		else toast.remove("appearance-save");
+	},
+);
+onBeforeUnmount(player.dispose);
 
 const { icons } = useTheme();
 const open = ref(false);
@@ -84,7 +124,6 @@ const links = computed(() => [
 				<main class="flex min-h-0 min-w-0 flex-1 flex-col">
 					<slot />
 				</main>
-				<PlayerNotice />
 				<PlayerDock />
 			</div>
 		</div>

@@ -6,7 +6,7 @@ import type {
 	VoiceChannel,
 } from "../../shared/player";
 
-interface PendingRequest {
+export interface PendingRequest {
 	id: string;
 	path: string;
 	method: "POST" | "PUT" | "DELETE";
@@ -14,6 +14,7 @@ interface PendingRequest {
 }
 
 const messages: Record<string, string> = {
+	undo_unavailable: "Undo has expired or was already used. The queue is unchanged.",
 	queue_conflict: "The queue changed. Check the updated queue and try again.",
 	playback_conflict: "The track changed before your action arrived. The player is up to date.",
 	entry_not_found: "That track has already left the queue.",
@@ -37,6 +38,8 @@ export function createPlayerClient(
 	const channelError = ref(false);
 	const channelsLoading = ref(false);
 	const pending = ref(false);
+	const activeRequest = shallowRef<PendingRequest | null>(null);
+	const completed = shallowRef<{ request: PendingRequest; result: MutationResult } | null>(null);
 	const uncertain = shallowRef<PendingRequest | null>(null);
 	const error = ref<string | null>(null);
 	const enabled = computed(
@@ -52,7 +55,9 @@ export function createPlayerClient(
 	let generation = 0;
 
 	function accept(state: PlayerState) {
-		if (!snapshot.value || state.revision >= snapshot.value.revision) snapshot.value = state;
+		if (snapshot.value && state.revision < snapshot.value.revision) return false;
+		snapshot.value = state;
+		return true;
 	}
 
 	async function refreshChannels() {
@@ -90,7 +95,7 @@ export function createPlayerClient(
 				const state = JSON.parse((event as MessageEvent).data) as PlayerState;
 				if (!Number.isSafeInteger(state.revision) || !Array.isArray(state.upcoming))
 					throw new Error("invalid state");
-				accept(state);
+				if (!accept(state)) return;
 				const reconnected = connection.value !== "live";
 				connection.value = "live";
 				if (reconnected) void refreshChannels();
@@ -120,6 +125,7 @@ export function createPlayerClient(
 	async function send(command: PendingRequest): Promise<boolean> {
 		const version = generation;
 		pending.value = true;
+		activeRequest.value = command;
 		error.value = null;
 		try {
 			const response = await request(command.path, {
@@ -141,6 +147,9 @@ export function createPlayerClient(
 							"The action was rejected. Refresh the connection and try again.");
 				return false;
 			}
+			if (!result.snapshot || result.request_id !== command.id)
+				throw new Error("unknown outcome");
+			completed.value = { request: command, result: result as MutationResult };
 			return true;
 		} catch {
 			if (version !== generation) return false;
@@ -148,7 +157,10 @@ export function createPlayerClient(
 			error.value = "The response was lost. Check the result to safely finish this action.";
 			return false;
 		} finally {
-			if (version === generation) pending.value = false;
+			if (version === generation) {
+				pending.value = false;
+				activeRequest.value = null;
+			}
 		}
 	}
 
@@ -188,6 +200,19 @@ export function createPlayerClient(
 		return send(uncertain.value);
 	}
 
+	function isPending(path: string, method?: PendingRequest["method"]) {
+		return (
+			activeRequest.value?.path === path && (!method || activeRequest.value.method === method)
+		);
+	}
+
+	function isAdding(sourceUrl: string) {
+		return (
+			isPending("/api/queue") &&
+			activeRequest.value?.body === JSON.stringify({ source_url: sourceUrl })
+		);
+	}
+
 	function dispose() {
 		generation++;
 		disposed = true;
@@ -201,6 +226,8 @@ export function createPlayerClient(
 		uncertain.value = null;
 		error.value = null;
 		pending.value = false;
+		activeRequest.value = null;
+		completed.value = null;
 	}
 
 	return {
@@ -210,6 +237,10 @@ export function createPlayerClient(
 		channelError,
 		channelsLoading,
 		pending,
+		activeRequest,
+		completed,
+		isPending,
+		isAdding,
 		uncertain,
 		error,
 		enabled,

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { catalogEntry, type CatalogTrack } from "#shared/catalog";
+import { catalogEntry, queuePresence, type CatalogTrack } from "#shared/catalog";
 import { formatTime, trackTitle } from "#shared/player";
 defineProps<{
 	entries: CatalogTrack[];
@@ -11,6 +11,7 @@ defineProps<{
 }>();
 const emit = defineEmits<{ add: [entry: CatalogTrack]; toggle: [index: number] }>();
 const { icons } = useTheme();
+const player = usePlayerStore();
 </script>
 
 <template>
@@ -54,6 +55,12 @@ const { icons } = useTheme();
 				<p v-if="item.unavailable" class="mt-1 text-xs text-muted">
 					{{ item.unavailable }}
 				</p>
+				<p
+					v-else-if="queuePresence(item.source_url, player.snapshot)"
+					class="mt-1 text-xs text-muted"
+				>
+					{{ queuePresence(item.source_url, player.snapshot) }}
+				</p>
 			</div>
 			<UButton
 				v-if="!selectable"
@@ -64,6 +71,8 @@ const { icons } = useTheme();
 				:aria-label="`Add ${trackTitle(catalogEntry(item))} to queue`"
 				:title="`Add ${trackTitle(catalogEntry(item))} to queue`"
 				:disabled="!enabled || !!item.unavailable || !item.source_url"
+				:loading="!!item.source_url && player.isAdding(item.source_url)"
+				:aria-busy="!!item.source_url && player.isAdding(item.source_url)"
 				@click="emit('add', item)"
 			/>
 		</li>

@@ -1,4 +1,29 @@
-import { youtubeVideoId, type QueueEntry } from "./player";
+import { youtubeVideoId, type QueueEntry, type PlayerState } from "./player";
+
+export function queuePresence(sourceUrl: string | null, state: PlayerState | null): string | null {
+	const id = sourceUrl && youtubeVideoId(sourceUrl);
+	if (!id || !state) return null;
+	if (state.current && youtubeVideoId(state.current.source_url) === id) return "Now playing";
+	return state.upcoming.some((entry) => youtubeVideoId(entry.source_url) === id)
+		? "Already queued"
+		: null;
+}
+
+export function importCounts(
+	urls: readonly string[],
+	state: PlayerState | null,
+	skipDuplicates: boolean,
+) {
+	if (!skipDuplicates) return { added: urls.length, skipped: 0 };
+	const seen = new Set<string>();
+	let added = 0;
+	for (const url of urls) {
+		const id = youtubeVideoId(url) ?? url;
+		if (!seen.has(id) && !queuePresence(url, state)) added++;
+		seen.add(id);
+	}
+	return { added, skipped: urls.length - added };
+}
 
 export type SearchSource = "youtube_music" | "youtube";
 

@@ -58,11 +58,16 @@ class ClearInput(QueueRevisionInput):
 
 class BatchInput(Input):
     source_urls: tuple[str, ...] = Field(min_length=1, max_length=PLAYLIST_LIMIT)
+    skip_duplicates: bool = Field(default=False, strict=True)
 
     @field_validator("source_urls")
     @classmethod
     def youtube_videos(cls, values: tuple[str, ...]) -> tuple[str, ...]:
         return tuple(AddInput.youtube_video(value) for value in values)
+
+
+class UndoInput(Input):
+    undo_id: UUID
 
 
 class PlaylistInput(Input):
@@ -117,9 +122,17 @@ class Entry(BaseModel):
 
 
 class Issue(BaseModel):
+    id: UUID
     entry_id: UUID | None
+    entry: Entry | None
     code: Literal["playback_failed", "backend_halted"]
     fatal: bool
+    reason: Literal[
+        "source_unavailable",
+        "stream_interrupted",
+        "voice_unavailable",
+        "backend_halted",
+    ]
 
 
 class RecentEntry(BaseModel):
@@ -167,8 +180,11 @@ class State(BaseModel):
             position_seconds=status.position_seconds,
             position_updated_at=status.position_updated_at,
             last_issue=Issue(
+                id=issue.id,
                 entry_id=issue.entry_id,
+                entry=Entry.from_entry(issue.entry) if issue.entry else None,
                 fatal=issue.fatal,
+                reason="backend_halted" if issue.fatal else issue.reason,
                 code="backend_halted" if issue.fatal else "playback_failed",
             )
             if issue
@@ -191,3 +207,11 @@ class MutationResult(BaseModel):
     entry_id: UUID | None
     replayed: bool
     snapshot: State
+    added_count: int = 0
+    skipped_count: int = 0
+    removed_count: int = 0
+    restored_count: int = 0
+    undo_id: UUID | None = None
+    undo_expires_at: datetime | None = None
+    actor: ContributorData | None = None
+    entries: tuple[Entry, ...] = ()

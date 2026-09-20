@@ -1,14 +1,8 @@
 <script setup lang="ts">
-import { useThemeEffects } from "~/composables/useThemeEffects";
-import { usePlayerStore } from "~/stores/player";
 import { useProfileStore } from "~/stores/profile";
 
-useThemeEffects();
-const player = usePlayerStore();
 const profile = useProfileStore();
 const consent = useConsentStore();
-const settings = useSettingsStore();
-const toast = useToast();
 const route = useRoute();
 const publicPage = computed(() => ["/licenses", "/licenses/"].includes(route.path));
 onMounted(() => {
@@ -19,42 +13,11 @@ onMounted(() => {
 		/* Storage can be unavailable. */
 	}
 });
-watch(
-	() => settings.error,
-	(description) => {
-		if (description)
-			toast.add({
-				id: "appearance-save",
-				title: "Appearance not saved",
-				description,
-				color: "warning",
-				actions: [
-					{
-						label: "Retry",
-						onClick: () => {
-							void settings.retry();
-						},
-					},
-				],
-			});
-		else toast.remove("appearance-save");
-	},
-);
 onMounted(profile.restore);
-watch(
-	() =>
-		profile.status === "authenticated" && profile.profileComplete ? profile.profile?.id : null,
-	(signedIn) => {
-		player.dispose();
-		if (signedIn) player.connect();
-	},
-	{ flush: "sync" },
-);
-onBeforeUnmount(player.dispose);
 </script>
 
 <template>
-	<UApp>
+	<UApp :toaster="{ position: 'top-right', max: 3, ui: { viewport: 'top-16' } }">
 		<NuxtLoadingIndicator />
 		<div
 			v-if="!publicPage && !profile.ready"
@@ -70,7 +33,7 @@ onBeforeUnmount(player.dispose);
 			class="contents"
 		>
 			<NuxtLayout>
-				<NuxtPage :page-key="(route) => route.path" />
+				<NuxtPage :page-key="route.path" />
 			</NuxtLayout>
 		</div>
 		<PrivacyConsent />
@@ -89,6 +52,9 @@ onBeforeUnmount(player.dispose);
 	opacity: 0;
 }
 @media (prefers-reduced-motion: reduce) {
+	.animate-spin {
+		animation: none !important;
+	}
 	.page-enter-active,
 	.page-leave-active {
 		transition: none;

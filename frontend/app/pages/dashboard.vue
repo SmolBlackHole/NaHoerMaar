@@ -37,8 +37,9 @@ function dayLabel(date: Date) {
 			<template #header>
 				<UDashboardNavbar title="Overview">
 					<template #leading><UDashboardSidebarCollapse /></template>
-					<template #right
-						><UButton
+					<template #right>
+						<PlayerConnection />
+						<UButton
 							to="/"
 							label="Open player"
 							:icon="icons.music"

@@ -2,10 +2,15 @@
 import { musicSource, type SearchSource } from "#shared/catalog";
 const source = defineModel<string>({ required: true });
 const provider = defineModel<SearchSource>("provider", { required: true });
-defineProps<{ connected: boolean; enabled: boolean; error: string }>();
+defineProps<{ connected: boolean; enabled: boolean; error: string; loading?: boolean }>();
 const emit = defineEmits<{ submit: []; playlist: [url: string] }>();
 const { icons } = useTheme();
 const id = useId();
+const input = useTemplateRef<HTMLInputElement>("input");
+function clear() {
+	source.value = "";
+	input.value?.focus();
+}
 const parsed = computed(() => musicSource(source.value));
 const playlistLink = computed(() => (parsed.value.kind === "video" ? parsed.value.playlist : null));
 const submitLabel = computed(() =>
@@ -26,6 +31,7 @@ const submitLabel = computed(() =>
 				<UIcon :name="icons.search" class="search-icon size-5 shrink-0 text-muted" />
 				<label class="sr-only" :for="id">Link, title or artist</label>
 				<input
+					ref="input"
 					:id="id"
 					v-model="source"
 					type="text"
@@ -36,6 +42,17 @@ const submitLabel = computed(() =>
 					:disabled="!connected"
 					:aria-invalid="!!error"
 					:aria-describedby="error ? `${id}-error` : undefined"
+				/>
+				<UButton
+					v-if="source"
+					:icon="icons.close"
+					aria-label="Clear search"
+					type="button"
+					color="neutral"
+					variant="ghost"
+					class="search-clear"
+					:disabled="!connected"
+					@click="clear"
 				/>
 				<USelect
 					v-model="provider"
@@ -74,7 +91,11 @@ const submitLabel = computed(() =>
 				color="neutral"
 				variant="solid"
 				class="discovery-submit"
-				:disabled="!source.trim() || !connected || (parsed.kind === 'video' && !enabled)"
+				:loading="loading"
+				:aria-busy="loading"
+				:disabled="
+					loading || !source.trim() || !connected || (parsed.kind === 'video' && !enabled)
+				"
 				><span class="discovery-submit-label">{{ submitLabel }}</span></UButton
 			>
 		</form>
@@ -145,6 +166,13 @@ const submitLabel = computed(() =>
 	font-size: 0.8125rem;
 	color: var(--ui-text);
 	cursor: pointer;
+}
+.search-clear {
+	flex-shrink: 0;
+	justify-content: center;
+	width: 2.75rem;
+	min-height: 2.75rem;
+	color: var(--ui-text-muted);
 }
 .search-source:hover {
 	background: var(--ui-bg-accented);

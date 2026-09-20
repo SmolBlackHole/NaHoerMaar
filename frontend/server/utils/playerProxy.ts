@@ -9,7 +9,7 @@ import {
 
 const routes: Record<string, RegExp> = {
 	GET: /^\/api\/(auth\/(session|discord(?:\/callback)?)|state|channels|events|catalog\/search|youtube\/playlists\/[a-f0-9-]{36})$/,
-	POST: /^\/api\/(auth\/logout|queue(?:\/clear|\/batch|\/[a-f0-9-]{36}\/move)?|player\/(play|pause|skip|stop)|youtube\/playlists)$/,
+	POST: /^\/api\/(auth\/logout|queue(?:\/clear|\/batch|\/undo|\/[a-f0-9-]{36}\/move)?|player\/(play|pause|skip|stop)|youtube\/playlists)$/,
 	PUT: /^\/api\/(profile(?:\/appearance)?|player\/(volume|seek)|voice\/channel)$/,
 	DELETE: /^\/api\/(queue\/[a-f0-9-]{36}|voice\/channel|youtube\/playlists\/[a-f0-9-]{36})$/,
 };
