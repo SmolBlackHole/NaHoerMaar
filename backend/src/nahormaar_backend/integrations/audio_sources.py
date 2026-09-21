@@ -29,6 +29,7 @@ _PCM_FRAME_BYTES = 3_840
 _SAMPLES_PER_FRAME = 960
 _MUSIC_BITRATE_KBPS = 512
 _PROCESS_TIMEOUT_SECONDS = 2.0
+_DURATION_TOLERANCE_SECONDS = 1.0
 _HEADER_NAME = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
 _HTTP_ERROR = re.compile(rb"(?:HTTP error|Server returned)\s+([45][0-9]{2})", re.I)
 _LOGGER = logging.getLogger(__name__)
@@ -49,9 +50,13 @@ def _diagnostic_kind(line: bytes) -> str:
         (b"error decoding", "decode_error"),
         (b"input/output error", "io_error"),
         (b"tls", "tls_error"),
+        (b"immediate exit requested", "interrupted"),
+        (b"corrupt input packet", "corrupt_media"),
     ):
         if marker in lowered:
             return kind
+    if b"error" in lowered:
+        return "ffmpeg_error"
     return "ffmpeg_message"
 
 
@@ -98,7 +103,12 @@ class FFmpegSource(discord.AudioSource):
         *,
         opus: bool = False,
         position_seconds: float = 0,
+        duration_seconds: float | None = None,
     ) -> None:
+        if duration_seconds is not None and (
+            not isfinite(duration_seconds) or duration_seconds < 0
+        ):
+            raise ValueError("Track duration must be finite and non-negative.")
         arguments = _ffmpeg_arguments(
             executable, source, headers, opus=opus, position_seconds=position_seconds
         )
@@ -116,6 +126,9 @@ class FFmpegSource(discord.AudioSource):
         self._stdout: BinaryIO = cast(BinaryIO, self._process.stdout)
         self._pid = self._process.pid
         self._started_at = time.monotonic()
+        self._position_seconds = position_seconds
+        self._duration_seconds = duration_seconds
+        self._output_seconds = 0.0
         self._diagnostics: deque[str] = deque(maxlen=8)
         self._diagnostics_lock = threading.Lock()
         self._stderr_thread = threading.Thread(target=self._drain_stderr, daemon=True)
@@ -156,6 +169,17 @@ class FFmpegSource(discord.AudioSource):
         with self._diagnostics_lock:
             return ",".join(self._diagnostics) or "none"
 
+    def _terminal_diagnostic(self) -> bool:
+        with self._diagnostics_lock:
+            return any(kind != "ffmpeg_message" for kind in self._diagnostics)
+
+    def _ended_early(self) -> bool:
+        duration = self._duration_seconds
+        if duration is None:
+            return False
+        expected = max(0.0, duration - self._position_seconds)
+        return self._output_seconds + _DURATION_TOLERANCE_SECONDS < expected
+
     @property
     def process_id(self) -> int:
         return self._pid
@@ -172,6 +196,7 @@ class FFmpegSource(discord.AudioSource):
         if self._packets is None:
             data = self._stdout.read(_PCM_FRAME_BYTES)
             if data:
+                self._output_seconds += len(data) / (48_000 * 2 * 2)
                 return data.ljust(_PCM_FRAME_BYTES, b"\0")
         else:
             try:
@@ -189,6 +214,11 @@ class FFmpegSource(discord.AudioSource):
                         continue
                     if packet.startswith(b"OpusTags"):
                         continue
+                    self._output_seconds += (
+                        discord.opus.Decoder.packet_get_samples_per_frame(packet)
+                        * discord.opus.Decoder.packet_get_nb_frames(packet)
+                        / 48_000
+                    )
                     return packet
             except OggError:
                 raise MediaStreamError("Invalid Opus stream.") from None
@@ -197,10 +227,13 @@ class FFmpegSource(discord.AudioSource):
             return_code: int | None = self._process.wait(timeout=0.2)
         except subprocess.TimeoutExpired:
             return_code = self._process.poll()
-        if return_code not in (None, 0):
+        self._stderr_thread.join(timeout=0.2)
+        if (
+            return_code not in (None, 0)
+            or self._terminal_diagnostic()
+            or self._ended_early()
+        ):
             self._current_error = MediaStreamError("FFmpeg stream failed.")
-        if return_code is not None:
-            self._stderr_thread.join(timeout=0.2)
         _LOGGER.log(
             logging.WARNING if self._current_error else logging.INFO,
             "ffmpeg.eof audio_pid=%s returncode=%s elapsed=%.3f diagnostics=%s",

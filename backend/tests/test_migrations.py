@@ -6,6 +6,8 @@ import sqlite3
 import subprocess
 import sys
 from contextlib import closing
+from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -17,13 +19,86 @@ from alembic.migration import MigrationContext
 from sqlalchemy import MetaData, Table, update
 
 from nahormaar_backend.application.player import Player
-from nahormaar_backend.domain.commands import Outcome, Receipt
-from nahormaar_backend.domain.models import Contributor, QueueEntry
+from nahormaar_backend.domain.checkpoint import PlaybackCheckpoint
+from nahormaar_backend.domain.commands import Outcome, Receipt, Revisions
+from nahormaar_backend.domain.models import (
+    Contributor,
+    HistoryEntry,
+    PlaybackState,
+    PlayerSnapshot,
+    QueueEntry,
+)
 from nahormaar_backend.domain.preferences import Appearance
 from nahormaar_backend.persistence.accounts import Accounts
 from nahormaar_backend.persistence.database import Base, database_engine
 from nahormaar_backend.persistence.models import AccountRow
 from nahormaar_backend.persistence.player_store import SQLiteStore, StorageError
+
+
+@pytest.mark.parametrize("kind", ["confirmed", "loading", "idle"])
+@pytest.mark.parametrize("corrupt", [False, True])
+def test_checkpoint_confirmation_migration_preserves_rows_and_backfills_once(
+    tmp_path: Path, kind: str, corrupt: bool
+) -> None:
+    path = tmp_path / "v10.sqlite3"
+    first, second = QueueEntry("first"), QueueEntry("second")
+    current = None if kind == "idle" else first
+    snapshot = PlayerSnapshot(
+        PlaybackState.IDLE if current is None else PlaybackState.LOADING,
+        current,
+        (second,),
+        recently_played=(
+            HistoryEntry(first if kind == "confirmed" else second, datetime.now(UTC)),
+        ),
+        crossfade_seconds=5,
+    )
+    checkpoint = PlaybackCheckpoint(
+        7,
+        current.id if current else None,
+        position_seconds=35 if current else 0,
+        paused=current is not None,
+        volume=0.4,
+    )
+    revisions = Revisions(8, 3)
+    receipt = Receipt(uuid4(), "add", Outcome(entry_id=second.id))
+    with SQLiteStore(path) as store:
+        store.reserve(receipt)
+        store.save(
+            snapshot, checkpoint=checkpoint, revisions=revisions, receipt=receipt
+        )
+    engine = database_engine(path)
+    try:
+        with engine.begin() as connection:
+            config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
+            config.attributes["connection"] = connection
+            command.downgrade(config, "0010")
+            if corrupt:
+                connection.exec_driver_sql("UPDATE playback_checkpoint SET volume = 2")
+        before = path.read_bytes()
+        if corrupt:
+            with pytest.raises(StorageError):
+                SQLiteStore(path)
+            assert path.read_bytes() == before
+            return
+        with SQLiteStore(path) as store:
+            assert store.load() == snapshot
+            assert store.revisions() == revisions
+            assert store.reserve(receipt) == receipt
+            assert store.checkpoint() == replace(
+                checkpoint, history_recorded=kind == "confirmed"
+            )
+            # An explicit replay is unconfirmed even if the same entry was heard
+            # before. Opening the already-migrated database must not infer again.
+            store.save_checkpoint(checkpoint)
+        with SQLiteStore(path) as store:
+            assert store.load() == snapshot
+            assert store.checkpoint() == checkpoint
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            assert context.get_current_revision() == "0011"
+            assert compare_metadata(context, Base.metadata) == []
+    finally:
+        engine.dispose()
 
 
 @pytest.mark.parametrize("corrupt", [False, True])
@@ -33,9 +108,13 @@ def test_adopt_v5_preserves_accounts_sessions_history_and_queue(
     path = tmp_path / "v5.sqlite3"
     with SQLiteStore(path) as store:
         player = Player(store)
-        player.enqueue(QueueEntry("https://youtu.be/Pqp9fDRp1lw"))
-        player.play()
-        player.mark_playing()
+        player.commit_lifecycle(
+            PlayerSnapshot(
+                PlaybackState.PLAYING, QueueEntry("https://youtu.be/Pqp9fDRp1lw")
+            ),
+            None,
+            record_history=True,
+        )
         snapshot, revisions = store.load(), store.revisions()
     accounts = Accounts(path)
     try:
@@ -76,7 +155,7 @@ def test_adopt_v5_preserves_accounts_sessions_history_and_queue(
             accounts.close()
         with engine.connect() as connection:
             context = MigrationContext.configure(connection)
-            assert context.get_current_revision() == "0010"
+            assert context.get_current_revision() == "0011"
             assert compare_metadata(context, Base.metadata) == []
     finally:
         engine.dispose()
@@ -124,7 +203,7 @@ def test_migrate_v1_recovers_current_preserving_ids_order_and_revisions(
     with closing(sqlite3.connect(path)) as db:
         assert (
             db.execute("SELECT version_num FROM alembic_version").fetchone()[0]
-            == "0010"
+            == "0011"
         )
 
 
@@ -256,7 +335,7 @@ def test_migrate_v3_preserves_queue_and_history_or_rolls_back(
         with closing(sqlite3.connect(path)) as db:
             assert (
                 db.execute("SELECT version_num FROM alembic_version").fetchone()[0]
-                == "0010"
+                == "0011"
             )
 
 
@@ -268,9 +347,14 @@ def test_v4_auth_migration_preserves_legacy_profiles_without_claiming_them(
     contributor = Contributor(uuid4(), "Legacy listener", "0002")
     with SQLiteStore(path) as store:
         player = Player(store)
-        player.enqueue(QueueEntry("https://youtu.be/Pqp9fDRp1lw", added_by=contributor))
-        player.play()
-        player.mark_playing()
+        player.commit_lifecycle(
+            PlayerSnapshot(
+                PlaybackState.PLAYING,
+                QueueEntry("https://youtu.be/Pqp9fDRp1lw", added_by=contributor),
+            ),
+            None,
+            record_history=True,
+        )
         snapshot, revisions = store.load(), store.revisions()
     with closing(sqlite3.connect(path, autocommit=True)) as db:
         db.executescript("""
@@ -301,7 +385,7 @@ def test_v4_auth_migration_preserves_legacy_profiles_without_claiming_them(
     with closing(sqlite3.connect(path)) as db:
         assert (
             db.execute("SELECT version_num FROM alembic_version").fetchone()[0]
-            == "0010"
+            == "0011"
         )
         assert db.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] == 0
         assert db.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 0

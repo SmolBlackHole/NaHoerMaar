@@ -7,32 +7,44 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import asdict, dataclass, field, replace
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
-from pathlib import Path
 from time import monotonic
-from typing import cast
+from typing import Protocol, cast
 from uuid import UUID, uuid4
 
 from ..cache import CatalogBusy, Snapshot, SnapshotCache
 from ..domain.catalog import CatalogTrack, SearchPage, SearchSource
-from ..domain.models import Contributor, QueueEntry, TrackMetadata
-from ..integrations.discovery import DiscoveryExtractor
+from ..domain.models import Contributor, PlayerSnapshot, QueueEntry, TrackMetadata
+from ..integrations.processes import ProcessResult
 from ..integrations.youtube import playlist_id, video_id
 from ..integrations.youtube_metadata import metadata_text
-from ..integrations.youtube_search import (
-    YouTubeMusicSearch,
-    YouTubeVideoSearch,
-    catalog_track,
-    metadata_object,
-)
+from ..integrations.youtube_search import catalog_track, metadata_object
 from .audio import TrackError
-from .search import SearchCatalog
+from .metadata import merge_metadata
+from .search import SearchCatalog, SearchProvider
+from .radio import RadioCatalog
 
 PLAYLIST_LIMIT = 100
 PREVIEW_LIMIT = 16
 PREVIEW_TTL = 600.0
 METADATA_LIMIT = 1000
+
+
+class CatalogExtractor(Protocol):
+    async def run(
+        self,
+        source: str,
+        options: tuple[str, ...],
+        *,
+        timeout: float = 30,
+        on_line: Callable[[bytes], None] | None = None,
+    ) -> ProcessResult: ...
+
+    def stop_accepting(self) -> None: ...
+
+    async def close(self) -> None: ...
 
 
 class PreviewState(StrEnum):
@@ -66,32 +78,29 @@ class _PreviewJob:
 
 
 class MediaCatalog:
-    def __init__(self, node_path: Path) -> None:
-        self._extractor = DiscoveryExtractor(node_path)
+    """Own discovery caches, preview tasks and the injected extractor's lifetime."""
+
+    def __init__(
+        self,
+        extractor: CatalogExtractor,
+        providers: Mapping[SearchSource, SearchProvider],
+    ) -> None:
+        self._extractor = extractor
         self._previews: dict[UUID, _PreviewJob] = {}
         self._metadata = SnapshotCache[TrackMetadata](METADATA_LIMIT, 300.0)
         self._playlists = SnapshotCache[PlaylistPreview](32, 60.0)
         self._closed = False
-        self._search = SearchCatalog(
-            {
-                SearchSource.MUSIC: YouTubeMusicSearch(self._extractor.execute),
-                SearchSource.VIDEOS: YouTubeVideoSearch(self._extractor.run),
-            },
-            self._remember,
-        )
+        self._search = SearchCatalog(providers, self._remember)
 
     def _remember(self, entry: CatalogTrack) -> None:
         if entry.video_id and entry.unavailable is None:
             previous = self._metadata.peek(entry.video_id)
-            values = asdict(previous.value) if previous else {}
-            values.update(
-                {
-                    key: value
-                    for key, value in asdict(entry.metadata()).items()
-                    if value is not None
-                }
+            self._metadata.put(
+                entry.video_id,
+                merge_metadata(
+                    previous.value if previous else TrackMetadata(), entry.metadata()
+                ),
             )
-            self._metadata.put(entry.video_id, TrackMetadata(**values))
 
     def cached_metadata(self, source: str) -> TrackMetadata:
         identifier = video_id(source)
@@ -106,8 +115,8 @@ class MediaCatalog:
         )
 
     def queue_entry(self, source: str, added_by: Contributor | None) -> QueueEntry:
-        return QueueEntry(
-            source, added_by=added_by, **asdict(self.cached_metadata(source))
+        return merge_metadata(
+            QueueEntry(source, added_by=added_by), self.cached_metadata(source)
         )
 
     async def metadata(self, source_url: str) -> TrackMetadata:
@@ -310,6 +319,8 @@ class MediaCatalog:
         return job.snapshot
 
     async def close(self) -> None:
+        if self._closed:
+            return
         self._closed = True
         self._extractor.stop_accepting()
         await self._search.close()
@@ -323,3 +334,47 @@ class MediaCatalog:
         await asyncio.gather(*tasks, return_exceptions=True)
         await self._extractor.close()
         self._previews.clear()
+
+
+def source_key(source: str) -> str:
+    return video_id(source) or source
+
+
+class CatalogEntries:
+    def __init__(
+        self,
+        *,
+        catalog: MediaCatalog | None,
+        radio: RadioCatalog | None,
+        snapshot: Callable[[], PlayerSnapshot],
+    ) -> None:
+        self._catalog = catalog
+        self._radio = radio
+        self._snapshot = snapshot
+
+    def queue_entry(self, source_url: str, added_by: Contributor | None) -> QueueEntry:
+        entry = (
+            self._catalog.queue_entry(source_url, added_by)
+            if self._catalog
+            else QueueEntry(source_url, added_by=added_by)
+        )
+        identifier = video_id(source_url)
+        if identifier and self._radio:
+            metadata = self._radio.metadata(identifier)
+            if metadata:
+                entry = merge_metadata(entry, metadata)
+        snapshot = self._snapshot()
+        known = (
+            ((snapshot.current,) if snapshot.current else ())
+            + snapshot.upcoming
+            + tuple(item.entry for item in snapshot.recently_played)
+        )
+        for candidate in known:
+            if (
+                identifier
+                and (candidate.video_id or video_id(candidate.source_url)) == identifier
+            ):
+                entry = merge_metadata(entry, candidate, overwrite=False)
+                if entry.title and entry.duration_seconds is not None:
+                    break
+        return entry

@@ -8,7 +8,7 @@ from uuid import UUID
 
 from fastapi import Response
 
-from ..application.playback import PlaybackController
+from ..application.session import Session
 from ..domain import commands
 from . import schemas as dto
 from .dependencies import CurrentUser
@@ -19,7 +19,7 @@ async def mutate(
     request_id: UUID,
     command: commands.Command,
     response: Response,
-    active: PlaybackController,
+    active: Session,
 ) -> dto.MutationResult:
     reply = await active.request(
         request_id,

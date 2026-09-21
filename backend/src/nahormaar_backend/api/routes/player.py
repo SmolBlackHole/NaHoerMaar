@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Response
 
-from ...application.playback import PlaybackController
+from ...application.session import Session
 from ...domain import commands
 from .. import schemas as dto
 from ..dependencies import ApiServices, CurrentUser, RequestID
@@ -19,7 +19,7 @@ def player_router(services: ApiServices) -> APIRouter:
     router = APIRouter()
 
     async def state(
-        active: Annotated[PlaybackController, Depends(services.player)],
+        active: Annotated[Session, Depends(services.player)],
     ) -> dto.State:
         return dto.State.from_status(await active.read_status())
 
@@ -27,7 +27,7 @@ def player_router(services: ApiServices) -> APIRouter:
 
     @router.get("/api/channels")
     async def channels(
-        active: Annotated[PlaybackController, Depends(services.player)],
+        active: Annotated[Session, Depends(services.player)],
     ) -> list[dto.Channel]:
         await active.read_status()
         return [
@@ -49,7 +49,7 @@ def player_router(services: ApiServices) -> APIRouter:
         body: dto.ControlInput,
         response: Response,
         request_id: RequestID,
-        active: Annotated[PlaybackController, Depends(services.player)],
+        active: Annotated[Session, Depends(services.player)],
     ) -> dto.MutationResult:
         return await mutate(
             user,
@@ -65,7 +65,7 @@ def player_router(services: ApiServices) -> APIRouter:
         body: dto.VolumeInput,
         response: Response,
         request_id: RequestID,
-        active: Annotated[PlaybackController, Depends(services.player)],
+        active: Annotated[Session, Depends(services.player)],
     ) -> dto.MutationResult:
         return await mutate(
             user, request_id, commands.Volume(body.volume), response, active
@@ -77,7 +77,7 @@ def player_router(services: ApiServices) -> APIRouter:
         body: dto.CrossfadeInput,
         response: Response,
         request_id: RequestID,
-        active: Annotated[PlaybackController, Depends(services.player)],
+        active: Annotated[Session, Depends(services.player)],
     ) -> dto.MutationResult:
         return await mutate(
             user, request_id, commands.Crossfade(body.seconds), response, active
@@ -89,7 +89,7 @@ def player_router(services: ApiServices) -> APIRouter:
         body: dto.SeekInput,
         response: Response,
         request_id: RequestID,
-        active: Annotated[PlaybackController, Depends(services.player)],
+        active: Annotated[Session, Depends(services.player)],
     ) -> dto.MutationResult:
         return await mutate(
             user,
@@ -105,7 +105,7 @@ def player_router(services: ApiServices) -> APIRouter:
         body: dto.ChannelInput,
         response: Response,
         request_id: RequestID,
-        active: Annotated[PlaybackController, Depends(services.player)],
+        active: Annotated[Session, Depends(services.player)],
     ) -> dto.MutationResult:
         return await mutate(
             user, request_id, commands.Connect(int(body.channel_id)), response, active
@@ -116,7 +116,7 @@ def player_router(services: ApiServices) -> APIRouter:
         user: CurrentUser,
         response: Response,
         request_id: RequestID,
-        active: Annotated[PlaybackController, Depends(services.player)],
+        active: Annotated[Session, Depends(services.player)],
     ) -> dto.MutationResult:
         return await mutate(user, request_id, commands.Disconnect(), response, active)
 

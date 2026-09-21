@@ -127,6 +127,73 @@ def test_paused_start_and_pause_freeze_the_audio_position() -> None:
         mixer.cleanup()
 
 
+def test_start_callback_waits_for_first_encoded_media_frame() -> None:
+    first, current = buffered(12000, 10)
+    started: list[float] = []
+    mixer = CrossfadeSource(
+        current,
+        volume=1,
+        position=42.36,
+        paused=True,
+        on_started=lambda: started.append(mixer.position_seconds),
+    )
+    mixer._encoder = cast(FrameEncoder, PCMEncoder())
+    try:
+        assert audioop.max(mixer.read(), 2) == 0
+        assert started == []
+        mixer.resume()
+        assert mixer.read() == first.frame.pcm
+        assert started == [pytest.approx(42.38)]
+        assert mixer.read() == first.frame.pcm
+        assert len(started) == 1
+        assert not mixer.paused
+        assert mixer.current_error is None
+    finally:
+        mixer.cleanup()
+
+
+def test_underrun_silence_does_not_confirm_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, current = buffered(12000, 10)
+    started = threading.Event()
+    mixer = CrossfadeSource(current, volume=1, on_started=started.set)
+    mixer._encoder = cast(FrameEncoder, PCMEncoder())
+    take = current.take
+    monkeypatch.setattr(current, "take", lambda timeout=0.02: None)
+    try:
+        assert audioop.max(mixer.read(), 2) == 0
+        assert not started.is_set()
+        monkeypatch.setattr(current, "take", take)
+        assert mixer.read()
+        assert started.is_set()
+    finally:
+        mixer.cleanup()
+
+
+def test_activation_replaces_start_callback_before_incoming_first_frame() -> None:
+    _, current = buffered(30000, 100)
+    _, upcoming = buffered(-30000, 100)
+    starts: list[str] = []
+    mixer = CrossfadeSource(current, volume=1, on_started=lambda: starts.append("old"))
+    mixer._encoder = cast(FrameEncoder, PCMEncoder())
+    try:
+        mixer.stage(upcoming, seconds=1, duration=1, on_due=lambda: None)
+        mixer.read()
+        assert starts == ["old"]
+        assert mixer.activate(
+            lambda: None,
+            on_started=lambda: starts.append("incoming"),
+        )
+        assert starts == ["old"]
+        mixer.read()
+        assert starts == ["old", "incoming"]
+        mixer.read()
+        assert starts == ["old", "incoming"]
+    finally:
+        mixer.cleanup()
+
+
 def test_temporary_tail_underrun_does_not_end_fade(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -185,6 +252,38 @@ def test_early_tail_end_keeps_incoming_fade_envelope(failed: bool) -> None:
         assert first.closed
     finally:
         mixer.cleanup()
+
+
+def test_outgoing_retirement_failure_remains_the_mixer_terminal_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first, current = buffered(30000, 100)
+    _, upcoming = buffered(-30000, 100)
+    mixer = CrossfadeSource(current, volume=1)
+    mixer._encoder = cast(FrameEncoder, PCMEncoder())
+    cleanup = current.cleanup
+    attempts = 0
+
+    def fail_once() -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("Outgoing cleanup failed.")
+        cleanup()
+
+    monkeypatch.setattr(current, "cleanup", fail_once)
+    faded = threading.Event()
+    try:
+        mixer.stage(upcoming, seconds=0.02, duration=0.02, on_due=lambda: None)
+        mixer.read()
+        assert mixer.activate(faded.set)
+        mixer.read()
+        assert faded.wait(1)
+        assert isinstance(mixer.current_error, RuntimeError)
+        assert mixer.read() == b""
+    finally:
+        mixer.cleanup()
+    assert first.closed
 
 
 def test_real_opus_packets_survive_before_and_after_overlap(tmp_path: Path) -> None:

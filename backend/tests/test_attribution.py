@@ -4,6 +4,7 @@
 
 import asyncio
 import json
+from dataclasses import replace
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -15,6 +16,8 @@ from nahormaar_backend.domain.commands import Add, Outcome, Receipt, fingerprint
 from nahormaar_backend.domain.models import (
     ANONYMOUS_CONTRIBUTOR,
     Contributor,
+    PlaybackState,
+    PlayerSnapshot,
     QueueEntry,
     TrackMetadata,
 )
@@ -136,9 +139,14 @@ def test_metadata_history_and_recovery_preserve_original_contributor(
         entry = QueueEntry(VIDEO, added_by=alice)
         player.enqueue(entry)
         player.enrich(entry.id, TrackMetadata(title="Song", artist="Artist"))
-        player.play()
-        player.mark_playing()
-        player.skip()
+        player.commit_lifecycle(
+            PlayerSnapshot(PlaybackState.PLAYING, player.snapshot.upcoming[0]),
+            None,
+            record_history=True,
+        )
+        player.commit_lifecycle(
+            replace(player.snapshot, state=PlaybackState.IDLE, current=None), None
+        )
         player.enqueue(QueueEntry(VIDEO, added_by=bob))
     with SQLiteStore(path) as store:
         snapshot = Player(store).snapshot

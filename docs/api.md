@@ -128,8 +128,11 @@ zero. Changing it requires the same authentication, CSRF token and request ID as
 other controls. It changes the next natural transition, never a fade already in
 progress. At fade start the incoming entry becomes current with a new playback
 ID and progress anchor. Seek targets that entry and ends the outgoing tail;
-pause and resume affect both voices. Skip stops both and advances once. Stop and
-disconnect return the incoming entry to the queue for a manual restart.
+pause and resume affect both voices. Skip stops both and advances once. Stop
+returns the incoming entry to the queue for a restart from the beginning.
+Disconnect retains it as current with its reached position and pause state;
+an explicit later join resumes that intent. Explicit Leave disables automatic
+rejoin after a process restart.
 
 Seeking moves the shared Discord audio to an absolute position in seconds.
 The position must be at least zero and less than the current track's duration.

@@ -13,7 +13,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from ..application.catalog import PLAYLIST_LIMIT
 from ..application.status import PlaybackStatus
 from ..domain.models import (
-    Contributor,
     PlaybackState,
     QueueEntry,
     VoiceState,
@@ -32,9 +31,6 @@ class ContributorData(Input):
     id: UUID
     name: str = Field(min_length=1, max_length=32)
     avatar: str = Field(pattern=r"^[0-9a-f]{4}$")
-
-    def to_contributor(self) -> Contributor:
-        return Contributor(self.id, self.name, self.avatar)
 
 
 class AddInput(Input):

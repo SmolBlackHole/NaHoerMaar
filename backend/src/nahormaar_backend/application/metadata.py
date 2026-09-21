@@ -2,16 +2,34 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""Resolve queue metadata outside the controller's mutation lock."""
+"""Merge public track metadata and resolve missing queue metadata asynchronously."""
 
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
+from dataclasses import fields, replace
 from uuid import UUID
 
-from ..domain.models import PlayerSnapshot, TrackMetadata
-from ..persistence.player_store import StorageError
+from ..domain.models import PlayerSnapshot, QueueEntry, TrackMetadata
 from .audio import MetadataResolver, TrackError
+
+
+def merge_metadata[T: (TrackMetadata, QueueEntry)](
+    target: T, source: TrackMetadata | QueueEntry, *, overwrite: bool = True
+) -> T:
+    """Copy known metadata, preserving queue identity and attribution.
+
+    Only None is missing. With overwrite=False, existing values take precedence.
+    """
+    return replace(
+        target,
+        **{
+            field.name: value
+            for field in fields(TrackMetadata)
+            if (value := getattr(source, field.name)) is not None
+            and (overwrite or getattr(target, field.name) is None)
+        },
+    )
 
 
 class QueueMetadata:
@@ -70,7 +88,7 @@ class QueueMetadata:
                 continue
             try:
                 await self._apply(entry.id, metadata)
-            except (RuntimeError, StorageError):
+            except RuntimeError:
                 return
             self._wake.set()
 

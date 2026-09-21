@@ -6,7 +6,7 @@ import asyncio
 import socket
 import time
 from collections.abc import AsyncGenerator, AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from uuid import uuid4
 
@@ -20,11 +20,15 @@ from nahormaar_backend.api import create_app
 from nahormaar_backend.api.schemas import Channel, MutationResult, State
 from nahormaar_backend.application.audio import ResolvedTrack
 from nahormaar_backend.application.auth import SESSION_COOKIE, csrf_token, digest
-from nahormaar_backend.application.playback import PlaybackController
+from nahormaar_backend.application.catalog import MediaCatalog
+from nahormaar_backend.application.radio import RadioCatalog
+from nahormaar_backend.application.session import Session
 from nahormaar_backend.config import AuthSettings
 from nahormaar_backend.domain.accounts import Account
 from nahormaar_backend.domain.models import PlaybackState, QueueEntry
 from nahormaar_backend.persistence.accounts import Accounts
+from nahormaar_backend.persistence.player_store import SQLiteStore
+from nahormaar_backend.runtime import RuntimeServices
 from test_commands import wait_for
 from test_playback import ControlledResolver, FakeVoice
 
@@ -35,11 +39,19 @@ AUTH_HEADERS = {"Origin": TEST_ORIGIN, "X-CSRF-Token": csrf_token(TEST_TOKEN)}
 
 
 class Harness:
-    def __init__(self, path: Path) -> None:
+    def __init__(
+        self,
+        path: Path,
+        *,
+        catalog: MediaCatalog | None = None,
+        radio_catalog: RadioCatalog | None = None,
+    ) -> None:
         self.path = path
         self.voice = FakeVoice()
         self.resolver = ControlledResolver()
-        self.controller: PlaybackController | None = None
+        self.controller: Session | None = None
+        self.catalog = catalog
+        self.radio_catalog = radio_catalog
         self.starts = 0
         self.stops = 0
         self.auth_settings = AuthSettings(
@@ -67,16 +79,27 @@ class Harness:
             accounts.close()
 
     @asynccontextmanager
-    async def runtime(self) -> AsyncGenerator[PlaybackController]:
+    async def runtime(self) -> AsyncGenerator[RuntimeServices]:
         self.starts += 1
-        self.controller = await PlaybackController.create(
-            self.path, self.resolver, self.voice
-        )
-        self.account()
         try:
-            yield self.controller
+            async with AsyncExitStack() as resources:
+                if self.catalog is not None:
+                    resources.push_async_callback(self.catalog.close)
+                if self.radio_catalog is not None:
+                    resources.push_async_callback(self.radio_catalog.close)
+                self.controller = await Session.create(
+                    lambda: SQLiteStore(self.path),
+                    self.resolver,
+                    self.voice,
+                    catalog=self.catalog,
+                    radio_catalog=self.radio_catalog,
+                )
+                resources.push_async_callback(self.controller.close)
+                self.account()
+                yield RuntimeServices(self.controller, self.catalog, self.radio_catalog)
         finally:
-            await self.controller.close()
+            self.catalog = None
+            self.radio_catalog = None
             self.stops += 1
 
     @asynccontextmanager

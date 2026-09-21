@@ -2,11 +2,17 @@
 
 Parent: [Project README](README.md)
 
-Status: phases 1, 3, 4 and 5 complete. Live playback failure and disconnect checks
+Active backend refactor: [scope, phases and acceptance criteria](TODO.md).
+Its phases 1 through 4 are implemented; phase 5 covers final integration and
+audio acceptance. Coordinated live Discord acceptance is still pending.
+
+Product milestones below: phases 1, 3, 4 and 5 complete. Earlier live playback failure and disconnect checks
 passed, as did concurrent queue additions in two browser tabs. Phase 6 is
 implemented. Real Discord sign-in, shared-session logout in two tabs and live
 whitelist removal have passed locally. Shared deployment and the visible
 presence check remain open.
+Those earlier live checks do not establish acceptance of the current backend
+refactor.
 
 ## Current scope
 
@@ -318,28 +324,33 @@ responsibilities of the reorganized modules.
 
 ## Playback controller cleanup
 
-Take this on after the current audio behavior and live listening checks pass.
-`application/playback.py` has accumulated command handling, radio replenishment,
-crossfade coordination, position tracking and restart recovery in one controller.
+Implemented through phases 1 through 4 of the [backend refactor](TODO.md).
+The Session owns ordered commands and commits, Queue owns edits and undo, and
+Radio owns recommendations and refill. Playback executes the FSM's lifecycle
+decisions and audio effects. Phase 5 verifies their integration; live listening
+and reconnect acceptance remain open.
 
-- [ ] Make the existing FSM the single authority for playback and voice-state
+- [x] Make the existing FSM the single authority for playback and voice-state
   transitions. Audit controller branches and direct state replacements, including
   checkpoint recovery in `Player`, and model missing lifecycle events explicitly
-- [ ] Keep the FSM deterministic and free of I/O. Keep audio processes, Discord,
+- [x] Keep the FSM deterministic and free of I/O. Keep audio processes, Discord,
   storage and task cancellation in the application and integration layers
-- [ ] Separate command/undo handling, radio replenishment and checkpoint/position
+- [x] Separate command/undo handling, radio replenishment and checkpoint/position
   ownership where this removes current coupling. Keep the playback controller
   focused on coordinating transitions and their side effects
-- [ ] Audit runtime flags for duplicated domain state. Preserve attempt IDs and
+- [x] Audit runtime flags for duplicated domain state. Preserve attempt IDs and
   cancellation ownership that prevent stale callbacks from affecting a new track
-- [ ] Preserve one serialized mutation path and commit before publishing state.
+- [x] Preserve one serialized mutation path and commit before publishing state.
   Test event sequences for natural completion, crossfade, pause/resume, seek,
   retry, skip, disconnect and restart, including late callbacks
+- [ ] Complete coordinated live Discord listening, reconnect and restart
+  acceptance after the isolated integration and real offline audio checks
 
-Acceptance: playback-state changes go through explicit FSM events; API behavior,
-queue order, history counts and restart recovery stay unchanged. The refactor
-must preserve the verified audio behavior and avoid introducing a generic
-state-machine or service framework.
+Acceptance: playback-state changes go through explicit FSM events; HTTP/SSE
+contracts and queue semantics remain compatible. Interruption retry, join/resume
+and confirmed-start history follow the explicit acceptance cases in TODO.md.
+No generic state-machine framework, Spotify integration or multi-server queues
+are included.
 
 ## Frontend cleanup
 

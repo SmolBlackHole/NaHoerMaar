@@ -11,7 +11,13 @@ import pytest
 
 from nahormaar_backend.application.player import Player
 from nahormaar_backend.domain.commands import Clear, fingerprint
-from nahormaar_backend.domain.models import Contributor, QueueEntry
+from nahormaar_backend.domain.models import (
+    Contributor,
+    PlaybackState,
+    PlayerSnapshot,
+    QueueEntry,
+)
+from nahormaar_backend.domain.queue import select_removal
 from nahormaar_backend.persistence.player_store import SQLiteStore, StorageError
 from test_api import VIDEO, Harness, headers, mutation
 
@@ -27,12 +33,18 @@ def test_clear_by_profile_preserves_current_history_and_other_people(
     renamed = QueueEntry(VIDEO, added_by=replace(owner, name="New name"))
     theirs = QueueEntry(VIDEO, added_by=other)
     anonymous = QueueEntry(VIDEO)
-    player.enqueue_many((current, theirs, mine, anonymous, renamed))
-    player.play()
-    player.mark_playing()
+    player.commit_lifecycle(
+        PlayerSnapshot(
+            PlaybackState.PLAYING, current, (theirs, mine, anonymous, renamed)
+        ),
+        None,
+        record_history=True,
+    )
     before = player.snapshot
     revision = player.revisions
-    cleared = player.clear(owner.id)
+    cleared = player.remove(
+        select_removal(before, Clear(revision.queue_revision, owner.id))
+    )
     assert cleared.current == current
     assert cleared.state == before.state
     assert cleared.recently_played == before.recently_played
@@ -40,7 +52,10 @@ def test_clear_by_profile_preserves_current_history_and_other_people(
     assert player.revisions.queue_revision == revision.queue_revision + 1
     assert store.load() == cleared
     unchanged = player.revisions
-    assert player.clear(uuid4()) == cleared
+    assert (
+        player.remove(select_removal(cleared, Clear(unchanged.queue_revision, uuid4())))
+        == cleared
+    )
     assert player.revisions == unchanged
 
 
@@ -58,7 +73,7 @@ def test_profile_clear_storage_failure_does_not_publish_partial_removal(
 
     monkeypatch.setattr(store, "save", fail)
     with pytest.raises(StorageError):
-        player.clear(owner.id)
+        player.remove(select_removal(before, Clear(revisions.queue_revision, owner.id)))
     assert player.snapshot == before == store.load()
     assert player.revisions == revisions
 

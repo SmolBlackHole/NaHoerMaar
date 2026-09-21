@@ -6,7 +6,7 @@ Parent: [Project README](../README.md)
 
 - `domain/` defines immutable values, commands and FSM transitions without
   database, HTTP or Discord dependencies
-- `application/` coordinates playback, identity and discovery. The controller
+- `application/` coordinates playback, identity and discovery. The Session
   serializes mutations; its worker owns the synchronous player and database
 - `api/` owns FastAPI routes, request and response schemas, authentication checks
   and SSE transport
@@ -14,9 +14,77 @@ Parent: [Project README](../README.md)
 - `integrations/` handles Discord voice and OAuth, YouTube extraction and child
   processes
 
-`runtime.py` starts and closes the voice client and player together. The API
+`runtime.py` composes the Discord gateway, shared catalogs and SessionManager. The API
 lifespan owns that runtime and the authentication service. Configuration stays
 in `config.py`.
+
+## Session ownership
+
+`application/session.py` contains the single Session manager, shared state mirror,
+request handling and status publication. These closely related roles stay in one
+module. The Session keeps the existing public control operations as delegates;
+HTTP and Discord commands enter the same awaited inbox. Its worker's `Player`
+remains the authoritative state and transaction owner.
+
+| Owner                        | Resources and responsibilities                                                                                                                        |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime                      | Discord gateway, shared catalog caches, recommendation previews and their extractors; concrete adapter and store construction                         |
+| SessionManager               | Create, expose and close exactly one Session                                                                                                          |
+| Session                      | One inbox receiver, receipts, revisions, committed-event subscriptions, latest-only SSE, metadata and checkpoint tasks, component and worker teardown |
+| Queue                        | Editing, duplicate filtering and undo through the shared commit boundary                                                                              |
+| PlaybackController           | Resolver tasks, audio attempts, recovery, crossfade preparation and audio effects                                                                     |
+| RadioController (`radio.py`) | Active radio state, recommendation pool and refill tasks; preview service remains runtime-owned                                                       |
+| DiscordVoice                 | Audio sources, voice connection and connection monitoring                                                                                             |
+| DiscordGateway               | Client connection, command registration, presence and daily profile tasks                                                                             |
+
+The Session borrows shared catalogs; closing it does not close those caches.
+`catalog.py` resolves provider identity and chooses known metadata sources for
+new queue entries. `metadata.py` owns the shared field-merge rules: only known
+public metadata is copied, without replacing entry identity or attribution.
+Queue and Radio receive source identity operations by injection.
+The runtime's store factory creates SQLite storage on the same worker thread that
+loads, uses and closes it. Checkpoint reconciliation lives in application code;
+snapshot, revision, receipt and checkpoint changes still commit atomically.
+
+Shutdown first rejects new Session work and closes SSE. It cancels checkpoint and
+subscriber tasks, lets the active command finish and rejects pending inbox work.
+It then cancels radio and metadata tasks, saves the current position, reaps
+audio/resolution/preparation, and closes voice and storage. Runtime then closes
+recommendation previews and extractors, the shared catalog, and finally the
+Discord gateway. Cleanup attempts the remaining
+owned resources even if one fails; partial startup also releases acquired resources.
+
+The inbox introduced in [the backend refactor](../TODO.md) uses typed messages
+instead of closure dispatch and a mutation lock. Resolver, metadata and recommendation work
+runs outside the inbox; correlated results return through it. Audio-thread
+callbacks cross onto the event loop without waiting for database or subscriber
+work. The FSM owns interruption, resume and confirmed-start decisions.
+
+The inbox admits up to 128 pending commands, then backpressures their callers.
+Once admitted, a command survives cancellation of its caller. Sixteen additional
+slots are reserved for nonblocking audio/connection results, in the same FIFO.
+Exhausting that reserve logs an overload and halts playback explicitly; pending
+callers receive errors. The receiver waits when idle, with no polling loop.
+
+After persistence and revision publication succeed, the Session emits immutable
+`QueueChanged`, `PlaybackChanged`, `RadioChanged` and confirmed `TrackStarted`
+facts. Explicit subscribers
+wake metadata enrichment, request radio refill and update crossfade preparation.
+These internal invalidations coalesce to the latest pending change and recompute
+current state. Ordinary subscribers keep a bounded FIFO (64 pending facts by
+default); exceptions are logged independently, and overflow detaches that
+consumer. Subscriptions support drain and close. This in-memory bus is separate
+from SSE and does not promise crash-safe event delivery. `TrackStarted` follows
+the history commit, once per logical play; it is not emitted for buffering,
+crossfade reservation or a failed output start.
+
+Radio retains continuation intent when a committed snapshot enters loading or
+playing. The Session records that observation before publishing coalesced
+invalidations, so an EOF cannot erase it before a delayed refill runs. After
+handling a refill or provider result, Radio resumes queued work when the current
+track has ended and voice is still connected, including when manual additions
+already filled the buffer. Starting Radio while idle does not start playback;
+stopping Radio clears the intent, and an explicitly paused track stays paused.
 
 ## Queue and player state
 
@@ -28,29 +96,39 @@ One synchronous `Player` owns the state. Queue operations address entry IDs;
 removing or moving the current track requires a playback action instead.
 Clearing the queue leaves the current track alone. Stopping puts it first in
 the queue and waits for a new start from the beginning.
+Removal selection is shared by the state mutation, durable outcome and Undo.
+Single-entry, contributor and whole-queue removal therefore act on the same
+entry IDs. The worker commits the queue, receipt and Undo record together.
 
-Playback follows a deterministic finite-state machine. The
-[transition table](../backend/src/nahormaar_backend/domain/fsm.py) defines every allowed
-state/event pair:
+Playback follows the pure
+[lifecycle FSM](../backend/src/nahormaar_backend/domain/fsm.py). Its decision
+contains a new snapshot, a `PlaybackContext` and typed effects. The controller
+commits the decision and its checkpoint before executing audio effects. The
+context owns output-attempt identity, retry count, pause/resume intent, retained
+position and whether this logical play has already been recorded.
 
-| State     | `play`    | `ready`   | `pause`  | `skip` | `stop` | `fail`  | `finished` |
-| --------- | --------- | --------- | -------- | ------ | ------ | ------- | ---------- |
-| `idle`    | next      | -         | -        | `idle` | `idle` | -       | -          |
-| `loading` | -         | `playing` | -        | next   | `idle` | `error` | -          |
-| `playing` | -         | -         | `paused` | next   | `idle` | `error` | next       |
-| `paused`  | `playing` | -         | -        | next   | `idle` | `error` | next       |
-| `error`   | `loading` | -         | -        | next   | `idle` | -       | -          |
+| Event | Decision |
+| --- | --- |
+| Play | Start queued work, resume a paused track or reload a suspended track; active playback is unchanged |
+| Pause / seek | Preserve the current entry; seek creates a new output attempt and preserves pause |
+| Confirmed start | First media output changes loading to playing, or retains pause, and records history once |
+| Natural completion | Advance once; ignore completion from a replaced attempt |
+| Recoverable interruption | Resolve a fresh stream and retry once at the captured position |
+| Failed output / exhausted retry | Report the affected track and advance once |
+| Skip / stop | Skip advances; Stop requeues the current entry from the beginning without retry |
+| Join | Resume retained playback or start queued work; preserve an explicit pause |
+| Leave / connection loss | Stop output and retain current entry, position and pause; only explicit Leave clears automatic restart rejoin |
+| Process restoration | Rejoin the saved channel; resume the retained track, or remain idle after Stop |
 
-`next` takes the next queued entry into `loading`, or becomes `idle` when the
-queue is empty. `play` from `error` retries the same entry. A dash means the
-event raises `InvalidTransitionError` without changing state. `finished` also
-applies while paused because a pause can race with the final audio frame.
-The `seek` event preserves `playing` or `paused` and leaves the queue unchanged;
-it is invalid in other states.
-The `crossfade` event is valid only while playing with an upcoming entry. It
-advances directly to `playing`; the incoming track and its history record commit
-together before activation. If EOF wins during that commit, the same incoming
-entry starts conventionally, without recording another play.
+Pause also accepts a loading track. Seeking requires playing or paused state.
+Invalid user transitions raise `InvalidTransitionError`; stale technical messages
+leave the decision unchanged. There is no automatic reconnect loop after a lost
+voice connection.
+
+Crossfade reserves the incoming entry while the outgoing audio continues. History
+is recorded only when the adapter confirms incoming media output. If activation
+fails, conventional playback gets a distinct attempt ID; late callbacks cannot
+complete that fallback or count it twice.
 
 SQLAlchemy defines the tables and handles database access; Alembic applies schema
 migrations at startup. Existing databases are adopted using their legacy version
@@ -62,21 +140,26 @@ commits in one Session transaction before the Player publishes its new snapshot.
 Failed writes and failed commits leave the previous snapshot intact.
 
 The last 100 started tracks are stored with timestamps and independent history
-IDs. Recording a start and entering `playing` share one transaction. Skips keep
+IDs. Recording a confirmed start and its playback/checkpoint state share one
+transaction, including a pause that races with the start. Skips keep
 the history entry; removing an unplayed track creates none. Resuming or retrying
 a stream automatically, or seeking within it, does not count twice.
 
 The singleton `playback_checkpoint` stores the connected channel, current entry
-ID, audio position, pause state and volume. Player transactions keep its entry ID
-aligned with the queue, resetting position when the current entry changes and
-clearing it on an error. The controller refreshes the position every five seconds
+ID, audio position, pause state, volume and `history_recorded` marker. Lifecycle
+decisions commit that restart intent with the corresponding snapshot. Queue and
+metadata edits reconcile the existing checkpoint without resetting the retained
+track position. The Session refreshes the position every five seconds
 and freezes the audio clock before saving on clean shutdown. These writes do not
 increment public revisions or emit SSE updates.
 
 Creating a Player with a checkpoint retains the current entry in `loading`.
 Once the Discord gateway is ready, the controller rejoins the saved channel and
 resolves a fresh stream at that offset. Paused playback starts silently and stays
-paused. Existing history identifies a resumed play, so it is not counted again.
+paused. The checkpoint's `history_recorded` marker prevents another play count;
+an earlier history entry for the same queue ID does not identify a new replay.
+Migration `0011` infers this marker from history once for legacy checkpoints;
+their original replay intent cannot be reconstructed reliably.
 A shutdown during startup preserves a checkpoint that has not been restored yet.
 During a crossfade the position belongs to the incoming track; its outgoing tail
 is not restored. Radio replenishment does not restart automatically.
@@ -89,8 +172,9 @@ states raise `StorageError` without replacing the database.
 
 ## Playback and voice
 
-The [PlaybackController](../backend/src/nahormaar_backend/application/playback.py) serializes
-controls and callbacks. One worker thread owns the synchronous Player and its
+The [Session](../backend/src/nahormaar_backend/application/session.py) serializes
+controls and callbacks. Its [PlaybackController](../backend/src/nahormaar_backend/application/playback.py)
+coordinates audio effects. One worker thread owns the synchronous Player and its
 database; Discord runs on the asyncio event loop. Each playback attempt has its
 own ID. Late extraction results and completion callbacks are ignored once that
 attempt has been stopped, skipped or replaced.
@@ -98,7 +182,10 @@ attempt has been stopped, skipped or replaced.
 The Discord adapter discovers joined servers and their voice channels from
 Discord's guild cache. No guild ID is configured. All servers share the same
 queue, with one active voice connection. Switching servers disconnects the old
-channel before joining the new one and waits for a manual playback start.
+channel before joining the new one and resumes retained playback at its saved
+position. Joining with no current track starts queued work. `/pspsps` and the
+dashboard use this same operation; joining an already active channel does not
+restart its track.
 Late disconnect events from the old channel cannot close the new connection.
 
 The [YouTube resolver](../backend/src/nahormaar_backend/integrations/youtube.py) runs `yt-dlp`
@@ -108,7 +195,7 @@ Stream URLs, codec information and HTTP headers stay in memory.
 
 The [metadata task](../backend/src/nahormaar_backend/application/metadata.py)
 resolves missing metadata for upcoming entries. It processes
-one entry at a time, outside the command lock. Results update existing IDs only,
+one entry at a time, outside the Session inbox. Results update existing IDs only,
 so removing a track during extraction cannot bring it back. Playback resolution
 also saves public metadata before the track starts.
 
@@ -191,7 +278,7 @@ accepted operations until they finish, even if their awaiting caller is cancelle
 ## API and simultaneous changes
 
 FastAPI owns one runtime through its lifespan. HTTP controls and playback
-callbacks share the controller's lock. The API reads complete committed
+callbacks share the Session inbox. The API reads complete committed
 snapshots; player endpoints leave database and Discord changes to the controller.
 
 SQLite stores track metadata, contributor profiles, playback history, accounts,
@@ -201,7 +288,7 @@ changes, including runtime-only changes such as volume. `queue_revision` changes
 only when upcoming entries or their order change. Startup advances the global
 revision because the voice connection and other runtime values reset.
 
-Reorder and clear compare the client's queue revision under the controller lock.
+Reorder and clear compare the client's queue revision inside the inbox handler.
 Playback controls compare the expected playback attempt ID. A late skip for a
 finished track cannot consume its successor.
 
@@ -220,9 +307,10 @@ The controller publishes committed snapshots through
 [`application/events.py`](../backend/src/nahormaar_backend/application/events.py).
 [`api/events.py`](../backend/src/nahormaar_backend/api/events.py) handles SSE
 serialization, heartbeats and access rechecks.
-Subscribers register and receive their first snapshot under the same lock
-as publication. Each subscriber buffers at most one snapshot, replacing an older
-pending update when needed. Reconnect always starts with the current state.
+Subscribers pass an inbox read barrier, then register with the latest committed
+snapshot on the event loop without yielding. Each subscriber buffers at most one
+snapshot, replacing an older pending update when needed. Reconnect always starts
+with the current state.
 The server closes event streams before draining HTTP requests during shutdown.
 Failed database writes close streams and make API requests return 503 until
 restart.

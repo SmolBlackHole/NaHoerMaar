@@ -8,23 +8,29 @@ from __future__ import annotations
 import asyncio
 import sqlite3
 from contextlib import closing
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-from nahormaar_backend.application import playback
+from nahormaar_backend.application import session as playback
 from nahormaar_backend.application.audio import ResolvedTrack, VoiceError
-from nahormaar_backend.application.playback import PlaybackController
+from nahormaar_backend.application.session import Session
 from nahormaar_backend.application.player import Player
 from nahormaar_backend.domain.checkpoint import PlaybackCheckpoint
-from nahormaar_backend.domain.models import PlaybackState, QueueEntry, VoiceState
+from nahormaar_backend.domain.models import (
+    PlaybackState,
+    PlayerSnapshot,
+    QueueEntry,
+    VoiceState,
+)
 from nahormaar_backend.persistence.player_store import SQLiteStore, StorageError
-from test_crossfade import _playing
+from test_crossfade import _playing, _wait_for_started
 from test_playback import ControlledResolver, FakeVoice, _controller, _wait_until
 
 
 async def start_track(
-    controller: PlaybackController, resolver: ControlledResolver
+    controller: Session, resolver: ControlledResolver
 ) -> tuple[QueueEntry, QueueEntry]:
     entries = (
         QueueEntry("https://youtu.be/first"),
@@ -63,7 +69,7 @@ def test_restart_resumes_channel_position_volume_and_history(
             await controller.close()
         with SQLiteStore(database) as store:
             assert store.checkpoint() == PlaybackCheckpoint(
-                7, entries[0].id, 42.36, paused, 0.4
+                7, entries[0].id, 42.36, paused, 0.4, history_recorded=True
             )
 
         restored, resolver, voice, _ = await _controller(tmp_path)
@@ -75,7 +81,9 @@ def test_restart_resumes_channel_position_volume_and_history(
             await restored.restore()  # Startup restoration is idempotent.
             await resolve(resolver)
             expected = PlaybackState.PAUSED if paused else PlaybackState.PLAYING
-            await _wait_until(lambda: restored.snapshot.state is expected)
+            await _wait_until(
+                lambda: restored.snapshot.state is expected and bool(voice.positions)
+            )
             assert resolver.calls == [entries[0].source_url]
             assert voice.channel_id == 7
             assert voice.positions == [42.36]
@@ -115,20 +123,21 @@ def test_stopped_player_rejoins_without_starting_the_queue(tmp_path: Path) -> No
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("connection_lost", [False, True])
-def test_leaving_clears_automatic_rejoin(tmp_path: Path, connection_lost: bool) -> None:
+def test_explicit_leaving_retains_memory_but_clears_automatic_rejoin(
+    tmp_path: Path,
+) -> None:
     async def scenario() -> None:
         controller, resolver, voice, database = await _controller(tmp_path)
         try:
             await start_track(controller, resolver)
-            if connection_lost:
-                voice.lose_connection()
-                await _wait_until(
-                    lambda: controller.snapshot.voice_state is VoiceState.DISCONNECTED
-                )
-            else:
-                await controller.disconnect()
-            queued = controller.snapshot.upcoming
+            current = controller.snapshot.current
+            assert current is not None
+            voice.position_seconds = 32
+            await controller.disconnect()
+            assert controller.snapshot.current == current
+            assert controller.snapshot.state is PlaybackState.LOADING
+            assert controller.status.position_seconds == 32
+            queued = (current, *controller.snapshot.upcoming)
         finally:
             await controller.close()
         with SQLiteStore(database) as store:
@@ -139,6 +148,51 @@ def test_leaving_clears_automatic_rejoin(tmp_path: Path, connection_lost: bool) 
             assert not voice.connected
             assert not resolver.calls
             assert restored.snapshot.upcoming == queued
+        finally:
+            await restored.close()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("paused", [False, True])
+def test_connection_loss_keeps_checkpoint_for_process_restoration(
+    tmp_path: Path, paused: bool
+) -> None:
+    async def scenario() -> None:
+        controller, resolver, voice, database = await _controller(tmp_path)
+        try:
+            entries = await start_track(controller, resolver)
+            voice.position_seconds = 37.5
+            if paused:
+                await controller.pause()
+            history = controller.snapshot.recently_played
+            voice.lose_connection()
+            await _wait_until(
+                lambda: controller.snapshot.voice_state is VoiceState.DISCONNECTED
+            )
+            assert controller.snapshot.current is not None
+            assert controller.snapshot.current.id == entries[0].id
+            assert controller.snapshot.upcoming == entries[1:]
+            assert len(resolver.calls) == 1
+        finally:
+            await controller.close()
+        with SQLiteStore(database) as store:
+            assert store.checkpoint() == PlaybackCheckpoint(
+                7, entries[0].id, 37.5, paused, history_recorded=True
+            )
+        restored, resolver, voice, _ = await _controller(tmp_path)
+        try:
+            await restored.restore()
+            await resolve(resolver)
+            expected = PlaybackState.PAUSED if paused else PlaybackState.PLAYING
+            await _wait_until(
+                lambda: restored.snapshot.state is expected and bool(voice.positions)
+            )
+            assert voice.connected and voice.channel_id == 7
+            assert voice.positions == [37.5]
+            assert resolver.calls == [entries[0].source_url]
+            assert restored.snapshot.upcoming == entries[1:]
+            assert restored.snapshot.recently_played == history
         finally:
             await restored.close()
 
@@ -193,7 +247,12 @@ def test_failed_startup_before_gateway_ready_preserves_checkpoint(
         try:
             await restored.restore()
             await resolve(resolver)
-            await _wait_until(lambda: restored.snapshot.state is PlaybackState.PAUSED)
+            await _wait_until(
+                lambda: (
+                    restored.snapshot.state is PlaybackState.PAUSED
+                    and bool(voice.positions)
+                )
+            )
             assert voice.positions == [23.5]
             assert len(restored.snapshot.recently_played) == 1
         finally:
@@ -213,6 +272,8 @@ def test_missing_channel_keeps_queue_and_reports_issue(tmp_path: Path) -> None:
             entries = await start_track(controller, resolver)
         finally:
             await controller.close()
+        with SQLiteStore(database) as store:
+            checkpoint = store.checkpoint()
         restored, resolver, voice, _ = await _controller(
             tmp_path, voice=MissingChannel()
         )
@@ -221,14 +282,17 @@ def test_missing_channel_keeps_queue_and_reports_issue(tmp_path: Path) -> None:
             assert not voice.connected
             assert not resolver.calls
             status = await restored.read_status()
-            assert status.player.current is None
+            assert status.player.current is not None
+            assert status.player.current.id == entries[0].id
+            assert status.player.state is PlaybackState.LOADING
+            assert status.player.voice_state is VoiceState.DISCONNECTED
             assert tuple(entry.id for entry in status.player.upcoming) == tuple(
-                entry.id for entry in entries
+                entry.id for entry in entries[1:]
             )
             assert status.last_issue is not None
             assert status.last_issue.message == "The saved channel is unavailable."
             with SQLiteStore(database) as store:
-                assert store.checkpoint() is None
+                assert store.checkpoint() == checkpoint
         finally:
             await restored.close()
 
@@ -263,7 +327,9 @@ def test_crash_uses_periodic_checkpoint_without_a_clean_shutdown(
         finally:
             await controller.close()
         resolver, voice = ControlledResolver(), FakeVoice()
-        restored = await PlaybackController.create(crash_database, resolver, voice)
+        restored = await Session.create(
+            lambda: SQLiteStore(crash_database), resolver, voice
+        )
         try:
             await restored.restore()
             await resolve(resolver)
@@ -280,7 +346,7 @@ def test_restart_during_crossfade_resumes_incoming_track(tmp_path: Path) -> None
         controller, _, voice, _, entries = await _playing(tmp_path)
         try:
             voice.fade_due()
-            await _wait_until(lambda: len(voice.played) == 2)
+            await _wait_for_started(controller, voice, 2)
             await controller.read_status()  # Wait for the serialized transition commit.
             voice.position_seconds = 2.5
             history = controller.snapshot.recently_played
@@ -320,7 +386,12 @@ def test_retry_of_paused_restoration_keeps_offset_and_does_not_count_a_play(
             await _wait_until(lambda: len(resolver.requests) == 1)
             resolver.fail(0, "temporary failure", retryable=True)
             await resolve(resolver, 1)
-            await _wait_until(lambda: restored.snapshot.state is PlaybackState.PAUSED)
+            await _wait_until(
+                lambda: (
+                    restored.snapshot.state is PlaybackState.PAUSED
+                    and bool(voice.positions)
+                )
+            )
             assert voice.positions == [41]
             assert len(restored.snapshot.recently_played) == 1
         finally:
@@ -349,14 +420,33 @@ def test_track_changes_update_checkpoint_in_the_same_transaction(
     store: SQLiteStore, player: Player
 ) -> None:
     first, second = QueueEntry("first"), QueueEntry("second")
-    player.enqueue(first)
-    player.enqueue(second)
-    player.play()
-    player.mark_playing()
-    player.save_checkpoint(PlaybackCheckpoint(7, first.id, 35, volume=0.4))
-    player.pause()
-    assert store.checkpoint() == PlaybackCheckpoint(7, first.id, 35, True, 0.4)
-    player.skip()
+    checkpoint = PlaybackCheckpoint(7, first.id, 35, volume=0.4, history_recorded=True)
+    player.commit_lifecycle(
+        PlayerSnapshot(PlaybackState.PLAYING, first, (second,)),
+        checkpoint,
+        record_history=True,
+    )
+    history = player.snapshot.recently_played
+    player.commit_lifecycle(
+        replace(player.snapshot, state=PlaybackState.PAUSED),
+        replace(checkpoint, paused=True),
+    )
+    assert store.load() == player.snapshot
+    assert store.checkpoint() == replace(checkpoint, paused=True)
+    player.commit_lifecycle(
+        replace(
+            player.snapshot, state=PlaybackState.LOADING, current=second, upcoming=()
+        ),
+        PlaybackCheckpoint(7, second.id, volume=0.4),
+    )
+    assert store.load() == player.snapshot
     assert store.checkpoint() == PlaybackCheckpoint(7, second.id, volume=0.4)
-    player.stop()
+    player.commit_lifecycle(
+        replace(
+            player.snapshot, state=PlaybackState.IDLE, current=None, upcoming=(second,)
+        ),
+        PlaybackCheckpoint(7, None, volume=0.4),
+    )
+    assert store.load() == player.snapshot
     assert store.checkpoint() == PlaybackCheckpoint(7, None, volume=0.4)
+    assert store.load().recently_played == history

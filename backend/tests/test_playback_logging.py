@@ -29,6 +29,7 @@ from test_playback import _controller, _wait_until
         (b"Connection timed out: https://private.invalid/secret", "timeout"),
         (b"Connection reset by peer", "connection_reset"),
         (b"Invalid data found when processing input", "invalid_media"),
+        (b"Error opening input file private.wav", "ffmpeg_error"),
         (b"Authorization: Bearer secret", "ffmpeg_message"),
     ],
 )
@@ -50,7 +51,7 @@ def test_ffmpeg_failure_logs_exit_without_source_or_headers(
         source.cleanup()
     assert "ffmpeg.eof" in caplog.text
     assert f"audio_pid={source.process_id}" in caplog.text
-    assert "diagnostics=ffmpeg_message" in caplog.text
+    assert "diagnostics=ffmpeg_error" in caplog.text
     assert "killed=False" in caplog.text
     assert "private-missing-source" not in caplog.text
     assert str(tmp_path) not in caplog.text

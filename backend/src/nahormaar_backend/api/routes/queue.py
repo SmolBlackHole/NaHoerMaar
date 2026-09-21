@@ -9,7 +9,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Response
 
-from ...application.playback import PlaybackController
+from ...application.session import Session
 from ...domain import commands
 from .. import schemas as dto
 from ..dependencies import ApiServices, CurrentUser, RequestID
@@ -25,7 +25,7 @@ def queue_router(services: ApiServices) -> APIRouter:
         body: dto.AddInput,
         response: Response,
         request_id: RequestID,
-        active: Annotated[PlaybackController, Depends(services.player)],
+        active: Annotated[Session, Depends(services.player)],
     ) -> dto.MutationResult:
         return await mutate(
             user,
@@ -44,7 +44,7 @@ def queue_router(services: ApiServices) -> APIRouter:
         body: dto.BatchInput,
         response: Response,
         request_id: RequestID,
-        active: Annotated[PlaybackController, Depends(services.player)],
+        active: Annotated[Session, Depends(services.player)],
     ) -> dto.MutationResult:
         return await mutate(
             user,
@@ -64,7 +64,7 @@ def queue_router(services: ApiServices) -> APIRouter:
         entry_id: UUID,
         response: Response,
         request_id: RequestID,
-        active: Annotated[PlaybackController, Depends(services.player)],
+        active: Annotated[Session, Depends(services.player)],
     ) -> dto.MutationResult:
         return await mutate(
             user, request_id, commands.Remove(entry_id), response, active
@@ -77,7 +77,7 @@ def queue_router(services: ApiServices) -> APIRouter:
         body: dto.MoveInput,
         response: Response,
         request_id: RequestID,
-        active: Annotated[PlaybackController, Depends(services.player)],
+        active: Annotated[Session, Depends(services.player)],
     ) -> dto.MutationResult:
         return await mutate(
             user,
@@ -93,7 +93,7 @@ def queue_router(services: ApiServices) -> APIRouter:
         body: dto.ClearInput,
         response: Response,
         request_id: RequestID,
-        active: Annotated[PlaybackController, Depends(services.player)],
+        active: Annotated[Session, Depends(services.player)],
     ) -> dto.MutationResult:
         return await mutate(
             user,
@@ -109,7 +109,7 @@ def queue_router(services: ApiServices) -> APIRouter:
         body: dto.UndoInput,
         response: Response,
         request_id: RequestID,
-        active: Annotated[PlaybackController, Depends(services.player)],
+        active: Annotated[Session, Depends(services.player)],
     ) -> dto.MutationResult:
         return await mutate(
             user, request_id, commands.Undo(body.undo_id), response, active

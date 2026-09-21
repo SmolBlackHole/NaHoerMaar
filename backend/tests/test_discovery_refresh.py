@@ -13,11 +13,12 @@ import pytest
 
 from nahormaar_backend import cache as cache_module
 from nahormaar_backend.application import catalog as module
-from nahormaar_backend.application.catalog import MediaCatalog, PreviewState
+from nahormaar_backend.application.catalog import PreviewState
 from nahormaar_backend.application.search import SearchCatalog
 from nahormaar_backend.cache import SnapshotCache
 from nahormaar_backend.domain.catalog import SearchSource
 from nahormaar_backend.integrations import discovery as extractor_module
+from nahormaar_backend.integrations.catalog import create_media_catalog
 from nahormaar_backend.integrations.processes import ProcessResult
 from test_catalog import PLAYLIST, VIDEO, Runner, item
 from test_commands import wait_for
@@ -77,7 +78,7 @@ def test_playlist_shared_fetch_and_cancellation_are_separate_per_user(
         runner = Runner()
         runner.release = asyncio.Event()
         monkeypatch.setattr(extractor_module, "run_process", runner)
-        catalog = MediaCatalog(Path("node"))
+        catalog = await create_media_catalog(Path("node"))
         first, second, owner, other = uuid4(), uuid4(), uuid4(), uuid4()
         try:
             catalog.start_preview(PLAYLIST, first, owner_id=owner)
@@ -115,7 +116,7 @@ def test_playlist_refresh_preserves_complete_data_on_partial_failure(
         runner = Runner()
         runner.entries = [item(), item(id="bWHJbIm1TAA")]
         monkeypatch.setattr(extractor_module, "run_process", runner)
-        catalog = MediaCatalog(Path("node"))
+        catalog = await create_media_catalog(Path("node"))
         owner = uuid4()
         try:
             catalog.start_preview(PLAYLIST, owner, owner_id=owner)
@@ -175,7 +176,7 @@ def test_link_metadata_is_immediate_and_refresh_is_coalesced(
             )
 
         monkeypatch.setattr(extractor_module, "run_process", run)
-        catalog = MediaCatalog(Path("node"))
+        catalog = await create_media_catalog(Path("node"))
         try:
             original = await catalog.metadata(VIDEO)
             clock[0] += 301

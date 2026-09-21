@@ -2,14 +2,18 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+from dataclasses import replace
+from uuid import uuid4
+
 import pytest
 
+from nahormaar_backend.domain.checkpoint import PlaybackCheckpoint
 from nahormaar_backend.domain.fsm import (
     InvalidTransitionError,
-    PlaybackEvent,
-    VoiceEvent,
-    transition,
-    voice_transition,
+    LifecycleEvent,
+    PlaybackContext,
+    PlaybackEffect,
+    decide_playback,
 )
 from nahormaar_backend.domain.models import (
     PlaybackState,
@@ -27,49 +31,112 @@ def _snapshot(state: PlaybackState, *, has_next: bool = True) -> PlayerSnapshot:
     return PlayerSnapshot(state, current, upcoming, VoiceState.CONNECTED)
 
 
-def test_start_pause_and_resume_keep_the_same_entry() -> None:
+def _context(snapshot: PlayerSnapshot) -> PlaybackContext:
+    return PlaybackContext(
+        entry_id=snapshot.current.id if snapshot.current else None,
+        attempt_id=uuid4() if snapshot.current else None,
+        position_seconds=45 if snapshot.current else 0,
+        paused=snapshot.state is PlaybackState.PAUSED,
+        started=snapshot.state in (PlaybackState.PLAYING, PlaybackState.PAUSED),
+        history_recorded=snapshot.state
+        in (PlaybackState.PLAYING, PlaybackState.PAUSED),
+        channel_id=7,
+        rejoin=True,
+    )
+
+
+def test_start_pause_before_confirmation_and_resume_keep_the_same_entry() -> None:
     idle = _snapshot(PlaybackState.IDLE)
-    loading = transition(idle, PlaybackEvent.PLAY)
-    assert loading.state is PlaybackState.LOADING
-    assert loading.current == idle.upcoming[0]
-    assert loading.upcoming == ()
-    playing = transition(loading, PlaybackEvent.READY)
-    paused = transition(playing, PlaybackEvent.PAUSE)
-    assert paused.state is PlaybackState.PAUSED
-    assert paused.current == playing.current
-    assert transition(paused, PlaybackEvent.PLAY) == playing
+    loading = decide_playback(idle, _context(idle), LifecycleEvent.PLAY)
+    assert loading.snapshot.current == idle.upcoming[0]
+    assert loading.snapshot.state is PlaybackState.LOADING
+    assert loading.snapshot.upcoming == ()
+    assert loading.effects == (PlaybackEffect.STOP_OUTPUT, PlaybackEffect.LOAD)
+    attempt = uuid4()
+    context = replace(loading.context, attempt_id=attempt)
+    paused = decide_playback(loading.snapshot, context, LifecycleEvent.PAUSE)
+    assert paused.snapshot.state is PlaybackState.PAUSED
+    started = decide_playback(
+        paused.snapshot, paused.context, LifecycleEvent.STARTED, attempt_id=attempt
+    )
+    assert started.snapshot.state is PlaybackState.PAUSED
+    assert started.effects == (PlaybackEffect.RECORD_HISTORY,)
+    resumed = decide_playback(started.snapshot, started.context, LifecycleEvent.PLAY)
+    assert resumed.snapshot.state is PlaybackState.PLAYING
+    assert resumed.snapshot.current == idle.upcoming[0]
+    assert resumed.effects == (PlaybackEffect.RESUME_OUTPUT,)
     assert idle.current is None
 
 
 @pytest.mark.parametrize("state", list(PlaybackState))
-def test_seek_only_preserves_an_active_or_paused_track(state: PlaybackState) -> None:
+def test_seek_preserves_active_track_and_logical_play(state: PlaybackState) -> None:
     before = _snapshot(state)
+    context = _context(before)
     if state in (PlaybackState.PLAYING, PlaybackState.PAUSED):
-        assert transition(before, PlaybackEvent.SEEK) == before
+        after = decide_playback(
+            before, context, LifecycleEvent.SEEK, position_seconds=12
+        )
+        assert after.snapshot.current == before.current
+        assert after.snapshot.upcoming == before.upcoming
+        assert after.context.position_seconds == 12
+        assert after.context.history_recorded
+        assert after.context.paused == context.paused
+        assert after.context.attempt_id is None
+        assert after.effects == (PlaybackEffect.STOP_OUTPUT, PlaybackEffect.LOAD)
     else:
         with pytest.raises(InvalidTransitionError):
-            transition(before, PlaybackEvent.SEEK)
+            decide_playback(before, context, LifecycleEvent.SEEK)
 
 
 @pytest.mark.parametrize("state", list(PlaybackState))
-def test_recovery_requeues_once_and_resets_connection(state: PlaybackState) -> None:
+def test_recovery_without_checkpoint_requeues_once(state: PlaybackState) -> None:
     before = _snapshot(state)
-    after = transition(before, PlaybackEvent.RECOVER)
+    after = decide_playback(before, _context(before), LifecycleEvent.RECOVER)
     expected = ((before.current,) if before.current else ()) + before.upcoming
-    assert after == PlayerSnapshot(upcoming=expected)
-    assert transition(after, PlaybackEvent.RECOVER) == after
+    assert after.snapshot == PlayerSnapshot(upcoming=expected)
+    assert after.context == PlaybackContext()
+    assert after.effects == ()
+    assert (
+        decide_playback(after.snapshot, after.context, LifecycleEvent.RECOVER) == after
+    )
+
+
+@pytest.mark.parametrize("paused", [False, True])
+def test_recovery_retains_checkpoint_until_connection_is_restored(paused: bool) -> None:
+    before = _snapshot(PlaybackState.PAUSED if paused else PlaybackState.PLAYING)
+    assert before.current
+    checkpoint = PlaybackCheckpoint(7, before.current.id, 45, paused, 0.4, True)
+    recovered = decide_playback(
+        before, PlaybackContext(), LifecycleEvent.RECOVER, checkpoint=checkpoint
+    )
+    assert recovered.snapshot.current == before.current
+    assert recovered.snapshot.upcoming == before.upcoming
+    assert recovered.snapshot.state is PlaybackState.LOADING
+    assert recovered.snapshot.voice_state is VoiceState.DISCONNECTED
+    assert recovered.effects == ()
+    joined = decide_playback(
+        recovered.snapshot, recovered.context, LifecycleEvent.RESTORED, channel_id=7
+    )
+    assert joined.context.position_seconds == 45
+    assert joined.context.history_recorded
+    assert joined.context.paused is paused
+    assert joined.effects == (PlaybackEffect.STOP_OUTPUT, PlaybackEffect.LOAD)
 
 
 @pytest.mark.parametrize("state", list(PlaybackState))
-def test_stop_keeps_all_entries_and_connection(state: PlaybackState) -> None:
+def test_stop_requeues_and_resets_play_but_keeps_connection(
+    state: PlaybackState,
+) -> None:
     before = _snapshot(state)
-    after = transition(before, PlaybackEvent.STOP)
-    assert after.state is PlaybackState.IDLE
-    assert after.current is None
-    assert after.upcoming == (
+    after = decide_playback(before, _context(before), LifecycleEvent.STOP)
+    assert after.snapshot.state is PlaybackState.IDLE
+    assert after.snapshot.current is None
+    assert after.snapshot.upcoming == (
         ((before.current,) if before.current else ()) + before.upcoming
     )
-    assert after.voice_state is VoiceState.CONNECTED
+    assert after.snapshot.voice_state is VoiceState.CONNECTED
+    assert after.context == PlaybackContext(channel_id=7, rejoin=True)
+    assert after.effects == (PlaybackEffect.STOP_OUTPUT,)
 
 
 @pytest.mark.parametrize("has_next", [True, False])
@@ -78,63 +145,46 @@ def test_skip_advances_only_an_active_player(
     state: PlaybackState, has_next: bool
 ) -> None:
     before = _snapshot(state, has_next=has_next)
-    after = transition(before, PlaybackEvent.SKIP)
+    after = decide_playback(before, _context(before), LifecycleEvent.SKIP)
     if state is PlaybackState.IDLE:
-        assert after == before
+        assert after.snapshot == before
     elif has_next:
-        assert after.current == before.upcoming[0]
-        assert after.state is PlaybackState.LOADING
-        assert after.upcoming == ()
+        assert after.snapshot.current == before.upcoming[0]
+        assert after.snapshot.state is PlaybackState.LOADING
+        assert after.snapshot.upcoming == ()
     else:
-        assert after.current is None
-        assert after.state is PlaybackState.IDLE
+        assert after.snapshot.current is None
+        assert after.snapshot.state is PlaybackState.IDLE
 
 
-def test_play_with_an_empty_queue_stays_idle() -> None:
+def test_empty_queue_play_and_restored_connection_stay_idle() -> None:
     empty = PlayerSnapshot()
-    assert transition(empty, PlaybackEvent.PLAY) == empty
+    after = decide_playback(empty, PlaybackContext(), LifecycleEvent.PLAY)
+    assert after.snapshot == empty
+    assert PlaybackEffect.LOAD not in after.effects
+    queued = PlayerSnapshot(upcoming=(QueueEntry("queued"),))
+    restored = decide_playback(
+        queued, PlaybackContext(), LifecycleEvent.RESTORED, channel_id=7
+    )
+    assert restored.snapshot.current is None
+    assert restored.snapshot.upcoming == queued.upcoming
+    assert restored.effects == ()
+    joined = decide_playback(
+        queued, PlaybackContext(), LifecycleEvent.JOINED, channel_id=7
+    )
+    assert joined.snapshot.current == queued.upcoming[0]
 
 
 @pytest.mark.parametrize(
-    "state", [PlaybackState.LOADING, PlaybackState.PLAYING, PlaybackState.PAUSED]
+    "state", [PlaybackState.IDLE, PlaybackState.PAUSED, PlaybackState.ERROR]
 )
-def test_failure_and_retry_keep_the_failed_entry(state: PlaybackState) -> None:
+def test_pause_rejects_invalid_states(state: PlaybackState) -> None:
     before = _snapshot(state)
-    failed = transition(before, PlaybackEvent.FAIL)
-    assert failed.state is PlaybackState.ERROR
-    assert failed.current == before.current
-    retry = transition(failed, PlaybackEvent.PLAY)
-    assert retry.state is PlaybackState.LOADING
-    assert retry.current == before.current
-    assert retry.upcoming == before.upcoming
-
-
-@pytest.mark.parametrize(
-    ("state", "event"),
-    [
-        (PlaybackState.IDLE, PlaybackEvent.READY),
-        (PlaybackState.IDLE, PlaybackEvent.PAUSE),
-        (PlaybackState.IDLE, PlaybackEvent.FAIL),
-        (PlaybackState.LOADING, PlaybackEvent.PLAY),
-        (PlaybackState.LOADING, PlaybackEvent.PAUSE),
-        (PlaybackState.PLAYING, PlaybackEvent.PLAY),
-        (PlaybackState.PLAYING, PlaybackEvent.READY),
-        (PlaybackState.PAUSED, PlaybackEvent.READY),
-        (PlaybackState.PAUSED, PlaybackEvent.PAUSE),
-        (PlaybackState.ERROR, PlaybackEvent.READY),
-        (PlaybackState.ERROR, PlaybackEvent.PAUSE),
-        (PlaybackState.ERROR, PlaybackEvent.FAIL),
-    ],
-)
-def test_invalid_events_do_not_change_state(
-    state: PlaybackState, event: PlaybackEvent
-) -> None:
-    snapshot = _snapshot(state)
     with pytest.raises(InvalidTransitionError) as error:
-        transition(snapshot, event)
+        decide_playback(before, _context(before), LifecycleEvent.PAUSE)
     assert error.value.state is state
-    assert error.value.event is event
-    assert snapshot.state is state
+    assert error.value.event is LifecycleEvent.PAUSE
+    assert before.state is state
 
 
 @pytest.mark.parametrize("state", [PlaybackState.PLAYING, PlaybackState.PAUSED])
@@ -142,41 +192,69 @@ def test_invalid_events_do_not_change_state(
 def test_natural_completion_advances_even_if_pause_raced_with_end(
     state: PlaybackState, has_next: bool
 ) -> None:
-    snapshot = _snapshot(state, has_next=has_next)
-    after = transition(snapshot, PlaybackEvent.FINISHED)
-    assert after.current == (snapshot.upcoming[0] if has_next else None)
-    assert after.state is (PlaybackState.LOADING if has_next else PlaybackState.IDLE)
+    before = _snapshot(state, has_next=has_next)
+    context = _context(before)
+    after = decide_playback(
+        before, context, LifecycleEvent.FINISHED, attempt_id=context.attempt_id
+    )
+    assert after.snapshot.current == (before.upcoming[0] if has_next else None)
+    assert after.snapshot.state is (
+        PlaybackState.LOADING if has_next else PlaybackState.IDLE
+    )
+    assert PlaybackEffect.REPORT_FAILURE not in after.effects
 
 
-@pytest.mark.parametrize(
-    "state", [PlaybackState.IDLE, PlaybackState.LOADING, PlaybackState.ERROR]
-)
-def test_completion_requires_a_started_track(state: PlaybackState) -> None:
-    with pytest.raises(InvalidTransitionError):
-        transition(_snapshot(state), PlaybackEvent.FINISHED)
+@pytest.mark.parametrize("event", [LifecycleEvent.LEAVE, LifecycleEvent.DISCONNECTED])
+@pytest.mark.parametrize("paused", [False, True])
+def test_disconnect_retains_position_and_join_preserves_pause(
+    event: LifecycleEvent, paused: bool
+) -> None:
+    before = _snapshot(PlaybackState.PAUSED if paused else PlaybackState.PLAYING)
+    disconnected = decide_playback(before, _context(before), event)
+    assert disconnected.snapshot.current == before.current
+    assert disconnected.snapshot.upcoming == before.upcoming
+    assert disconnected.snapshot.voice_state is VoiceState.DISCONNECTED
+    assert disconnected.context.rejoin is (event is LifecycleEvent.DISCONNECTED)
+    assert disconnected.context.attempt_id is None
+    joined = decide_playback(
+        disconnected.snapshot, disconnected.context, LifecycleEvent.JOINED, channel_id=8
+    )
+    assert joined.snapshot.current == before.current
+    assert joined.context.position_seconds == 45
+    assert joined.context.history_recorded
+    assert joined.context.channel_id == 8
+    assert joined.context.paused is paused
+    assert joined.effects == (PlaybackEffect.STOP_OUTPUT, PlaybackEffect.LOAD)
 
 
-def test_voice_connect_events_require_a_pending_connection() -> None:
-    disconnected = PlayerSnapshot()
-    with pytest.raises(ValueError):
-        voice_transition(disconnected, VoiceEvent.CONNECTED)
-    connecting = voice_transition(disconnected, VoiceEvent.CONNECT)
-    assert connecting.voice_state is VoiceState.CONNECTING
-    with pytest.raises(ValueError):
-        voice_transition(connecting, VoiceEvent.CONNECT)
-    connected = voice_transition(connecting, VoiceEvent.CONNECTED)
-    assert connected.voice_state is VoiceState.CONNECTED
-    assert voice_transition(connecting, VoiceEvent.DISCONNECT) == disconnected
-    assert voice_transition(connected, VoiceEvent.DISCONNECT) == disconnected
+@pytest.mark.parametrize("state", list(PlaybackState))
+def test_fault_keeps_entries_and_clears_attempt_and_rejoin(
+    state: PlaybackState,
+) -> None:
+    before = _snapshot(state)
+    after = decide_playback(before, _context(before), LifecycleEvent.FAULT)
+    assert after.snapshot.current == before.current
+    assert after.snapshot.upcoming == before.upcoming
+    assert after.snapshot.state is (
+        PlaybackState.ERROR if before.current else PlaybackState.IDLE
+    )
+    assert after.context.attempt_id is None
+    assert not after.context.rejoin
 
 
-def test_voice_loss_preserves_track_and_does_not_resume_on_reconnect() -> None:
-    playing = _snapshot(PlaybackState.PLAYING)
-    disconnected = voice_transition(playing, VoiceEvent.DISCONNECT)
-    assert disconnected.current is None
-    assert disconnected.upcoming == (playing.current, *playing.upcoming)
-    assert voice_transition(disconnected, VoiceEvent.DISCONNECT) == disconnected
-    connecting = voice_transition(disconnected, VoiceEvent.CONNECT)
-    reconnected = voice_transition(connecting, VoiceEvent.CONNECTED)
-    assert reconnected.state is PlaybackState.IDLE
-    assert reconnected.upcoming == disconnected.upcoming
+@pytest.mark.parametrize("state", list(PlaybackState))
+@pytest.mark.parametrize("has_next", [True, False])
+def test_crossfade_reserves_next_track_without_start_or_cleanup(
+    state: PlaybackState, has_next: bool
+) -> None:
+    before = _snapshot(state, has_next=has_next)
+    if state is PlaybackState.PLAYING and has_next:
+        after = decide_playback(before, _context(before), LifecycleEvent.CROSSFADE)
+        assert after.snapshot.current == before.upcoming[0]
+        assert after.snapshot.state is PlaybackState.LOADING
+        assert after.effects == ()
+        assert not after.context.history_recorded
+        assert after.context.attempt_id is None
+    else:
+        with pytest.raises(InvalidTransitionError):
+            decide_playback(before, _context(before), LifecycleEvent.CROSSFADE)

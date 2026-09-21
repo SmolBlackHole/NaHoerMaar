@@ -10,10 +10,10 @@ import pytest
 
 from nahormaar_backend.api.schemas import State
 from nahormaar_backend.application.audio import ResolvedTrack
-from nahormaar_backend.application.catalog import MediaCatalog
 from nahormaar_backend.domain.catalog import SearchSource
 from nahormaar_backend.domain.models import PlaybackState
 from nahormaar_backend.integrations import discovery as extractor_module
+from nahormaar_backend.integrations.catalog import create_media_catalog
 from nahormaar_backend.persistence.player_store import SQLiteStore
 from test_api import Harness, headers, mutation
 from test_catalog import PLAYLIST, VIDEO, Runner, item
@@ -29,10 +29,12 @@ def test_search_defaults_to_music_and_validates_source(
             {"videoId": "Pqp9fDRp1lw", "title": "Music result", "duration_seconds": 180}
         ]
         monkeypatch.setattr(extractor_module, "run_process", runner)
-        harness = Harness(tmp_path / "player.sqlite3")
+        harness = Harness(
+            tmp_path / "player.sqlite3",
+            catalog=await create_media_catalog(Path("node")),
+        )
         async with harness.client() as client:
             assert harness.controller is not None
-            harness.controller.catalog = MediaCatalog(Path("node"))
             response = await client.get("/api/catalog/search", params={"q": "song"})
             assert response.status_code == 200
             assert (
@@ -68,12 +70,11 @@ def test_playback_starts_while_discovery_slots_are_busy(
         runner = Runner()
         runner.release = asyncio.Event()
         monkeypatch.setattr(extractor_module, "run_process", runner)
-        harness = Harness(tmp_path / "player.sqlite3")
+        library = await create_media_catalog(Path("node"))
+        harness = Harness(tmp_path / "player.sqlite3", catalog=library)
         async with harness.client() as client:
             assert harness.controller is not None
             controller = harness.controller
-            library = MediaCatalog(Path("node"))
-            controller.catalog = library
             tasks = [asyncio.create_task(library.search(str(i))) for i in range(2)]
             try:
                 await wait_for(lambda: len(runner.calls) == 2)
@@ -112,10 +113,10 @@ def test_batch_is_atomic_ordered_and_replayed_after_restart(
         runner = Runner()
         runner.entries = [item(), item(id="bWHJbIm1TAA", duration=None)]
         monkeypatch.setattr(extractor_module, "run_process", runner)
+        library = await create_media_catalog(Path("node"))
+        harness.catalog = library
         async with harness.client() as client:
             assert harness.controller is not None
-            library = MediaCatalog(Path("node"))
-            harness.controller.catalog = library
             await library.search("example", source=SearchSource.VIDEOS)
             before = State.model_validate((await client.get("/api/state")).json())
             batch_response, single_response = await asyncio.gather(
@@ -260,11 +261,12 @@ def test_preview_api_progress_cancel_and_queue_independence(
         runner.entries = [item(), item(id="bWHJbIm1TAA", availability="private")]
         runner.release = asyncio.Event()
         monkeypatch.setattr(extractor_module, "run_process", runner)
-        harness = Harness(tmp_path / "player.sqlite3")
+        harness = Harness(
+            tmp_path / "player.sqlite3",
+            catalog=await create_media_catalog(Path("node")),
+        )
         async with harness.client() as client:
             assert harness.controller is not None
-            library = MediaCatalog(Path("node"))
-            harness.controller.catalog = library
             key = headers()
             response = await client.post(
                 "/api/youtube/playlists", json={"source_url": PLAYLIST}, headers=key

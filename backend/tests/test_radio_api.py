@@ -14,11 +14,12 @@ from test_radio import Recommendations
 
 def test_radio_api_auth_preview_start_replay_and_end(tmp_path: Path) -> None:
     async def scenario() -> None:
-        harness = Harness(tmp_path / "radio.sqlite3")
+        harness = Harness(
+            tmp_path / "radio.sqlite3", radio_catalog=RadioCatalog(Recommendations())
+        )
         async with harness.client() as client:
             assert harness.controller is not None
             controller = harness.controller
-            controller.radio_catalog = RadioCatalog(Recommendations())
             body = {
                 "kind": "track",
                 "source_url": "https://youtu.be/Pqp9fDRp1lw",

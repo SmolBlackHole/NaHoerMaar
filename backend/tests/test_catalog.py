@@ -14,10 +14,11 @@ import pytest
 
 from nahormaar_backend.application import catalog as module
 from nahormaar_backend.application.audio import TrackError
-from nahormaar_backend.application.catalog import MediaCatalog, PreviewState
+from nahormaar_backend.application.catalog import PreviewState
 from nahormaar_backend.cache import CatalogBusy
 from nahormaar_backend.domain.catalog import SearchSource
 from nahormaar_backend.integrations import discovery as extractor_module
+from nahormaar_backend.integrations.catalog import create_media_catalog
 from nahormaar_backend.integrations.processes import ProcessResult, run_process
 from nahormaar_backend.integrations.youtube import playlist_id
 from test_commands import wait_for
@@ -112,7 +113,7 @@ def test_search_limits_metadata_and_cache(monkeypatch: pytest.MonkeyPatch) -> No
             item(id="aaaaaaaaaaa", is_live=True),
         ] + [item()] * 20
         monkeypatch.setattr(extractor_module, "run_process", runner)
-        catalog = MediaCatalog(Path("node"))
+        catalog = await create_media_catalog(Path("node"))
         try:
             page = await catalog.search("  Амура  ", source=SearchSource.VIDEOS)
             found = page.entries
@@ -216,7 +217,7 @@ def test_installed_ytdlp_accepts_discovery_arguments_offline(
 
     async def scenario() -> None:
         monkeypatch.setattr(extractor_module, "run_process", check_arguments)
-        catalog = MediaCatalog(node_path)
+        catalog = await create_media_catalog(node_path)
         try:
             if operation == "search":
                 result = await catalog.search("Амура", source=SearchSource.VIDEOS)
@@ -249,7 +250,7 @@ def test_search_pages_keep_positions_and_stop_at_end(
         runner = Runner()
         runner.entries = [item(id=f"{index:011d}") for index in range(23)]
         monkeypatch.setattr(extractor_module, "run_process", runner)
-        catalog = MediaCatalog(Path("node"))
+        catalog = await create_media_catalog(Path("node"))
         try:
             second = await catalog.search("example", 10, SearchSource.VIDEOS)
             assert [entry.index for entry in second.entries] == list(range(11, 21))
@@ -281,7 +282,7 @@ def test_playlist_progress_limit_and_idempotent_start(
         runner.entries = [item()] * 101
         runner.release = asyncio.Event()
         monkeypatch.setattr(extractor_module, "run_process", runner)
-        catalog = MediaCatalog(Path("node"))
+        catalog = await create_media_catalog(Path("node"))
         key = uuid4()
         try:
             assert (
@@ -314,7 +315,7 @@ def test_cancel_and_shutdown_reap_discovery(monkeypatch: pytest.MonkeyPatch) -> 
         runner = Runner()
         runner.release = asyncio.Event()
         monkeypatch.setattr(extractor_module, "run_process", runner)
-        catalog = MediaCatalog(Path("node"))
+        catalog = await create_media_catalog(Path("node"))
         key = uuid4()
         catalog.start_preview(PLAYLIST, key, owner_id=key)
         await runner.started.wait()
@@ -336,7 +337,7 @@ def test_partial_failure_keeps_loaded_tracks(monkeypatch: pytest.MonkeyPatch) ->
         runner = Runner()
         runner.code = 1
         monkeypatch.setattr(extractor_module, "run_process", runner)
-        catalog = MediaCatalog(Path("node"))
+        catalog = await create_media_catalog(Path("node"))
         key = uuid4()
         try:
             catalog.start_preview(PLAYLIST, key, owner_id=key)
@@ -359,7 +360,7 @@ def test_partial_failure_keeps_loaded_tracks(monkeypatch: pytest.MonkeyPatch) ->
 def test_preview_expires(monkeypatch: pytest.MonkeyPatch) -> None:
     async def scenario() -> None:
         monkeypatch.setattr(extractor_module, "run_process", Runner())
-        catalog = MediaCatalog(Path("node"))
+        catalog = await create_media_catalog(Path("node"))
         key = uuid4()
         try:
             catalog.start_preview(PLAYLIST, key, owner_id=key)
@@ -381,7 +382,7 @@ def test_preview_is_owned_by_the_authenticated_account(
 ) -> None:
     async def scenario() -> None:
         monkeypatch.setattr(extractor_module, "run_process", Runner())
-        catalog = MediaCatalog(Path("node"))
+        catalog = await create_media_catalog(Path("node"))
         key, owner, other = uuid4(), uuid4(), uuid4()
         try:
             catalog.start_preview(PLAYLIST, key, owner_id=owner)
@@ -430,7 +431,7 @@ def test_discovery_concurrency_and_waiting_are_bounded(
         runner = Runner()
         runner.release = asyncio.Event()
         monkeypatch.setattr(extractor_module, "run_process", runner)
-        catalog = MediaCatalog(Path("node"))
+        catalog = await create_media_catalog(Path("node"))
         tasks = [asyncio.create_task(catalog.search(str(index))) for index in range(8)]
         try:
             await wait_for(lambda: len(runner.calls) == 2)

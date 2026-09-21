@@ -12,13 +12,16 @@ from fastapi import Depends, Header, HTTPException, Request
 
 from ..application.auth import Auth, Authenticated
 from ..application.catalog import MediaCatalog
-from ..application.playback import PlaybackController
+from ..application.radio import RadioCatalog
+from ..application.session import Session
 from ..domain.identity import AuthError
 
 
 @dataclass(slots=True)
 class ApiServices:
-    controller: PlaybackController | None = None
+    session: Session | None = None
+    discovery: MediaCatalog | None = None
+    radio_catalog: RadioCatalog | None = None
     authentication: Auth | None = None
 
     def auth(self) -> Auth:
@@ -26,16 +29,22 @@ class ApiServices:
             raise AuthError("auth_unavailable", 503)
         return self.authentication
 
-    async def player(self) -> PlaybackController:
-        if self.controller is None:
+    async def player(self) -> Session:
+        if self.session is None:
             raise HTTPException(503, detail="Backend is not running.")
-        return self.controller
+        return self.session
 
     async def catalog(self) -> MediaCatalog:
-        active = await self.player()
-        if active.catalog is None:
+        await self.player()
+        if self.discovery is None:
             raise HTTPException(503, detail="YouTube discovery is not running.")
-        return active.catalog
+        return self.discovery
+
+    async def radio(self) -> RadioCatalog:
+        await self.player()
+        if self.radio_catalog is None:
+            raise HTTPException(503, detail="Radio is unavailable.")
+        return self.radio_catalog
 
 
 def current_user(request: Request) -> Authenticated:

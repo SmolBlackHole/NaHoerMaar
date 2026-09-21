@@ -129,6 +129,7 @@ class CrossfadeSource(discord.AudioSource):
         volume: float,
         position: float = 0,
         paused: bool = False,
+        on_started: Callable[[], None] = lambda: None,
     ) -> None:
         self.current = current
         self.volume = volume
@@ -149,6 +150,7 @@ class CrossfadeSource(discord.AudioSource):
         self._on_faded: Callable[[], None] = lambda: None
         self._starved_at: float | None = None
         self._current_error: Exception | None = None
+        self._on_started: Callable[[], None] | None = on_started
 
     @property
     def closed(self) -> bool:
@@ -159,6 +161,16 @@ class CrossfadeSource(discord.AudioSource):
     def position_seconds(self) -> float:
         with self._lock:
             return self._position
+
+    @property
+    def paused(self) -> bool:
+        with self._lock:
+            return self._paused
+
+    @property
+    def current_error(self) -> Exception | None:
+        with self._lock:
+            return self._current_error
 
     def pause(self) -> None:
         with self._lock:
@@ -204,6 +216,7 @@ class CrossfadeSource(discord.AudioSource):
         self,
         on_faded: Callable[[], None],
         on_activate: Callable[[], None] = lambda: None,
+        on_started: Callable[[], None] = lambda: None,
     ) -> bool:
         with self._lock:
             prepared = self._prepared
@@ -222,6 +235,7 @@ class CrossfadeSource(discord.AudioSource):
             self._fade_index = 0
             self._starved_at = None
             self._on_faded = on_faded
+            self._on_started = on_started
             # Bind completion to the incoming attempt before its first read can
             # fail on the audio thread.
             on_activate()
@@ -293,7 +307,11 @@ class CrossfadeSource(discord.AudioSource):
                             daemon=True,
                         )
                         self._retire_thread.start()
-                return self._encoder.encode(frame, self.volume)
+                packet = self._encoder.encode(frame, self.volume)
+                on_started, self._on_started = self._on_started, None
+                if on_started is not None:
+                    on_started()
+                return packet
             except Exception as error:
                 _LOGGER.warning(
                     "audio.failed position=%.3f fading=%s error=%s",

@@ -8,8 +8,8 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 
-from ...application.playback import PlaybackController
-from ...application.radio import RadioPreview
+from ...application.radio import RadioCatalog, RadioPreview
+from ...application.session import Session
 from ...domain.commands import RetryRadio, StartRadio, StopRadio
 from ...integrations.youtube_radio import radio_seed
 from .. import schemas as dto
@@ -25,15 +25,11 @@ def radio_router(services: ApiServices) -> APIRouter:
         user: CurrentUser,
         body: dto.RadioPreviewInput,
         request_id: RequestID,
-        active: Annotated[PlaybackController, Depends(services.player)],
+        catalog: Annotated[RadioCatalog, Depends(services.radio)],
     ) -> RadioPreview:
-        if active.radio_catalog is None:
-            raise HTTPException(503, detail="Radio is unavailable.")
         try:
             seed = radio_seed(body.source_url, body.kind, body.title)
-            return await active.radio_catalog.preview(
-                request_id, user.account.profile.id, seed
-            )
+            return await catalog.preview(request_id, user.account.profile.id, seed)
         except ValueError as exc:
             raise HTTPException(422, detail=str(exc)) from exc
 
@@ -43,7 +39,7 @@ def radio_router(services: ApiServices) -> APIRouter:
         body: dto.RadioStartInput,
         response: Response,
         request_id: RequestID,
-        active: Annotated[PlaybackController, Depends(services.player)],
+        active: Annotated[Session, Depends(services.player)],
     ) -> dto.MutationResult:
         return await mutate(
             user,
@@ -60,7 +56,7 @@ def radio_router(services: ApiServices) -> APIRouter:
         body: dto.RadioSessionInput,
         response: Response,
         request_id: RequestID,
-        active: Annotated[PlaybackController, Depends(services.player)],
+        active: Annotated[Session, Depends(services.player)],
     ) -> dto.MutationResult:
         command = (
             StopRadio(body.expected_session_id)

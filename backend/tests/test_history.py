@@ -3,15 +3,24 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import asyncio
+from dataclasses import replace
 from pathlib import Path
+from uuid import uuid4
 
 from nahormaar_backend.api.schemas import State
 from nahormaar_backend.application.audio import ResolvedTrack, TrackError
-from nahormaar_backend.application.playback import PlaybackController
 from nahormaar_backend.application.player import Player
+from nahormaar_backend.application.session import Session
+from nahormaar_backend.domain.fsm import (
+    LifecycleEvent,
+    PlaybackContext,
+    PlaybackEffect,
+    decide_playback,
+)
 from nahormaar_backend.domain.models import (
     HISTORY_LIMIT,
     PlaybackState,
+    PlayerSnapshot,
     QueueEntry,
     TrackMetadata,
 )
@@ -30,17 +39,24 @@ def test_history_records_starts_and_survives_recovery(tmp_path: Path) -> None:
         removed = QueueEntry("https://youtu.be/removed")
         started = QueueEntry("https://youtu.be/started")
         player.enqueue(removed)
-        player.remove(removed.id)
-        player.enqueue(started)
-        player.play()
+        player.remove((removed,))
+        player.commit_lifecycle(PlayerSnapshot(PlaybackState.LOADING, started), None)
         assert player.snapshot.recently_played == ()
         player.enrich(
             started.id,
             TrackMetadata(title="Song", artist="Artist", duration_seconds=123),
         )
-        player.mark_playing()
-        player.pause()
-        player.play()
+        player.commit_lifecycle(
+            replace(player.snapshot, state=PlaybackState.PLAYING),
+            None,
+            record_history=True,
+        )
+        player.commit_lifecycle(
+            replace(player.snapshot, state=PlaybackState.PAUSED), None
+        )
+        player.commit_lifecycle(
+            replace(player.snapshot, state=PlaybackState.PLAYING), None
+        )
         history = player.snapshot.recently_played
         assert len(history) == 1
         assert history[0].entry.title == "Song"
@@ -51,20 +67,36 @@ def test_history_records_starts_and_survives_recovery(tmp_path: Path) -> None:
         player = Player(store)
         assert player.snapshot.recently_played == history
         assert player.snapshot.upcoming == (history[0].entry,)
-        player.play()
-        player.mark_playing()
+        player.commit_lifecycle(
+            replace(
+                player.snapshot,
+                state=PlaybackState.PLAYING,
+                current=player.snapshot.upcoming[0],
+                upcoming=(),
+            ),
+            None,
+            record_history=True,
+        )
         assert len(player.snapshot.recently_played) == 2
         assert player.snapshot.recently_played[0].id != history[0].id
-        player.skip()
+        player.commit_lifecycle(
+            replace(player.snapshot, state=PlaybackState.IDLE, current=None), None
+        )
         assert len(player.snapshot.recently_played) == 2
 
 
 def test_failed_and_removed_tracks_never_enter_history(player: Player) -> None:
     entry = QueueEntry("https://youtu.be/missing")
-    player.enqueue(entry)
-    player.play()
-    player.fail()
-    player.skip()
+    attempt = uuid4()
+    player.commit_lifecycle(PlayerSnapshot(PlaybackState.LOADING, entry), None)
+    failed = decide_playback(
+        player.snapshot,
+        PlaybackContext(entry_id=entry.id, attempt_id=attempt),
+        LifecycleEvent.FAILED,
+        attempt_id=attempt,
+    )
+    assert PlaybackEffect.RECORD_HISTORY not in failed.effects
+    player.commit_lifecycle(failed.snapshot, None)
     player.enrich(entry.id, TrackMetadata(title="Late metadata"))
     assert player.snapshot.recently_played == ()
     assert player.snapshot.current is None
@@ -75,10 +107,15 @@ def test_history_is_bounded_and_newest_first(
     player: Player, store: SQLiteStore
 ) -> None:
     for index in range(HISTORY_LIMIT + 2):
-        player.enqueue(QueueEntry(f"https://youtu.be/{index}"))
-        player.play()
-        player.mark_playing()
-        player.skip()
+        player.commit_lifecycle(
+            replace(
+                player.snapshot,
+                state=PlaybackState.PLAYING,
+                current=QueueEntry(f"https://youtu.be/{index}"),
+            ),
+            None,
+            record_history=True,
+        )
     history = store.load().recently_played
     assert len(history) == HISTORY_LIMIT
     assert history[0].entry.source_url.endswith(str(HISTORY_LIMIT + 1))
@@ -90,8 +127,8 @@ def test_playback_publishes_metadata_and_retry_does_not_duplicate_history(
 ) -> None:
     async def scenario() -> None:
         resolver, voice = ControlledResolver(), FakeVoice()
-        controller = await PlaybackController.create(
-            tmp_path / "player.sqlite3", resolver, voice
+        controller = await Session.create(
+            lambda: SQLiteStore(tmp_path / "player.sqlite3"), resolver, voice
         )
         try:
             await controller.enqueue(QueueEntry("https://youtu.be/Pqp9fDRp1lw"))
@@ -148,8 +185,8 @@ def test_background_metadata_is_serial_and_does_not_resurrect_removed_entries(
 
     async def scenario() -> None:
         metadata = Metadata()
-        controller = await PlaybackController.create(
-            tmp_path / "player.sqlite3",
+        controller = await Session.create(
+            lambda: SQLiteStore(tmp_path / "player.sqlite3"),
             ControlledResolver(),
             FakeVoice(),
             metadata_resolver=metadata,

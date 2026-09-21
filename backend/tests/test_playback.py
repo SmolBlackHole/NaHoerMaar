@@ -9,16 +9,22 @@ import sqlite3
 from collections.abc import Callable
 from contextlib import closing
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 
 from nahormaar_backend.api.schemas import State
 from nahormaar_backend.application.audio import (
+    AudioCompleted,
+    AudioEndReason,
+    AudioEvent,
+    AudioStarted,
     ResolvedTrack,
     TrackError,
     VoiceChannelInfo,
+    VoiceDisconnected,
 )
-from nahormaar_backend.application.playback import PlaybackController
+from nahormaar_backend.application.session import Session
 from nahormaar_backend.domain.models import (
     PlaybackState,
     PlayerSnapshot,
@@ -58,10 +64,17 @@ class FakeVoice:
     def __init__(self) -> None:
         self._connected = False
         self._channel_id: int | None = None
-        self._disconnect_handler: Callable[[], None] = lambda: None
+        self._disconnect_handler: Callable[[VoiceDisconnected], None] = lambda event: (
+            None
+        )
         self.played: list[ResolvedTrack] = []
         self.positions: list[float] = []
         self.callbacks: list[Callable[[Exception | None], None]] = []
+        self.attempts: list[UUID] = []
+        self.notifications: list[Callable[[AudioEvent], None]] = []
+        self.auto_start = True
+        self.paused = False
+        self.media_started = False
         self.stop_count = 0
         self.pause_count = 0
         self.resume_count = 0
@@ -88,7 +101,8 @@ class FakeVoice:
     def start_transition(
         self,
         track: ResolvedTrack,
-        after: Callable[[Exception | None], None],
+        attempt_id: UUID,
+        notify: Callable[[AudioEvent], None],
         on_faded: Callable[[], None],
     ) -> bool:
         if self.prepared is None:
@@ -96,7 +110,7 @@ class FakeVoice:
         self.prepared = None
         self.transitioning = True
         self.fade_finished = on_faded
-        self.play(track, after)
+        self.play(track, attempt_id, notify)
         return True
 
     @property
@@ -110,7 +124,9 @@ class FakeVoice:
     def channels(self) -> tuple[VoiceChannelInfo, ...]:
         return (VoiceChannelInfo(7, "Music", True, True, 1, "Test server"),)
 
-    def set_disconnect_handler(self, handler: Callable[[], None]) -> None:
+    def set_disconnect_handler(
+        self, handler: Callable[[VoiceDisconnected], None]
+    ) -> None:
         self._disconnect_handler = handler
 
     async def connect(self, channel_id: int) -> None:
@@ -122,10 +138,14 @@ class FakeVoice:
         self._connected = False
         self._channel_id = None
 
+    async def close(self) -> None:
+        await self.disconnect()
+
     def play(
         self,
         track: ResolvedTrack,
-        after: Callable[[Exception | None], None],
+        attempt_id: UUID,
+        notify: Callable[[AudioEvent], None],
         *,
         position_seconds: float = 0,
         paused: bool = False,
@@ -133,9 +153,36 @@ class FakeVoice:
         self.played.append(track)
         self.positions.append(position_seconds)
         self.position_seconds = position_seconds
-        self.callbacks.append(after)
+        self.attempts.append(attempt_id)
+        self.notifications.append(notify)
+
+        def completed(error: Exception | None) -> None:
+            reason = (
+                AudioEndReason.NATURAL
+                if error is None
+                else (
+                    AudioEndReason.INTERRUPTED
+                    if isinstance(error, TrackError) and error.retryable
+                    else AudioEndReason.OUTPUT_FAILED
+                )
+            )
+            notify(
+                AudioCompleted(attempt_id, reason, self.position_seconds or 0, error)
+            )
+
+        self.callbacks.append(completed)
+        self.media_started = False
+        self.paused = paused
         if paused:
             self.pause()
+        elif self.auto_start:
+            self.confirm_start()
+
+    def confirm_start(self) -> None:
+        self.media_started = True
+        self.notifications[-1](
+            AudioStarted(self.attempts[-1], self.position_seconds or 0)
+        )
 
     async def stop(self) -> None:
         self.stop_count += 1
@@ -145,9 +192,13 @@ class FakeVoice:
 
     def pause(self) -> None:
         self.pause_count += 1
+        self.paused = True
 
     def resume(self) -> None:
         self.resume_count += 1
+        self.paused = False
+        if not self.media_started and self.auto_start:
+            self.confirm_start()
 
     def set_volume(self, volume: float) -> None:
         self.volumes.append(volume)
@@ -156,9 +207,16 @@ class FakeVoice:
         self.callbacks[index](error)
 
     def lose_connection(self) -> None:
+        event = VoiceDisconnected(
+            self.attempts[-1] if self.attempts else None,
+            self._channel_id,
+            self.position_seconds or 0,
+            self.paused,
+        )
         self._connected = False
         self._channel_id = None
-        self._disconnect_handler()
+        self.position_seconds = None
+        self._disconnect_handler(event)
 
 
 async def _wait_until(predicate: Callable[[], bool]) -> None:
@@ -171,12 +229,12 @@ async def _controller(
     tmp_path: Path,
     resolver: ControlledResolver | None = None,
     voice: FakeVoice | None = None,
-) -> tuple[PlaybackController, ControlledResolver, FakeVoice, Path]:
+) -> tuple[Session, ControlledResolver, FakeVoice, Path]:
     actual_resolver = resolver or ControlledResolver()
     actual_voice = voice or FakeVoice()
     database = tmp_path / "player.sqlite3"
-    controller = await PlaybackController.create(
-        database, actual_resolver, actual_voice
+    controller = await Session.create(
+        lambda: SQLiteStore(database), actual_resolver, actual_voice
     )
     return controller, actual_resolver, actual_voice, database
 
@@ -471,7 +529,7 @@ def test_connection_loss_preserves_current_for_manual_restart(tmp_path: Path) ->
                 lambda: controller.snapshot.voice_state is VoiceState.DISCONNECTED
             )
             assert controller.snapshot == PlayerSnapshot(
-                upcoming=(entry,), recently_played=history
+                state=PlaybackState.LOADING, current=entry, recently_played=history
             )
             assert controller.status.last_issue is not None
             assert "connection lost" in controller.status.last_issue.message
@@ -496,7 +554,9 @@ def test_explicit_leave_preserves_current_without_loss_issue(tmp_path: Path) -> 
             await controller.play()
             await _wait_until(lambda: len(resolver.requests) == 1)
             await controller.disconnect()
-            assert controller.snapshot == PlayerSnapshot(upcoming=(entry,))
+            assert controller.snapshot == PlayerSnapshot(
+                state=PlaybackState.LOADING, current=entry
+            )
             assert controller.status.last_issue is None
             await controller.connect(7)
             await controller.play()

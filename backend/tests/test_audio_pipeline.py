@@ -28,13 +28,13 @@ from discord.opus import OPUS_SILENCE
 from discord.player import AudioPlayer
 
 from nahormaar_backend.application.audio import ResolvedTrack
-from nahormaar_backend.application.playback import PlaybackController
+from nahormaar_backend.application.session import Session
 from nahormaar_backend.config import ffmpeg_executable
 from nahormaar_backend.domain import commands
 from nahormaar_backend.domain.models import PlaybackState, QueueEntry
 from nahormaar_backend.integrations.audio_mixer import CrossfadeSource
 from nahormaar_backend.integrations.audio_sources import AudioFrame, FrameEncoder
-from nahormaar_backend.integrations.discord_voice import DiscordVoice, _DiscordClient
+from nahormaar_backend.integrations.discord_voice import DiscordVoice
 from nahormaar_backend.persistence.player_store import SQLiteStore
 from test_discord_voice import (
     FakeDiscordClient,
@@ -185,14 +185,17 @@ async def open_player(
     path: Path,
     resolver: LocalResolver,
     monkeypatch: pytest.MonkeyPatch,
-) -> tuple[PlaybackController, DiscordVoice, RecordingVoice]:
+) -> tuple[Session, DiscordVoice, RecordingVoice]:
     monkeypatch.setattr(discord, "VoiceChannel", FakeVoiceChannel)
     recording = RecordingVoice()
     channel = FakeVoiceChannel(7, "Offline recorder")
     channel.voice = recording
-    adapter = DiscordVoice(ffmpeg_executable())
-    adapter._client = cast(_DiscordClient, FakeDiscordClient(FakeGuild([channel])))
-    controller = await PlaybackController.create(path, resolver, adapter)
+    adapter = DiscordVoice(
+        ffmpeg_executable(),
+        client=cast(discord.Client, FakeDiscordClient(FakeGuild([channel]))),
+        activity=lambda track=None, *, paused=False: None,
+    )
+    controller = await Session.create(lambda: SQLiteStore(path), resolver, adapter)
     return controller, adapter, recording
 
 

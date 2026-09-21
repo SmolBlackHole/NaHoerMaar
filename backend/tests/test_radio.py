@@ -9,7 +9,8 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from nahormaar_backend.application.playback import PlaybackController
+from nahormaar_backend.application.session import Session
+from nahormaar_backend.application.audio import AudioCompleted, AudioEndReason
 from nahormaar_backend.application.radio import RadioCatalog
 from nahormaar_backend.domain import commands
 from nahormaar_backend.domain.catalog import CatalogTrack
@@ -65,15 +66,15 @@ class Recommendations:
 
 async def setup(
     path: Path,
-) -> tuple[PlaybackController, Recommendations, FakeVoice, ControlledResolver]:
+) -> tuple[Session, Recommendations, FakeVoice, ControlledResolver]:
     provider, voice, resolver = Recommendations(), FakeVoice(), ControlledResolver()
-    controller = await PlaybackController.create(
-        path, resolver, voice, radio_catalog=RadioCatalog(provider)
+    controller = await Session.create(
+        lambda: SQLiteStore(path), resolver, voice, radio_catalog=RadioCatalog(provider)
     )
     return controller, provider, voice, resolver
 
 
-async def start(controller: PlaybackController) -> tuple[UUID, commands.StartRadio]:
+async def start(controller: Session) -> tuple[UUID, commands.StartRadio]:
     assert controller.radio_catalog is not None
     preview = await controller.radio_catalog.preview(uuid4(), ACTOR.id, SEED)
     request = uuid4()
@@ -259,6 +260,75 @@ def test_removal_undo_pause_and_history_exclusions(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("pool_size", [4, 12])
+@pytest.mark.parametrize("manual_fill", [False, True])
+def test_radio_continues_when_eof_precedes_the_pending_refill(
+    tmp_path: Path, pool_size: int, manual_fill: bool
+) -> None:
+    async def scenario() -> None:
+        controller, provider, voice, resolver = await setup(tmp_path / "radio.sqlite3")
+        provider.entries = tracks(pool_size)
+        try:
+            await start(controller)
+            await controller.connect(7)
+            await wait_for(lambda: len(resolver.requests) == 1)
+            resolver.succeed(0)
+            await wait_for(
+                lambda: (
+                    controller.snapshot.state is PlaybackState.PLAYING
+                    and len(controller.snapshot.upcoming) == 3
+                )
+            )
+            await controller.pause()
+            for entry in controller.snapshot.upcoming:
+                await controller.remove(entry.id)
+            await controller.events.drain()
+            assert controller.snapshot.upcoming == ()
+            attempt = controller.status.attempt_id
+            assert attempt is not None
+            provider.entries = tracks(start=20)
+            # Both messages precede the refill triggered by resuming. The radio
+            # must retain playback intent even if it first observes an idle queue.
+            resumed = controller._accept(commands.Control("play", attempt))  # pyright: ignore[reportPrivateUsage]
+            controller._post(AudioCompleted(attempt, AudioEndReason.NATURAL, 180))  # pyright: ignore[reportPrivateUsage]
+            added = (
+                controller._accept(  # pyright: ignore[reportPrivateUsage]
+                    commands.AddMany(
+                        tuple(
+                            f"https://youtu.be/{index:011}" for index in range(90, 93)
+                        ),
+                        ACTOR,
+                    )
+                )
+                if manual_fill
+                else None
+            )
+            await resumed
+            if added is not None:
+                await added
+            await wait_for(lambda: len(resolver.requests) == 2)
+            resolver.succeed(1)
+            await wait_for(
+                lambda: (
+                    controller.snapshot.state is PlaybackState.PLAYING
+                    and len(controller.snapshot.recently_played) == 2
+                )
+            )
+            assert len(voice.played) == 2
+            assert controller.snapshot.current is not None
+            assert controller.snapshot.current.origin == (
+                "manual" if manual_fill else "radio"
+            )
+            if manual_fill:
+                assert controller.snapshot.current.source_url.endswith("00000000090")
+            assert controller.status.radio.state is RadioState.ACTIVE
+            assert len(controller.snapshot.recently_played) == 2
+        finally:
+            await controller.close()
+
+    asyncio.run(scenario())
+
+
 def test_empty_provider_waits_and_retries_without_busy_loop(tmp_path: Path) -> None:
     async def scenario() -> None:
         controller, provider, _, _ = await setup(tmp_path / "radio.sqlite3")
@@ -293,6 +363,7 @@ def test_failed_save_never_publishes_radio_entries(
         try:
             await start(controller)
             await wait_for(lambda: controller.status.radio.state is RadioState.WAITING)
+            await controller.read_status()
             saved = SQLiteStore.save
 
             def fail(self: SQLiteStore, snapshot: object, **kwargs: object) -> None:

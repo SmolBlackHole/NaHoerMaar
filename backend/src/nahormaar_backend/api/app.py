@@ -16,10 +16,9 @@ from fastapi import FastAPI
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from ..application.auth import Auth, IdentityProvider
-from ..application.playback import PlaybackController
 from ..config import AuthSettings, Settings
 from ..integrations.discord_oauth import DiscordOAuth
-from ..runtime import open_runtime
+from ..runtime import RuntimeServices, open_runtime
 from .boundary import AuthBoundary
 from .dependencies import ApiServices
 from .errors import install_error_handlers
@@ -30,7 +29,7 @@ from .routes.player import player_router
 from .routes.queue import queue_router
 from .routes.radio import radio_router
 
-type RuntimeFactory = Callable[[], AbstractAsyncContextManager[PlaybackController]]
+type RuntimeFactory = Callable[[], AbstractAsyncContextManager[RuntimeServices]]
 
 
 def create_app(
@@ -51,7 +50,9 @@ def create_app(
             else open_runtime(Settings.from_env(), access_path=settings.access_path)
         )
         async with runtime as active:
-            services.controller = active
+            services.session = active.session
+            services.discovery = active.catalog
+            services.radio_catalog = active.radio_catalog
             avatars = cast(
                 list[str],
                 json.loads(
@@ -69,7 +70,7 @@ def create_app(
             async def stop_streams() -> None:
                 if shutdown_event is not None:
                     await shutdown_event.wait()
-                    active.close_events()
+                    active.session.close_events()
 
             watcher = asyncio.create_task(stop_streams())
             try:
@@ -77,8 +78,10 @@ def create_app(
             finally:
                 watcher.cancel()
                 await asyncio.gather(watcher, return_exceptions=True)
-                active.close_events()
-                services.controller = None
+                active.session.close_events()
+                services.session = None
+                services.discovery = None
+                services.radio_catalog = None
                 await services.auth().close()
                 services.authentication = None
 

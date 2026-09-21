@@ -12,7 +12,7 @@ from uuid import uuid4
 import pytest
 
 from nahormaar_backend.application.audio import ResolvedTrack, VoiceError
-from nahormaar_backend.application.playback import PlaybackController
+from nahormaar_backend.application.session import Session
 from nahormaar_backend.application.status import PlaybackStatus
 from nahormaar_backend.domain import commands
 from nahormaar_backend.domain.commands import Outcome, Receipt
@@ -33,8 +33,8 @@ def test_seek_preserves_track_history_queue_volume_and_pause(
 ) -> None:
     async def scenario() -> None:
         resolver, voice = ControlledResolver(), FakeVoice()
-        controller = await PlaybackController.create(
-            tmp_path / "player.sqlite3", resolver, voice
+        controller = await Session.create(
+            lambda: SQLiteStore(tmp_path / "player.sqlite3"), resolver, voice
         )
         try:
             await controller.enqueue(QueueEntry("https://youtu.be/Pqp9fDRp1lw"))
@@ -101,8 +101,8 @@ def test_invalid_seek_leaves_playback_untouched(
 ) -> None:
     async def scenario() -> None:
         resolver, voice = ControlledResolver(), FakeVoice()
-        controller = await PlaybackController.create(
-            tmp_path / "player.sqlite3", resolver, voice
+        controller = await Session.create(
+            lambda: SQLiteStore(tmp_path / "player.sqlite3"), resolver, voice
         )
         try:
             await controller.enqueue(QueueEntry("https://youtu.be/Pqp9fDRp1lw"))
@@ -129,8 +129,10 @@ def test_invalid_seek_leaves_playback_untouched(
 
 def test_concurrent_requests_replay_and_queue_conflicts(tmp_path: Path) -> None:
     async def scenario() -> None:
-        controller = await PlaybackController.create(
-            tmp_path / "player.sqlite3", ControlledResolver(), FakeVoice()
+        controller = await Session.create(
+            lambda: SQLiteStore(tmp_path / "player.sqlite3"),
+            ControlledResolver(),
+            FakeVoice(),
         )
         try:
             initial = await controller.read_status()
@@ -194,8 +196,8 @@ def test_storage_failure_while_reporting_voice_failure_closes_events(
 
     async def scenario() -> None:
         path = tmp_path / "player.sqlite3"
-        controller = await PlaybackController.create(
-            path, ControlledResolver(), BrokenVoice()
+        controller = await Session.create(
+            lambda: SQLiteStore(path), ControlledResolver(), BrokenVoice()
         )
         try:
             async with controller.subscribe() as events:
@@ -222,8 +224,8 @@ def test_two_targeted_skips_racing_completion_advance_once(
 ) -> None:
     async def scenario() -> None:
         resolver, voice = ControlledResolver(), FakeVoice()
-        controller = await PlaybackController.create(
-            tmp_path / "player.sqlite3", resolver, voice
+        controller = await Session.create(
+            lambda: SQLiteStore(tmp_path / "player.sqlite3"), resolver, voice
         )
         try:
             entries = [QueueEntry(f"https://youtu.be/{i}") for i in range(3)]
@@ -269,7 +271,9 @@ def test_completed_and_interrupted_requests_survive_restart(tmp_path: Path) -> N
     volume = commands.Volume(0.25)
 
     async def scenario() -> None:
-        first = await PlaybackController.create(path, ControlledResolver(), FakeVoice())
+        first = await Session.create(
+            lambda: SQLiteStore(path), ControlledResolver(), FakeVoice()
+        )
         result = await first.request(add_id, add)
         await first.request(volume_id, volume)
         revision = (await first.read_status()).revision
@@ -277,7 +281,9 @@ def test_completed_and_interrupted_requests_survive_restart(tmp_path: Path) -> N
         with SQLiteStore(path) as store:
             assert store.reserve(Receipt(pending_id, commands.fingerprint(add))) is None
         voice = FakeVoice()
-        second = await PlaybackController.create(path, ControlledResolver(), voice)
+        second = await Session.create(
+            lambda: SQLiteStore(path), ControlledResolver(), voice
+        )
         try:
             replay = await second.request(add_id, add)
             assert replay.replayed and replay.outcome == result.outcome
@@ -309,8 +315,10 @@ def test_cancelled_request_remains_owned_and_retry_waits_for_result(
     async def scenario() -> None:
         voice = SlowVoice()
         voice.started, voice.release = asyncio.Event(), asyncio.Event()
-        controller = await PlaybackController.create(
-            tmp_path / "player.sqlite3", ControlledResolver(), voice
+        controller = await Session.create(
+            lambda: SQLiteStore(tmp_path / "player.sqlite3"),
+            ControlledResolver(),
+            voice,
         )
         key, command = uuid4(), commands.Connect(7)
         try:
@@ -341,8 +349,8 @@ def test_failed_commit_never_broadcasts_success_or_completes_receipt(
     command = commands.Add("https://youtu.be/Pqp9fDRp1lw")
 
     async def scenario() -> None:
-        controller = await PlaybackController.create(
-            path, ControlledResolver(), FakeVoice()
+        controller = await Session.create(
+            lambda: SQLiteStore(path), ControlledResolver(), FakeVoice()
         )
         try:
             async with controller.subscribe() as events:
@@ -371,8 +379,10 @@ def test_subscribers_receive_latest_committed_snapshot_and_reconnect(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
-        controller = await PlaybackController.create(
-            tmp_path / "player.sqlite3", ControlledResolver(), FakeVoice()
+        controller = await Session.create(
+            lambda: SQLiteStore(tmp_path / "player.sqlite3"),
+            ControlledResolver(),
+            FakeVoice(),
         )
         try:
             async with controller.subscribe() as first, controller.subscribe() as slow:
@@ -399,8 +409,8 @@ def test_progress_anchors_change_on_pause_resume_without_changing_queue_revision
 ) -> None:
     async def scenario() -> None:
         resolver, voice = ControlledResolver(), FakeVoice()
-        controller = await PlaybackController.create(
-            tmp_path / "player.sqlite3", resolver, voice
+        controller = await Session.create(
+            lambda: SQLiteStore(tmp_path / "player.sqlite3"), resolver, voice
         )
         try:
             await controller.enqueue(QueueEntry("https://youtu.be/Pqp9fDRp1lw"))
@@ -410,7 +420,7 @@ def test_progress_anchors_change_on_pause_resume_without_changing_queue_revision
             resolver.succeed(0)
             await wait_for(lambda: controller.snapshot.state is PlaybackState.PLAYING)
             playing = await controller.read_status()
-            await asyncio.sleep(0.02)
+            voice.position_seconds = 0.02
             await controller.pause()
             paused = await controller.read_status()
             assert paused.position_seconds > playing.position_seconds

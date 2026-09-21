@@ -9,99 +9,92 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import logging
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+import threading
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Protocol, cast
+from uuid import UUID
 
 import discord
 from discord.opus import OpusNotLoaded
 
-from ..application.audio import ResolvedTrack, TrackError, VoiceChannelInfo, VoiceError
+from ..application.audio import (
+    AudioCompleted,
+    AudioEndReason,
+    AudioEvent,
+    AudioStarted,
+    ResolvedTrack,
+    TrackError,
+    VoiceChannelInfo,
+    VoiceDisconnected,
+    VoiceError,
+)
 from .audio_sources import FFmpegSource, MediaStreamError, VolumeSource
 from .audio_mixer import BufferedAudio, CrossfadeSource, FRAME_SECONDS
-from .daily_bio import update_daily_bio
-from .discord_commands import DiscordCommands
 
 _VOICE_MONITOR_SECONDS = 0.25
-_PRESENCE_INTERVAL_SECONDS = 5.0
-_PRESENCE_TEXT_LIMIT = 128
+_NATURAL_EOF_TOLERANCE_SECONDS = 1.0
 _LOGGER = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class _Attempt:
+    track: ResolvedTrack
+    attempt_id: UUID
+    notify: Callable[[AudioEvent], None]
+    started: bool = False
 
 
 @dataclass(slots=True)
 class _Playback:
     source: CrossfadeSource
-    track: ResolvedTrack
-    after: Callable[[Exception | None], None]
-    cancellation_error: Exception | None = None
+    current: _Attempt
+    paused: bool
+    lock: threading.RLock = field(default_factory=threading.RLock)
+    forced_reason: AudioEndReason | None = None
+    forced_error: Exception | None = None
+    activating: bool = False
+    activation_finished: threading.Event = field(default_factory=threading.Event)
+    finishing: bool = False
+    finished: threading.Event = field(default_factory=threading.Event)
+    cleanup_error: VoiceError | None = None
+
+    def __post_init__(self) -> None:
+        self.activation_finished.set()
 
 
-class _DiscordClient(discord.Client):
-    def __init__(self, owner: DiscordVoice, *, intents: discord.Intents) -> None:
-        super().__init__(intents=intents)
-        self._owner = owner
-        self.commands: DiscordCommands | None = None
-
-    async def setup_hook(self) -> None:
-        if self.commands is not None:
-            await self.commands.register()
-
-    async def on_ready(self) -> None:
-        self._owner._discord_ready()  # pyright: ignore[reportPrivateUsage]
-
-    async def on_voice_state_update(
-        self,
-        member: discord.Member,
-        before: discord.VoiceState,
-        after: discord.VoiceState,
-    ) -> None:
-        if (
-            self.user is not None
-            and member.id == self.user.id
-            and after.channel is None
-            and before.channel is not None
-        ):
-            previous_channel_id = before.channel.id
-            if not self._owner._consume_expected_disconnect(  # pyright: ignore[reportPrivateUsage]
-                previous_channel_id
-            ):
-                await self._owner._discord_voice_disconnected(previous_channel_id)  # pyright: ignore[reportPrivateUsage]
-
-    async def on_guild_remove(self, guild: discord.Guild) -> None:
-        voice = self._owner._voice  # pyright: ignore[reportPrivateUsage]
-        if voice is not None and voice.guild.id == guild.id:
-            await self._owner._discord_voice_disconnected(voice.channel.id)  # pyright: ignore[reportPrivateUsage]
+class PlaybackActivity(Protocol):
+    def __call__(
+        self, track: ResolvedTrack | None = None, *, paused: bool = False
+    ) -> None: ...
 
 
 class DiscordVoice:
     """One active voice connection across the bot's joined Discord servers."""
 
-    def __init__(self, ffmpeg_path: Path, volume: float = 1.0) -> None:
+    def __init__(
+        self,
+        ffmpeg_path: Path,
+        volume: float = 1.0,
+        *,
+        client: discord.Client,
+        activity: PlaybackActivity,
+    ) -> None:
         self._validate_volume(volume)
         self._ffmpeg_path = ffmpeg_path
         self._volume = volume
-        intents = discord.Intents.none()
-        intents.guilds = True
-        intents.voice_states = True
-        self._client = _DiscordClient(self, intents=intents)
-        self._ready = asyncio.Event()
-        self._startup_error: VoiceError | None = None
-        self._started = False
+        self._client = client
+        self._set_activity = activity
         self._closing = False
         self._voice: discord.VoiceClient | None = None
         self._playback: _Playback | None = None
         self._preparing: BufferedAudio | None = None
-        self._disconnect_handler: Callable[[], None] = lambda: None
+        self._disconnect_handler: Callable[[VoiceDisconnected], None] = lambda _: None
         self._connection_generation = 0
         self._expected_disconnects: dict[int, int] = {}
         self._monitor: asyncio.Task[None] | None = None
         self._connection_lock = asyncio.Lock()
-        self._activity: discord.BaseActivity = discord.CustomActivity(
-            name="Bereit für Musik"
-        )
-        self._sent_activity: discord.BaseActivity | None = None
-        self._presence_task: asyncio.Task[None] | None = None
-        self._bio_task: asyncio.Task[None] | None = None
 
     @staticmethod
     def _validate_volume(volume: float) -> None:
@@ -118,44 +111,8 @@ class DiscordVoice:
             return None
         return self._voice.channel.id
 
-    async def start(self, token: str) -> None:
-        """Run the Discord client until close() is called."""
-        if self._started:
-            raise VoiceError("Discord client has already been started.")
-        self._started = True
-        try:
-            self._validate_voice_dependencies()
-            self._presence_task = asyncio.create_task(
-                self._update_presence(), name="discord-presence"
-            )
-            self._bio_task = asyncio.create_task(
-                self._update_bio(), name="discord-daily-bio"
-            )
-            await self._client.start(token)
-        except asyncio.CancelledError:
-            await self.close()
-            raise
-        except discord.LoginFailure as error:
-            self._startup_error = VoiceError("Discord authentication failed.")
-            self._ready.set()
-            await self._client.close()
-            raise self._startup_error from error
-        except VoiceError as error:
-            self._startup_error = error
-            self._ready.set()
-            await self._client.close()
-            raise
-        except Exception as error:
-            self._startup_error = VoiceError("Discord client failed to start.")
-            self._ready.set()
-            await self._client.close()
-            raise self._startup_error from error
-        finally:
-            self._ready.set()
-            await self._stop_profile_tasks()
-
     @staticmethod
-    def _validate_voice_dependencies() -> None:
+    def validate_dependencies() -> None:
         if importlib.util.find_spec("davey") is None:
             raise VoiceError("Discord DAVE voice support is unavailable.")
         try:
@@ -163,76 +120,33 @@ class DiscordVoice:
         except (OpusNotLoaded, OSError) as error:
             raise VoiceError("Discord Opus encoding support is unavailable.") from error
 
-    async def wait_until_ready(self) -> None:
-        await self._ready.wait()
-        if self._startup_error is not None:
-            raise self._startup_error
-
-    def _discord_ready(self) -> None:
-        self._sent_activity = None
-        self._ready.set()
-
-    def _set_activity(
-        self, track: ResolvedTrack | None = None, *, paused: bool = False
-    ) -> None:
-        if track is None:
-            self._activity = discord.CustomActivity(name="Bereit für Musik")
-            return
-        title = " ".join((track.title or "YouTube").split()) or "YouTube"
-        uploader = " ".join((track.uploader or "").split())
-        if paused:
-            self._activity = discord.CustomActivity(
-                name=f"Pausiert: {title}"[:_PRESENCE_TEXT_LIMIT]
-            )
-        else:
-            self._activity = discord.Activity(
-                type=discord.ActivityType.listening,
-                name=title[:_PRESENCE_TEXT_LIMIT],
-                state=uploader[:_PRESENCE_TEXT_LIMIT] or None,
-            )
-
-    async def _update_presence(self) -> None:
-        await self._ready.wait()
-        while True:
-            activity = self._activity
-            if self._client.is_ready() and (
-                self._sent_activity is None
-                or activity.to_dict() != self._sent_activity.to_dict()
-            ):
-                try:
-                    async with asyncio.timeout(10):
-                        await self._client.change_presence(activity=activity)
-                except Exception as error:
-                    _LOGGER.warning(
-                        "Discord presence update failed (%s); will retry.",
-                        type(error).__name__,
-                    )
-                else:
-                    self._sent_activity = activity
-            await asyncio.sleep(_PRESENCE_INTERVAL_SECONDS)
-
-    async def _update_bio(self) -> None:
-        await self._ready.wait()
-        await update_daily_bio(self._client)
-
-    async def _stop_profile_tasks(self) -> None:
-        tasks = tuple(
-            task for task in (self._presence_task, self._bio_task) if task is not None
-        )
-        self._presence_task = self._bio_task = None
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
-
     async def close(self) -> None:
+        """Close Session-owned output; the gateway retains client ownership."""
         if self._closing:
             return
         self._closing = True
-        await self._stop_profile_tasks()
-        try:
-            await self.disconnect()
-        finally:
-            await self._client.close()
+        await self.disconnect()
+
+    async def on_voice_state_update(
+        self,
+        member: discord.Member,
+        before: discord.VoiceState,
+        after: discord.VoiceState,
+    ) -> None:
+        if (
+            self._client.user is not None
+            and member.id == self._client.user.id
+            and after.channel is None
+            and before.channel is not None
+        ):
+            previous_channel_id = before.channel.id
+            if not self._consume_expected_disconnect(previous_channel_id):
+                await self._discord_voice_disconnected(previous_channel_id)
+
+    async def on_guild_remove(self, guild: discord.Guild) -> None:
+        voice = self._voice
+        if voice is not None and voice.guild.id == guild.id:
+            await self._discord_voice_disconnected(voice.channel.id)
 
     def channels(self) -> tuple[VoiceChannelInfo, ...]:
         return tuple(
@@ -254,13 +168,10 @@ class DiscordVoice:
             for channel in guild.voice_channels
         )
 
-    def set_disconnect_handler(self, handler: Callable[[], None]) -> None:
-        self._disconnect_handler = handler
-
-    def install_commands(
-        self, access_path: Path, connect: Callable[[int], Awaitable[object]]
+    def set_disconnect_handler(
+        self, handler: Callable[[VoiceDisconnected], None]
     ) -> None:
-        self._client.commands = DiscordCommands(self._client, access_path, connect)
+        self._disconnect_handler = handler
 
     async def connect(self, channel_id: int) -> None:
         async with self._connection_lock:
@@ -317,9 +228,7 @@ class DiscordVoice:
         async with self._connection_lock:
             voice = self._voice
             if voice is None:
-                await self._stop_playback(
-                    VoiceError("Discord voice connection was closed.")
-                )
+                await self._stop_playback(AudioEndReason.STOPPED)
                 return
             await self._disconnect_voice(voice, report_loss=False)
 
@@ -328,16 +237,24 @@ class DiscordVoice:
     ) -> None:
         if voice is not self._voice:
             return
+        disconnected = self._disconnect_event(voice) if report_loss else None
         await self._cancel_monitor()
         self._connection_generation += 1
+        if report_loss:
+            # Completion can reach the Session while cleanup awaits a worker
+            # thread. Expose the lost connection before that callback so the
+            # Session suspends instead of retrying during teardown.
+            self._voice = None
         cleanup_error: VoiceError | None = None
         try:
             await self._stop_playback(
-                VoiceError("Discord voice connection was lost."), voice=voice
+                AudioEndReason.INTERRUPTED if report_loss else AudioEndReason.STOPPED,
+                voice=voice,
             )
         except VoiceError as error:
             cleanup_error = error
-        self._voice = None
+        if not report_loss:
+            self._voice = None
         channel_id = voice.channel.id
         if not report_loss:
             self._expected_disconnects[channel_id] = (
@@ -348,10 +265,28 @@ class DiscordVoice:
         except (discord.HTTPException, discord.ClientException) as error:
             if not report_loss:
                 raise VoiceError("Discord voice disconnect failed.") from error
-        if report_loss:
-            self._disconnect_handler()
+        if disconnected is not None:
+            self._disconnect_handler(disconnected)
         if cleanup_error is not None:
             raise cleanup_error
+
+    def _disconnect_event(self, voice: discord.VoiceClient) -> VoiceDisconnected:
+        playback = self._playback
+        if playback is None:
+            return VoiceDisconnected(None, voice.channel.id, 0.0, False)
+        while True:
+            with playback.lock:
+                attempt = playback.current
+                paused = playback.paused
+            position = playback.source.position_seconds
+            with playback.lock:
+                if playback.current is attempt and playback.paused is paused:
+                    return VoiceDisconnected(
+                        attempt.attempt_id,
+                        voice.channel.id,
+                        position,
+                        paused,
+                    )
 
     def _consume_expected_disconnect(self, channel_id: int | None) -> bool:
         if channel_id is None:
@@ -405,7 +340,8 @@ class DiscordVoice:
     def play(
         self,
         track: ResolvedTrack,
-        after: Callable[[Exception | None], None],
+        attempt_id: UUID,
+        notify: Callable[[AudioEvent], None],
         *,
         position_seconds: float = 0,
         paused: bool = False,
@@ -425,6 +361,7 @@ class DiscordVoice:
                 track.headers,
                 opus=track.is_opus,
                 position_seconds=position_seconds,
+                duration_seconds=track.duration_seconds,
             )
         except FileNotFoundError as error:
             raise VoiceError(
@@ -434,16 +371,19 @@ class DiscordVoice:
             raise VoiceError("FFmpeg could not be started.") from error
 
         try:
+            attempt = _Attempt(track, attempt_id, notify)
+            playback: _Playback
             source = CrossfadeSource(
                 BufferedAudio(VolumeSource(pcm)),
                 volume=self._volume,
                 position=position_seconds,
                 paused=paused,
+                on_started=lambda: self._started(playback, attempt),
             )
         except Exception as error:
             pcm.cleanup()
             raise VoiceError("Discord audio processing could not start.") from error
-        playback = _Playback(source=source, track=track, after=after)
+        playback = _Playback(source=source, current=attempt, paused=paused)
         self._playback = playback
         _LOGGER.info(
             "voice.audio_started channel=%s audio_pid=%s duration=%s paused=%s",
@@ -454,24 +394,7 @@ class DiscordVoice:
         )
 
         def completed(error: Exception | None) -> None:
-            _LOGGER.info(
-                "voice.audio_completed channel=%s position=%.3f error=%s cancelled=%s",
-                self.channel_id,
-                source.position_seconds,
-                type(error).__name__ if error is not None else "none",
-                playback.cancellation_error is not None,
-            )
-            try:
-                source.cleanup()
-            except Exception:
-                playback.after(VoiceError("FFmpeg process cleanup failed."))
-                return
-            reported = playback.cancellation_error
-            if reported is None and isinstance(error, MediaStreamError):
-                reported = TrackError("The audio stream failed.", retryable=True)
-            elif reported is None and error is not None:
-                reported = VoiceError("Discord audio playback failed.")
-            playback.after(reported)
+            self._complete_playback(playback, error)
 
         try:
             voice.play(source, after=completed)
@@ -482,6 +405,110 @@ class DiscordVoice:
             self._playback = None
             raise VoiceError("Discord audio playback could not start.") from error
         self._set_activity(track, paused=paused)
+
+    def _started(self, playback: _Playback, attempt: _Attempt) -> None:
+        position = playback.source.position_seconds
+        with playback.lock:
+            if (
+                playback is not self._playback
+                or playback.current is not attempt
+                or attempt.started
+                or playback.finishing
+            ):
+                return
+            attempt.started = True
+            attempt.notify(AudioStarted(attempt.attempt_id, position))
+
+    def _complete_playback(
+        self, playback: _Playback, player_error: Exception | None
+    ) -> None:
+        while True:
+            with playback.lock:
+                if playback.finishing:
+                    duplicate = True
+                    activation = None
+                    attempt = None
+                elif playback.activating:
+                    duplicate = False
+                    activation = playback.activation_finished
+                    attempt = None
+                else:
+                    duplicate = False
+                    activation = None
+                    attempt = playback.current
+            if duplicate:
+                playback.finished.wait()
+                return
+            if activation is not None:
+                activation.wait()
+                continue
+
+            candidate = cast(_Attempt, attempt)
+            position = playback.source.position_seconds
+            terminal_error = playback.source.current_error
+            with playback.lock:
+                if playback.finishing:
+                    duplicate = True
+                elif playback.activating or playback.current is not candidate:
+                    duplicate = False
+                else:
+                    playback.finishing = True
+                    active_attempt = candidate
+                    forced_reason = playback.forced_reason
+                    forced_error = playback.forced_error
+                    break
+            if duplicate:
+                playback.finished.wait()
+                return
+
+        cleanup_error: VoiceError | None = None
+        try:
+            playback.source.cleanup()
+        except Exception:
+            cleanup_error = VoiceError("FFmpeg process cleanup failed.")
+
+        if forced_reason is not None:
+            reason = forced_reason
+            error = forced_error
+        elif isinstance(terminal_error, MediaStreamError) or isinstance(
+            player_error, MediaStreamError
+        ):
+            reason = AudioEndReason.INTERRUPTED
+            error = TrackError("The audio stream failed.", retryable=True)
+        elif terminal_error is not None or player_error is not None:
+            reason = AudioEndReason.OUTPUT_FAILED
+            error = VoiceError("Discord audio playback failed.")
+        elif (
+            active_attempt.track.duration_seconds is not None
+            and position + _NATURAL_EOF_TOLERANCE_SECONDS
+            < active_attempt.track.duration_seconds
+        ):
+            reason = AudioEndReason.INTERRUPTED
+            error = TrackError("The audio stream ended early.", retryable=True)
+        else:
+            reason = AudioEndReason.NATURAL
+            error = None
+        if cleanup_error is not None:
+            playback.cleanup_error = cleanup_error
+            if reason is not AudioEndReason.STOPPED:
+                reason = AudioEndReason.OUTPUT_FAILED
+            error = cleanup_error
+
+        _LOGGER.info(
+            "voice.audio_completed channel=%s position=%.3f reason=%s error=%s",
+            self.channel_id,
+            position,
+            reason,
+            type(error).__name__ if error is not None else "none",
+        )
+        if self._playback is playback:
+            self._playback = None
+        try:
+            active_attempt.notify(
+                AudioCompleted(active_attempt.attempt_id, reason, position, error)
+            )
+        finally:
+            playback.finished.set()
 
     @property
     def transitioning(self) -> bool:
@@ -502,13 +529,17 @@ class DiscordVoice:
             raise VoiceError("Previous prepared audio cleanup is incomplete.")
         if (
             playback is None
-            or playback.track.duration_seconds is None
+            or playback.current.track.duration_seconds is None
             or not self.connected
             or self.transitioning
         ):
             return False
         raw = FFmpegSource(
-            self._ffmpeg_path, track.stream_url, track.headers, opus=track.is_opus
+            self._ffmpeg_path,
+            track.stream_url,
+            track.headers,
+            opus=track.is_opus,
+            duration_seconds=track.duration_seconds,
         )
         try:
             audio = BufferedAudio(VolumeSource(raw))
@@ -525,7 +556,7 @@ class DiscordVoice:
                 staged = playback.source.stage(
                     audio,
                     seconds=seconds,
-                    duration=playback.track.duration_seconds,
+                    duration=playback.current.track.duration_seconds,
                     on_due=on_due,
                 )
             _LOGGER.info(
@@ -565,28 +596,57 @@ class DiscordVoice:
     def start_transition(
         self,
         track: ResolvedTrack,
-        after: Callable[[Exception | None], None],
+        attempt_id: UUID,
+        notify: Callable[[AudioEvent], None],
         on_faded: Callable[[], None],
     ) -> bool:
         playback = self._playback
         if playback is None:
             return False
 
-        def activated() -> None:
-            playback.track = track
-            playback.after = after
+        attempt = _Attempt(track, attempt_id, notify)
 
-        if not playback.source.activate(on_faded, activated):
+        with playback.lock:
+            if (
+                playback is not self._playback
+                or playback.finishing
+                or playback.activating
+            ):
+                return False
+            playback.activating = True
+            playback.activation_finished.clear()
+
+        def activated() -> None:
+            with playback.lock:
+                if (
+                    playback is self._playback
+                    and playback.activating
+                    and not playback.finishing
+                ):
+                    playback.current = attempt
+                    playback.paused = False
+
+        try:
+            started = playback.source.activate(
+                on_faded,
+                activated,
+                lambda: self._started(playback, attempt),
+            )
+        finally:
+            with playback.lock:
+                playback.activating = False
+                playback.activation_finished.set()
+        if not started:
             return False
         self._set_activity(track)
         return True
 
     async def stop(self) -> None:
-        await self._stop_playback(None)
+        await self._stop_playback(AudioEndReason.STOPPED)
 
     async def _stop_playback(
         self,
-        error: Exception | None,
+        reason: AudioEndReason,
         *,
         voice: discord.VoiceClient | None = None,
     ) -> None:
@@ -595,23 +655,24 @@ class DiscordVoice:
         if playback is None:
             await self.discard_next()
             return
-        playback.cancellation_error = error
+        with playback.lock:
+            playback.forced_reason = reason
         _LOGGER.info(
             "voice.audio_stop channel=%s position=%.3f error=%s",
             self.channel_id,
             playback.source.position_seconds,
-            type(error).__name__ if error is not None else "none",
+            reason,
         )
         output = self._voice if voice is None else voice
         if output is not None:
             output.stop()
         try:
-            await asyncio.to_thread(playback.source.cleanup)
+            await asyncio.to_thread(self._complete_playback, playback, None)
             await self.discard_next()
         except Exception as cleanup_error:
             raise VoiceError("FFmpeg process cleanup failed.") from cleanup_error
-        if self._playback is playback:
-            self._playback = None
+        if playback.cleanup_error is not None:
+            raise playback.cleanup_error
 
     def pause(self) -> None:
         voice = self._voice
@@ -619,9 +680,10 @@ class DiscordVoice:
             raise VoiceError("Discord voice is not connected.")
         if self._playback is not None:
             self._playback.source.pause()
+            self._playback.paused = True
         voice.pause()
         if self._playback is not None:
-            self._set_activity(self._playback.track, paused=True)
+            self._set_activity(self._playback.current.track, paused=True)
 
     def resume(self) -> None:
         voice = self._voice
@@ -629,9 +691,10 @@ class DiscordVoice:
             raise VoiceError("Discord voice is not connected.")
         if self._playback is not None:
             self._playback.source.resume()
+            self._playback.paused = False
         voice.resume()
         if self._playback is not None:
-            self._set_activity(self._playback.track)
+            self._set_activity(self._playback.current.track)
 
     def set_volume(self, volume: float) -> None:
         self._validate_volume(volume)

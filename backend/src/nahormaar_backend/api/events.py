@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 
 from ..application.auth import ACCESS_CHECK_SECONDS, SESSION_COOKIE
-from ..application.playback import PlaybackController
+from ..application.session import Session
 from ..domain.identity import AuthError
 from . import schemas as dto
 from .dependencies import ApiServices
@@ -23,7 +23,7 @@ def events_router(services: ApiServices) -> APIRouter:
 
     async def subscription(
         request: Request,
-        active: Annotated[PlaybackController, Depends(services.player)],
+        active: Annotated[Session, Depends(services.player)],
     ) -> AsyncGenerator[AsyncIterator[ServerSentEvent]]:
         async with active.subscribe() as queue:
 

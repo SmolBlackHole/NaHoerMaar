@@ -6,7 +6,9 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Protocol
+from uuid import UUID
 
 from ..domain.models import TrackMetadata
 
@@ -59,6 +61,38 @@ class VoiceError(RuntimeError):
     """A voice connection or audio dependency failed."""
 
 
+class AudioEndReason(StrEnum):
+    NATURAL = "natural"
+    INTERRUPTED = "interrupted"
+    STOPPED = "stopped"
+    OUTPUT_FAILED = "output_failed"
+
+
+@dataclass(frozen=True, slots=True)
+class AudioStarted:
+    attempt_id: UUID
+    position_seconds: float
+
+
+@dataclass(frozen=True, slots=True)
+class AudioCompleted:
+    attempt_id: UUID
+    reason: AudioEndReason
+    position_seconds: float
+    error: Exception | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class VoiceDisconnected:
+    attempt_id: UUID | None
+    channel_id: int | None
+    position_seconds: float
+    paused: bool
+
+
+type AudioEvent = AudioStarted | AudioCompleted
+
+
 class SourceResolver(Protocol):
     async def resolve(self, source_url: str) -> ResolvedTrack: ...
 
@@ -79,16 +113,21 @@ class VoiceOutput(Protocol):
 
     def channels(self) -> tuple[VoiceChannelInfo, ...]: ...
 
-    def set_disconnect_handler(self, handler: Callable[[], None]) -> None: ...
+    def set_disconnect_handler(
+        self, handler: Callable[[VoiceDisconnected], None]
+    ) -> None: ...
 
     async def connect(self, channel_id: int) -> None: ...
 
     async def disconnect(self) -> None: ...
 
+    async def close(self) -> None: ...
+
     def play(
         self,
         track: ResolvedTrack,
-        after: Callable[[Exception | None], None],
+        attempt_id: UUID,
+        notify: Callable[[AudioEvent], None],
         *,
         position_seconds: float = 0,
         paused: bool = False,
@@ -114,6 +153,7 @@ class VoiceOutput(Protocol):
     def start_transition(
         self,
         track: ResolvedTrack,
-        after: Callable[[Exception | None], None],
+        attempt_id: UUID,
+        notify: Callable[[AudioEvent], None],
         on_faded: Callable[[], None],
     ) -> bool: ...

@@ -16,7 +16,7 @@ import pytest
 from nahormaar_backend.application.audio import VoiceError
 from nahormaar_backend.domain.models import PlaybackState, QueueEntry
 from nahormaar_backend.integrations.discord_commands import DiscordCommands
-from nahormaar_backend.integrations.discord_voice import DiscordVoice
+from nahormaar_backend.integrations.discord_gateway import DiscordGateway
 from test_playback import _controller, _wait_until  # pyright: ignore[reportPrivateUsage]
 
 
@@ -146,9 +146,9 @@ def test_startup_registers_command_but_ready_reconnect_does_not_resync(
     monkeypatch.setattr(DiscordCommands, "register", register)
 
     async def scenario() -> None:
-        voice = DiscordVoice(tmp_path / "ffmpeg")
-        voice.install_commands(tmp_path / "access.toml", AsyncMock())
-        client = voice._client  # pyright: ignore[reportPrivateUsage]
+        gateway = DiscordGateway()
+        gateway.install_commands(tmp_path / "access.toml", AsyncMock())
+        client = gateway.client
         await client.setup_hook()
         await client.on_ready()
         await client.on_ready()
@@ -191,12 +191,19 @@ def test_summon_uses_controller_and_preserves_queue(
                 assert controller.snapshot.current is not None
                 assert controller.snapshot.current.id == first.id
             else:
-                assert controller.snapshot.state is PlaybackState.IDLE
+                assert controller.snapshot.state is PlaybackState.LOADING
+                assert controller.snapshot.current is not None
+                assert controller.snapshot.current.id == first.id
                 assert [entry.id for entry in controller.snapshot.upcoming] == [
-                    first.id,
                     second.id,
                 ]
-                assert len(voice.played) == 1
+                await _wait_until(lambda: len(resolver.requests) == 2)
+                resolver.succeed(1)
+                await _wait_until(
+                    lambda: controller.snapshot.state is PlaybackState.PLAYING
+                )
+                assert len(controller.snapshot.recently_played) == 1
+                assert len(voice.played) == 2
         finally:
             await controller.close()
 

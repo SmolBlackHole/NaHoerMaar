@@ -73,6 +73,7 @@ class PlaybackCheckpointRow(Base):
     position_seconds: Mapped[float]
     paused: Mapped[bool]
     volume: Mapped[float]
+    history_recorded: Mapped[bool] = mapped_column(default=False, server_default="0")
 
 
 class RequestRow(Base):

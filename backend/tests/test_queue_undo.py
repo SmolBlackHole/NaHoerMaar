@@ -10,9 +10,9 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import event, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session as DatabaseSession
 
-from nahormaar_backend.application.playback import PlaybackController
+from nahormaar_backend.application.session import Session
 from nahormaar_backend.application.player import Player
 from nahormaar_backend.domain import commands
 from nahormaar_backend.domain.commands import Outcome, Receipt
@@ -39,8 +39,10 @@ def test_restore_uses_surviving_neighbors_and_preserves_other_edits() -> None:
 
 def test_bulk_duplicates_are_checked_at_insertion_and_replayed(tmp_path: Path) -> None:
     async def scenario() -> None:
-        controller = await PlaybackController.create(
-            tmp_path / "queue.db", ControlledResolver(), FakeVoice()
+        controller = await Session.create(
+            lambda: SQLiteStore(tmp_path / "queue.db"),
+            ControlledResolver(),
+            FakeVoice(),
         )
         try:
             actor = uuid4()
@@ -79,8 +81,10 @@ def test_bulk_duplicates_are_checked_at_insertion_and_replayed(tmp_path: Path) -
 
 def test_duplicates_include_the_current_track(tmp_path: Path) -> None:
     async def scenario() -> None:
-        controller = await PlaybackController.create(
-            tmp_path / "queue.db", ControlledResolver(), FakeVoice()
+        controller = await Session.create(
+            lambda: SQLiteStore(tmp_path / "queue.db"),
+            ControlledResolver(),
+            FakeVoice(),
         )
         try:
             await controller.enqueue(QueueEntry(VIDEO))
@@ -106,8 +110,8 @@ def test_undo_is_owned_single_use_and_survives_restart(
         entry = QueueEntry(
             VIDEO, title="Original title", duration_seconds=42, added_by=owner
         )
-        controller = await PlaybackController.create(
-            path, ControlledResolver(), FakeVoice()
+        controller = await Session.create(
+            lambda: SQLiteStore(path), ControlledResolver(), FakeVoice()
         )
         await controller.enqueue(entry)
         command = (
@@ -131,8 +135,8 @@ def test_undo_is_owned_single_use_and_survives_restart(
             removed.outcome.undo_expires_at - datetime.now(UTC)
         ).total_seconds() <= 12
         await controller.close()
-        controller = await PlaybackController.create(
-            path, ControlledResolver(), FakeVoice()
+        controller = await Session.create(
+            lambda: SQLiteStore(path), ControlledResolver(), FakeVoice()
         )
         try:
             later = QueueEntry(VIDEO, title="Added later")
@@ -173,8 +177,8 @@ def test_expiry_is_server_enforced_and_pruned(
 ) -> None:
     async def scenario() -> None:
         path, actor = tmp_path / "queue.db", uuid4()
-        controller = await PlaybackController.create(
-            path, ControlledResolver(), FakeVoice()
+        controller = await Session.create(
+            lambda: SQLiteStore(path), ControlledResolver(), FakeVoice()
         )
         try:
             entry = QueueEntry(VIDEO)
@@ -197,7 +201,7 @@ def test_expiry_is_server_enforced_and_pruned(
             )
             engine = database_engine(path)
             try:
-                with Session(engine) as session:
+                with DatabaseSession(engine) as session:
                     assert session.scalar(select(UndoRow)) is None
             finally:
                 engine.dispose()
@@ -226,7 +230,7 @@ def test_undo_and_queue_commit_or_roll_back_together(
         )
         player.reserve(receipt)
         if restoring:
-            player.apply_request(receipt, lambda p: p.remove(entry.id))
+            player.apply_request(receipt, lambda p: p.remove((entry,)))
             receipt = Receipt(
                 uuid4(),
                 "undo",
@@ -242,24 +246,24 @@ def test_undo_and_queue_commit_or_roll_back_together(
 
             raise OperationalError("COMMIT", {}, RuntimeError("disk failure"))
 
-        event.listen(Session, "before_commit", fail_commit)
+        event.listen(DatabaseSession, "before_commit", fail_commit)
         try:
             with pytest.raises(StorageError):
                 player.apply_request(
                     receipt,
                     lambda p: (
-                        p.restore_removal(removal) if restoring else p.remove(entry.id)
+                        p.restore_removal(removal) if restoring else p.remove((entry,))
                     ),
                 )
         finally:
-            event.remove(Session, "before_commit", fail_commit)
+            event.remove(DatabaseSession, "before_commit", fail_commit)
         assert player.snapshot == before == store.load()
         assert player.revisions == revisions
         stored_receipt = store.reserve(receipt)
         assert stored_receipt is not None and stored_receipt.outcome is None
         engine = database_engine(tmp_path / "queue.db")
         try:
-            with Session(engine) as session:
+            with DatabaseSession(engine) as session:
                 assert (session.get(UndoRow, removal.id) is not None) == restoring
         finally:
             engine.dispose()
@@ -309,8 +313,10 @@ def test_contributor_undo_preserves_playback_and_other_users_entries(
 ) -> None:
     async def scenario() -> None:
         actor, author = uuid4(), Contributor(uuid4(), "Kai", "0001")
-        controller = await PlaybackController.create(
-            tmp_path / "queue.db", ControlledResolver(), FakeVoice()
+        controller = await Session.create(
+            lambda: SQLiteStore(tmp_path / "queue.db"),
+            ControlledResolver(),
+            FakeVoice(),
         )
         try:
             current = QueueEntry(VIDEO)
