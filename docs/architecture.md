@@ -9,11 +9,40 @@ is described under [engine verification](engine-api.md#verification).
 
 ## Ownership
 
-The Nuxt client uses the native wire types in `frontend/shared/engine.ts`.
-It resolves track IDs into a display model for the existing components; requests
-always use native commands and identifiers. Playback controls target an attempt,
-while video rendering keeps the logical play ID across seeks and reconnects.
-Discovery pages remain pinned to a version until the listener accepts an update.
+`frontend/shared/api.generated.ts` is generated offline from the public API
+models, including the account and appearance contract. `shared/engine.ts` names
+wire types and projects track references into display data.
+
+`app/repositories/` owns typed endpoint calls. Session handles queue, playback,
+connection, radio and decoded SSE events; Catalog handles search, links and pinned
+discovery snapshots; Account handles sessions, profile and appearance. A shared
+HTTP transport supplies timeouts, cancellation, JSON/empty responses, errors and
+CSRF. The Nuxt plugin provides one set per app through Vue injection. Auth hooks
+read the profile store at request time; repositories never import stores or UI.
+Responses from an earlier account generation are discarded.
+
+`stores/player.ts` owns one session snapshot, the playback clock anchor, pending
+operations and the SSE subscription lifetime. Its display snapshot is computed.
+The default layout starts and disposes this lifetime with the signed-in account.
+HTTP and SSE pass through the same revision checks and operation deduplication.
+`usePlayerNotifications` translates the resulting activity into toasts using
+semantic actions and request IDs; retry preserves the original payload and key.
+Playback controls target an attempt, while video rendering keeps the logical
+play ID across seeks and reconnects.
+
+`useDiscovery` owns search/import/selection workflow; the Vue panel owns focus and
+scroll. `useCatalog` owns local results, pagination, refresh polling and cancellation;
+displayed versions stay pinned until the listener accepts an update. Closing the
+panel cancels pending work. Queue duplicate checks use persistent track IDs;
+playlist positions identify separate occurrences. `stores/radioPreview.ts` shares
+only the proposed radio seed between entry points and reuses known references;
+the active radio belongs to the player session.
+Track presentation components accept metadata without manufacturing queue entries.
+
+`stores/profile.ts` owns identity, session expiry and cross-tab refresh.
+`stores/settings.ts` owns appearance, debounce and retry. A refresh cannot overwrite
+unsaved local appearance changes. Account changes invalidate pending requests,
+clear private view state and bind the new account's settings.
 
 | Module | Responsibility |
 | --- | --- |

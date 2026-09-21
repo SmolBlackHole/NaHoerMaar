@@ -1,12 +1,6 @@
-export interface Appearance {
-	mode: "light" | "dark" | "system" | "time";
-	artworkColors: boolean;
-	primaryColor: string;
-	neutralColor: string;
-	fontFamily: string;
-	iconSet: "lucide" | "ph" | "heroicons" | "tabler";
-	textSize: "sm" | "md" | "lg";
-}
+import type { components } from "./api.generated";
+
+export type Appearance = Required<components["schemas"]["Appearance"]>;
 
 export const defaultAppearance: Readonly<Appearance> = {
 	mode: "dark",

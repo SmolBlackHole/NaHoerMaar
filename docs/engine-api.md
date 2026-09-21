@@ -84,10 +84,16 @@ Queue attribution comes from the authenticated account, never a request body.
 `radio` and a `tracks` dictionary keyed by internal track ID. Entries and history
 reference that dictionary; metadata is not independently copied into every row.
 Channel and guild snowflakes are decimal strings at the HTTP boundary.
+The public models live in `engine/api_models.py`. Playback exposes a connection
+state, not internal connection or preparation tokens. Track responses contain
+identity, source URL and metadata, without storage timestamps or provenance.
 
 Every queue, playback, connection and radio mutation requires an
-`Idempotency-Key` UUID. Responses contain `state`, `outcome` and `replayed`.
-Outcomes include affected entries and actor information. The same key with a
+`Idempotency-Key` UUID. Responses contain `request_id`, `action`, `state`,
+`outcome` and `replayed`. The semantic action (for example `queue.removed` or
+`playback.seek`) is shared with SSE. Outcomes include affected entries and actor
+information. `state.tracks` also supplies metadata for outcome entries that have
+already left the queue, including replayed removals. The same key with a
 different command or actor conflicts. Repeated accepted requests return the
 original outcome and current state without applying another mutation.
 
@@ -119,6 +125,8 @@ failure. History begins only after confirmed audio output.
 Conflicts return 409, missing entries 404, invalid actions 422, unavailable
 providers 502, and unavailable storage/runtime 503. Private provider URLs and
 exception details are not returned.
+Errors outside a committed command use `{code, message, retryable}`. A rejected
+command may return its mutation envelope with a non-`ok` outcome and current state.
 
 ## Discovery and stable selections
 
@@ -129,9 +137,13 @@ exception details are not returned.
 
 Search defaults to Music. Explicit `youtube` selects Videos when registered.
 Search and playlist observations remain bounded to 100 occurrences. Responses
-carry `version`, `offset`, `total`, `entries` and `refresh`; playlist replies also
-carry their title/reference. Each available result includes its persistent
-`track_id`, source `position` and original finding. Unavailable rows have no track ID.
+carry `version`, `offset`, `total`, `next_offset`, `source_has_more`, `entries`,
+`playlist`, `error` and `refresh`. `next_offset` paginates the pinned snapshot;
+`source_has_more` reports an upstream continuation beyond its bounded contents.
+Every playlist version includes `playlist: {title, reference}`, also after a
+refresh; search responses set it to null. Each result contains `track_id`,
+source `position`, `reference`, `metadata` and `unavailable`. Unavailable rows
+have no track ID. There is no background preview job to create or cancel.
 
 Clients select the track IDs from the displayed snapshot and submit them to
 `POST /api/queue`. Repeated playlist occurrences may supply the same track ID
@@ -144,7 +156,10 @@ version without replacing the old visible ordering or changing a user's selectio
 
 `GET /api/events` is SSE. Each connection first receives `event: state` containing
 a complete current snapshot, including when `Last-Event-ID` is present. Later
-`event: change` messages contain `action`, `outcome`, and committed `state`.
+`event: change` messages contain `request_id`, `action`, `outcome`, and committed
+`state`. HTTP and SSE report the same request ID for a command. Clients deduplicate
+by that ID regardless of arrival order. Internal state updates use `session.updated`;
+they do not imply a listener requested a queue edit.
 The event ID is the Session revision. This is a resynchronizing state stream,
 not a durable activity log or a promise to replay every historical notification.
 

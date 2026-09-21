@@ -357,26 +357,32 @@ are included.
 
 ## Frontend cleanup
 
-- [ ] Organize frontend code by responsibility, following the backend cleanup:
+- [x] Organize frontend code by responsibility, following the backend cleanup:
   API access, live state, stores, view composables and presentation components
-- [ ] Introduce small, typed API repositories for player/queue, discovery and
+- [x] Introduce small, typed API repositories for player/queue, discovery and
   accounts. Keep endpoint paths, payloads and response handling out of components;
   share the existing authenticated request layer instead of adding a generic
   repository framework
-- [ ] Separate HTTP mutations and SSE connection handling from reactive player
-  state and UI feedback. Give connection startup, reconnection and disposal one
-  owner, preserving revision ordering and request IDs across retries
-- [ ] Make the Nuxt proxy easier to extend and inspect, with explicit ownership
-  of allowed routes, query parameters, headers, cookies and streaming responses.
-  Preserve origin checks, authentication, CSRF protection and disconnect cleanup
-- [ ] Consolidate repeated loading, error and cancellation handling across search,
-  playlists, radio and profile settings. Keep shared layout effects initialized
-  once and component styles close to their Vue components
-- [ ] Review shared API types, domain values and view state for duplication.
+- [x] Keep HTTP transport and UI feedback separate from the reactive player owner.
+  Give connection startup, reconnection and disposal one owner, preserving revision
+  ordering and request IDs across retries. Derive presentation from one snapshot
+- [x] Retain and verify the explicit Nuxt proxy allowlist for routes, query
+  parameters, headers, cookies and streaming responses, including origin checks,
+  authentication, CSRF protection and disconnect cleanup
+- [x] Share HTTP errors and cancellation deadlines across search, playlists and
+  radio. Move discovery workflow into a composable and reuse known media references
+- [ ] Review remaining profile/settings loading and error handling for useful reuse.
+  Keep shared layout effects initialized once and component styles close to their
+  Vue components
+- [x] Review shared API types, domain values and view state for duplication.
   Reuse components and helpers where behavior is actually shared, keeping feature
   differences explicit
 
-Acceptance: user-visible behavior and API contracts stay unchanged. Navigation,
+The approved cleanup updates the native API and frontend together: public models,
+offline-generated TypeScript, semantic actions and correlated HTTP/SSE results.
+There is no compatibility adapter for the previous response shapes.
+
+Acceptance: user-visible behavior stays unchanged. Navigation,
 sidebar toggles and Player/Queue transitions do not reload playback or create
 duplicate event streams. Existing tests still cover concurrent queue changes,
 undo, stale responses, session expiry and proxy forwarding. Verify desktop and

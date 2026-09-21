@@ -98,6 +98,37 @@ API calls require the authentication session cookie, and mutations also require
 its CSRF token and configured origin. The dashboard retains the original
 idempotency key and command body when checking a lost mutation response.
 
+## Update the frontend API contract
+
+Public response models are defined in `backend/src/nahormaar_backend/engine/api_models.py`;
+request models and routes live in `engine/api.py`. After changing them, run:
+
+```powershell
+npm run api:generate --workspace frontend
+```
+
+This exports OpenAPI in an isolated Python process and runs the locally installed
+`openapi-typescript`. It does not enter the application lifespan, read runtime
+configuration, connect to Discord or open the player database. Commit the resulting
+`frontend/shared/api.generated.ts` with its API change. Do not edit or reformat
+that generated file manually. `npm run api:check --workspace frontend` verifies
+reproducibility and is included in the frontend/CI check command.
+
+Use the named methods in `app/repositories/` for HTTP access. They are provided once
+per Nuxt app by `app/plugins/repositories.ts`; obtain them through
+`useRepositories()` in stores and local workflow composables. Components call
+store/composable actions. Keep route strings out of spinners and toast decisions;
+use semantic actions such as `queue.reordered` and `playback.seek`.
+
+Stores own shared reactive state, not repositories. Keep search results and playlist
+selection local to `useCatalog`/`useDiscovery`; only the radio preview is shared
+between its entry points. The account repository uses the same transport as the
+catalog and session. Do not add another fetch wrapper to the profile store.
+
+Frontend tests inject repositories into a fresh Vue app and real Pinia using
+`test/repository-fixture.ts`. Their fetch and EventSource implementations are
+local doubles; they do not access the live bot, queue or account.
+
 Every playback or queue mutation needs a UUID in its `Idempotency-Key` header. Generate one with
 `[guid]::NewGuid().ToString()` in PowerShell. Reuse it only when retrying the same
 request. See the [engine API contract](engine-api.md) for payloads and conflict handling.

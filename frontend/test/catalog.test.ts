@@ -2,16 +2,19 @@ import { discovery, track } from "./engine-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	musicSource,
-	selectedSources,
 	selectedTrackIds,
 	catalogPage,
 	reconcileSelection,
 	queuePresence,
 	importCounts,
-	catalogEntry,
 	type CatalogTrack,
 } from "../shared/catalog";
-import { createCatalogClient } from "../app/player/catalog";
+import { useCatalog } from "../app/composables/useCatalog";
+import { repositoryFixture } from "./repository-fixture";
+function catalogSetup(request: typeof fetch) {
+	const fixture = repositoryFixture(request);
+	return fixture.app.runWithContext(() => fixture.scope.run(useCatalog))!;
+}
 import type { PlayerState } from "../shared/player";
 
 const video = "https://www.youtube.com/watch?v=Pqp9fDRp1lw";
@@ -19,6 +22,7 @@ const playlist = "https://www.youtube.com/playlist?list=PL12345678901234";
 const entry = (index = 1, changes: Partial<CatalogTrack> = {}): CatalogTrack => ({
 	index,
 	track_id: "track",
+	reference: null,
 	source_url: video,
 	video_id: "Pqp9fDRp1lw",
 	title: "Амура",
@@ -41,45 +45,32 @@ afterEach(() => vi.useRealTimers());
 
 describe("duplicate awareness", () => {
 	const state = {
-		current: catalogEntry(entry()),
-		upcoming: [
-			catalogEntry(
-				entry(2, { source_url: "https://youtu.be/bWHJbIm1TAA", video_id: "bWHJbIm1TAA" }),
-			),
-		],
+		current: { ...entry(), track_id: "current" },
+		upcoming: [{ ...entry(2), track_id: "queued" }],
 	} as PlayerState;
-	it("matches video IDs across Music, YouTube and short links without comparing titles", () => {
-		expect(queuePresence("https://music.youtube.com/watch?v=Pqp9fDRp1lw&list=abc", state)).toBe(
-			"Now playing",
-		);
-		expect(queuePresence("https://youtube.com/watch?v=bWHJbIm1TAA", state)).toBe(
-			"Already queued",
-		);
-		expect(queuePresence("https://youtu.be/GCYGuZGE6DA", state)).toBeNull();
+	it("matches persistent track IDs independently of URLs and titles", () => {
+		expect(queuePresence("current", state)).toBe("Now playing");
+		expect(queuePresence("queued", state)).toBe("Already queued");
+		expect(queuePresence("new", state)).toBeNull();
 	});
 	it("counts queue, current and batch duplicates only when explicitly enabled", () => {
-		const urls = [
-			video,
-			"https://youtu.be/bWHJbIm1TAA",
-			"https://youtu.be/GCYGuZGE6DA",
-			"https://music.youtube.com/watch?v=GCYGuZGE6DA",
-		];
-		expect(importCounts(urls, state, false)).toEqual({ added: 4, skipped: 0 });
-		expect(importCounts(urls, state, true)).toEqual({ added: 1, skipped: 3 });
-		expect(urls).toHaveLength(4);
+		const ids = ["current", "queued", "new", "new"];
+		expect(importCounts(ids, state, false)).toEqual({ added: 4, skipped: 0 });
+		expect(importCounts(ids, state, true)).toEqual({ added: 1, skipped: 3 });
+		expect(ids).toHaveLength(4);
 	});
 });
 describe("selection refresh", () => {
 	it("matches unique songs after reorder, drops removed songs and leaves new songs unchecked", () => {
 		const old = [
-			entry(1, { video_id: "a" }),
-			entry(2, { video_id: "b" }),
-			entry(3, { video_id: "c" }),
+			entry(1, { track_id: "a" }),
+			entry(2, { track_id: "b" }),
+			entry(3, { track_id: "c" }),
 		];
 		const next = [
-			entry(1, { video_id: "b" }),
-			entry(2, { video_id: "new" }),
-			entry(3, { video_id: "a" }),
+			entry(1, { track_id: "b" }),
+			entry(2, { track_id: "new" }),
+			entry(3, { track_id: "a" }),
 		];
 		expect([...reconcileSelection(old, next, new Set([1, 3]))]).toEqual([3]);
 	});
@@ -90,7 +81,7 @@ describe("selection refresh", () => {
 		expect([
 			...reconcileSelection(duplicates, [...duplicates, entry(3)], new Set([1, 2])),
 		]).toEqual([]);
-		expect(selectedSources(duplicates, new Set([1, 2]))).toEqual([video, video]);
+		expect(selectedTrackIds(duplicates, new Set([1, 2]))).toEqual(["track", "track"]);
 	});
 });
 describe("music sources", () => {
@@ -122,11 +113,15 @@ describe("music sources", () => {
 	it("preserves source order and duplicate songs while excluding unavailable entries", () => {
 		const tracks = [
 			entry(1),
-			entry(2, { source_url: video + "2" }),
+			entry(2, { track_id: "second", source_url: video + "2" }),
 			entry(3),
 			entry(4, { unavailable: "Private" }),
 		];
-		expect(selectedSources(tracks, new Set([4, 3, 1, 2]))).toEqual([video, video + "2", video]);
+		expect(selectedTrackIds(tracks, new Set([4, 3, 1, 2]))).toEqual([
+			"track",
+			"second",
+			"track",
+		]);
 	});
 });
 
@@ -137,7 +132,7 @@ describe("native discovery", () => {
 			.fn<typeof fetch>()
 			.mockReturnValueOnce(late.promise)
 			.mockResolvedValueOnce(Response.json(discovery("video")));
-		const client = createCatalogClient(request);
+		const client = catalogSetup(request);
 		const pending = client.search("same query");
 		client.searchSource.value = "youtube";
 		await client.search("same query");
@@ -154,11 +149,14 @@ describe("native discovery", () => {
 		vi.useFakeTimers();
 		const old = discovery("old", {
 			total: 2,
+			next_offset: 1,
 			refresh: { latest_version: "old", refreshing: true, error: null },
 		});
-		const second = discovery("old", { offset: 1, total: 2 });
+		const second = discovery("old", { offset: 1, total: 2, next_offset: 1 });
 		second.entries[0]!.position = 1;
-		second.entries[0]!.finding.reference!.identity.external_id = "another";
+		second.entries[0]!.track_id = "second";
+		second.next_offset = null;
+		second.entries[0]!.reference!.identity.external_id = "another";
 		const request = vi
 			.fn<typeof fetch>()
 			.mockResolvedValueOnce(Response.json(old))
@@ -171,13 +169,13 @@ describe("native discovery", () => {
 			)
 			.mockResolvedValueOnce(Response.json(discovery("new")))
 			.mockResolvedValueOnce(Response.json(second));
-		const client = createCatalogClient(request);
+		const client = catalogSetup(request);
 		await client.search("song");
 		await vi.advanceTimersByTimeAsync(1000);
 		expect(client.results.value[0]?.title).toBe("old");
-		expect(client.searchUpdate.value?.snapshot_id).toBe("new");
+		expect(client.searchUpdate.value?.version).toBe("new");
 		await client.loadMore();
-		expect(request.mock.calls[3]![0]).toBe("/api/catalog/search/old?offset=1");
+		expect(request.mock.calls[3]![0]).toBe("/api/catalog/search/old?offset=1&limit=20");
 		expect(client.results.value).toHaveLength(2);
 		client.applySearchUpdate();
 		expect(client.results.value[0]?.title).toBe("new");
@@ -186,9 +184,9 @@ describe("native discovery", () => {
 	it("keeps displayed data when a version expires", async () => {
 		const request = vi
 			.fn<typeof fetch>()
-			.mockResolvedValueOnce(Response.json(discovery("old", { total: 2 })))
+			.mockResolvedValueOnce(Response.json(discovery("old", { total: 2, next_offset: 1 })))
 			.mockResolvedValueOnce(Response.json({ code: "not_found" }, { status: 404 }));
-		const client = createCatalogClient(request);
+		const client = catalogSetup(request);
 		await client.search("song");
 		await client.loadMore();
 		expect(client.searchExpired.value).toBe(true);
@@ -199,10 +197,10 @@ describe("native discovery", () => {
 		const late = deferred<Response>();
 		const request = vi
 			.fn<typeof fetch>()
-			.mockResolvedValueOnce(Response.json(discovery("old", { total: 2 })))
+			.mockResolvedValueOnce(Response.json(discovery("old", { total: 2, next_offset: 1 })))
 			.mockReturnValueOnce(late.promise)
 			.mockResolvedValueOnce(Response.json(discovery("new")));
-		const client = createCatalogClient(request);
+		const client = catalogSetup(request);
 		await client.search("old");
 		const pending = client.loadMore();
 		await client.search("new");
@@ -213,7 +211,18 @@ describe("native discovery", () => {
 		client.dispose();
 	});
 	it("loads all bounded playlist occurrences without collapsing duplicates", async () => {
-		const initial = discovery("list", { total: 2, title: "Playlist" });
+		const initial = discovery("list", {
+			total: 2,
+			next_offset: 1,
+			playlist: {
+				title: "Playlist",
+				reference: {
+					kind: "playlist",
+					identity: { namespace: "youtube", external_id: "PL12345678901234" },
+					source_url: playlist,
+				},
+			},
+		});
 		const full = {
 			...initial,
 			entries: [...initial.entries, { ...initial.entries[0]!, position: 1 }],
@@ -222,15 +231,15 @@ describe("native discovery", () => {
 			.fn<typeof fetch>()
 			.mockResolvedValueOnce(Response.json(initial))
 			.mockResolvedValueOnce(Response.json(full));
-		const client = createCatalogClient(request);
+		const client = catalogSetup(request);
 		await client.openPreview(playlist);
 		expect(request.mock.calls[0]![0]).toBe("/api/catalog/playlist");
-		expect(request.mock.calls[1]![0]).toBe("/api/catalog/playlist/list?limit=100");
+		expect(request.mock.calls[1]![0]).toBe("/api/catalog/playlist/list?offset=0&limit=100");
 		expect(selectedTrackIds(client.preview.value!.entries, new Set([0, 1]))).toEqual([
 			track.id,
 			track.id,
 		]);
-		expect(client.preview.value?.title).toBe("Playlist");
+		expect(client.preview.value?.playlist?.title).toBe("Playlist");
 		client.dispose();
 	});
 	it("retains a visible playlist until its update is accepted", async () => {
@@ -238,19 +247,26 @@ describe("native discovery", () => {
 			.fn<typeof fetch>()
 			.mockResolvedValueOnce(Response.json(discovery("old")))
 			.mockResolvedValueOnce(Response.json(discovery("new")));
-		const client = createCatalogClient(request);
+		const client = catalogSetup(request);
 		await client.openPreview(playlist);
 		await client.openPreview(playlist, true);
-		expect(client.preview.value?.id).toBe("old");
-		expect(client.previewUpdate.value?.id).toBe("new");
+		expect(client.preview.value?.version).toBe("old");
+		expect(client.previewUpdate.value?.version).toBe("new");
 		client.applyPreviewUpdate();
-		expect(client.preview.value?.id).toBe("new");
+		expect(client.preview.value?.version).toBe("new");
 		client.dispose();
 	});
 	it("polls playlist refresh and stages the new version", async () => {
 		vi.useFakeTimers();
 		const old = discovery("old", {
-			title: "Playlist",
+			playlist: {
+				title: "Playlist",
+				reference: {
+					kind: "playlist",
+					identity: { namespace: "youtube", external_id: "PL12345678901234" },
+					source_url: playlist,
+				},
+			},
 			refresh: { latest_version: "old", refreshing: true, error: null },
 		});
 		const request = vi
@@ -263,19 +279,23 @@ describe("native discovery", () => {
 					}),
 				),
 			)
-			.mockResolvedValueOnce(Response.json(discovery("new")));
-		const client = createCatalogClient(request);
+			.mockResolvedValueOnce(
+				Response.json(
+					discovery("new", { playlist: { ...old.playlist!, title: "Renamed playlist" } }),
+				),
+			);
+		const client = catalogSetup(request);
 		await client.openPreview(playlist);
 		await vi.advanceTimersByTimeAsync(1000);
-		expect(client.preview.value?.id).toBe("old");
-		expect(client.previewUpdate.value?.id).toBe("new");
-		expect(client.previewUpdate.value?.title).toBe("Playlist");
+		expect(client.preview.value?.version).toBe("old");
+		expect(client.previewUpdate.value?.version).toBe("new");
+		expect(client.previewUpdate.value?.playlist?.title).toBe("Renamed playlist");
 		client.dispose();
 	});
 	it("cancels locally without creating or deleting a remote preview job", async () => {
 		const late = deferred<Response>();
 		const request = vi.fn<typeof fetch>().mockReturnValueOnce(late.promise);
-		const client = createCatalogClient(request);
+		const client = catalogSetup(request);
 		const pending = client.openPreview(playlist);
 		client.closePreview();
 		late.resolve(Response.json(discovery()));
@@ -289,7 +309,7 @@ describe("native discovery", () => {
 	it("keeps unavailable slots visible and unselectable", () => {
 		const native = discovery();
 		native.entries[0]!.track_id = null;
-		native.entries[0]!.finding.reason = "Private";
+		native.entries[0]!.unavailable = "Private";
 		const entries = catalogPage(native).entries;
 		expect(entries[0]?.unavailable).toBe("Private");
 		expect(selectedTrackIds(entries, new Set([0]))).toEqual([]);

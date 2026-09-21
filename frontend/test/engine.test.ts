@@ -7,9 +7,9 @@ afterEach(() => vi.useRealTimers());
 describe("engine presentation", () => {
 	it("keeps logical play identity distinct from a retry/seek attempt", () => {
 		const value = playing();
-		const before = presentSession(value, null);
+		const before = presentSession(value);
 		value.playback.attempt_id = "retry";
-		const after = presentSession(value, before);
+		const after = presentSession(value, before.position_updated_at!);
 		expect(after.playback_id).toBe(before.playback_id);
 		expect(after.attempt_id).not.toBe(before.attempt_id);
 		expect(after.current?.track_id).toBe(track.id);
@@ -19,24 +19,24 @@ describe("engine presentation", () => {
 		vi.setSystemTime(new Date("2026-09-21T12:00:00Z"));
 		const value = playing();
 		value.checkpoint.position_seconds = 12;
-		const before = presentSession(value, null);
+		const before = presentSession(value);
 		vi.advanceTimersByTime(2000);
 		value.session.volume = 0.5;
-		const after = presentSession(value, before);
+		const after = presentSession(value, before.position_updated_at!);
 		expect(playbackPosition(after, Date.now())).toBe(14);
 		value.checkpoint.intent = "paused";
 		value.checkpoint.position_seconds = 14;
 		value.playback.phase = "paused";
-		const paused = presentSession(value, after);
+		const paused = presentSession(value);
 		vi.advanceTimersByTime(2000);
 		expect(playbackPosition(paused, Date.now())).toBe(14);
 	});
 	it("does not mistake a desired reconnect channel for an active connection", () => {
 		const value = playing();
 		value.playback.phase = "suspended";
-		value.playback.connection_id = null;
+		value.playback.connection = "disconnected";
 		value.playback.attempt_id = null;
-		const state = presentSession(value, null);
+		const state = presentSession(value);
 		expect(state.channel_id).toBeTruthy();
 		expect(state.voice_state).toBe("disconnected");
 		expect(canControl(state, "skip")).toBe(false);
@@ -55,7 +55,7 @@ describe("engine presentation", () => {
 				end_reason: "failed",
 			},
 		];
-		const state = presentSession(value, null);
+		const state = presentSession(value);
 		expect(state.last_issue?.entry?.title).toBe(track.metadata.title);
 		expect(state.last_issue?.id).toBe("record");
 		expect(state.recently_played[0]?.entry.id).toBe(occurrence.id);
@@ -73,7 +73,7 @@ describe("engine presentation", () => {
 				end_reason: null,
 			},
 		];
-		const state = presentSession(value, null);
+		const state = presentSession(value);
 		expect(state.upcoming.map((item) => item.id)).toEqual([occurrence.id, "second"]);
 		expect(state.recently_played).toEqual([]);
 	});

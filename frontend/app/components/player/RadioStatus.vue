@@ -4,7 +4,7 @@ const { icons } = useTheme();
 const radio = computed(() => player.snapshot?.radio);
 function control(action: "retry" | "stop") {
 	if (radio.value?.generation)
-		void player.mutate(`/api/radio/${radio.value.generation}/${action}`, "POST");
+		void (action === "stop" ? player.stopRadio : player.retryRadio)(radio.value.generation);
 }
 </script>
 
@@ -33,7 +33,7 @@ function control(action: "retry" | "stop") {
 				color="neutral"
 				class="min-h-11"
 				:disabled="!player.enabled"
-				:loading="player.isPending(`/api/radio/${radio.generation}/retry`)"
+				:loading="player.isPending('radio.retried', radio.generation ?? undefined)"
 				@click="control('retry')"
 			/>
 			<UButton
@@ -42,7 +42,7 @@ function control(action: "retry" | "stop") {
 				color="neutral"
 				class="min-h-11"
 				:disabled="!player.enabled"
-				:loading="player.isPending(`/api/radio/${radio.generation}/stop`)"
+				:loading="player.isPending('radio.stopped', radio.generation ?? undefined)"
 				@click="control('stop')"
 			/>
 		</div>

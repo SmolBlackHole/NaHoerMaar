@@ -1,8 +1,11 @@
-import { ref, shallowRef } from "vue";
+import { ref, shallowRef, onScopeDispose } from "vue";
 import type { RadioPreview, RadioSource } from "../../shared/radio";
-import type { Track, DiscoveryPage, MediaReference } from "../../shared/engine";
+import { defineStore } from "pinia";
+import { useRepositories } from "../repositories";
+import type { MediaReference } from "../../shared/engine";
 
-export function createRadioClient(request: typeof fetch) {
+export const useRadioPreviewStore = defineStore("radioPreview", () => {
+	const { catalog: api } = useRepositories();
 	const source = shallowRef<RadioSource | null>(null);
 	const preview = shallowRef<RadioPreview | null>(null);
 	const loading = ref(false);
@@ -19,31 +22,16 @@ export function createRadioClient(request: typeof fetch) {
 		error.value = "";
 		loading.value = true;
 		try {
-			const response = await request(`/api/catalog/${value.kind}`, {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-				},
-				body: JSON.stringify({ source_url: value.source_url }),
-				signal: AbortSignal.any([controller.signal, AbortSignal.timeout(40_000)]),
-			});
-			if (!response.ok) {
-				const data = await response.json();
-				throw new Error(
-					typeof data.detail === "string"
-						? data.detail
-						: "Could not load radio. Try again.",
-				);
+			let seed: MediaReference;
+			if (value.reference) seed = value.reference;
+			else if (value.kind === "playlist") {
+				const page = await api.openPlaylist(value.source_url, false, controller.signal);
+				if (!page.playlist) throw new Error("The playlist could not be resolved.");
+				seed = page.playlist.reference;
+			} else {
+				const track = await api.resolveTrack(value.source_url, controller.signal);
+				seed = { kind: "track", identity: track.identity, source_url: track.source_url };
 			}
-			const data: Track | DiscoveryPage = await response.json();
-			const seed: MediaReference =
-				value.kind === "playlist"
-					? (data as DiscoveryPage).playlist!
-					: {
-							identity: (data as Track).identity,
-							kind: "track",
-							source_url: (data as Track).source_url,
-						};
 			if (current === version.value) preview.value = { seed };
 		} catch (reason) {
 			if (current === version.value)
@@ -63,5 +51,6 @@ export function createRadioClient(request: typeof fetch) {
 		error.value = "";
 		loading.value = false;
 	}
+	onScopeDispose(dispose);
 	return { source, preview, loading, error, version, open, dispose };
-}
+});

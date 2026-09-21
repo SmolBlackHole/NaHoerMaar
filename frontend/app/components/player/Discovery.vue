@@ -1,31 +1,9 @@
 <script setup lang="ts">
-import {
-	musicSource,
-	selectedSources,
-	selectedTrackIds,
-	reconcileSelection,
-	importCounts,
-	type CatalogTrack,
-} from "#shared/catalog";
-import { createCatalogClient } from "~/player/catalog";
-import { usePlayerStore } from "~/stores/player";
-import { useProfileStore } from "~/stores/profile";
-
-const player = usePlayerStore();
-const radio = useRadioStore();
 const { icons } = useTheme();
-const profile = useProfileStore();
-const library = createCatalogClient(profile.request);
-watch(
-	() => profile.status,
-	(status) => {
-		if (status !== "authenticated") {
-			library.dispose();
-			radio.dispose();
-		}
-	},
-);
 const {
+	player,
+	radio,
+	library,
 	results,
 	query,
 	searchSource,
@@ -42,166 +20,37 @@ const {
 	refreshing,
 	refreshError,
 	searchExpired,
-} = library;
-const source = ref("");
-const inputError = ref("");
-const toast = useToast();
-const panelOpen = ref(false);
+	source,
+	inputError,
+	panelOpen,
+	view,
+	selected,
+	importing,
+	skipDuplicates,
+	choices,
+	selection,
+	counts,
+	submitting,
+	loadingPlaylist,
+	startRadio,
+	openPlaylist,
+	submit,
+	addResult,
+	toggle,
+	selectAll,
+	importSelection,
+	applyUpdate,
+} = useDiscovery();
 const launcher = ref<HTMLElement>();
 const scrollArea = ref<HTMLElement>();
 let scrollTop = 0;
-const view = ref("search");
-const selected = ref(new Set<number>());
-const importing = ref(false);
-const skipDuplicates = ref(false);
-const parsed = computed(() => musicSource(source.value));
-const choices = computed(
-	() => preview.value?.entries.filter((item) => item.source_url && !item.unavailable) ?? [],
-);
-const selection = computed(() => selectedSources(preview.value?.entries ?? [], selected.value));
-const counts = computed(() => importCounts(selection.value, player.snapshot, skipDuplicates.value));
-const submitting = computed(
-	() =>
-		searching.value ||
-		previewPending.value ||
-		(parsed.value.kind === "video" && player.isAdding(parsed.value.url)),
-);
-const loadingPlaylist = computed(
-	() => !previewError.value && (previewPending.value || preview.value?.state === "loading"),
-);
-watch(
-	() => radio.version,
-	() => {
-		if (!radio.source) return;
-		view.value = "radio";
-		panelOpen.value = true;
-		library.setActive(false);
-		resetScroll();
-	},
-);
-async function startRadio() {
-	if (!radio.preview) return;
-	if (
-		await player.mutate("/api/radio", "POST", {
-			seed: radio.preview.seed,
-			expected_generation: player.snapshot?.radio?.generation ?? null,
-		})
-	)
-		panelOpen.value = false;
-}
-
-watch(searchSource, () => {
-	if (query.value) {
-		view.value = "search";
-		panelOpen.value = true;
-		void library.search(query.value);
-	}
-});
-
-watch(source, () => {
-	inputError.value = "";
-});
-watch(
-	() => preview.value?.state,
-	(state) => {
-		if (state === "ready") selected.value = new Set(choices.value.map((item) => item.index));
-	},
-);
-
-function resetScroll() {
+watch([view, query, previewUrl, () => radio.version], () => {
 	scrollTop = 0;
 	if (scrollArea.value) scrollArea.value.scrollTop = 0;
-}
-
-async function openPlaylist(url: string) {
-	panelOpen.value = true;
-	const preserve = previewUrl.value === url && preview.value?.state === "ready";
-	if (!preserve) {
-		selected.value = new Set();
-		resetScroll();
-	}
-	view.value = "playlist";
-	library.clearSearch();
-	await library.openPreview(url, preserve);
-}
-
-async function submit() {
-	const value = parsed.value;
-	inputError.value = "";
-	if (value.kind === "invalid") {
-		inputError.value =
-			"Enter a YouTube link or search for a title or artist (up to 200 characters).";
-		return;
-	}
-	if (value.kind === "playlist") {
-		await openPlaylist(value.url);
-		return;
-	}
-	if (value.kind === "search") {
-		if (view.value !== "search" || value.query !== query.value) resetScroll();
-		view.value = "search";
-		panelOpen.value = true;
-		library.closePreview();
-		await library.search(value.query);
-		return;
-	}
-	const submitted = source.value;
-	if (await player.add(value.url)) {
-		if (source.value === submitted) source.value = "";
-	}
-}
-
-async function addResult(item: CatalogTrack) {
-	if (!item.track_id || item.unavailable) return;
-	await player.addMany([item.track_id]);
-}
-
-function toggle(index: number) {
-	const next = new Set(selected.value);
-	if (next.has(index)) next.delete(index);
-	else next.add(index);
-	selected.value = next;
-}
-
-function selectAll() {
-	selected.value =
-		selection.value.length === choices.value.length
-			? new Set()
-			: new Set(choices.value.map((item) => item.index));
-}
-
-async function importSelection() {
-	if (importing.value || preview.value?.state !== "ready" || !selection.value.length) return;
-	importing.value = true;
-	try {
-		const trackIds = selectedTrackIds(preview.value.entries, selected.value);
-		const importedPreview = preview.value.id;
-		const importedSelection = selected.value;
-		const skip = skipDuplicates.value;
-		if (await player.addMany(trackIds, skip)) {
-			if (preview.value?.id === importedPreview && selected.value === importedSelection)
-				selected.value = new Set();
-			if (preview.value?.id === importedPreview) panelOpen.value = false;
-		}
-	} finally {
-		importing.value = false;
-	}
-}
-
-function applyUpdate() {
-	if (view.value === "playlist" && previewUpdate.value) {
-		selected.value = reconcileSelection(
-			preview.value?.entries ?? [],
-			previewUpdate.value.entries,
-			selected.value,
-		);
-		library.applyPreviewUpdate();
-		toast.add({
-			title: "Playlist updated",
-			description: "New or unmatched tracks are left unselected.",
-		});
-	} else library.applySearchUpdate();
-}
+});
+watch(panelOpen, (open) => {
+	if (!open) scrollTop = scrollArea.value?.scrollTop ?? scrollTop;
+});
 function restoreFocus() {
 	if (!panelOpen.value && view.value !== "radio")
 		launcher.value?.querySelector("input")?.focus({ preventScroll: true });
@@ -209,11 +58,6 @@ function restoreFocus() {
 function restoreScroll() {
 	if (scrollArea.value) scrollArea.value.scrollTop = scrollTop;
 }
-watch(panelOpen, (open) => {
-	if (!open) scrollTop = scrollArea.value?.scrollTop ?? scrollTop;
-	library.setActive(open && view.value !== "radio");
-});
-onBeforeUnmount(library.dispose);
 </script>
 <template>
 	<section aria-label="Find music" class="discovery">
@@ -243,7 +87,7 @@ onBeforeUnmount(library.dispose);
 				view === 'radio'
 					? 'Radio'
 					: view === 'playlist'
-						? preview?.title || 'Playlist'
+						? preview?.playlist?.title || 'Playlist'
 						: 'Find music'
 			"
 			:unmount-on-hide="false"
@@ -264,7 +108,7 @@ onBeforeUnmount(library.dispose);
 					target="_blank"
 					rel="noopener noreferrer"
 					class="hover:underline"
-					>{{ preview?.title || "YouTube playlist" }}</a
+					>{{ preview?.playlist?.title || "YouTube playlist" }}</a
 				>
 				<span v-else>{{ view === "radio" ? "Radio" : "Find music" }}</span>
 			</template>
@@ -329,7 +173,7 @@ onBeforeUnmount(library.dispose);
 							{{ refreshError }}
 						</p>
 						<p
-							v-else-if="refreshing && (results.length || preview?.state === 'ready')"
+							v-else-if="refreshing && (results.length || !!preview)"
 							class="text-xs text-muted"
 						>
 							Checking for updates…
@@ -400,14 +244,12 @@ onBeforeUnmount(library.dispose);
 										{{
 											loadingPlaylist
 												? `${preview?.entries.length ?? 0} tracks loaded`
-												: preview?.state === "cancelled"
-													? "Playlist loading cancelled"
-													: `${preview?.entries.length ?? 0} tracks`
+												: `${preview?.entries.length ?? 0} tracks`
 										}}
 									</p>
 								</div>
 								<UButton
-									v-if="preview?.state === 'ready'"
+									v-if="!!preview"
 									label="Radio from playlist"
 									:icon="icons.radio"
 									variant="ghost"
@@ -417,25 +259,21 @@ onBeforeUnmount(library.dispose);
 									@click="
 										radio.open({
 											kind: 'playlist',
+											reference: preview.playlist?.reference,
 											source_url: previewUrl,
-											title: preview.title || 'YouTube playlist',
+											title: preview.playlist?.title || 'YouTube playlist',
 										})
 									"
 								/>
 								<UButton
 									v-if="loadingPlaylist"
 									label="Cancel"
-									:disabled="previewPending"
 									color="neutral"
 									variant="ghost"
-									@click="library.cancelPreview()"
+									@click="library.closePreview()"
 								/>
 								<UButton
-									v-else-if="
-										previewError ||
-										preview?.state === 'cancelled' ||
-										preview?.state === 'failed'
-									"
+									v-else-if="previewError"
 									label="Reload playlist"
 									color="neutral"
 									variant="ghost"
@@ -449,9 +287,9 @@ onBeforeUnmount(library.dispose);
 							>
 								{{ previewError || preview?.error }}
 							</p>
-							<p v-if="preview?.truncated" class="my-3 text-sm text-muted">
-								Showing the first {{ preview.limit }} entries. The rest of this
-								playlist will not be imported.
+							<p v-if="preview?.source_has_more" class="my-3 text-sm text-muted">
+								Showing the first {{ preview.entries.length }} entries. The rest of
+								this playlist will not be imported.
 							</p>
 
 							<PlayerCatalogList
@@ -461,27 +299,18 @@ onBeforeUnmount(library.dispose);
 								selectable
 								:selected="selected"
 								:enabled="
-									preview?.state === 'ready' &&
-									!importing &&
-									!player.pending &&
-									!previewPending
+									!!preview && !importing && !player.pending && !previewPending
 								"
 								@toggle="toggle"
 							/>
-							<p
-								v-else-if="preview?.state === 'ready'"
-								class="py-6 text-sm text-muted"
-							>
+							<p v-else-if="!!preview" class="py-6 text-sm text-muted">
 								This playlist has no tracks available.
 							</p>
 						</div>
 					</div>
 				</template>
 			</template>
-			<template
-				v-if="view === 'radio' || (view === 'playlist' && preview?.state === 'ready')"
-				#footer
-			>
+			<template v-if="view === 'radio' || (view === 'playlist' && !!preview)" #footer>
 				<div
 					v-if="view === 'radio'"
 					class="flex w-full flex-wrap items-center justify-between gap-3"
@@ -503,7 +332,7 @@ onBeforeUnmount(library.dispose);
 						color="primary"
 						class="min-h-11 ml-auto"
 						:disabled="!player.enabled || radio.loading || !radio.preview"
-						:loading="player.isPending('/api/radio')"
+						:loading="player.isPending('radio.started')"
 						@click="startRadio"
 					/>
 				</div>
@@ -521,10 +350,7 @@ onBeforeUnmount(library.dispose);
 							>{{ counts.skipped }} already playing, queued or selected twice</span
 						>
 					</div>
-					<div
-						v-if="preview?.state === 'ready' && choices.length"
-						class="playlist-selection"
-					>
+					<div v-if="!!preview && choices.length" class="playlist-selection">
 						<UButton
 							:label="
 								selection.length === choices.length ? 'Deselect all' : 'Select all'

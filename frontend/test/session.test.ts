@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createSessionClient, SessionLost } from "../app/auth/client";
-import { createPlayerClient } from "../app/player/client";
+import { useProfileStore } from "../app/stores/profile";
+import { usePlayerStore } from "../app/stores/player";
+import { SessionLost } from "../app/repositories/transport";
+import { repositoryFixture } from "./repository-fixture";
 import type { ListenerSession } from "../shared/session";
 import { defaultAppearance } from "../shared/appearance";
 
@@ -14,27 +16,83 @@ const account = (): ListenerSession => ({
 const cleanup: (() => void)[] = [];
 afterEach(() => {
 	cleanup.splice(0).forEach((close) => close());
+	vi.unstubAllGlobals();
 	vi.useRealTimers();
 });
 
 function setup() {
 	const fetcher = vi.fn<typeof fetch>();
-	const client = createSessionClient(fetcher);
+	const fixture = repositoryFixture(fetcher, undefined, {
+		current: () => client.credentials,
+		lost: (code) => client.lost(code),
+	});
+	const client = useProfileStore(fixture.pinia);
 	cleanup.push(client.dispose);
-	return { fetcher, client };
+	return { fetcher, client, request: fixture.json };
 }
 
 describe("server sessions", () => {
-	it("gets identity from the server and adds CSRF only to mutations", async () => {
+	it("keeps account state isolated between two Vue apps", async () => {
+		const first = setup();
+		first.fetcher.mockResolvedValueOnce(Response.json(account()));
+		await first.client.restore();
+		const second = setup();
+		expect(second.client.profile).toBeNull();
+		second.fetcher.mockResolvedValueOnce(
+			Response.json({
+				...account(),
+				profile: { ...account().profile, id: "second", name: "Bob" },
+			}),
+		);
+		await second.client.restore();
+		expect(first.client.profile?.name).toBe("Alice");
+		expect(second.client.profile?.name).toBe("Bob");
+		first.client.lost("signed_out");
+		expect(second.client.status).toBe("authenticated");
+	});
+	it("refreshes on cross-tab messages and focus without duplicating listeners", async () => {
+		const window = new EventTarget();
+		const addListener = vi.spyOn(window, "addEventListener");
+		const removeListener = vi.spyOn(window, "removeEventListener");
+		const channels: Channel[] = [];
+		class Channel {
+			onmessage: (() => void) | null = null;
+			postMessage = vi.fn();
+			close = vi.fn();
+			constructor() {
+				channels.push(this);
+			}
+		}
+		vi.stubGlobal("window", window);
+		vi.stubGlobal("BroadcastChannel", Channel);
 		const { client, fetcher } = setup();
-		expect(client.status.value).toBe("checking");
+		fetcher.mockImplementation(async () => Response.json(account()));
+		await client.restore();
+		await client.restore();
+		expect(channels).toHaveLength(1);
+		expect(addListener).toHaveBeenCalledTimes(1);
+		channels[0]!.onmessage?.();
+		await client.restore();
+		expect(fetcher).toHaveBeenCalledTimes(3);
+		window.dispatchEvent(new Event("focus"));
+		await client.restore();
+		expect(fetcher).toHaveBeenCalledTimes(4);
+		await client.save("Alice", "0002");
+		expect(channels[0]!.postMessage).toHaveBeenCalledWith("profile");
+		client.$dispose();
+		expect(channels[0]!.close).toHaveBeenCalledOnce();
+		expect(removeListener).toHaveBeenCalledWith("focus", expect.any(Function));
+	});
+	it("gets identity from the server and adds CSRF only to mutations", async () => {
+		const { client, fetcher, request } = setup();
+		expect(client.status).toBe("checking");
 		fetcher.mockResolvedValueOnce(Response.json(account()));
 		await client.restore();
-		expect(client.profile.value?.name).toBe("Alice");
-		fetcher.mockResolvedValue(Response.json({}));
-		await client.request("/api/session");
+		expect(client.profile?.name).toBe("Alice");
+		fetcher.mockImplementation(async () => Response.json({}));
+		await request("/api/session");
 		expect(new Headers(fetcher.mock.lastCall?.[1]?.headers).has("X-CSRF-Token")).toBe(false);
-		await client.request("/api/queue", { method: "POST", body: "{}" });
+		await request("/api/queue", { method: "POST", body: "{}" });
 		expect(new Headers(fetcher.mock.lastCall?.[1]?.headers).get("X-CSRF-Token")).toBe(
 			"session-bound-csrf",
 		);
@@ -44,33 +102,33 @@ describe("server sessions", () => {
 		[403, "access_denied", "forbidden"],
 		[503, "access_unavailable", "unavailable"],
 	])("separates a %s response from a transport failure", async (status, code, expected) => {
-		const { client, fetcher } = setup();
+		const { client, fetcher, request } = setup();
 		fetcher.mockResolvedValue(Response.json({ code }, { status: Number(status) }));
 		await client.restore();
-		expect(client.status.value).toBe(expected);
-		expect(client.profile.value).toBeNull();
-		await expect(client.request("/api/session")).rejects.toBeInstanceOf(SessionLost);
+		expect(client.status).toBe(expected);
+		expect(client.profile).toBeNull();
+		await expect(request("/api/session")).rejects.toBeInstanceOf(SessionLost);
 	});
 	it("keeps network failure separate from denial and permits retry", async () => {
-		const { client, fetcher } = setup();
+		const { client, fetcher, request } = setup();
 		fetcher.mockRejectedValueOnce(new TypeError("offline"));
 		await client.restore();
-		expect(client.status.value).toBe("unavailable");
+		expect(client.status).toBe("unavailable");
 		fetcher.mockResolvedValueOnce(Response.json(account()));
 		await client.restore();
-		expect(client.status.value).toBe("authenticated");
+		expect(client.status).toBe("authenticated");
 	});
 	it("expires the local session without waiting for a user action", async () => {
 		vi.useFakeTimers();
-		const { client, fetcher } = setup();
+		const { client, fetcher, request } = setup();
 		fetcher.mockResolvedValueOnce(Response.json(account()));
 		await client.restore();
 		vi.advanceTimersByTime(60_001);
-		expect(client.status.value).toBe("signed_out");
-		expect(client.profile.value).toBeNull();
+		expect(client.status).toBe("signed_out");
+		expect(client.profile).toBeNull();
 	});
 	it("does not restore a session from a response arriving after logout", async () => {
-		const { client, fetcher } = setup();
+		const { client, fetcher, request } = setup();
 		fetcher.mockResolvedValueOnce(Response.json(account()));
 		await client.restore();
 		let resolve!: (value: Response) => void;
@@ -83,22 +141,22 @@ describe("server sessions", () => {
 		client.lost("signed_out");
 		resolve(Response.json(account()));
 		await checking;
-		expect(client.status.value).toBe("signed_out");
+		expect(client.status).toBe("signed_out");
 	});
 	it("does not report successful logout when the server cannot be reached", async () => {
-		const { client, fetcher } = setup();
+		const { client, fetcher, request } = setup();
 		fetcher.mockResolvedValueOnce(Response.json(account()));
 		await client.restore();
 		fetcher.mockRejectedValueOnce(new TypeError("offline"));
 		expect(await client.signOut()).toBe(false);
-		expect(client.status.value).toBe("authenticated");
-		expect(client.error.value).toContain("Couldn't sign out");
+		expect(client.status).toBe("authenticated");
+		expect(client.error).toContain("Couldn't sign out");
 		fetcher.mockResolvedValueOnce(new Response(null, { status: 204 }));
 		expect(await client.signOut()).toBe(true);
-		expect(client.status.value).toBe("signed_out");
+		expect(client.status).toBe("signed_out");
 	});
 	it("blocks a late mutation response from a previous account", async () => {
-		const { client, fetcher } = setup();
+		const { client, fetcher, request } = setup();
 		fetcher.mockResolvedValueOnce(Response.json(account()));
 		await client.restore();
 		let resolve!: (value: Response) => void;
@@ -107,8 +165,8 @@ describe("server sessions", () => {
 				resolve = done;
 			}),
 		);
-		const request = client.request("/api/queue", { method: "POST" });
-		const rejected = expect(request).rejects.toBeInstanceOf(SessionLost);
+		const pending = request("/api/queue", { method: "POST" });
+		const rejected = expect(pending).rejects.toBeInstanceOf(SessionLost);
 		client.lost("signed_out");
 		fetcher.mockResolvedValueOnce(
 			Response.json({ ...account(), profile: { ...account().profile, id: "second" } }),
@@ -116,26 +174,25 @@ describe("server sessions", () => {
 		await client.restore();
 		resolve(Response.json({ code: "ok" }));
 		await rejected;
-		expect(client.profile.value?.id).toBe("second");
+		expect(client.profile?.id).toBe("second");
 	});
 	it("closes SSE and clears private state when the server revokes access", () => {
 		class Events extends EventTarget {
 			close = vi.fn();
 		}
 		const events = new Events();
-		const lost = vi.fn();
-		const client = createPlayerClient(vi.fn(), () => events as unknown as EventSource, {
-			lost,
-			check: async () => {},
-		});
+		const fixture = repositoryFixture(vi.fn(), () => events as unknown as EventSource);
+		const profile = useProfileStore(fixture.pinia);
+		const lost = vi.spyOn(profile, "lost");
+		const client = usePlayerStore(fixture.pinia);
 		client.connect();
 		events.dispatchEvent(
 			new MessageEvent("auth", { data: JSON.stringify({ code: "access_denied" }) }),
 		);
 		expect(events.close).toHaveBeenCalledOnce();
-		expect(client.enabled.value).toBe(false);
-		expect(client.snapshot.value).toBeNull();
-		expect(client.uncertain.value).toBeNull();
+		expect(client.enabled).toBe(false);
+		expect(client.snapshot).toBeNull();
+		expect(client.uncertain).toBeNull();
 		expect(lost).toHaveBeenCalledWith("access_denied");
 	});
 });

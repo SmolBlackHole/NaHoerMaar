@@ -1,96 +1,53 @@
-import { youtubeVideoId, type QueueEntry, type PlayerState } from "./player";
+import { youtubeVideoId, type TrackDisplay, type PlayerState } from "./player";
 import type { DiscoveryPage } from "./engine";
 
-export function queuePresence(sourceUrl: string | null, state: PlayerState | null): string | null {
-	const id = sourceUrl && youtubeVideoId(sourceUrl);
-	if (!id || !state) return null;
-	if (state.current && youtubeVideoId(state.current.source_url) === id) return "Now playing";
-	return state.upcoming.some((entry) => youtubeVideoId(entry.source_url) === id)
-		? "Already queued"
-		: null;
+export function queuePresence(trackId: string | null, state: PlayerState | null): string | null {
+	if (!trackId || !state) return null;
+	if (state.current?.track_id === trackId) return "Now playing";
+	return state.upcoming.some((entry) => entry.track_id === trackId) ? "Already queued" : null;
 }
-
 export function importCounts(
-	urls: readonly string[],
+	trackIds: readonly string[],
 	state: PlayerState | null,
 	skipDuplicates: boolean,
 ) {
-	if (!skipDuplicates) return { added: urls.length, skipped: 0 };
+	if (!skipDuplicates) return { added: trackIds.length, skipped: 0 };
 	const seen = new Set<string>();
 	let added = 0;
-	for (const url of urls) {
-		const id = youtubeVideoId(url) ?? url;
-		if (!seen.has(id) && !queuePresence(url, state)) added++;
+	for (const id of trackIds) {
+		if (!seen.has(id) && !queuePresence(id, state)) added++;
 		seen.add(id);
 	}
-	return { added, skipped: urls.length - added };
+	return { added, skipped: trackIds.length - added };
 }
-
 export type SearchSource = "youtube_music" | "youtube";
-
-export interface CatalogTrack extends Omit<
-	QueueEntry,
-	"id" | "source_url" | "added_by" | "origin"
-> {
+export interface CatalogTrack extends TrackDisplay {
 	index: number;
-	source_url: string | null;
 	unavailable: string | null;
 }
-
-export function catalogPage(page: DiscoveryPage): SearchPage {
+export type CatalogPage = Omit<DiscoveryPage, "entries"> & { entries: CatalogTrack[] };
+export function catalogPage(page: DiscoveryPage): CatalogPage {
 	return {
-		entries: page.entries.map(({ position, track_id, finding }) => ({
-			...finding.metadata,
-			track_id: track_id ?? "",
+		...page,
+		entries: page.entries.map(({ position, track_id, reference, metadata, unavailable }) => ({
+			...metadata,
+			track_id,
+			reference,
 			index: position,
-			source_url: finding.reference?.source_url ?? null,
+			source_url: reference?.source_url ?? null,
 			video_id:
-				finding.reference?.identity.namespace === "youtube"
-					? finding.reference.identity.external_id
-					: null,
-			unavailable: finding.reason ?? (!track_id ? "Track unavailable" : null),
+				reference?.identity.namespace === "youtube" ? reference.identity.external_id : null,
+			unavailable: unavailable ?? (!track_id ? "Track unavailable" : null),
 		})),
-		next_offset:
-			page.offset + page.entries.length < page.total
-				? page.offset + page.entries.length
-				: null,
-		snapshot_id: page.version,
-		latest_snapshot_id: page.refresh.latest_version,
-		refreshing: page.refresh.refreshing,
-		refresh_error: page.refresh.error ?? page.error,
 	};
 }
-
 export function selectedTrackIds(
 	entries: readonly CatalogTrack[],
 	selected: ReadonlySet<number>,
 ): string[] {
 	return entries
 		.filter((item) => selected.has(item.index) && item.track_id && !item.unavailable)
-		.map((item) => item.track_id);
-}
-
-export interface PlaylistPreview {
-	id: string;
-	source_url: string;
-	state: "loading" | "ready" | "cancelled" | "failed";
-	title: string | null;
-	entries: CatalogTrack[];
-	limit: number;
-	truncated: boolean;
-	error: string | null;
-	snapshot_id: string | null;
-	refreshing: boolean;
-	refresh_error: string | null;
-}
-
-export interface SearchPage {
-	entries: CatalogTrack[];
-	next_offset: number | null;
-	snapshot_id: string;
-	latest_snapshot_id: string;
-	refreshing: boolean;
-	refresh_error: string | null;
+		.map((item) => item.track_id!);
 }
 
 export type MusicSource =
@@ -140,25 +97,6 @@ export function musicSource(input: string): MusicSource {
 	}
 }
 
-export function catalogEntry(track: CatalogTrack): QueueEntry {
-	return {
-		...track,
-		id: `catalog-${track.index}`,
-		source_url: track.source_url ?? "",
-		added_by: null,
-		origin: "manual",
-	};
-}
-
-export function selectedSources(
-	entries: readonly CatalogTrack[],
-	selected: ReadonlySet<number>,
-): string[] {
-	return entries
-		.filter((item) => selected.has(item.index) && item.source_url && !item.unavailable)
-		.map((item) => item.source_url!);
-}
-
 /** Retain selections only where a refreshed occurrence can be identified safely. */
 export function reconcileSelection(
 	previous: readonly CatalogTrack[],
@@ -168,7 +106,7 @@ export function reconcileSelection(
 	const groups = (entries: readonly CatalogTrack[]) => {
 		const result = new Map<string, CatalogTrack[]>();
 		for (const item of entries) {
-			const key = item.video_id || item.source_url;
+			const key = item.track_id;
 			if (key) result.set(key, [...(result.get(key) ?? []), item]);
 		}
 		return result;
@@ -183,7 +121,7 @@ export function reconcileSelection(
 		const allSelected = old.every((item) => selected.has(item.index));
 		if (old.length !== entries.length || (old.length > 1 && !allSelected)) continue;
 		for (const item of entries) {
-			if (allSelected && item.source_url && !item.unavailable) kept.add(item.index);
+			if (allSelected && item.track_id && !item.unavailable) kept.add(item.index);
 		}
 	}
 	return kept;

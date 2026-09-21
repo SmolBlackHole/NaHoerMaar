@@ -37,17 +37,11 @@ export const modeItems = [
 	{ label: "System", value: "system" },
 	{ label: "Light", value: "light" },
 	{ label: "Dark", value: "dark" },
-];
+] as const;
 
-export const fontItems = [
-	"Public Sans",
-	"DM Sans",
-	"Geist",
-	"Inter",
-	"Poppins",
-	"Outfit",
-	"Raleway",
-].map((f) => ({ label: f, value: f }));
+export const fontItems = (
+	["Public Sans", "DM Sans", "Geist", "Inter", "Poppins", "Outfit", "Raleway"] as const
+).map((f) => ({ label: f, value: f }));
 
 export const textSizes = [
 	{ label: "Small", value: "sm" },

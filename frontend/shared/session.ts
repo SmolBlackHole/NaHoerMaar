@@ -1,17 +1,9 @@
-import type { ListenerProfile } from "./profile";
+import type { components } from "./api.generated";
 import type { Appearance } from "./appearance";
 
 export type SessionStatus =
-	| "checking"
-	| "authenticated"
-	| "signed_out"
-	| "forbidden"
-	| "unavailable";
+	"checking" | "authenticated" | "signed_out" | "forbidden" | "unavailable";
 
-export interface ListenerSession {
+export type ListenerSession = Omit<components["schemas"]["AccountView"], "appearance"> & {
 	appearance: Appearance;
-	profile: ListenerProfile;
-	profile_complete: boolean;
-	csrf_token: string;
-	expires_at: number;
-}
+};

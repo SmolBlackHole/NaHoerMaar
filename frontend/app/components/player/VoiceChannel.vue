@@ -195,17 +195,17 @@ const status = computed(() => {
 						color="neutral"
 						variant="outline"
 						:loading="
-							player.isPending('/api/connection', 'PUT') ||
+							player.isPending('connection.join') ||
 							player.snapshot?.voice_state === 'connecting'
 						"
 						:aria-busy="
-							player.isPending('/api/connection', 'PUT') ||
+							player.isPending('connection.join') ||
 							player.snapshot?.voice_state === 'connecting'
 						"
 						:disabled="
 							!player.enabled || !available?.can_connect || !available?.can_speak
 						"
-						@click="player.mutate('/api/connection', 'PUT', { channel_id: selected })"
+						@click="player.join(selected)"
 					/>
 					<UButton
 						v-if="connected"
@@ -216,7 +216,7 @@ const status = computed(() => {
 						color="neutral"
 						variant="ghost"
 						:disabled="!player.enabled"
-						@click="player.mutate('/api/playback/control', 'POST', { action: 'leave' })"
+						@click="player.leave()"
 					/>
 				</div>
 			</section>

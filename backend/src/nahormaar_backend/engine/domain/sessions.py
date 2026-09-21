@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 from math import isfinite
+from typing import Literal
 from uuid import UUID, uuid4
 
 from nahormaar_backend.domain.identity import Contributor
@@ -191,9 +192,32 @@ class SessionSnapshot:
     playback: PlaybackRuntime = field(default_factory=PlaybackRuntime)
 
 
+type SessionAction = Literal[
+    "queue.added",
+    "queue.removed",
+    "queue.reordered",
+    "queue.cleared",
+    "queue.restored",
+    "playback.play",
+    "playback.pause",
+    "playback.skip",
+    "playback.stop",
+    "playback.seek",
+    "playback.volume",
+    "playback.crossfade",
+    "connection.join",
+    "connection.leave",
+    "radio.started",
+    "radio.stopped",
+    "radio.retried",
+    "session.updated",
+]
+
+
 @dataclass(frozen=True, slots=True)
 class SessionChanged:
     before: SessionSnapshot
     after: SessionSnapshot
-    action: str
+    action: SessionAction
     outcome: Outcome
+    request_id: UUID | None = None

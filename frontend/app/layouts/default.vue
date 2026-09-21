@@ -6,7 +6,7 @@ import { usePlayerStore } from "~/stores/player";
 useThemeEffects();
 usePlayerNotifications();
 const player = usePlayerStore();
-const radio = useRadioStore();
+const radio = useRadioPreviewStore();
 const profile = useProfileStore();
 const settings = useSettingsStore();
 const toast = useToast();

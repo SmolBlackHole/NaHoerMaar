@@ -61,8 +61,7 @@ export function session(): SessionState {
 		playback: {
 			phase: "idle",
 			attempt_id: null,
-			connection_id: "connection",
-			joining_id: null,
+			connection: "connected",
 			duration_seconds: null,
 			error: null,
 		},
@@ -92,23 +91,25 @@ export function discovery(
 		version,
 		offset: 0,
 		total: 1,
+		next_offset: null,
+		source_has_more: false,
+		playlist: null,
 		error: null,
 		entries: [
 			{
 				position: 0,
 				track_id: track.id,
-				finding: {
-					reference: {
-						identity: { ...track.identity },
-						source_url: track.source_url,
-						kind: "track",
-					},
-					metadata: { ...track.metadata, title: version },
+				reference: {
+					identity: { ...track.identity },
+					source_url: track.source_url,
+					kind: "track",
 				},
+				metadata: { ...track.metadata, title: version },
+				unavailable: null,
 			},
 		],
 		refresh: { latest_version: version, refreshing: false, error: null },
 		...changes,
 	};
 }
-export const view = () => presentSession(session(), null);
+export const view = () => presentSession(session());

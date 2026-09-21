@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import type { QueueEntry } from "#shared/player";
+import type { TrackDisplay } from "#shared/player";
 import { trackArtwork } from "#shared/player";
 
-const props = defineProps<{ entry: QueueEntry | null; large?: boolean }>();
+const props = defineProps<{ entry: TrackDisplay | null; large?: boolean }>();
 const { icons } = useTheme();
 const failed = ref(false);
 const consent = useConsentStore();

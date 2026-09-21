@@ -1,4 +1,5 @@
 import type { DropdownMenuItem } from "@nuxt/ui";
+import type { Appearance } from "#shared/appearance";
 import { colorNames, fontItems, modeItems, neutralNames, textSizes } from "~/config/theme";
 import { iconItems } from "~/config/icons";
 
@@ -11,13 +12,13 @@ export interface ThemeContext {
 	iconSet?: string;
 	textSize: string;
 	icons: Record<string, string>;
-	setPrimary(v: string): void;
+	setPrimary(v: Appearance["primaryColor"]): void;
 	setArtworkColors(v: boolean): void;
-	setNeutral(v: string): void;
-	setMode(v: string): void;
-	setFontFamily(v: string): void;
-	setIconSet(v: string): void;
-	setTextSize(v: string): void;
+	setNeutral(v: Appearance["neutralColor"]): void;
+	setMode(v: Appearance["mode"]): void;
+	setFontFamily(v: Appearance["fontFamily"]): void;
+	setIconSet(v: Appearance["iconSet"]): void;
+	setTextSize(v: Appearance["textSize"]): void;
 }
 
 const colors = Object.keys(colorNames) as (keyof typeof colorNames)[];

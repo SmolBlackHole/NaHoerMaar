@@ -1,22 +1,16 @@
-import { ref, shallowRef } from "vue";
+import { ref, shallowRef, onScopeDispose } from "vue";
+import { ApiFailure } from "../repositories/transport";
+import { useRepositories } from "../repositories";
 import {
 	catalogPage,
 	type CatalogTrack,
-	type PlaylistPreview,
-	type SearchPage,
+	type CatalogPage,
 	type SearchSource,
 } from "../../shared/catalog";
 import type { DiscoveryPage } from "../../shared/engine";
 
-class CatalogError extends Error {
-	constructor(
-		public status: number,
-		message: string,
-	) {
-		super(message);
-	}
-}
-export function createCatalogClient(request: typeof fetch = (...args) => fetch(...args)) {
+export function useCatalog() {
+	const { catalog: api } = useRepositories();
 	const results = shallowRef<CatalogTrack[]>([]);
 	const query = ref("");
 	const searchSource = ref<SearchSource>("youtube_music");
@@ -26,14 +20,14 @@ export function createCatalogClient(request: typeof fetch = (...args) => fetch(.
 	const searchError = ref("");
 	const searchExpired = ref(false);
 	const searchSnapshot = ref<string | null>(null);
-	const searchUpdate = shallowRef<SearchPage | null>(null);
-	const previewUpdate = shallowRef<PlaylistPreview | null>(null);
+	const searchUpdate = shallowRef<CatalogPage | null>(null);
+	const previewUpdate = shallowRef<CatalogPage | null>(null);
 	const refreshing = ref(false);
 	const refreshError = ref("");
 	let searchedSource: SearchSource = "youtube_music";
 	let searchTimer: ReturnType<typeof setTimeout> | undefined;
 	let active = true;
-	const preview = shallowRef<PlaylistPreview | null>(null);
+	const preview = shallowRef<CatalogPage | null>(null);
 	const previewUrl = ref("");
 	const previewError = ref("");
 	const previewPending = ref(false);
@@ -42,26 +36,6 @@ export function createCatalogClient(request: typeof fetch = (...args) => fetch(.
 	let previewAbort: AbortController | undefined;
 	let timer: ReturnType<typeof setTimeout> | undefined;
 
-	async function json<T>(path: string, options?: RequestInit): Promise<T> {
-		const response = await request(path, { signal: AbortSignal.timeout(35_000), ...options });
-		const data = await response.json();
-		if (!response.ok)
-			throw new CatalogError(
-				response.status,
-				[404, 410].includes(response.status)
-					? "These results expired. Search or open the playlist again."
-					: typeof data.detail === "string"
-						? data.detail
-						: "YouTube could not be reached. Try again.",
-			);
-		return data as T;
-	}
-
-	function searchUrl(offset: number, snapshot?: string | null) {
-		return snapshot
-			? `/api/catalog/search/${snapshot}?offset=${offset}`
-			: `/api/catalog/search?q=${encodeURIComponent(query.value)}&provider=${searchSource.value}&refresh=true`;
-	}
 	async function search(text: string) {
 		const same = query.value === text && searchedSource === searchSource.value;
 		searchAbort?.abort();
@@ -91,25 +65,25 @@ export function createCatalogClient(request: typeof fetch = (...args) => fetch(.
 		await searchPage(nextOffset.value);
 	}
 
-	function append(page: SearchPage) {
-		const seen = new Set(results.value.map((item) => item.video_id));
+	function append(page: CatalogPage) {
+		const seen = new Set(results.value.map((item) => item.track_id));
 		results.value = [
 			...results.value,
 			...page.entries.filter((item) => {
-				if (!item.video_id) return true;
-				if (seen.has(item.video_id)) return false;
-				seen.add(item.video_id);
+				if (!item.track_id) return true;
+				if (seen.has(item.track_id)) return false;
+				seen.add(item.track_id);
 				return true;
 			}),
 		];
 		nextOffset.value = page.next_offset;
-		searchSnapshot.value = page.snapshot_id;
+		searchSnapshot.value = page.version;
 	}
 
-	function observe(page: SearchPage, abort: AbortController) {
-		refreshing.value = page.refreshing;
-		refreshError.value = page.refresh_error || "";
-		if (active && (page.refreshing || page.latest_snapshot_id !== page.snapshot_id)) {
+	function observe(page: CatalogPage, abort: AbortController) {
+		refreshing.value = page.refresh.refreshing;
+		refreshError.value = page.refresh.error || "";
+		if (active && (page.refresh.refreshing || page.refresh.latest_version !== page.version)) {
 			clearTimeout(searchTimer);
 			searchTimer = setTimeout(() => void checkSearch(abort), 1000);
 		}
@@ -125,13 +99,13 @@ export function createCatalogClient(request: typeof fetch = (...args) => fetch(.
 		busy.value = true;
 		try {
 			const found = catalogPage(
-				await json<DiscoveryPage>(searchUrl(offset, offset ? searchSnapshot.value : null), {
-					signal: AbortSignal.any([abort.signal, AbortSignal.timeout(35_000)]),
-				}),
+				offset && searchSnapshot.value
+					? await api.snapshot("search", searchSnapshot.value, offset, 20, abort.signal)
+					: await api.search(query.value, searchSource.value, abort.signal),
 			);
 			if (abort.signal.aborted) return;
 			if (preserve && results.value.length) {
-				if (found.snapshot_id !== searchSnapshot.value) searchUpdate.value = found;
+				if (found.version !== searchSnapshot.value) searchUpdate.value = found;
 			} else {
 				if (!offset) results.value = [];
 				append(found);
@@ -140,7 +114,7 @@ export function createCatalogClient(request: typeof fetch = (...args) => fetch(.
 		} catch (error) {
 			if (!abort.signal.aborted) {
 				searchExpired.value =
-					error instanceof CatalogError && [404, 410].includes(error.status);
+					error instanceof ApiFailure && [404, 410].includes(error.status);
 				searchError.value =
 					error instanceof Error ? error.message : "Search failed. Try again.";
 			}
@@ -153,28 +127,29 @@ export function createCatalogClient(request: typeof fetch = (...args) => fetch(.
 		if (!active || abort.signal.aborted || !query.value || !searchSnapshot.value) return;
 		try {
 			const current = catalogPage(
-				await json<DiscoveryPage>(searchUrl(0, searchSnapshot.value), {
-					signal: AbortSignal.any([abort.signal, AbortSignal.timeout(35_000)]),
-				}),
+				await api.snapshot("search", searchSnapshot.value, 0, 20, abort.signal),
 			);
 			if (abort.signal.aborted) return;
-			refreshing.value = current.refreshing;
-			refreshError.value = current.refresh_error || "";
-			if (current.latest_snapshot_id !== searchSnapshot.value) {
+			refreshing.value = current.refresh.refreshing;
+			refreshError.value = current.refresh.error || "";
+			if (current.refresh.latest_version !== searchSnapshot.value) {
 				const next = catalogPage(
-					await json<DiscoveryPage>(searchUrl(0, current.latest_snapshot_id), {
-						signal: AbortSignal.any([abort.signal, AbortSignal.timeout(35_000)]),
-					}),
+					await api.snapshot(
+						"search",
+						current.refresh.latest_version,
+						0,
+						20,
+						abort.signal,
+					),
 				);
 				if (abort.signal.aborted) return;
 				searchUpdate.value = next;
 			}
-			if (current.refreshing && active)
+			if (current.refresh.refreshing && active)
 				searchTimer = setTimeout(() => void checkSearch(abort), 1000);
 		} catch (error) {
 			if (abort.signal.aborted) return;
-			searchExpired.value =
-				error instanceof CatalogError && [404, 410].includes(error.status);
+			searchExpired.value = error instanceof ApiFailure && [404, 410].includes(error.status);
 			refreshError.value =
 				error instanceof Error ? error.message : "Could not refresh results.";
 		}
@@ -216,40 +191,18 @@ export function createCatalogClient(request: typeof fetch = (...args) => fetch(.
 		previewError.value = "";
 	}
 
-	async function readPlaylist(
-		page: DiscoveryPage,
-		url: string,
-		abort: AbortController,
-	): Promise<PlaylistPreview> {
-		const options = { signal: AbortSignal.any([abort.signal, AbortSignal.timeout(35_000)]) };
-		// One bounded version contains at most 100 occurrences, including duplicates.
+	async function readPlaylist(page: DiscoveryPage, abort: AbortController): Promise<CatalogPage> {
+		// A snapshot contains at most 100 occurrences, including duplicates.
 		const all =
-			page.total > page.entries.length
-				? await json<DiscoveryPage>(
-						`/api/catalog/playlist/${page.version}?limit=100`,
-						options,
-					)
+			page.next_offset !== null
+				? await api.snapshot("playlist", page.version, 0, 100, abort.signal)
 				: page;
-		const found = catalogPage(all);
-		return {
-			id: page.version,
-			snapshot_id: page.version,
-			source_url: url,
-			state: "ready",
-			title: page.title ?? preview.value?.title ?? null,
-			entries: found.entries,
-			limit: 100,
-			truncated: all.total >= 100,
-			error: all.error,
-			refreshing: found.refreshing,
-			refresh_error: found.refresh_error,
-		};
+		return catalogPage(all);
 	}
-	function receivePreview(value: PlaylistPreview) {
-		refreshing.value = value.refreshing;
-		refreshError.value = value.refresh_error || "";
-		if (preview.value && value.snapshot_id !== preview.value.snapshot_id)
-			previewUpdate.value = value;
+	function receivePreview(value: CatalogPage) {
+		refreshing.value = value.refresh.refreshing;
+		refreshError.value = value.refresh.error || "";
+		if (preview.value && value.version !== preview.value.version) previewUpdate.value = value;
 		else preview.value = value;
 	}
 	function applyPreviewUpdate() {
@@ -259,22 +212,25 @@ export function createCatalogClient(request: typeof fetch = (...args) => fetch(.
 	async function poll(abort: AbortController, version: number) {
 		if (!active || abort.signal.aborted || !preview.value) return;
 		try {
-			const options = {
-				signal: AbortSignal.any([abort.signal, AbortSignal.timeout(35_000)]),
-			};
-			const current = await json<DiscoveryPage>(
-				`/api/catalog/playlist/${preview.value.id}`,
-				options,
+			const current = await api.snapshot(
+				"playlist",
+				preview.value.version,
+				0,
+				20,
+				abort.signal,
 			);
 			if (version !== previewVersion) return;
 			refreshing.value = current.refresh.refreshing;
 			refreshError.value = current.refresh.error || "";
-			if (current.refresh.latest_version !== preview.value.id) {
-				const next = await json<DiscoveryPage>(
-					`/api/catalog/playlist/${current.refresh.latest_version}?limit=100`,
-					options,
+			if (current.refresh.latest_version !== preview.value.version) {
+				const next = await api.snapshot(
+					"playlist",
+					current.refresh.latest_version,
+					0,
+					100,
+					abort.signal,
 				);
-				const value = await readPlaylist(next, previewUrl.value, abort);
+				const value = await readPlaylist(next, abort);
 				if (version !== previewVersion) return;
 				receivePreview(value);
 			}
@@ -296,14 +252,9 @@ export function createCatalogClient(request: typeof fetch = (...args) => fetch(.
 		previewUrl.value = url;
 		previewPending.value = true;
 		try {
-			const page = await json<DiscoveryPage>("/api/catalog/playlist", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ source_url: url, refresh: true }),
-				signal: AbortSignal.any([abort.signal, AbortSignal.timeout(35_000)]),
-			});
+			const page = await api.openPlaylist(url, true, abort.signal);
 			if (version !== previewVersion) return;
-			const value = await readPlaylist(page, url, abort);
+			const value = await readPlaylist(page, abort);
 			if (version !== previewVersion) return;
 			receivePreview(value);
 			if (active && (page.refresh.refreshing || page.refresh.latest_version !== page.version))
@@ -317,10 +268,19 @@ export function createCatalogClient(request: typeof fetch = (...args) => fetch(.
 		}
 	}
 	function setActive(value: boolean) {
+		if (active === value) return;
 		active = value;
 		clearTimeout(searchTimer);
 		clearTimeout(timer);
-		if (!active) return;
+		if (!active) {
+			searchAbort?.abort();
+			previewAbort?.abort();
+			previewVersion++;
+			searching.value = loadingMore.value = previewPending.value = false;
+			return;
+		}
+		if (searchAbort?.signal.aborted) searchAbort = new AbortController();
+		if (previewAbort?.signal.aborted) previewAbort = new AbortController();
 		if (searchAbort && query.value) void checkSearch(searchAbort);
 		if (previewAbort && preview.value) void poll(previewAbort, previewVersion);
 	}
@@ -329,6 +289,7 @@ export function createCatalogClient(request: typeof fetch = (...args) => fetch(.
 		clearSearch();
 		closePreview();
 	}
+	onScopeDispose(dispose);
 	return {
 		searchUpdate,
 		previewUpdate,
@@ -354,7 +315,6 @@ export function createCatalogClient(request: typeof fetch = (...args) => fetch(.
 		clearSearch,
 		openPreview,
 		closePreview,
-		cancelPreview: closePreview,
 		dispose,
 	};
 }

@@ -68,6 +68,7 @@ class Provider(YouTubeProvider):
             TrackMetadata(title="Амура", duration_seconds=120),
         )
         self.calls = 0
+        self.playlist_title = "Fixture"
         self.closed = False
 
     async def track(self, identity: MediaIdentity) -> TrackFinding:
@@ -88,7 +89,7 @@ class Provider(YouTubeProvider):
                 MediaKind.PLAYLIST,
                 f"https://music.youtube.com/playlist?list={identity.external_id}",
             ),
-            "Fixture",
+            self.playlist_title,
             TrackPage((self.finding, self.finding)),
         )
 
@@ -209,8 +210,16 @@ def test_http_discovery_queue_receipts_undo_and_committed_events(
                 assert data["outcome"]["added_count"] == 2
                 assert len({entry["id"] for entry in data["state"]["queue"]}) == 2
                 assert data["outcome"]["actor"]["name"] == "Listener"
+                assert data["request_id"] == operation
+                assert data["action"] == "queue.added"
+                assert "session_id" not in data["state"]["queue"][0]
+                assert "preparation" not in data["state"]["playback"]
+                assert "provenance" not in data["state"]["tracks"][track_id]
                 change = await anext(stream)
                 assert change.event == "change" and change.id == "1"
+                event = jsonable_encoder(change.data)
+                assert event["request_id"] == operation
+                assert event["action"] == data["action"]
                 replay = await client.post(
                     "/api/queue",
                     json={"track_ids": [track_id, track_id]},
@@ -248,6 +257,110 @@ def test_http_discovery_queue_receipts_undo_and_committed_events(
                 await stream.aclose()
 
     asyncio.run(scenario())
+
+
+def test_removed_track_metadata_survives_reply_replay(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        async with fixture(tmp_path) as (client, services, provider, _audio):
+            track = await services.catalog.track(provider.finding.reference.source_url)
+            added = await client.post(
+                "/api/queue",
+                json={"track_ids": [str(track.id)]},
+                headers={"Idempotency-Key": str(uuid4())},
+            )
+            entry = added.json()["outcome"]["entries"][0]
+            headers = {"Idempotency-Key": str(uuid4())}
+            for replayed in (False, True):
+                removed = await client.delete(
+                    f"/api/queue/{entry['id']}", headers=headers
+                )
+                data = removed.json()
+                assert data["state"]["queue"] == []
+                assert data["replayed"] is replayed
+                assert (
+                    data["state"]["tracks"][str(track.id)]["metadata"]["title"]
+                    == "Амура"
+                )
+                assert data["action"] == "queue.removed"
+
+    asyncio.run(scenario())
+
+
+def test_playlist_refresh_preserves_version_title_and_pagination(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        async with fixture(tmp_path) as (client, services, provider, _audio):
+            body = {
+                "source_url": "https://music.youtube.com/playlist?list=PLabcdefghijk"
+            }
+            original = (await client.post("/api/catalog/playlist", json=body)).json()
+            version = UUID(original["version"])
+            provider.playlist_title = "Renamed playlist"
+            await client.post("/api/catalog/playlist", json=body | {"refresh": True})
+            await until(
+                lambda: (
+                    services.catalog.refresh_status(
+                        version, playlist=True
+                    ).latest_version
+                    != version
+                )
+            )
+            updated = services.catalog.refresh_status(
+                version, playlist=True
+            ).latest_version
+            for identifier, title in (
+                (version, "Fixture"),
+                (updated, "Renamed playlist"),
+            ):
+                page = (
+                    await client.get(
+                        f"/api/catalog/playlist/{identifier}", params={"limit": 1}
+                    )
+                ).json()
+                assert page["playlist"]["title"] == title
+                assert (
+                    page["playlist"]["reference"] == original["playlist"]["reference"]
+                )
+                assert page["next_offset"] == 1
+                assert page["source_has_more"] is False
+                assert len(page["entries"]) == 1
+
+    asyncio.run(scenario())
+
+
+def test_schema_export_never_opens_runtime() -> None:
+    from contextlib import AbstractAsyncContextManager
+
+    def forbidden() -> AbstractAsyncContextManager[Services]:
+        raise AssertionError("Schema generation tried to start services")
+
+    schema = create_app(forbidden, public_origin="http://localhost").openapi()
+    models = schema["components"]["schemas"]
+    assert {
+        "SessionView",
+        "ChangeView",
+        "MutationView",
+        "DiscoveryView",
+        "AccountView",
+    } <= models.keys()
+    assert "connection_id" not in models["PlaybackView"]["properties"]
+    assert "queue.removed" in models["SessionAction"]["enum"]
+    assert "request_id" in models["MutationView"]["required"]
+    assert set(models["AccountView"]["required"]) == {
+        "profile",
+        "profile_complete",
+        "csrf_token",
+        "expires_at",
+        "appearance",
+    }
+    for path, method in [("/api/auth/session", "get"), ("/api/profile", "put")]:
+        assert schema["paths"][path][method]["responses"]["200"]["content"][
+            "application/json"
+        ]["schema"]["$ref"].endswith("/AccountView")
+    assert schema["paths"]["/api/events"]["get"]["x-sse-payloads"]["change"][
+        "$ref"
+    ].endswith("/ChangeView")
 
 
 def test_http_playback_guards_and_recovery_share_session(tmp_path: Path) -> None:

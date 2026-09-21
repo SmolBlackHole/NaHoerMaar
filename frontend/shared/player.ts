@@ -1,20 +1,20 @@
 import type { ListenerProfile } from "./profile";
 import type { RadioStatus } from "./radio";
+import type { Outcome, TrackMetadata, MediaReference, VoiceChannel as Channel } from "./engine";
 
-export type PlaybackState = "idle" | "loading" | "playing" | "paused" | "error";
+export type PlaybackState = "idle" | "loading" | "playing" | "paused";
 export type PlaybackAction = "play" | "pause" | "skip" | "stop";
 
-export interface QueueEntry {
+export interface TrackDisplay extends TrackMetadata {
+	track_id: string | null;
+	reference: MediaReference | null;
+	source_url: string | null;
+	video_id: string | null;
+}
+export interface QueueEntry extends TrackDisplay {
 	id: string;
 	track_id: string;
 	source_url: string;
-	video_id: string | null;
-	title: string | null;
-	uploader: string | null;
-	duration_seconds: number | null;
-	thumbnail_url: string | null;
-	artist: string | null;
-	uploader_url: string | null;
 	added_by: ListenerProfile | null;
 	origin: "manual" | "radio";
 }
@@ -35,8 +35,7 @@ export function groupHistory(history: readonly HistoryEntry[]): RecentTrack[] {
 		(a, b) => Date.parse(b.played_at) - Date.parse(a.played_at),
 	);
 	for (const item of latestFirst) {
-		const videoId = item.entry.video_id || youtubeVideoId(item.entry.source_url);
-		const key = videoId ? `youtube:${videoId}` : item.entry.source_url;
+		const key = item.entry.track_id;
 		const existing = tracks.get(key);
 		if (existing) existing.play_count++;
 		else tracks.set(key, { ...item, play_count: 1 });
@@ -65,37 +64,16 @@ export interface PlayerState {
 		id: string;
 		entry_id: string | null;
 		entry: QueueEntry | null;
-		code: "playback_failed" | "backend_halted";
-		fatal: boolean;
-		reason:
-			| "source_unavailable"
-			| "stream_interrupted"
-			| "voice_unavailable"
-			| "backend_halted";
+		reason: "source_unavailable" | "voice_unavailable";
 	} | null;
 }
 
-export interface VoiceChannel {
-	id: string;
-	name: string;
-	can_connect: boolean;
-	can_speak: boolean;
-	guild_id: string;
-	guild_name: string;
-}
+export type VoiceChannel = Channel;
 
-export interface MutationResult {
-	code: string;
+export type MutationResult = Omit<Outcome, "entries"> & {
 	replayed: boolean;
-	added_count: number;
-	skipped_count: number;
-	removed_count: number;
-	restored_count: number;
-	undo_id: string | null;
-	undo_expires_at: string | null;
-	actor: ListenerProfile | null;
 	entries: QueueEntry[];
-}
+};
 
 export function youtubeVideoId(source: string): string | null {
 	if (source.length > 2048) return null;
@@ -130,18 +108,18 @@ export function youtubeVideoId(source: string): string | null {
 	}
 }
 
-export function trackTitle(entry: QueueEntry): string {
+export function trackTitle(entry: TrackDisplay): string {
 	return (
 		entry.title ||
-		`YouTube · ${entry.video_id || youtubeVideoId(entry.source_url) || "Untitled track"}`
+		`YouTube · ${entry.video_id || youtubeVideoId(entry.source_url ?? "") || "Untitled track"}`
 	);
 }
 
-export function trackArtist(entry: QueueEntry): string {
+export function trackArtist(entry: TrackDisplay): string {
 	return entry.artist || entry.uploader || "YouTube";
 }
 
-export function trackArtistUrl(entry: QueueEntry): string | null {
+export function trackArtistUrl(entry: TrackDisplay): string | null {
 	const sameArtist =
 		!entry.artist ||
 		entry.artist.toLowerCase() === entry.uploader?.replace(/ - Topic$/i, "").toLowerCase();
@@ -164,7 +142,7 @@ export function trackArtistUrl(entry: QueueEntry): string | null {
 		: null;
 }
 
-export function trackArtwork(entry: QueueEntry | null): string | null {
+export function trackArtwork(entry: TrackDisplay | null): string | null {
 	if (!entry) return null;
 	if (entry.thumbnail_url) {
 		try {
@@ -174,7 +152,7 @@ export function trackArtwork(entry: QueueEntry | null): string | null {
 			/* Use the public YouTube thumbnail. */
 		}
 	}
-	const id = youtubeVideoId(entry.source_url);
+	const id = youtubeVideoId(entry.source_url ?? "");
 	return id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : null;
 }
 
@@ -200,9 +178,7 @@ export function listeningStats(history: HistoryEntry[], days: number, now = new 
 	}
 	return {
 		starts: entries.length,
-		tracks: new Set(
-			entries.map((item) => youtubeVideoId(item.entry.source_url) || item.entry.source_url),
-		).size,
+		tracks: new Set(entries.map((item) => item.entry.track_id)).size,
 		artists: artists.size,
 		buckets,
 		topArtists: [...artists].sort((a, b) => b[1] - a[1]).slice(0, 5),
@@ -226,14 +202,13 @@ export function playbackPosition(state: PlayerState, now: number): number {
 }
 
 export function canControl(state: PlayerState | null, action: PlaybackAction): boolean {
-	if (!state || state.last_issue?.fatal) return false;
+	if (!state) return false;
 	if (action === "stop" || action === "skip")
 		return state.current !== null && state.attempt_id !== null;
 	if (action === "pause") return state.state === "playing";
 	return (
 		state.voice_state === "connected" &&
 		(state.state === "paused" ||
-			state.state === "error" ||
 			(state.state === "idle" && (state.upcoming.length > 0 || state.current !== null)))
 	);
 }
@@ -242,7 +217,6 @@ export function queueWaits(state: PlayerState | null, now: number): (number | nu
 	if (!state) return [];
 	let seconds: number | null =
 		state.state === "playing" &&
-		!state.last_issue?.fatal &&
 		state.voice_state === "connected" &&
 		state.current?.duration_seconds != null
 			? Math.max(0, state.current.duration_seconds - playbackPosition(state, now))

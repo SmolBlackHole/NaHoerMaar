@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import type { QueueEntry } from "#shared/player";
+import type { TrackDisplay } from "#shared/player";
 import { trackTitle } from "#shared/player";
-const props = defineProps<{ entry: QueueEntry; labelled?: boolean }>();
+const props = defineProps<{ entry: TrackDisplay; labelled?: boolean }>();
 const player = usePlayerStore();
-const radio = useRadioStore();
+const radio = useRadioPreviewStore();
 const route = useRoute();
 const { icons } = useTheme();
 async function open() {
 	const source = {
 		kind: "track" as const,
-		source_url: props.entry.source_url,
+		source_url: props.entry.source_url!,
+		reference: props.entry.reference,
 		title: trackTitle(props.entry),
 	};
 	if (route.path !== "/") {

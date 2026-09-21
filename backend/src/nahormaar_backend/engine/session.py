@@ -18,7 +18,17 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .catalog import Catalog
 from .audio import AudioPlayer, VoiceTransport
-from .domain.playback import Control, Effect, PlaybackCommand, PlaybackMessage, decide
+from .domain.playback import (
+    Control,
+    Effect,
+    Join,
+    Seek,
+    SetVolume,
+    SetCrossfade,
+    PlaybackCommand,
+    PlaybackMessage,
+    decide,
+)
 from nahormaar_backend.domain.identity import Contributor
 from .domain.queue import (
     Add,
@@ -51,6 +61,7 @@ from .domain.sessions import (
     PlaybackRuntime,
     Receipt,
     SessionChanged,
+    SessionAction,
     SessionSnapshot,
 )
 from .events import EventBus
@@ -75,6 +86,34 @@ class RefillRadio:
 
 type Command = QueueCommand | StartRadio | StopRadio | RetryRadio | PlaybackCommand
 type Message = Command | RefillRadio | RadioLoaded | PlaybackMessage
+
+
+def action_for(message: Message) -> SessionAction:
+    """Public action identity, independent of implementation class names."""
+    if isinstance(message, Control):
+        controls: dict[Control, SessionAction] = {
+            Control.PLAY: "playback.play",
+            Control.PAUSE: "playback.pause",
+            Control.SKIP: "playback.skip",
+            Control.STOP: "playback.stop",
+            Control.LEAVE: "connection.leave",
+        }
+        return controls.get(message, "session.updated")
+    actions: dict[type, SessionAction] = {
+        Add: "queue.added",
+        Remove: "queue.removed",
+        Move: "queue.reordered",
+        Clear: "queue.cleared",
+        Undo: "queue.restored",
+        Seek: "playback.seek",
+        SetVolume: "playback.volume",
+        SetCrossfade: "playback.crossfade",
+        Join: "connection.join",
+        StartRadio: "radio.started",
+        StopRadio: "radio.stopped",
+        RetryRadio: "radio.retried",
+    }
+    return actions.get(type(message), "session.updated")
 
 
 @dataclass(frozen=True, slots=True)
@@ -468,10 +507,9 @@ class Session:
                 SessionChanged(
                     before,
                     after,
-                    message.value
-                    if isinstance(message, Control)
-                    else type(message).__name__,
+                    action_for(message),
                     outcome,
+                    envelope.request_id,
                 )
             )
         if self._playback and self._accepting:

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { trackArtist, trackArtistUrl, type QueueEntry } from "#shared/player";
-const props = defineProps<{ entry: QueueEntry }>();
+import { trackArtist, trackArtistUrl, type TrackDisplay } from "#shared/player";
+const props = defineProps<{ entry: TrackDisplay }>();
 const url = computed(() => trackArtistUrl(props.entry));
 </script>
 

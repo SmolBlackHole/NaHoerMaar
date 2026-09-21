@@ -39,13 +39,6 @@ const mounted = useMounted();
 			@click="player.connect()"
 		/>
 		<span
-			v-else-if="player.snapshot?.last_issue?.fatal"
-			role="status"
-			class="text-xs text-error"
-			title="Restart the backend to continue"
-			>Bot stopped</span
-		>
-		<span
 			v-else
 			class="connection-status"
 			:class="{ 'is-visible': mounted && visibility === 'visible' }"

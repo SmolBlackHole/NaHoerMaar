@@ -106,7 +106,7 @@ watch(
 	{ immediate: true },
 );
 async function setVolume() {
-	await player.mutate("/api/playback/volume", "PUT", { volume: volume.value / 100 });
+	await player.setVolume(volume.value / 100);
 	volume.value = Math.round((player.snapshot?.volume ?? 1) * 100);
 }
 const crossfade = ref(0);
@@ -119,7 +119,7 @@ watch(
 );
 async function setCrossfade(seconds: number) {
 	crossfade.value = seconds;
-	await player.mutate("/api/playback/crossfade", "PUT", { seconds });
+	await player.setCrossfade(seconds as Parameters<typeof player.setCrossfade>[0]);
 	crossfade.value = player.snapshot?.crossfade_seconds ?? 0;
 }
 </script>
@@ -267,7 +267,7 @@ async function setCrossfade(seconds: number) {
 								:disabled="
 									!player.enabled ||
 									player.snapshot?.crossfade_seconds === undefined ||
-									player.isPending('/api/playback/crossfade')
+									player.isPending('playback.crossfade')
 								"
 								@update:model-value="setCrossfade($event ? 5 : 0)"
 							/>
@@ -283,7 +283,7 @@ async function setCrossfade(seconds: number) {
 								aria-label="Crossfade duration"
 								:aria-valuetext="`${crossfade} seconds`"
 								:disabled="
-									!player.enabled || player.isPending('/api/playback/crossfade')
+									!player.enabled || player.isPending('playback.crossfade')
 								"
 								@change="setCrossfade(crossfade)"
 							/>

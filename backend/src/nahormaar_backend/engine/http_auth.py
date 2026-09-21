@@ -10,7 +10,6 @@ player API or application runtime is imported by this boundary.
 
 import secrets
 from collections.abc import Callable
-from dataclasses import asdict
 from typing import Annotated, cast
 
 from fastapi import APIRouter, Depends, Request, Response
@@ -29,6 +28,7 @@ from ..application.auth import (
 from ..config import CALLBACK_PATH
 from ..domain.identity import AuthError
 from ..domain.preferences import Appearance
+from .api_models import AccountView, ApiError
 
 
 def current_user(request: Request) -> Authenticated:
@@ -80,14 +80,15 @@ class AuthBoundary:
                     raise AuthError("csrf_failed", 403)
                 request.state.user = user
         except AuthError as error:
-            await JSONResponse({"code": error.code}, status_code=error.status)(
-                scope, receive, private_send
-            )
+            await JSONResponse(
+                ApiError(code=error.code).model_dump(), status_code=error.status
+            )(scope, receive, private_send)
             return
         except SQLAlchemyError:
-            await JSONResponse({"code": "auth_unavailable"}, status_code=503)(
-                scope, receive, private_send
-            )
+            await JSONResponse(
+                ApiError(code="auth_unavailable", retryable=True).model_dump(),
+                status_code=503,
+            )(scope, receive, private_send)
             return
         await self.app(scope, receive, private_send)
 
@@ -98,14 +99,14 @@ class ProfileInput(BaseModel):
     avatar: str = Field(pattern=r"^[0-9a-f]{4}$")
 
 
-def account_document(user: Authenticated) -> dict[str, object]:
-    return {
-        "profile": asdict(user.account.profile),
-        "profile_complete": user.account.profile_complete,
-        "csrf_token": user.csrf,
-        "expires_at": user.expires_at,
-        "appearance": user.account.appearance.model_dump(),
-    }
+def account_document(user: Authenticated) -> AccountView:
+    return AccountView(
+        profile=user.account.profile,
+        profile_complete=user.account.profile_complete,
+        csrf_token=user.csrf,
+        expires_at=user.expires_at,
+        appearance=user.account.appearance,
+    )
 
 
 def auth_router(service: Callable[[], Auth]) -> APIRouter:
@@ -164,7 +165,7 @@ def auth_router(service: Callable[[], Auth]) -> APIRouter:
         return response
 
     @router.get("/api/auth/session")
-    async def account(user: CurrentUser) -> dict[str, object]:
+    async def account(user: CurrentUser) -> AccountView:
         return account_document(user)
 
     @router.post("/api/auth/logout", status_code=204)
@@ -182,7 +183,7 @@ def auth_router(service: Callable[[], Auth]) -> APIRouter:
         return response
 
     @router.put("/api/profile")
-    async def profile(body: ProfileInput, user: CurrentUser) -> dict[str, object]:
+    async def profile(body: ProfileInput, user: CurrentUser) -> AccountView:
         account = await service().profile(user, body.name, body.avatar)
         return account_document(Authenticated(account, user.expires_at, user.csrf))
 

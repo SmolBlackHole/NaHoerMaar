@@ -1,10 +1,5 @@
 import { watch, onScopeDispose } from "vue";
-import {
-	trackTitle,
-	youtubeVideoId,
-	type MutationResult,
-	type QueueEntry,
-} from "../../shared/player";
+import { trackTitle, type MutationResult, type QueueEntry } from "../../shared/player";
 import { usePlayerStore } from "../stores/player";
 
 /** Shared shell notifications, independent of page navigation. */
@@ -13,164 +8,84 @@ export function usePlayerNotifications() {
 	const toast = useToast();
 	const seen = new Set<string>();
 	const undoTimers = new Map<string, ReturnType<typeof setTimeout>>();
-	const pendingTitles = new Map<string, { entries: QueueEntry[]; skipped: number }>();
 	let errorToastId: string | number | undefined;
 	let connectionToastId: string | number | undefined;
 	const actionTitle = (result: MutationResult, n: number, verb: string) =>
 		`${result.actor?.name || "You"} ${verb} ${n === 1 ? "a track" : `${n} tracks`}`;
-	watch(
-		() => player.activity,
-		(activity) => {
-			if (!activity || seen.has(activity.id)) return;
-			seen.add(activity.id);
-			const { action, result, own } = activity;
-			if (["StartRadio", "StopRadio", "RetryRadio"].includes(action)) {
-				toast.add({
-					title: `${result.actor?.name || "A listener"} ${action === "StopRadio" ? "ended" : action === "RetryRadio" ? "retried" : "started"} the radio`,
-					description: player.snapshot?.radio.title ?? undefined,
-				});
-			} else if (
-				!own &&
-				result.actor &&
-				(result.added_count || result.removed_count || result.restored_count)
-			) {
-				const verb = result.removed_count
-					? "removed"
-					: result.restored_count
-						? "restored"
-						: "added";
-				toast.add({
-					title: actionTitle(
-						result,
-						result.removed_count || result.restored_count || result.added_count,
-						verb,
-					),
-					description: trackDescription(result.entries, result.skipped_count),
-				});
-			}
-		},
-	);
-	function trackDescription(entries: QueueEntry[], skipped = 0, loading = false) {
-		const names = entries
-			.slice(0, 2)
-			.map((entry) => entry.title || (loading ? "Title is loading…" : "Title unavailable"));
+	function trackDescription(entries: QueueEntry[], skipped = 0) {
+		const names = entries.slice(0, 2).map((entry) => entry.title || "Title unavailable");
 		if (entries.length > 2) names.push(`and ${entries.length - 2} more`);
 		if (skipped) names.push(`${skipped} duplicates skipped`);
 		return names.join(" · ") || undefined;
 	}
-	function addedToast(result: MutationResult, id: string) {
-		const entries = result.entries;
-		toast.add({
-			id,
-			title: actionTitle(result, result.added_count, "added"),
-			description: trackDescription(entries, result.skipped_count, true),
-			duration: 7000,
-		});
-		if (entries.some((entry) => !entry.title))
-			pendingTitles.set(id, { entries, skipped: result.skipped_count });
-	}
-
 	watch(
-		() => player.completed,
-		(completed) => {
-			if (!completed || seen.has(completed.request.id)) return;
-			seen.add(completed.request.id);
-			const { request, result } = completed;
-			for (const id of pendingTitles.keys())
-				if (!toast.toasts.value.some((item) => item.id === id && item.open !== false))
-					pendingTitles.delete(id);
-			if (result.undo_id && result.undo_expires_at) {
-				const id = `undo-${result.undo_id}`;
-				const remaining = Math.max(0, Date.parse(result.undo_expires_at) - Date.now());
+		() => player.activity,
+		(activity) => {
+			if (!activity || activity.action === "session.updated" || seen.has(activity.id)) return;
+			seen.add(activity.id);
+			const { action, result, own, target } = activity;
+			if (["radio.started", "radio.stopped", "radio.retried"].includes(action)) {
 				toast.add({
-					id,
-					title: actionTitle(result, result.removed_count, "removed"),
-					description: trackDescription(result.entries),
-					duration: remaining || 5000,
-					actions: remaining
-						? [
-								{
-									label: "Undo",
-									onClick: () => {
-										if (!player.enabled) return;
-										void player.mutate(
-											`/api/queue/undo/${result.undo_id}`,
-											"POST",
-										);
-									},
+					title: `${result.actor?.name || "A listener"} ${action === "radio.stopped" ? "ended" : action === "radio.retried" ? "retried" : "started"} the radio`,
+					description: player.snapshot?.radio.title ?? undefined,
+				});
+				return;
+			}
+			if (action === "queue.reordered") {
+				if (own) toast.add({ title: "Queue order updated" });
+				return;
+			}
+			if (
+				!["queue.added", "queue.removed", "queue.cleared", "queue.restored"].includes(
+					action,
+				)
+			)
+				return;
+			if (action === "queue.restored" && target) {
+				const id = `undo-${target}`;
+				clearTimeout(undoTimers.get(id));
+				undoTimers.delete(id);
+				toast.remove(id);
+			}
+			const verb =
+				action === "queue.restored"
+					? "restored"
+					: action === "queue.added"
+						? "added"
+						: "removed";
+			const count = result.removed_count || result.restored_count || result.added_count;
+			const remaining =
+				own && result.undo_id && result.undo_expires_at
+					? Math.max(0, Math.min(12_000, Date.parse(result.undo_expires_at) - Date.now()))
+					: 0;
+			const id = remaining ? `undo-${result.undo_id}` : `request-${activity.id}`;
+			toast.add({
+				id,
+				title: actionTitle(result, count, verb),
+				description: trackDescription(result.entries, result.skipped_count),
+				duration: remaining || 7000,
+				actions: remaining
+					? [
+							{
+								label: "Undo",
+								onClick: () => {
+									if (player.enabled) void player.undo(result.undo_id!);
 								},
-							]
-						: [],
-				});
-				if (remaining)
-					undoTimers.set(
-						id,
-						setTimeout(() => {
-							toast.remove(id);
-							undoTimers.delete(id);
-						}, remaining),
-					);
-			} else if (request.path === "/api/queue") {
-				addedToast(result, `request-${request.id}`);
-			} else if (request.path.startsWith("/api/queue/undo/")) {
-				for (const [id, timer] of undoTimers) {
-					if (request.path !== `/api/queue/undo/${id.slice(5)}`) continue;
-					clearTimeout(timer);
-					undoTimers.delete(id);
-					toast.remove(id);
-				}
-				toast.add({
-					title: actionTitle(result, result.restored_count, "restored"),
-					description: trackDescription(result.entries),
-				});
-			} else if (request.path.endsWith("/position")) {
-				toast.add({ title: "Queue order updated" });
-			} else if (
-				request.path === "/api/queue/clear" ||
-				(request.method === "DELETE" && request.path.startsWith("/api/queue/"))
-			) {
-				toast.add({
-					title: actionTitle(result, result.removed_count, "removed"),
-					description: trackDescription(result.entries),
-				});
-			}
-		},
-	);
-
-	watch([() => player.snapshot, () => toast.toasts.value], ([state]) => {
-		if (!state) return;
-		const known = [
-			...(state.current ? [state.current] : []),
-			...state.upcoming,
-			...state.recently_played.map((item) => item.entry),
-		];
-		for (const [id, pending] of pendingTitles) {
-			const existing = toast.toasts.value.find((item) => item.id === id);
-			if (!existing) continue; // Nuxt UI inserts queued toasts on the next tick.
-			if (existing.open === false) {
-				pendingTitles.delete(id);
-				continue;
-			}
-			pending.entries = pending.entries.map((entry) => {
-				if (entry.title) return entry;
-				const video = entry.video_id || youtubeVideoId(entry.source_url);
-				return (
-					known.find(
-						(candidate) =>
-							candidate.title &&
-							(candidate.id === entry.id ||
-								(video &&
-									(candidate.video_id || youtubeVideoId(candidate.source_url)) ===
-										video)),
-					) || entry
-				);
+							},
+						]
+					: [],
 			});
-			const description = trackDescription(pending.entries, pending.skipped, true);
-			if (description !== existing.description)
-				toast.update(id, { description, duration: existing.duration });
-			if (pending.entries.every((entry) => entry.title)) pendingTitles.delete(id);
-		}
-	});
+			if (remaining)
+				undoTimers.set(
+					id,
+					setTimeout(() => {
+						toast.remove(id);
+						undoTimers.delete(id);
+					}, remaining),
+				);
+		},
+		{ flush: "sync" },
+	);
 
 	watch(
 		() => player.error,
@@ -203,36 +118,27 @@ export function usePlayerNotifications() {
 			if (!issue || seen.has(issue.id)) return;
 			seen.add(issue.id);
 			const entry = issue.entry;
-			const reason = issue.fatal
-				? "The bot needs a restart before playback can continue."
-				: issue.reason === "stream_interrupted"
-					? "The audio stream stopped, and retrying didn't help."
-					: entry
-						? "The audio source couldn't be opened."
-						: "Rejoin a voice channel and press play to continue.";
+			const reason = entry
+				? "The audio source couldn't be opened."
+				: "Rejoin a voice channel and press play to continue.";
 			toast.add({
 				id: `playback-${issue.id}`,
-				title: issue.fatal
-					? "Playback stopped"
-					: entry
-						? "Track skipped"
-						: "Discord connection lost",
+				title: entry ? "Track skipped" : "Discord connection lost",
 				description: entry ? `${trackTitle(entry)}\n${reason}` : reason,
 				ui: { description: "whitespace-pre-line" },
-				color: issue.fatal ? "error" : "warning",
+				color: "warning",
 				duration: 10000,
-				actions:
-					entry && !issue.fatal
-						? [
-								{
-									label: "Add to queue again",
-									disabled: !player.enabled,
-									onClick: () => {
-										void player.addMany([entry.track_id]);
-									},
+				actions: entry
+					? [
+							{
+								label: "Add to queue again",
+								disabled: !player.enabled,
+								onClick: () => {
+									void player.addMany([entry.track_id]);
 								},
-							]
-						: [],
+							},
+						]
+					: [],
 			});
 		},
 	);
@@ -280,7 +186,7 @@ export function usePlayerNotifications() {
 						actions: existing.actions.map((action) => ({
 							...action,
 							disabled: !player.enabled,
-							loading: player.isPending(`/api/queue/undo/${id.slice(5)}`),
+							loading: player.isPending("queue.restored", id.slice(5)),
 						})),
 					});
 			}
@@ -306,7 +212,6 @@ export function usePlayerNotifications() {
 			toast.remove(id);
 		}
 		undoTimers.clear();
-		pendingTitles.clear();
 		for (const issue of seen) {
 			toast.remove(`playback-${issue}`);
 			toast.remove(`radio-${issue}`);

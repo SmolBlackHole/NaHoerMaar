@@ -9,6 +9,8 @@
 		"node": ">=24.11.0"
 	},
 	"scripts": {
+		"api:generate": "python ../scripts/api_contract.py",
+		"api:check": "python ../scripts/api_contract.py --check",
 		"predev": "node ../scripts/licenses.mjs",
 		"dev": "nuxt dev --host 127.0.0.1 --port 3012 --dotenv ../.env",
 		"prebuild": "node ../scripts/licenses.mjs",
@@ -16,7 +18,7 @@
 		"preview": "nuxt preview --host 127.0.0.1",
 		"postinstall": "nuxt prepare",
 		"typecheck": "nuxt typecheck",
-		"check": "npm run test && npm run typecheck && npm run build",
+		"check": "npm run api:check && npm run test && npm run typecheck && npm run build",
 		"test": "vitest run"
 	},
 	"dependencies": {
@@ -41,6 +43,7 @@
 	"devDependencies": {
 		"@types/node": "^24.13.3",
 		"@types/sortablejs": "^1.15.9",
+		"openapi-typescript": "^7.13.0",
 		"typescript": "~5.9.3",
 		"vitest": "^5.0.0",
 		"vue-tsc": "~3.2.9"

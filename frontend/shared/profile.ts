@@ -1,10 +1,7 @@
 import avatars from "../../backend/src/nahormaar_backend/avatars.json";
+import type { components } from "./api.generated";
 
-export interface ListenerProfile {
-	id: string;
-	name: string;
-	avatar: string;
-}
+export type ListenerProfile = components["schemas"]["Contributor"];
 
 export const PROFILE_KEY = "nahormaar-profile";
 

@@ -9,12 +9,12 @@ import logging
 from collections.abc import AsyncGenerator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import asdict
-from typing import Annotated, Literal, cast
+from typing import Annotated, Literal
 from urllib.parse import urlsplit
 from uuid import UUID
 
 from fastapi import FastAPI, Header, Query, Request
-from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from pydantic import BaseModel, ConfigDict, Field
@@ -23,16 +23,36 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from ..application.auth import ACCESS_CHECK_SECONDS, SESSION_COOKIE, Auth
 from ..domain.identity import AuthError
-from .domain.catalog import MediaReference, TrackFinding, TrackPage
+from .domain.catalog import MediaReference, PlaylistPage, TrackFinding, TrackPage
 from .catalog import Catalog
 from .domain.playback import Control, Join, Seek, SetCrossfade, SetVolume
-from .domain.queue import Add, Clear, Move, Remove, Undo
+from .domain.queue import Add, Clear, Move, Outcome, Remove, Undo
 from .domain.radio import RadioStrategy, RetryRadio, StartRadio, StopRadio
 from .domain.sessions import SessionSnapshot
 from .http_auth import AuthBoundary, CurrentUser, auth_router
 from .providers import ProviderError, UnsupportedCapability
 from .runtime import Services
-from .session import Command
+from .session import Command, action_for
+from .api_models import (
+    ApiError,
+    CatalogEntryView,
+    ChangeView,
+    ChannelView,
+    CheckpointView,
+    DiscoveryView,
+    HistoryView,
+    ManualView,
+    MetadataView,
+    MutationView,
+    OutcomeView,
+    PlaybackView,
+    PlaylistView,
+    QueueEntryView,
+    RadioView,
+    SessionSettingsView,
+    SessionView,
+    TrackView,
+)
 
 type OperationID = Annotated[UUID, Header(alias="Idempotency-Key")]
 _LOGGER = logging.getLogger(__name__)
@@ -82,6 +102,9 @@ class JoinInput(Input):
 class LinkInput(Input):
     source_url: str = Field(min_length=1, max_length=2048)
     provider: str | None = Field(default=None, max_length=40)
+
+
+class PlaylistInput(LinkInput):
     refresh: bool = False
 
 
@@ -91,42 +114,52 @@ class RadioInput(Input):
 
 
 async def state_document(
-    services: Services, snapshot: SessionSnapshot
-) -> dict[str, object]:
+    services: Services, snapshot: SessionSnapshot, outcome: Outcome | None = None
+) -> SessionView:
     identifiers = {entry.track_id for entry in snapshot.queue.entries} | {
         record.track_id for record in snapshot.history
     }
     if snapshot.checkpoint.track_id:
         identifiers.add(snapshot.checkpoint.track_id)
+    if outcome:
+        identifiers.update(entry.track_id for entry in outcome.entries)
     tracks = await services.metadata.get_many(tuple(identifiers))
     radio = snapshot.strategy
-    return cast(
-        dict[str, object],
-        jsonable_encoder(
-            {
-                "session": asdict(snapshot.settings)
-                | {
-                    "channel_id": str(snapshot.settings.channel_id)
-                    if snapshot.settings.channel_id
-                    else None
-                },
-                "queue": snapshot.queue.entries,
-                "checkpoint": snapshot.checkpoint,
-                "playback": snapshot.playback,
-                "history": snapshot.history,
-                "radio": {
-                    "mode": "radio",
-                    "generation": radio.generation,
-                    "seed": radio.seed,
-                    "state": radio.state,
-                    "initiator": radio.initiator,
-                    "error": radio.error,
-                }
-                if isinstance(radio, RadioStrategy)
-                else {"mode": "manual"},
-                "tracks": {str(track.id): track for track in tracks},
+    if isinstance(radio, RadioStrategy) and radio.seed.kind == "track":
+        seed = await services.metadata.get_many((radio.seed.identity,))
+        tracks = (*tracks, *seed)
+    playback = snapshot.playback
+    return SessionView(
+        session=SessionSettingsView.model_validate(
+            asdict(snapshot.settings)
+            | {
+                "channel_id": str(snapshot.settings.channel_id)
+                if snapshot.settings.channel_id
+                else None,
             }
         ),
+        queue=tuple(
+            QueueEntryView.model_validate(entry) for entry in snapshot.queue.entries
+        ),
+        checkpoint=CheckpointView.model_validate(snapshot.checkpoint),
+        playback=PlaybackView(
+            phase=playback.phase,
+            attempt_id=playback.attempt_id,
+            connection="connecting"
+            if playback.joining_id
+            else "connected"
+            if playback.connection_id
+            else "disconnected",
+            duration_seconds=playback.duration_seconds,
+            error=playback.error,
+        ),
+        history=tuple(
+            HistoryView.model_validate(record) for record in snapshot.history
+        ),
+        radio=RadioView.model_validate(radio)
+        if isinstance(radio, RadioStrategy)
+        else ManualView(),
+        tracks={str(track.id): TrackView.model_validate(track) for track in tracks},
     )
 
 
@@ -151,24 +184,27 @@ async def event_stream(
                     change = await changes.get()
                 if change is None:
                     return
-                document = await state_document(services, change.after)
+                document = await state_document(services, change.after, change.outcome)
                 await services.auth.authenticate(token)
                 yield ServerSentEvent(
                     event="change",
                     id=str(change.after.settings.revision),
-                    data={
-                        "action": change.action,
-                        "outcome": jsonable_encoder(change.outcome),
-                        "state": document,
-                    },
+                    data=ChangeView(
+                        request_id=change.request_id,
+                        action=change.action,
+                        outcome=OutcomeView.model_validate(change.outcome),
+                        state=document,
+                    ),
                 )
             except TimeoutError:
                 continue
             except AuthError as error:
-                yield ServerSentEvent(event="auth", data={"code": error.code})
+                yield ServerSentEvent(event="auth", data=ApiError(code=error.code))
                 return
             except SQLAlchemyError:
-                yield ServerSentEvent(event="auth", data={"code": "auth_unavailable"})
+                yield ServerSentEvent(
+                    event="auth", data=ApiError(code="auth_unavailable")
+                )
                 return
 
 
@@ -212,7 +248,14 @@ def create_app(
                 watcher.cancel()
                 await asyncio.gather(watcher, return_exceptions=True)
 
-    app = FastAPI(title="NaHörMaar engine", lifespan=lifespan)
+    app = FastAPI(
+        title="NaHörMaar engine",
+        lifespan=lifespan,
+        responses={
+            status: {"model": ApiError}
+            for status in (401, 403, 404, 409, 422, 502, 503)
+        },
+    )
     app.add_middleware(AuthBoundary, service=auth)
     app.add_middleware(
         TrustedHostMiddleware,
@@ -227,17 +270,27 @@ def create_app(
 
     @app.exception_handler(AuthError)
     async def auth_error(request: Request, error: AuthError) -> JSONResponse:
-        return JSONResponse({"code": error.code}, status_code=error.status)
+        return JSONResponse(
+            ApiError(code=error.code).model_dump(mode="json"), status_code=error.status
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(
+        request: Request, error: RequestValidationError
+    ) -> JSONResponse:
+        return JSONResponse(
+            ApiError(code="invalid_request").model_dump(mode="json"), status_code=422
+        )
 
     @app.exception_handler(ValueError)
     @app.exception_handler(LookupError)
     async def invalid(request: Request, error: Exception) -> JSONResponse:
         return JSONResponse(
-            {
-                "code": "not_found"
+            ApiError(
+                code="not_found"
                 if isinstance(error, LookupError)
                 else "invalid_request"
-            },
+            ).model_dump(mode="json"),
             status_code=404 if isinstance(error, LookupError) else 422,
         )
 
@@ -246,15 +299,25 @@ def create_app(
     async def unavailable(request: Request, error: Exception) -> JSONResponse:
         if isinstance(error, UnsupportedCapability):
             return JSONResponse(
-                {"code": "unsupported_source", "message": str(error)}, status_code=422
+                ApiError(code="unsupported_source", message=str(error)).model_dump(
+                    mode="json"
+                ),
+                status_code=422,
             )
         if isinstance(error, ProviderError):
             return JSONResponse(
-                {"code": "provider_unavailable", "retryable": error.retryable},
+                ApiError(
+                    code="provider_unavailable", retryable=error.retryable
+                ).model_dump(mode="json"),
                 status_code=502,
             )
         _LOGGER.error("engine.api.failed: %s", type(error).__name__)
-        return JSONResponse({"code": "backend_unavailable"}, status_code=503)
+        return JSONResponse(
+            ApiError(code="backend_unavailable", retryable=True).model_dump(
+                mode="json"
+            ),
+            status_code=503,
+        )
 
     async def mutate(
         command: Command,
@@ -281,49 +344,74 @@ def create_app(
             else 422
         )
         return JSONResponse(
-            {
-                "state": await state_document(value, reply.snapshot),
-                "outcome": jsonable_encoder(reply.outcome),
-                "replayed": reply.replayed,
-            },
+            MutationView(
+                request_id=operation,
+                action=action_for(command),
+                state=await state_document(value, reply.snapshot, reply.outcome),
+                outcome=OutcomeView.model_validate(reply.outcome),
+                replayed=reply.replayed,
+            ).model_dump(mode="json"),
             status_code=status,
         )
 
     @app.get("/api/session")
-    async def state() -> dict[str, object]:
+    async def state() -> SessionView:
         return await state_document(services(), services().session.snapshot)
 
     @app.get("/api/channels")
-    async def channels() -> list[dict[str, object]]:
-        return cast(
-            list[dict[str, object]],
-            [
+    async def channels() -> list[ChannelView]:
+        return [
+            ChannelView.model_validate(
                 asdict(channel)
-                | {"id": str(channel.id), "guild_id": str(channel.guild_id)}
-                for channel in services().voice.channels()
-            ],
-        )
+                | {
+                    "id": str(channel.id),
+                    "guild_id": str(channel.guild_id),
+                }
+            )
+            for channel in services().voice.channels()
+        ]
 
-    @app.get("/api/events", response_class=EventSourceResponse)
+    @app.get(
+        "/api/events",
+        response_class=EventSourceResponse,
+        response_model=SessionView | ChangeView | ApiError,
+        openapi_extra={
+            "x-sse-payloads": {
+                "state": {"$ref": "#/components/schemas/SessionView"},
+                "change": {"$ref": "#/components/schemas/ChangeView"},
+                "auth": {"$ref": "#/components/schemas/ApiError"},
+            }
+        },
+    )
     async def events(request: Request) -> AsyncGenerator[ServerSentEvent]:
         async for event in event_stream(
             services(), request.cookies.get(SESSION_COOKIE)
         ):
             yield event
 
-    @app.post("/api/queue")
+    mutation_errors: dict[int | str, dict[str, object]] = {
+        status: {"model": MutationView | ApiError} for status in (404, 409, 422)
+    }
+
+    @app.post("/api/queue", response_model=MutationView, responses=mutation_errors)
     async def add(
         body: AddInput, operation: OperationID, user: CurrentUser
     ) -> JSONResponse:
         return await mutate(Add(body.track_ids, body.skip_duplicates), operation, user)
 
-    @app.delete("/api/queue/{entry_id}")
+    @app.delete(
+        "/api/queue/{entry_id}", response_model=MutationView, responses=mutation_errors
+    )
     async def remove(
         entry_id: UUID, operation: OperationID, user: CurrentUser
     ) -> JSONResponse:
         return await mutate(Remove(entry_id), operation, user)
 
-    @app.put("/api/queue/{entry_id}/position")
+    @app.put(
+        "/api/queue/{entry_id}/position",
+        response_model=MutationView,
+        responses=mutation_errors,
+    )
     async def move(
         entry_id: UUID, body: MoveInput, operation: OperationID, user: CurrentUser
     ) -> JSONResponse:
@@ -333,7 +421,9 @@ def create_app(
             user,
         )
 
-    @app.post("/api/queue/clear")
+    @app.post(
+        "/api/queue/clear", response_model=MutationView, responses=mutation_errors
+    )
     async def clear(
         body: ClearInput, operation: OperationID, user: CurrentUser
     ) -> JSONResponse:
@@ -341,13 +431,19 @@ def create_app(
             Clear(body.expected_queue_revision, body.contributor_id), operation, user
         )
 
-    @app.post("/api/queue/undo/{undo_id}")
+    @app.post(
+        "/api/queue/undo/{undo_id}",
+        response_model=MutationView,
+        responses=mutation_errors,
+    )
     async def undo(
         undo_id: UUID, operation: OperationID, user: CurrentUser
     ) -> JSONResponse:
         return await mutate(Undo(undo_id), operation, user)
 
-    @app.post("/api/playback/control")
+    @app.post(
+        "/api/playback/control", response_model=MutationView, responses=mutation_errors
+    )
     async def control(
         body: ControlInput, operation: OperationID, user: CurrentUser
     ) -> JSONResponse:
@@ -360,7 +456,9 @@ def create_app(
             Control(body.action), operation, user, attempt=body.expected_attempt_id
         )
 
-    @app.put("/api/playback/position")
+    @app.put(
+        "/api/playback/position", response_model=MutationView, responses=mutation_errors
+    )
     async def seek(
         body: SeekInput, operation: OperationID, user: CurrentUser
     ) -> JSONResponse:
@@ -368,19 +466,25 @@ def create_app(
             Seek(body.seconds), operation, user, attempt=body.expected_attempt_id
         )
 
-    @app.put("/api/playback/volume")
+    @app.put(
+        "/api/playback/volume", response_model=MutationView, responses=mutation_errors
+    )
     async def volume(
         body: VolumeInput, operation: OperationID, user: CurrentUser
     ) -> JSONResponse:
         return await mutate(SetVolume(body.volume), operation, user)
 
-    @app.put("/api/playback/crossfade")
+    @app.put(
+        "/api/playback/crossfade",
+        response_model=MutationView,
+        responses=mutation_errors,
+    )
     async def crossfade(
         body: CrossfadeInput, operation: OperationID, user: CurrentUser
     ) -> JSONResponse:
         return await mutate(SetCrossfade(body.seconds), operation, user)
 
-    @app.put("/api/connection")
+    @app.put("/api/connection", response_model=MutationView, responses=mutation_errors)
     async def join(
         body: JoinInput, operation: OperationID, user: CurrentUser
     ) -> JSONResponse:
@@ -389,7 +493,7 @@ def create_app(
             raise ValueError("Channel ID exceeds the supported integer range.")
         return await mutate(Join(channel_id), operation, user)
 
-    @app.post("/api/radio")
+    @app.post("/api/radio", response_model=MutationView, responses=mutation_errors)
     async def radio(
         body: RadioInput, operation: OperationID, user: CurrentUser
     ) -> JSONResponse:
@@ -397,7 +501,11 @@ def create_app(
             StartRadio(body.seed, body.expected_generation), operation, user
         )
 
-    @app.post("/api/radio/{generation}/{action}")
+    @app.post(
+        "/api/radio/{generation}/{action}",
+        response_model=MutationView,
+        responses=mutation_errors,
+    )
     async def radio_control(
         generation: UUID,
         action: Literal["stop", "retry"],
@@ -415,30 +523,25 @@ def create_app(
         q: Annotated[str, Query(min_length=1, max_length=200)],
         provider: str = "youtube_music",
         refresh: bool = False,
-    ) -> object:
+    ) -> DiscoveryView:
         value = await services().catalog.search(
             q, provider_key=provider, refresh=refresh
         )
         return await discovery_document(value.version, value.value, services().catalog)
 
     @app.post("/api/catalog/playlist")
-    async def playlist(body: LinkInput) -> object:
+    async def playlist(body: PlaylistInput) -> DiscoveryView:
         value = await services().catalog.playlist(
             body.source_url, provider_key=body.provider, refresh=body.refresh
         )
-        return {
-            "playlist": value.value.reference,
-            "title": value.value.title,
-            **await discovery_document(
-                value.version, value.value.page, services().catalog, playlist=True
-            ),
-        }
+        return await discovery_document(value.version, value.value, services().catalog)
 
     @app.post("/api/catalog/track")
-    async def track(body: LinkInput) -> object:
-        return await services().catalog.track(
+    async def track(body: LinkInput) -> TrackView:
+        value = await services().catalog.track(
             body.source_url, provider_key=body.provider
         )
+        return TrackView.model_validate(value)
 
     @app.get("/api/catalog/{kind}/{version}")
     async def snapshot(
@@ -446,10 +549,10 @@ def create_app(
         version: UUID,
         offset: Annotated[int, Query(ge=0)] = 0,
         limit: Annotated[int, Query(ge=1, le=100)] = 20,
-    ) -> object:
+    ) -> DiscoveryView:
         catalog = services().catalog
         value = (
-            catalog.playlist_snapshot(version).value.page
+            catalog.playlist_snapshot(version).value
             if kind == "playlist"
             else catalog.search_snapshot(version).value
         )
@@ -457,20 +560,20 @@ def create_app(
             version,
             value,
             catalog,
-            playlist=kind == "playlist",
             offset=offset,
             limit=limit,
         )
 
     async def discovery_document(
         version: UUID,
-        page: TrackPage,
+        value: TrackPage | PlaylistPage,
         catalog: Catalog,
         *,
-        playlist: bool = False,
         offset: int = 0,
         limit: int = 20,
-    ) -> dict[str, object]:
+    ) -> DiscoveryView:
+        playlist = value if isinstance(value, PlaylistPage) else None
+        page = value.page if isinstance(value, PlaylistPage) else value
         visible = page.entries[offset : offset + limit]
         tracks = await services().metadata.get_many(
             tuple(
@@ -480,22 +583,30 @@ def create_app(
             )
         )
         by_identity = {track.identity: track.id for track in tracks}
-        return {
-            "version": version,
-            "offset": offset,
-            "total": len(page.entries),
-            "error": page.error,
-            "entries": [
-                {
-                    "position": offset + index,
-                    "track_id": by_identity[entry.reference.identity]
+        next_offset = offset + len(visible)
+        return DiscoveryView(
+            version=version,
+            offset=offset,
+            total=len(page.entries),
+            next_offset=next_offset if next_offset < len(page.entries) else None,
+            source_has_more=page.continuation is not None,
+            error=page.error,
+            playlist=PlaylistView.model_validate(playlist) if playlist else None,
+            entries=tuple(
+                CatalogEntryView(
+                    position=offset + index,
+                    track_id=by_identity[entry.reference.identity]
                     if isinstance(entry, TrackFinding)
                     else None,
-                    "finding": entry,
-                }
+                    reference=entry.reference,
+                    metadata=MetadataView.model_validate(entry.metadata),
+                    unavailable=None
+                    if isinstance(entry, TrackFinding)
+                    else entry.reason,
+                )
                 for index, entry in enumerate(visible)
-            ],
-            "refresh": catalog.refresh_status(version, playlist=playlist),
-        }
+            ),
+            refresh=catalog.refresh_status(version, playlist=playlist is not None),
+        )
 
     return app

@@ -5,6 +5,7 @@ export interface RadioSource {
 	kind: MediaReference["kind"];
 	source_url: string;
 	title: string;
+	reference?: MediaReference | null;
 }
 export interface RadioPreview {
 	seed: MediaReference;

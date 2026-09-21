@@ -14,7 +14,7 @@ import { usePlayerStore } from "~/stores/player";
 import { useProfileStore } from "~/stores/profile";
 
 const player = usePlayerStore();
-const radio = useRadioStore();
+const radio = useRadioPreviewStore();
 const profile = useProfileStore();
 const { icons } = useTheme();
 const toast = useToast();
@@ -250,11 +250,7 @@ function confirmClear(contributor: ListenerProfile | null) {
 async function clearQueue() {
 	const target = clearing.value;
 	clearing.value = null;
-	if (target)
-		await player.mutate("/api/queue/clear", "POST", {
-			expected_queue_revision: target.revision,
-			...(target.contributor ? { contributor_id: target.contributor.id } : {}),
-		});
+	if (target) await player.clearQueue(target.revision, target.contributor?.id);
 }
 </script>
 
@@ -281,8 +277,8 @@ async function clearQueue() {
 			>
 				<UButton
 					label="Remove"
-					:loading="player.isPending('/api/queue/clear')"
-					:aria-busy="player.isPending('/api/queue/clear')"
+					:loading="player.isPending('queue.cleared')"
+					:aria-busy="player.isPending('queue.cleared')"
 					:icon="icons.trash"
 					:trailing-icon="icons.chevronDown"
 					color="neutral"
@@ -393,7 +389,7 @@ async function clearQueue() {
 								icon: icons.trash,
 								color: 'error',
 								disabled: !player.enabled,
-								onSelect: () => player.mutate('/api/queue/' + entry.id, 'DELETE'),
+								onSelect: () => player.removeTrack(entry.id),
 							},
 						]"
 						:content="{ align: 'end', onCloseAutoFocus: focusPosition }"
@@ -401,8 +397,8 @@ async function clearQueue() {
 						<UButton
 							:icon="icons.ellipsis"
 							:loading="
-								player.isPending('/api/queue/' + entry.id) ||
-								player.isPending('/api/queue/' + entry.id + '/position')
+								player.isPending('queue.removed', entry.id) ||
+								player.isPending('queue.reordered', entry.id)
 							"
 							:aria-label="'Options for ' + trackTitle(entry)"
 							color="neutral"
@@ -433,7 +429,7 @@ async function clearQueue() {
 						<UButton
 							type="submit"
 							label="Move"
-							:loading="player.isPending('/api/queue/' + entry.id + '/position')"
+							:loading="player.isPending('queue.reordered', entry.id)"
 							color="neutral"
 							:disabled="!player.enabled"
 						/>

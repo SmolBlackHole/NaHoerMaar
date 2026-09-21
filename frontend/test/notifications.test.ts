@@ -1,6 +1,6 @@
 import { effectScope, nextTick, reactive, ref } from "vue";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createPlayerClient } from "../app/player/client";
+import type { PendingRequest, PlayerActivity } from "../app/stores/player";
 import { usePlayerNotifications } from "../app/composables/usePlayerNotifications";
 import type { MutationResult, PlayerState, QueueEntry } from "../shared/player";
 import type { Toast } from "@nuxt/ui/composables/useToast";
@@ -10,6 +10,7 @@ vi.mock("../app/stores/player", () => ({ usePlayerStore: getPlayer }));
 
 const track: QueueEntry = {
 	track_id: "track",
+	reference: null,
 	id: "entry",
 	source_url: "https://youtu.be/Pqp9fDRp1lw",
 	video_id: "Pqp9fDRp1lw",
@@ -56,7 +57,24 @@ afterEach(() => {
 });
 
 function setup() {
-	const player = reactive({ ...createPlayerClient(), addMany: vi.fn().mockResolvedValue(true) });
+	const player = reactive({
+		activity: null as PlayerActivity | null,
+		uncertain: null as PendingRequest | null,
+		error: null as string | null,
+		connection: "live" as "live" | "connecting" | "offline",
+		pending: false,
+		enabled: true,
+		retry: vi.fn(),
+		undo: vi.fn(),
+		dispose: () => {},
+		snapshot: { ...state } as PlayerState | null,
+		addMany: vi.fn().mockResolvedValue(true),
+	});
+	player.dispose = () => {
+		player.snapshot = null;
+		player.uncertain = null;
+		player.error = null;
+	};
 	player.snapshot = { ...state };
 	player.connection = "live";
 	getPlayer.mockReturnValue(player);
@@ -85,6 +103,27 @@ function setup() {
 }
 
 describe("player notifications", () => {
+	it("does not confuse a seek with a queue reorder", async () => {
+		const { player, toast } = setup();
+		const result: MutationResult = {
+			code: "ok",
+			replayed: false,
+			added_count: 0,
+			removed_count: 0,
+			restored_count: 0,
+			skipped_count: 0,
+			entries: [],
+			actor: null,
+			undo_id: null,
+			undo_expires_at: null,
+		};
+		player.activity = { id: "seek", action: "playback.seek", result, own: true };
+		await nextTick();
+		expect(toast.add).not.toHaveBeenCalled();
+		player.activity = { id: "move", action: "queue.reordered", result, own: true };
+		await nextTick();
+		expect(toast.toasts.value[0]?.title).toBe("Queue order updated");
+	});
 	it("announces remote edits once, without duplicating own HTTP notices or radio refills", async () => {
 		const { player, toast } = setup();
 		const result: MutationResult = {
@@ -99,17 +138,17 @@ describe("player notifications", () => {
 			undo_id: null,
 			undo_expires_at: null,
 		};
-		player.activity = { id: "session:2", action: "Add", result, own: false };
+		player.activity = { id: "session:2", action: "queue.added", result, own: false };
 		await nextTick();
 		expect(toast.toasts.value[0]?.title).toBe("Kai added a track");
 		expect(toast.toasts.value[0]?.description).toBe("A track");
 		player.activity = { ...player.activity };
 		await nextTick();
-		player.activity = { id: "session:3", action: "Add", result, own: true };
+		player.activity = { id: "session:2", action: "queue.added", result, own: true };
 		await nextTick();
 		player.activity = {
 			id: "session:4",
-			action: "RadioLoaded",
+			action: "session.updated",
 			result: { ...result, actor: null },
 			own: false,
 		};
@@ -122,8 +161,6 @@ describe("player notifications", () => {
 			entry_id: track.id,
 			id: "failure-1",
 			entry: { ...track, title: "You’re here that’s the thing" },
-			fatal: false,
-			code: "playback_failed",
 			reason: "source_unavailable",
 		};
 		player.snapshot = { ...state, last_issue: issue };
@@ -161,15 +198,17 @@ describe("player notifications", () => {
 			actor: { id: "remover", name: "Kai", avatar: "0002" },
 			entries: [{ ...track, added_by: { id: "author", name: "Andrey", avatar: "0001" } }],
 		};
-		player.completed = {
-			request: { id: "remove", path: "/api/queue/entry", method: "DELETE" },
+		player.activity = {
+			id: "remove",
+			action: "queue.removed",
+			own: true,
 			result,
 		};
 		await nextTick();
 		expect(toast.toasts.value[0]?.actions?.[0]?.label).toBe("Undo");
 		expect(toast.toasts.value[0]?.title).toBe("Kai removed a track");
 		expect(toast.toasts.value[0]?.description).toBe("A track");
-		player.completed = { ...player.completed, result: { ...result, replayed: true } };
+		player.activity = { ...player.activity, result: { ...result, replayed: true } };
 		await nextTick();
 		expect(toast.add).toHaveBeenCalledOnce();
 		await vi.advanceTimersByTimeAsync(11999);
@@ -180,7 +219,7 @@ describe("player notifications", () => {
 
 	it("does not reopen dismissed recovery toasts when pending or connection changes", async () => {
 		const { player, toast } = setup();
-		player.uncertain = { id: "lost", path: "/api/queue", method: "POST" };
+		player.uncertain = { id: "lost", action: "queue.added", execute: vi.fn() };
 		player.error = "Response lost";
 		await nextTick();
 		const notification = toast.toasts.value[0]!;
@@ -209,18 +248,19 @@ describe("player notifications", () => {
 			actor: { id: "remover", name: "Kai", avatar: "0002" },
 			entries: [track],
 		};
-		player.completed = {
-			request: { id: "remove", path: "/api/queue/entry", method: "DELETE" },
+		player.activity = {
+			id: "remove",
+			action: "queue.removed",
+			own: true,
 			result,
 		};
 		await nextTick();
 		const undoToast = toast.toasts.value[0]!;
-		player.completed = {
-			request: {
-				id: "restore",
-				path: "/api/queue/undo/undo",
-				method: "POST",
-			},
+		player.activity = {
+			id: "restore",
+			action: "queue.restored",
+			own: true,
+			target: "undo",
 			result: {
 				...result,
 				replayed: true,
@@ -238,8 +278,10 @@ describe("player notifications", () => {
 
 	it("reports actual import counts and clears recovery actions at sign-out", async () => {
 		const { player, toast } = setup();
-		player.completed = {
-			request: { id: "batch", path: "/api/queue", method: "POST" },
+		player.activity = {
+			id: "batch",
+			action: "queue.added",
+			own: true,
 			result: {
 				code: "ok",
 				replayed: false,
@@ -258,7 +300,7 @@ describe("player notifications", () => {
 		expect(toast.toasts.value[0]?.description).toBe(
 			"A track · Another track · 3 duplicates skipped",
 		);
-		player.uncertain = { id: "lost", path: "/api/queue", method: "POST" };
+		player.uncertain = { id: "lost", action: "queue.added", execute: vi.fn() };
 		player.error = "Response lost";
 		await nextTick();
 		player.dispose();
@@ -268,7 +310,7 @@ describe("player notifications", () => {
 		);
 	});
 
-	it("replaces a pending title without showing video IDs or reopening dismissed toasts", async () => {
+	it("reports missing titles without showing source IDs", async () => {
 		const { player, toast } = setup();
 		const unknown = { ...track, title: null };
 		player.snapshot = { ...state, upcoming: [unknown] };
@@ -284,18 +326,20 @@ describe("player notifications", () => {
 			actor: { id: "author", name: "Andrey", avatar: "0001" },
 			entries: [unknown],
 		};
-		player.completed = { request: { id: "add", path: "/api/queue", method: "POST" }, result };
+		player.activity = { id: "add", action: "queue.added", own: true, result };
 		await nextTick();
 		expect(toast.toasts.value[0]?.title).toBe("Andrey added a track");
-		expect(toast.toasts.value[0]?.description).toBe("Title is loading…");
+		expect(toast.toasts.value[0]?.description).toBe("Title unavailable");
 		player.snapshot = { ...state, revision: 2 };
 		await nextTick();
 		expect(toast.add).toHaveBeenCalledOnce();
-		expect(toast.toasts.value[0]?.description).toBe("A track");
+		expect(toast.toasts.value[0]?.description).toBe("Title unavailable");
 		player.snapshot = { ...state, upcoming: [unknown] };
-		player.completed = {
-			request: { id: "second", path: "/api/queue", method: "POST" },
-			result: { ...result, request_id: "second" },
+		player.activity = {
+			id: "second",
+			action: "queue.added",
+			own: true,
+			result,
 		};
 		await nextTick();
 		toast.toasts.value[1]!.open = false;

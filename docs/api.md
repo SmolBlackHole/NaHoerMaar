@@ -14,5 +14,7 @@ an `Idempotency-Key` UUID.
 
 The Nuxt proxy forwards this contract directly. The player client resolves track
 references into display entries without sending that projection back to the API.
+Public types are generated from OpenAPI; see
+[contract generation](development.md#update-the-frontend-api-contract).
 See [engine verification](engine-api.md#verification) for the checked boundaries
 and the outstanding Discord listening acceptance.

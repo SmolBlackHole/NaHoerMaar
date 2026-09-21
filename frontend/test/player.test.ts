@@ -1,7 +1,11 @@
 import { session, playing, track as catalogTrack, occurrence, outcome } from "./engine-fixtures";
 import type { SessionState } from "../shared/engine";
 import { describe, expect, it, vi } from "vitest";
-import { createPlayerClient } from "../app/player/client";
+import { usePlayerStore } from "../app/stores/player";
+import { repositoryFixture } from "./repository-fixture";
+vi.mock("../app/stores/profile", () => ({
+	useProfileStore: () => ({ profile: null, lost: vi.fn(), restore: vi.fn() }),
+}));
 import {
 	canControl,
 	queueWaits,
@@ -15,6 +19,7 @@ import {
 
 const track: QueueEntry = {
 	track_id: "track",
+	reference: null,
 	id: "c68fe9f1-ac72-4f15-9e7f-445d332b9ca7",
 	source_url: "https://www.youtube.com/watch?v=Pqp9fDRp1lw",
 	video_id: "Pqp9fDRp1lw",
@@ -86,7 +91,7 @@ class Events extends EventTarget {
 function setup() {
 	const events: Events[] = [];
 	const mutation = vi.fn<typeof fetch>();
-	const client = createPlayerClient(
+	const fixture = repositoryFixture(
 		(url, options) =>
 			url === "/api/channels" ? Promise.resolve(Response.json([])) : mutation(url, options),
 		() => {
@@ -95,27 +100,108 @@ function setup() {
 			return stream as unknown as EventSource;
 		},
 	);
+	const client = usePlayerStore(fixture.pinia);
 	client.connect();
 	return { client, events, mutation };
 }
 describe("native engine client", () => {
+	it.each(["event-first", "http-first"])(
+		"deduplicates an operation in either delivery order: %s",
+		async (order) => {
+			const { client, events, mutation } = setup();
+			events[0]!.emit(session());
+			let resolve!: (response: Response) => void;
+			mutation.mockReturnValue(
+				new Promise((done) => {
+					resolve = done;
+				}),
+			);
+			const pending = client.removeTrack(occurrence.id);
+			const value = session();
+			value.session.revision = 2;
+			value.queue = [];
+			const result = {
+				request_id: client.activeRequest!.id,
+				action: "queue.removed",
+				state: value,
+				outcome: outcome({ removed_count: 1, entries: [occurrence] }),
+				replayed: false,
+			};
+			const event = () =>
+				events[0]!.dispatchEvent(
+					new MessageEvent("change", { data: JSON.stringify(result) }),
+				);
+			if (order === "event-first") event();
+			else {
+				resolve(Response.json(result));
+				await pending;
+			}
+			const activity = client.activity;
+			if (order === "event-first") {
+				resolve(Response.json(result));
+				await pending;
+			} else event();
+			expect(client.activity).toBe(activity);
+			expect(activity?.result.entries[0]?.title).toBe("Амура");
+			expect(activity?.own).toBe(true);
+			client.dispose();
+		},
+	);
+	it("settles a lost response from its live event and leaves unrelated operations uncertain", async () => {
+		const { client, events, mutation } = setup();
+		events[0]!.emit(session());
+		mutation.mockRejectedValue(new TypeError("lost"));
+		await client.addMany([catalogTrack.id]);
+		const id = client.uncertain!.id;
+		const result = {
+			request_id: "another",
+			action: "queue.added",
+			state: session(),
+			outcome: outcome({ added_count: 1, entries: [occurrence] }),
+		};
+		events[0]!.dispatchEvent(new MessageEvent("change", { data: JSON.stringify(result) }));
+		expect(client.uncertain?.id).toBe(id);
+		result.request_id = id;
+		events[0]!.dispatchEvent(new MessageEvent("change", { data: JSON.stringify(result) }));
+		expect(client.uncertain).toBeNull();
+		expect(client.error).toBeNull();
+		expect(client.enabled).toBe(true);
+		client.dispose();
+	});
+	it("keeps the playback clock across unrelated events without a writable presentation snapshot", () => {
+		vi.useFakeTimers();
+		try {
+			const { client, events } = setup();
+			const value = playing();
+			value.checkpoint.position_seconds = 12;
+			events[0]!.emit(value);
+			vi.advanceTimersByTime(2000);
+			value.session.revision++;
+			value.session.volume = 0.4;
+			events[0]!.emit(value);
+			expect(playbackPosition(client.snapshot, Date.now())).toBe(14);
+			client.dispose();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
 	it("waits for resync, consumes changes and rejects stale state", () => {
 		const { client, events } = setup();
-		expect(client.enabled.value).toBe(false);
+		expect(client.enabled).toBe(false);
 		const value = session();
 		value.session.revision = 7;
 		events[0]!.emit(value);
-		expect(client.snapshot.value?.upcoming[0]?.title).toBe("Амура");
-		expect(client.enabled.value).toBe(true);
+		expect(client.snapshot?.upcoming[0]?.title).toBe("Амура");
+		expect(client.enabled).toBe(true);
 		value.session.revision = 8;
 		value.session.volume = 0.4;
-		events[0]!.emit(value, "SetVolume");
+		events[0]!.emit(value, "playback.volume");
 		events[0]!.emit(session());
-		expect(client.snapshot.value?.volume).toBe(0.4);
+		expect(client.snapshot?.volume).toBe(0.4);
 		events[0]!.onerror?.();
-		expect(client.enabled.value).toBe(false);
+		expect(client.enabled).toBe(false);
 		events[0]!.emit(value);
-		expect(client.enabled.value).toBe(true);
+		expect(client.enabled).toBe(true);
 		client.dispose();
 	});
 	it("accepts a new session with a lower revision and ignores replaced streams", () => {
@@ -128,7 +214,7 @@ describe("native engine client", () => {
 		other.session.id = "fresh";
 		events[1]!.emit(other);
 		events[0]!.emit(value);
-		expect(client.snapshot.value?.session_id).toBe("fresh");
+		expect(client.snapshot?.session_id).toBe("fresh");
 		expect(events[0]!.close).toHaveBeenCalledOnce();
 		client.dispose();
 	});
@@ -147,8 +233,8 @@ describe("native engine client", () => {
 		expect(await client.move(occurrence.id, null, 1)).toBe(false);
 		expect(mutation.mock.calls[0]![0]).toBe(`/api/queue/${occurrence.id}/position`);
 		expect(mutation.mock.calls[0]![1]?.method).toBe("PUT");
-		expect(client.snapshot.value?.queue_revision).toBe(3);
-		expect(client.uncertain.value).toBeNull();
+		expect(client.snapshot?.queue_revision).toBe(3);
+		expect(client.uncertain).toBeNull();
 		client.dispose();
 	});
 	it("freezes the original attempt and idempotency key across a lost reply", async () => {
@@ -162,7 +248,13 @@ describe("native engine client", () => {
 		next.playback.attempt_id = "next";
 		events[0]!.emit(next);
 		mutation.mockResolvedValue(
-			Response.json({ state: next, outcome: outcome(), replayed: true }),
+			Response.json({
+				request_id: client.uncertain!.id,
+				action: "playback.skip",
+				state: next,
+				outcome: outcome(),
+				replayed: true,
+			}),
 		);
 		expect(await client.retry()).toBe(true);
 		expect(mutation.mock.calls[1]![1]?.body).toBe(mutation.mock.calls[0]![1]?.body);
@@ -188,15 +280,15 @@ describe("native engine client", () => {
 	it("resolves links once and queues persistent IDs, keeping duplicate occurrences", async () => {
 		const { client, events, mutation } = setup();
 		events[0]!.emit(session());
-		mutation
-			.mockResolvedValueOnce(Response.json(catalogTrack))
-			.mockResolvedValue(
-				Response.json({
-					state: session(),
-					outcome: outcome({ added_count: 1, entries: [occurrence] }),
-					replayed: false,
-				}),
-			);
+		mutation.mockResolvedValueOnce(Response.json(catalogTrack)).mockImplementation(async () =>
+			Response.json({
+				request_id: client.activeRequest!.id,
+				action: "queue.added",
+				state: session(),
+				outcome: outcome({ added_count: 1, entries: [occurrence] }),
+				replayed: false,
+			}),
+		);
 		expect(await client.add(catalogTrack.source_url)).toBe(true);
 		expect(mutation.mock.calls[0]![0]).toBe("/api/catalog/track");
 		expect(JSON.parse(String(mutation.mock.calls[1]![1]?.body)).track_ids).toEqual([
@@ -214,7 +306,7 @@ describe("native engine client", () => {
 		events[0]!.emit(session());
 		let resolve!: (r: Response) => void;
 		mutation.mockReturnValue(new Promise((done) => (resolve = done)));
-		const pending = client.mutate(`/api/queue/${occurrence.id}`, "DELETE");
+		const pending = client.removeTrack(occurrence.id);
 		const newer = session();
 		newer.session.revision = 3;
 		newer.session.volume = 0.8;
@@ -224,17 +316,18 @@ describe("native engine client", () => {
 		const older = session();
 		older.session.revision = 2;
 		older.queue = [];
-		older.tracks = {};
 		resolve(
 			Response.json({
+				request_id: client.activeRequest!.id,
+				action: "queue.removed",
 				state: older,
 				outcome: outcome({ removed_count: 1, entries: [occurrence] }),
 				replayed: false,
 			}),
 		);
 		await pending;
-		expect(client.snapshot.value?.volume).toBe(0.8);
-		expect(client.completed.value?.result.entries[0]?.title).toBe("Амура");
+		expect(client.snapshot?.volume).toBe(0.8);
+		expect(client.activity?.result.entries[0]?.title).toBe("Амура");
 		client.dispose();
 	});
 	it("invalidates in-flight link resolution on sign-out without queueing", async () => {
@@ -247,18 +340,18 @@ describe("native engine client", () => {
 		resolve(Response.json(catalogTrack));
 		expect(await pending).toBe(false);
 		expect(mutation).toHaveBeenCalledTimes(1);
-		expect(client.snapshot.value).toBeNull();
+		expect(client.snapshot).toBeNull();
 	});
 	it("keeps gateway failures uncertain and input rejection final", async () => {
 		const { client, events, mutation } = setup();
 		events[0]!.emit(session());
 		mutation.mockResolvedValueOnce(Response.json({}, { status: 502 }));
 		await client.addMany([catalogTrack.id]);
-		expect(client.uncertain.value).not.toBeNull();
+		expect(client.uncertain).not.toBeNull();
 		mutation.mockResolvedValueOnce(Response.json({ code: "invalid_request" }, { status: 422 }));
 		await client.retry();
-		expect(client.uncertain.value).toBeNull();
-		expect(client.error.value).toContain("invalid");
+		expect(client.uncertain).toBeNull();
+		expect(client.error).toContain("invalid");
 		client.dispose();
 	});
 });
@@ -303,12 +396,6 @@ describe("player presentation", () => {
 			null,
 		]);
 		expect(queueWaits(null, anchor)).toEqual([]);
-		expect(
-			queueWaits(
-				{ ...playing, last_issue: { code: "backend_halted", fatal: true, entry_id: null } },
-				anchor,
-			),
-		).toEqual([null, null, null]);
 		expect(formatWait(40)).toBe("In <1 min");
 		expect(formatWait(140)).toBe("In ~2 min");
 		expect(formatWait(3599)).toBe("In ~01:00 h");
@@ -336,7 +423,6 @@ describe("player presentation", () => {
 		expect(canControl(state({ upcoming: [] }), "play")).toBe(false);
 		expect(canControl(state({ state: "loading", current: track }), "pause")).toBe(false);
 		expect(canControl(state({ state: "loading", current: track }), "skip")).toBe(true);
-		expect(canControl(state({ state: "error", current: track }), "play")).toBe(true);
 	});
 	it.each([
 		"https://music.youtube.com/watch?v=Pqp9fDRp1lw",

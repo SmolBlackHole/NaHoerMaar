@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { catalogEntry, queuePresence, type CatalogTrack } from "#shared/catalog";
+import { queuePresence, type CatalogTrack } from "#shared/catalog";
 import { formatTime, trackTitle } from "#shared/player";
 defineProps<{
 	entries: CatalogTrack[];
@@ -33,9 +33,9 @@ const player = usePlayerStore();
 					:disabled="!enabled || !!item.unavailable || !item.source_url"
 					@change="emit('toggle', item.index)"
 				/>
-				<span class="sr-only">Select {{ trackTitle(catalogEntry(item)) }}</span>
+				<span class="sr-only">Select {{ trackTitle(item) }}</span>
 			</label>
-			<PlayerTrackArtwork :entry="catalogEntry(item)" class="catalog-cover" />
+			<PlayerTrackArtwork :entry="item" class="catalog-cover" />
 			<div class="catalog-copy">
 				<a
 					v-if="item.source_url"
@@ -43,12 +43,12 @@ const player = usePlayerStore();
 					target="_blank"
 					rel="noopener noreferrer"
 					class="catalog-title"
-					:title="trackTitle(catalogEntry(item))"
-					>{{ trackTitle(catalogEntry(item)) }}</a
+					:title="trackTitle(item)"
+					>{{ trackTitle(item) }}</a
 				>
 				<span v-else class="catalog-title">{{ item.title || "Unavailable video" }}</span>
 				<p class="catalog-detail">
-					<PlayerArtistLink :entry="catalogEntry(item)" /><span>{{
+					<PlayerArtistLink :entry="item" /><span>{{
 						formatTime(item.duration_seconds)
 					}}</span>
 				</p>
@@ -56,10 +56,10 @@ const player = usePlayerStore();
 					{{ item.unavailable }}
 				</p>
 				<p
-					v-else-if="queuePresence(item.source_url, player.snapshot)"
+					v-else-if="queuePresence(item.track_id, player.snapshot)"
 					class="mt-1 text-xs text-muted"
 				>
-					{{ queuePresence(item.source_url, player.snapshot) }}
+					{{ queuePresence(item.track_id, player.snapshot) }}
 				</p>
 			</div>
 			<UButton
@@ -68,16 +68,16 @@ const player = usePlayerStore();
 				color="neutral"
 				variant="ghost"
 				class="size-11 shrink-0 justify-center"
-				:aria-label="`Add ${trackTitle(catalogEntry(item))} to queue`"
-				:title="`Add ${trackTitle(catalogEntry(item))} to queue`"
+				:aria-label="`Add ${trackTitle(item)} to queue`"
+				:title="`Add ${trackTitle(item)} to queue`"
 				:disabled="!enabled || !!item.unavailable || !item.source_url"
-				:loading="!!item.source_url && player.isAdding(item.track_id)"
-				:aria-busy="!!item.source_url && player.isAdding(item.track_id)"
+				:loading="!!item.source_url && player.isAdding(item.track_id ?? '')"
+				:aria-busy="!!item.source_url && player.isAdding(item.track_id ?? '')"
 				@click="emit('add', item)"
 			/>
 			<PlayerRadioAction
 				v-if="!selectable && item.source_url && !item.unavailable"
-				:entry="catalogEntry(item)"
+				:entry="item"
 			/>
 		</li>
 		<li

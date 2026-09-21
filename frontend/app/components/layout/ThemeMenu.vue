@@ -1,7 +1,5 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from "@nuxt/ui";
-import type { IconSet } from "~/config/icons";
-import type { ColorModePreference, TextSize } from "~/stores/settings";
 import { useTheme } from "~/composables/useTheme";
 import { useThemeMenu } from "~/composables/useThemeMenu";
 
@@ -44,16 +42,16 @@ const { themeItems } = useThemeMenu({
 		settings.artworkColors = value;
 	},
 	setMode(value) {
-		settings.mode = value as ColorModePreference;
+		settings.mode = value;
 	},
 	setFontFamily(value) {
 		settings.fontFamily = value;
 	},
 	setIconSet(value) {
-		settings.iconSet = value as IconSet;
+		settings.iconSet = value;
 	},
 	setTextSize(value) {
-		settings.textSize = value as TextSize;
+		settings.textSize = value;
 	},
 });
 </script>
