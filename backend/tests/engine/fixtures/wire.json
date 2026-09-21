@@ -1,0 +1,1718 @@
+{
+	"format": 1,
+	"common_response_headers": {
+		"cache-control": "no-store",
+		"vary": "Cookie",
+		"referrer-policy": "no-referrer"
+	},
+	"authenticated_request_headers": {
+		"Origin": "https://fixture.invalid",
+		"X-CSRF-Token": "fixture-csrf",
+		"Cookie": "nahormaar_session=fixture-session"
+	},
+	"bodies": {
+		"idle": {
+			"revision": 0,
+			"queue_revision": 0,
+			"state": "idle",
+			"current": null,
+			"upcoming": [],
+			"recently_played": [],
+			"voice_state": "disconnected",
+			"channel_id": null,
+			"playback_id": null,
+			"volume": 1,
+			"crossfade_seconds": 0,
+			"position_seconds": 0,
+			"position_updated_at": null,
+			"last_issue": null,
+			"radio": {
+				"state": "off",
+				"session_id": null,
+				"seed": null,
+				"initiator": null,
+				"error": null,
+				"event_id": null,
+				"action": null,
+				"actor": null
+			}
+		},
+		"playing": {
+			"revision": 3,
+			"queue_revision": 3,
+			"state": "playing",
+			"current": {
+				"id": "00000000-0000-4000-8000-000000000002",
+				"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+				"video_id": "GCYGuZGE6DA",
+				"title": "Амура - Я хочу любить",
+				"uploader": "Fixture Artist",
+				"duration_seconds": 180,
+				"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+				"artist": "Амура",
+				"uploader_url": "https://www.youtube.com/@fixture",
+				"added_by": {
+					"id": "00000000-0000-4000-8000-000000000001",
+					"name": "Fixture Listener",
+					"avatar": "0abc"
+				},
+				"origin": "manual"
+			},
+			"upcoming": [
+				{
+					"id": "00000000-0000-4000-8000-000000000003",
+					"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+					"video_id": "GCYGuZGE6DA",
+					"title": null,
+					"uploader": null,
+					"duration_seconds": null,
+					"thumbnail_url": null,
+					"artist": null,
+					"uploader_url": null,
+					"added_by": null,
+					"origin": "manual"
+				}
+			],
+			"recently_played": [
+				{
+					"id": "00000000-0000-4000-8000-000000000004",
+					"played_at": "2026-09-21T12:00:00Z",
+					"entry": {
+						"id": "00000000-0000-4000-8000-000000000002",
+						"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+						"video_id": "GCYGuZGE6DA",
+						"title": "Амура - Я хочу любить",
+						"uploader": "Fixture Artist",
+						"duration_seconds": 180,
+						"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+						"artist": "Амура",
+						"uploader_url": "https://www.youtube.com/@fixture",
+						"added_by": {
+							"id": "00000000-0000-4000-8000-000000000001",
+							"name": "Fixture Listener",
+							"avatar": "0abc"
+						},
+						"origin": "manual"
+					}
+				}
+			],
+			"voice_state": "connected",
+			"channel_id": "123456789012345678",
+			"playback_id": "00000000-0000-4000-8000-000000000005",
+			"volume": 1,
+			"crossfade_seconds": 5,
+			"position_seconds": 42.5,
+			"position_updated_at": "2026-09-21T12:00:42.500000Z",
+			"last_issue": null,
+			"radio": {
+				"state": "off",
+				"session_id": null,
+				"seed": null,
+				"initiator": null,
+				"error": null,
+				"event_id": null,
+				"action": null,
+				"actor": null
+			}
+		},
+		"paused": {
+			"revision": 4,
+			"queue_revision": 3,
+			"state": "paused",
+			"current": {
+				"id": "00000000-0000-4000-8000-000000000002",
+				"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+				"video_id": "GCYGuZGE6DA",
+				"title": "Амура - Я хочу любить",
+				"uploader": "Fixture Artist",
+				"duration_seconds": 180,
+				"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+				"artist": "Амура",
+				"uploader_url": "https://www.youtube.com/@fixture",
+				"added_by": {
+					"id": "00000000-0000-4000-8000-000000000001",
+					"name": "Fixture Listener",
+					"avatar": "0abc"
+				},
+				"origin": "manual"
+			},
+			"upcoming": [
+				{
+					"id": "00000000-0000-4000-8000-000000000003",
+					"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+					"video_id": "GCYGuZGE6DA",
+					"title": null,
+					"uploader": null,
+					"duration_seconds": null,
+					"thumbnail_url": null,
+					"artist": null,
+					"uploader_url": null,
+					"added_by": null,
+					"origin": "manual"
+				}
+			],
+			"recently_played": [
+				{
+					"id": "00000000-0000-4000-8000-000000000004",
+					"played_at": "2026-09-21T12:00:00Z",
+					"entry": {
+						"id": "00000000-0000-4000-8000-000000000002",
+						"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+						"video_id": "GCYGuZGE6DA",
+						"title": "Амура - Я хочу любить",
+						"uploader": "Fixture Artist",
+						"duration_seconds": 180,
+						"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+						"artist": "Амура",
+						"uploader_url": "https://www.youtube.com/@fixture",
+						"added_by": {
+							"id": "00000000-0000-4000-8000-000000000001",
+							"name": "Fixture Listener",
+							"avatar": "0abc"
+						},
+						"origin": "manual"
+					}
+				}
+			],
+			"voice_state": "connected",
+			"channel_id": "123456789012345678",
+			"playback_id": "00000000-0000-4000-8000-000000000005",
+			"volume": 1,
+			"crossfade_seconds": 5,
+			"position_seconds": 42.5,
+			"position_updated_at": "2026-09-21T12:00:42.500000Z",
+			"last_issue": null,
+			"radio": {
+				"state": "off",
+				"session_id": null,
+				"seed": null,
+				"initiator": null,
+				"error": null,
+				"event_id": null,
+				"action": null,
+				"actor": null
+			}
+		},
+		"radio_waiting": {
+			"revision": 5,
+			"queue_revision": 3,
+			"state": "playing",
+			"current": {
+				"id": "00000000-0000-4000-8000-000000000002",
+				"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+				"video_id": "GCYGuZGE6DA",
+				"title": "Амура - Я хочу любить",
+				"uploader": "Fixture Artist",
+				"duration_seconds": 180,
+				"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+				"artist": "Амура",
+				"uploader_url": "https://www.youtube.com/@fixture",
+				"added_by": {
+					"id": "00000000-0000-4000-8000-000000000001",
+					"name": "Fixture Listener",
+					"avatar": "0abc"
+				},
+				"origin": "manual"
+			},
+			"upcoming": [
+				{
+					"id": "00000000-0000-4000-8000-000000000003",
+					"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+					"video_id": "GCYGuZGE6DA",
+					"title": null,
+					"uploader": null,
+					"duration_seconds": null,
+					"thumbnail_url": null,
+					"artist": null,
+					"uploader_url": null,
+					"added_by": null,
+					"origin": "manual"
+				}
+			],
+			"recently_played": [
+				{
+					"id": "00000000-0000-4000-8000-000000000004",
+					"played_at": "2026-09-21T12:00:00Z",
+					"entry": {
+						"id": "00000000-0000-4000-8000-000000000002",
+						"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+						"video_id": "GCYGuZGE6DA",
+						"title": "Амура - Я хочу любить",
+						"uploader": "Fixture Artist",
+						"duration_seconds": 180,
+						"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+						"artist": "Амура",
+						"uploader_url": "https://www.youtube.com/@fixture",
+						"added_by": {
+							"id": "00000000-0000-4000-8000-000000000001",
+							"name": "Fixture Listener",
+							"avatar": "0abc"
+						},
+						"origin": "manual"
+					}
+				}
+			],
+			"voice_state": "connected",
+			"channel_id": "123456789012345678",
+			"playback_id": "00000000-0000-4000-8000-000000000005",
+			"volume": 1,
+			"crossfade_seconds": 5,
+			"position_seconds": 42.5,
+			"position_updated_at": "2026-09-21T12:00:42.500000Z",
+			"last_issue": null,
+			"radio": {
+				"state": "waiting",
+				"session_id": "00000000-0000-4000-8000-000000000009",
+				"seed": {
+					"kind": "track",
+					"identifier": "GCYGuZGE6DA",
+					"title": "Амура - Я хочу любить"
+				},
+				"initiator": {
+					"id": "00000000-0000-4000-8000-000000000001",
+					"name": "Fixture Listener",
+					"avatar": "0abc"
+				},
+				"error": "No more recommendations are available.",
+				"event_id": "00000000-0000-4000-8000-000000000010",
+				"action": "started",
+				"actor": {
+					"id": "00000000-0000-4000-8000-000000000001",
+					"name": "Fixture Listener",
+					"avatar": "0abc"
+				}
+			}
+		},
+		"playback_issue": {
+			"revision": 6,
+			"queue_revision": 3,
+			"state": "paused",
+			"current": {
+				"id": "00000000-0000-4000-8000-000000000002",
+				"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+				"video_id": "GCYGuZGE6DA",
+				"title": "Амура - Я хочу любить",
+				"uploader": "Fixture Artist",
+				"duration_seconds": 180,
+				"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+				"artist": "Амура",
+				"uploader_url": "https://www.youtube.com/@fixture",
+				"added_by": {
+					"id": "00000000-0000-4000-8000-000000000001",
+					"name": "Fixture Listener",
+					"avatar": "0abc"
+				},
+				"origin": "manual"
+			},
+			"upcoming": [
+				{
+					"id": "00000000-0000-4000-8000-000000000003",
+					"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+					"video_id": "GCYGuZGE6DA",
+					"title": null,
+					"uploader": null,
+					"duration_seconds": null,
+					"thumbnail_url": null,
+					"artist": null,
+					"uploader_url": null,
+					"added_by": null,
+					"origin": "manual"
+				}
+			],
+			"recently_played": [
+				{
+					"id": "00000000-0000-4000-8000-000000000004",
+					"played_at": "2026-09-21T12:00:00Z",
+					"entry": {
+						"id": "00000000-0000-4000-8000-000000000002",
+						"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+						"video_id": "GCYGuZGE6DA",
+						"title": "Амура - Я хочу любить",
+						"uploader": "Fixture Artist",
+						"duration_seconds": 180,
+						"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+						"artist": "Амура",
+						"uploader_url": "https://www.youtube.com/@fixture",
+						"added_by": {
+							"id": "00000000-0000-4000-8000-000000000001",
+							"name": "Fixture Listener",
+							"avatar": "0abc"
+						},
+						"origin": "manual"
+					}
+				}
+			],
+			"voice_state": "connected",
+			"channel_id": "123456789012345678",
+			"playback_id": "00000000-0000-4000-8000-000000000005",
+			"volume": 1,
+			"crossfade_seconds": 5,
+			"position_seconds": 42.5,
+			"position_updated_at": "2026-09-21T12:00:42.500000Z",
+			"last_issue": {
+				"id": "00000000-0000-4000-8000-000000000011",
+				"entry_id": "00000000-0000-4000-8000-000000000012",
+				"entry": {
+					"id": "00000000-0000-4000-8000-000000000012",
+					"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+					"video_id": "GCYGuZGE6DA",
+					"title": null,
+					"uploader": null,
+					"duration_seconds": null,
+					"thumbnail_url": null,
+					"artist": null,
+					"uploader_url": null,
+					"added_by": null,
+					"origin": "manual"
+				},
+				"code": "playback_failed",
+				"fatal": false,
+				"reason": "source_unavailable"
+			},
+			"radio": {
+				"state": "off",
+				"session_id": null,
+				"seed": null,
+				"initiator": null,
+				"error": null,
+				"event_id": null,
+				"action": null,
+				"actor": null
+			}
+		},
+		"added": {
+			"request_id": "00000000-0000-4000-8000-000000000020",
+			"code": "ok",
+			"entry_id": "00000000-0000-4000-8000-000000000003",
+			"replayed": false,
+			"snapshot": {
+				"revision": 2,
+				"queue_revision": 2,
+				"state": "idle",
+				"current": null,
+				"upcoming": [
+					{
+						"id": "00000000-0000-4000-8000-000000000002",
+						"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+						"video_id": "GCYGuZGE6DA",
+						"title": "Амура - Я хочу любить",
+						"uploader": "Fixture Artist",
+						"duration_seconds": 180,
+						"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+						"artist": "Амура",
+						"uploader_url": "https://www.youtube.com/@fixture",
+						"added_by": {
+							"id": "00000000-0000-4000-8000-000000000001",
+							"name": "Fixture Listener",
+							"avatar": "0abc"
+						},
+						"origin": "manual"
+					},
+					{
+						"id": "00000000-0000-4000-8000-000000000003",
+						"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+						"video_id": "GCYGuZGE6DA",
+						"title": null,
+						"uploader": null,
+						"duration_seconds": null,
+						"thumbnail_url": null,
+						"artist": null,
+						"uploader_url": null,
+						"added_by": {
+							"id": "00000000-0000-4000-8000-000000000001",
+							"name": "Fixture Listener",
+							"avatar": "0abc"
+						},
+						"origin": "manual"
+					}
+				],
+				"recently_played": [],
+				"voice_state": "disconnected",
+				"channel_id": null,
+				"playback_id": null,
+				"volume": 1,
+				"crossfade_seconds": 0,
+				"position_seconds": 0,
+				"position_updated_at": null,
+				"last_issue": null,
+				"radio": {
+					"state": "off",
+					"session_id": null,
+					"seed": null,
+					"initiator": null,
+					"error": null,
+					"event_id": null,
+					"action": null,
+					"actor": null
+				}
+			},
+			"added_count": 1,
+			"skipped_count": 0,
+			"removed_count": 0,
+			"restored_count": 0,
+			"undo_id": null,
+			"undo_expires_at": null,
+			"actor": {
+				"id": "00000000-0000-4000-8000-000000000001",
+				"name": "Fixture Listener",
+				"avatar": "0abc"
+			},
+			"entries": [
+				{
+					"id": "00000000-0000-4000-8000-000000000003",
+					"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+					"video_id": "GCYGuZGE6DA",
+					"title": null,
+					"uploader": null,
+					"duration_seconds": null,
+					"thumbnail_url": null,
+					"artist": null,
+					"uploader_url": null,
+					"added_by": {
+						"id": "00000000-0000-4000-8000-000000000001",
+						"name": "Fixture Listener",
+						"avatar": "0abc"
+					},
+					"origin": "manual"
+				}
+			]
+		},
+		"removed": {
+			"request_id": "00000000-0000-4000-8000-000000000020",
+			"code": "ok",
+			"entry_id": null,
+			"replayed": false,
+			"snapshot": {
+				"revision": 4,
+				"queue_revision": 4,
+				"state": "playing",
+				"current": {
+					"id": "00000000-0000-4000-8000-000000000002",
+					"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+					"video_id": "GCYGuZGE6DA",
+					"title": "Амура - Я хочу любить",
+					"uploader": "Fixture Artist",
+					"duration_seconds": 180,
+					"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+					"artist": "Амура",
+					"uploader_url": "https://www.youtube.com/@fixture",
+					"added_by": {
+						"id": "00000000-0000-4000-8000-000000000001",
+						"name": "Fixture Listener",
+						"avatar": "0abc"
+					},
+					"origin": "manual"
+				},
+				"upcoming": [],
+				"recently_played": [
+					{
+						"id": "00000000-0000-4000-8000-000000000004",
+						"played_at": "2026-09-21T12:00:00Z",
+						"entry": {
+							"id": "00000000-0000-4000-8000-000000000002",
+							"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+							"video_id": "GCYGuZGE6DA",
+							"title": "Амура - Я хочу любить",
+							"uploader": "Fixture Artist",
+							"duration_seconds": 180,
+							"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+							"artist": "Амура",
+							"uploader_url": "https://www.youtube.com/@fixture",
+							"added_by": {
+								"id": "00000000-0000-4000-8000-000000000001",
+								"name": "Fixture Listener",
+								"avatar": "0abc"
+							},
+							"origin": "manual"
+						}
+					}
+				],
+				"voice_state": "connected",
+				"channel_id": "123456789012345678",
+				"playback_id": "00000000-0000-4000-8000-000000000005",
+				"volume": 1,
+				"crossfade_seconds": 5,
+				"position_seconds": 42.5,
+				"position_updated_at": "2026-09-21T12:00:42.500000Z",
+				"last_issue": null,
+				"radio": {
+					"state": "off",
+					"session_id": null,
+					"seed": null,
+					"initiator": null,
+					"error": null,
+					"event_id": null,
+					"action": null,
+					"actor": null
+				}
+			},
+			"added_count": 0,
+			"skipped_count": 0,
+			"removed_count": 1,
+			"restored_count": 0,
+			"undo_id": "00000000-0000-4000-8000-000000000021",
+			"undo_expires_at": "2026-09-21T12:00:54.500000Z",
+			"actor": {
+				"id": "00000000-0000-4000-8000-000000000001",
+				"name": "Fixture Listener",
+				"avatar": "0abc"
+			},
+			"entries": [
+				{
+					"id": "00000000-0000-4000-8000-000000000003",
+					"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+					"video_id": "GCYGuZGE6DA",
+					"title": null,
+					"uploader": null,
+					"duration_seconds": null,
+					"thumbnail_url": null,
+					"artist": null,
+					"uploader_url": null,
+					"added_by": null,
+					"origin": "manual"
+				}
+			]
+		},
+		"restored": {
+			"request_id": "00000000-0000-4000-8000-000000000022",
+			"code": "ok",
+			"entry_id": null,
+			"replayed": false,
+			"snapshot": {
+				"revision": 5,
+				"queue_revision": 5,
+				"state": "playing",
+				"current": {
+					"id": "00000000-0000-4000-8000-000000000002",
+					"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+					"video_id": "GCYGuZGE6DA",
+					"title": "Амура - Я хочу любить",
+					"uploader": "Fixture Artist",
+					"duration_seconds": 180,
+					"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+					"artist": "Амура",
+					"uploader_url": "https://www.youtube.com/@fixture",
+					"added_by": {
+						"id": "00000000-0000-4000-8000-000000000001",
+						"name": "Fixture Listener",
+						"avatar": "0abc"
+					},
+					"origin": "manual"
+				},
+				"upcoming": [
+					{
+						"id": "00000000-0000-4000-8000-000000000003",
+						"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+						"video_id": "GCYGuZGE6DA",
+						"title": null,
+						"uploader": null,
+						"duration_seconds": null,
+						"thumbnail_url": null,
+						"artist": null,
+						"uploader_url": null,
+						"added_by": null,
+						"origin": "manual"
+					}
+				],
+				"recently_played": [
+					{
+						"id": "00000000-0000-4000-8000-000000000004",
+						"played_at": "2026-09-21T12:00:00Z",
+						"entry": {
+							"id": "00000000-0000-4000-8000-000000000002",
+							"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+							"video_id": "GCYGuZGE6DA",
+							"title": "Амура - Я хочу любить",
+							"uploader": "Fixture Artist",
+							"duration_seconds": 180,
+							"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+							"artist": "Амура",
+							"uploader_url": "https://www.youtube.com/@fixture",
+							"added_by": {
+								"id": "00000000-0000-4000-8000-000000000001",
+								"name": "Fixture Listener",
+								"avatar": "0abc"
+							},
+							"origin": "manual"
+						}
+					}
+				],
+				"voice_state": "connected",
+				"channel_id": "123456789012345678",
+				"playback_id": "00000000-0000-4000-8000-000000000005",
+				"volume": 1,
+				"crossfade_seconds": 5,
+				"position_seconds": 42.5,
+				"position_updated_at": "2026-09-21T12:00:42.500000Z",
+				"last_issue": null,
+				"radio": {
+					"state": "off",
+					"session_id": null,
+					"seed": null,
+					"initiator": null,
+					"error": null,
+					"event_id": null,
+					"action": null,
+					"actor": null
+				}
+			},
+			"added_count": 0,
+			"skipped_count": 0,
+			"removed_count": 0,
+			"restored_count": 1,
+			"undo_id": null,
+			"undo_expires_at": null,
+			"actor": {
+				"id": "00000000-0000-4000-8000-000000000001",
+				"name": "Fixture Listener",
+				"avatar": "0abc"
+			},
+			"entries": [
+				{
+					"id": "00000000-0000-4000-8000-000000000003",
+					"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+					"video_id": "GCYGuZGE6DA",
+					"title": null,
+					"uploader": null,
+					"duration_seconds": null,
+					"thumbnail_url": null,
+					"artist": null,
+					"uploader_url": null,
+					"added_by": null,
+					"origin": "manual"
+				}
+			]
+		},
+		"replayed": {
+			"request_id": "00000000-0000-4000-8000-000000000020",
+			"code": "ok",
+			"entry_id": null,
+			"replayed": true,
+			"snapshot": {
+				"revision": 5,
+				"queue_revision": 4,
+				"state": "playing",
+				"current": {
+					"id": "00000000-0000-4000-8000-000000000002",
+					"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+					"video_id": "GCYGuZGE6DA",
+					"title": "Амура - Я хочу любить",
+					"uploader": "Fixture Artist",
+					"duration_seconds": 180,
+					"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+					"artist": "Амура",
+					"uploader_url": "https://www.youtube.com/@fixture",
+					"added_by": {
+						"id": "00000000-0000-4000-8000-000000000001",
+						"name": "Fixture Listener",
+						"avatar": "0abc"
+					},
+					"origin": "manual"
+				},
+				"upcoming": [],
+				"recently_played": [
+					{
+						"id": "00000000-0000-4000-8000-000000000004",
+						"played_at": "2026-09-21T12:00:00Z",
+						"entry": {
+							"id": "00000000-0000-4000-8000-000000000002",
+							"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+							"video_id": "GCYGuZGE6DA",
+							"title": "Амура - Я хочу любить",
+							"uploader": "Fixture Artist",
+							"duration_seconds": 180,
+							"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+							"artist": "Амура",
+							"uploader_url": "https://www.youtube.com/@fixture",
+							"added_by": {
+								"id": "00000000-0000-4000-8000-000000000001",
+								"name": "Fixture Listener",
+								"avatar": "0abc"
+							},
+							"origin": "manual"
+						}
+					}
+				],
+				"voice_state": "connected",
+				"channel_id": "123456789012345678",
+				"playback_id": "00000000-0000-4000-8000-000000000005",
+				"volume": 0.5,
+				"crossfade_seconds": 5,
+				"position_seconds": 42.5,
+				"position_updated_at": "2026-09-21T12:00:42.500000Z",
+				"last_issue": null,
+				"radio": {
+					"state": "off",
+					"session_id": null,
+					"seed": null,
+					"initiator": null,
+					"error": null,
+					"event_id": null,
+					"action": null,
+					"actor": null
+				}
+			},
+			"added_count": 0,
+			"skipped_count": 0,
+			"removed_count": 1,
+			"restored_count": 0,
+			"undo_id": "00000000-0000-4000-8000-000000000021",
+			"undo_expires_at": "2026-09-21T12:00:54.500000Z",
+			"actor": {
+				"id": "00000000-0000-4000-8000-000000000001",
+				"name": "Fixture Listener",
+				"avatar": "0abc"
+			},
+			"entries": [
+				{
+					"id": "00000000-0000-4000-8000-000000000003",
+					"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+					"video_id": "GCYGuZGE6DA",
+					"title": null,
+					"uploader": null,
+					"duration_seconds": null,
+					"thumbnail_url": null,
+					"artist": null,
+					"uploader_url": null,
+					"added_by": null,
+					"origin": "manual"
+				}
+			]
+		},
+		"queue_conflict": {
+			"request_id": "00000000-0000-4000-8000-000000000020",
+			"code": "queue_conflict",
+			"entry_id": null,
+			"replayed": false,
+			"snapshot": {
+				"revision": 3,
+				"queue_revision": 3,
+				"state": "playing",
+				"current": {
+					"id": "00000000-0000-4000-8000-000000000002",
+					"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+					"video_id": "GCYGuZGE6DA",
+					"title": "Амура - Я хочу любить",
+					"uploader": "Fixture Artist",
+					"duration_seconds": 180,
+					"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+					"artist": "Амура",
+					"uploader_url": "https://www.youtube.com/@fixture",
+					"added_by": {
+						"id": "00000000-0000-4000-8000-000000000001",
+						"name": "Fixture Listener",
+						"avatar": "0abc"
+					},
+					"origin": "manual"
+				},
+				"upcoming": [
+					{
+						"id": "00000000-0000-4000-8000-000000000003",
+						"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+						"video_id": "GCYGuZGE6DA",
+						"title": null,
+						"uploader": null,
+						"duration_seconds": null,
+						"thumbnail_url": null,
+						"artist": null,
+						"uploader_url": null,
+						"added_by": null,
+						"origin": "manual"
+					}
+				],
+				"recently_played": [
+					{
+						"id": "00000000-0000-4000-8000-000000000004",
+						"played_at": "2026-09-21T12:00:00Z",
+						"entry": {
+							"id": "00000000-0000-4000-8000-000000000002",
+							"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+							"video_id": "GCYGuZGE6DA",
+							"title": "Амура - Я хочу любить",
+							"uploader": "Fixture Artist",
+							"duration_seconds": 180,
+							"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+							"artist": "Амура",
+							"uploader_url": "https://www.youtube.com/@fixture",
+							"added_by": {
+								"id": "00000000-0000-4000-8000-000000000001",
+								"name": "Fixture Listener",
+								"avatar": "0abc"
+							},
+							"origin": "manual"
+						}
+					}
+				],
+				"voice_state": "connected",
+				"channel_id": "123456789012345678",
+				"playback_id": "00000000-0000-4000-8000-000000000005",
+				"volume": 1,
+				"crossfade_seconds": 5,
+				"position_seconds": 42.5,
+				"position_updated_at": "2026-09-21T12:00:42.500000Z",
+				"last_issue": null,
+				"radio": {
+					"state": "off",
+					"session_id": null,
+					"seed": null,
+					"initiator": null,
+					"error": null,
+					"event_id": null,
+					"action": null,
+					"actor": null
+				}
+			},
+			"added_count": 0,
+			"skipped_count": 0,
+			"removed_count": 0,
+			"restored_count": 0,
+			"undo_id": null,
+			"undo_expires_at": null,
+			"actor": null,
+			"entries": []
+		},
+		"undo_unavailable": {
+			"request_id": "00000000-0000-4000-8000-000000000020",
+			"code": "undo_unavailable",
+			"entry_id": null,
+			"replayed": false,
+			"snapshot": {
+				"revision": 3,
+				"queue_revision": 3,
+				"state": "playing",
+				"current": {
+					"id": "00000000-0000-4000-8000-000000000002",
+					"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+					"video_id": "GCYGuZGE6DA",
+					"title": "Амура - Я хочу любить",
+					"uploader": "Fixture Artist",
+					"duration_seconds": 180,
+					"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+					"artist": "Амура",
+					"uploader_url": "https://www.youtube.com/@fixture",
+					"added_by": {
+						"id": "00000000-0000-4000-8000-000000000001",
+						"name": "Fixture Listener",
+						"avatar": "0abc"
+					},
+					"origin": "manual"
+				},
+				"upcoming": [
+					{
+						"id": "00000000-0000-4000-8000-000000000003",
+						"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+						"video_id": "GCYGuZGE6DA",
+						"title": null,
+						"uploader": null,
+						"duration_seconds": null,
+						"thumbnail_url": null,
+						"artist": null,
+						"uploader_url": null,
+						"added_by": null,
+						"origin": "manual"
+					}
+				],
+				"recently_played": [
+					{
+						"id": "00000000-0000-4000-8000-000000000004",
+						"played_at": "2026-09-21T12:00:00Z",
+						"entry": {
+							"id": "00000000-0000-4000-8000-000000000002",
+							"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+							"video_id": "GCYGuZGE6DA",
+							"title": "Амура - Я хочу любить",
+							"uploader": "Fixture Artist",
+							"duration_seconds": 180,
+							"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+							"artist": "Амура",
+							"uploader_url": "https://www.youtube.com/@fixture",
+							"added_by": {
+								"id": "00000000-0000-4000-8000-000000000001",
+								"name": "Fixture Listener",
+								"avatar": "0abc"
+							},
+							"origin": "manual"
+						}
+					}
+				],
+				"voice_state": "connected",
+				"channel_id": "123456789012345678",
+				"playback_id": "00000000-0000-4000-8000-000000000005",
+				"volume": 1,
+				"crossfade_seconds": 5,
+				"position_seconds": 42.5,
+				"position_updated_at": "2026-09-21T12:00:42.500000Z",
+				"last_issue": null,
+				"radio": {
+					"state": "off",
+					"session_id": null,
+					"seed": null,
+					"initiator": null,
+					"error": null,
+					"event_id": null,
+					"action": null,
+					"actor": null
+				}
+			},
+			"added_count": 0,
+			"skipped_count": 0,
+			"removed_count": 0,
+			"restored_count": 0,
+			"undo_id": null,
+			"undo_expires_at": null,
+			"actor": null,
+			"entries": []
+		},
+		"search_stale": {
+			"entries": [
+				{
+					"video_id": "GCYGuZGE6DA",
+					"title": "Амура - Я хочу любить",
+					"uploader": "Fixture Artist",
+					"duration_seconds": 180,
+					"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+					"artist": "Амура",
+					"uploader_url": "https://www.youtube.com/@fixture",
+					"index": 0,
+					"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+					"unavailable": null
+				},
+				{
+					"video_id": "AAAAAAAAA01",
+					"title": "Fixture track 1",
+					"uploader": "Fixture Artist",
+					"duration_seconds": 180,
+					"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+					"artist": "Амура",
+					"uploader_url": "https://www.youtube.com/@fixture",
+					"index": 1,
+					"source_url": "https://www.youtube.com/watch?v=AAAAAAAAA01",
+					"unavailable": null
+				},
+				{
+					"video_id": "AAAAAAAAA02",
+					"title": "Fixture track 2",
+					"uploader": "Fixture Artist",
+					"duration_seconds": 180,
+					"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+					"artist": "Амура",
+					"uploader_url": "https://www.youtube.com/@fixture",
+					"index": 2,
+					"source_url": "https://www.youtube.com/watch?v=AAAAAAAAA02",
+					"unavailable": null
+				},
+				{
+					"video_id": "AAAAAAAAA03",
+					"title": "Fixture track 3",
+					"uploader": "Fixture Artist",
+					"duration_seconds": 180,
+					"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+					"artist": "Амура",
+					"uploader_url": "https://www.youtube.com/@fixture",
+					"index": 3,
+					"source_url": "https://www.youtube.com/watch?v=AAAAAAAAA03",
+					"unavailable": null
+				},
+				{
+					"video_id": "AAAAAAAAA04",
+					"title": "Fixture track 4",
+					"uploader": "Fixture Artist",
+					"duration_seconds": 180,
+					"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+					"artist": "Амура",
+					"uploader_url": "https://www.youtube.com/@fixture",
+					"index": 4,
+					"source_url": "https://www.youtube.com/watch?v=AAAAAAAAA04",
+					"unavailable": null
+				},
+				{
+					"video_id": "AAAAAAAAA05",
+					"title": "Fixture track 5",
+					"uploader": "Fixture Artist",
+					"duration_seconds": 180,
+					"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+					"artist": "Амура",
+					"uploader_url": "https://www.youtube.com/@fixture",
+					"index": 5,
+					"source_url": "https://www.youtube.com/watch?v=AAAAAAAAA05",
+					"unavailable": null
+				},
+				{
+					"video_id": "AAAAAAAAA06",
+					"title": "Fixture track 6",
+					"uploader": "Fixture Artist",
+					"duration_seconds": 180,
+					"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+					"artist": "Амура",
+					"uploader_url": "https://www.youtube.com/@fixture",
+					"index": 6,
+					"source_url": "https://www.youtube.com/watch?v=AAAAAAAAA06",
+					"unavailable": null
+				},
+				{
+					"video_id": "AAAAAAAAA07",
+					"title": "Fixture track 7",
+					"uploader": "Fixture Artist",
+					"duration_seconds": 180,
+					"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+					"artist": "Амура",
+					"uploader_url": "https://www.youtube.com/@fixture",
+					"index": 7,
+					"source_url": "https://www.youtube.com/watch?v=AAAAAAAAA07",
+					"unavailable": null
+				},
+				{
+					"video_id": "AAAAAAAAA08",
+					"title": "Fixture track 8",
+					"uploader": "Fixture Artist",
+					"duration_seconds": 180,
+					"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+					"artist": "Амура",
+					"uploader_url": "https://www.youtube.com/@fixture",
+					"index": 8,
+					"source_url": "https://www.youtube.com/watch?v=AAAAAAAAA08",
+					"unavailable": null
+				},
+				{
+					"video_id": "AAAAAAAAA09",
+					"title": "Fixture track 9",
+					"uploader": "Fixture Artist",
+					"duration_seconds": 180,
+					"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+					"artist": "Амура",
+					"uploader_url": "https://www.youtube.com/@fixture",
+					"index": 9,
+					"source_url": "https://www.youtube.com/watch?v=AAAAAAAAA09",
+					"unavailable": null
+				}
+			],
+			"next_offset": 10,
+			"snapshot_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			"latest_snapshot_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			"refreshing": false,
+			"refresh_error": null
+		},
+		"playlist_ready": {
+			"id": "00000000-0000-4000-8000-000000000030",
+			"source_url": "https://www.youtube.com/playlist?list=PLfixture12345",
+			"state": "ready",
+			"title": "Fixture playlist",
+			"entries": [
+				{
+					"video_id": "GCYGuZGE6DA",
+					"title": "Амура - Я хочу любить",
+					"uploader": "Fixture Artist",
+					"duration_seconds": 180,
+					"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+					"artist": "Амура",
+					"uploader_url": "https://www.youtube.com/@fixture",
+					"index": 0,
+					"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+					"unavailable": null
+				},
+				{
+					"video_id": null,
+					"title": "[Deleted video]",
+					"uploader": null,
+					"duration_seconds": null,
+					"thumbnail_url": null,
+					"artist": null,
+					"uploader_url": null,
+					"index": 1,
+					"source_url": null,
+					"unavailable": "This video is unavailable."
+				},
+				{
+					"video_id": "GCYGuZGE6DA",
+					"title": "Амура - Я хочу любить",
+					"uploader": "Fixture Artist",
+					"duration_seconds": 180,
+					"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+					"artist": "Амура",
+					"uploader_url": "https://www.youtube.com/@fixture",
+					"index": 2,
+					"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+					"unavailable": null
+				}
+			],
+			"limit": 100,
+			"truncated": false,
+			"error": null,
+			"snapshot_id": "cccccccccccccccccccccccccccccccc",
+			"refreshing": true,
+			"refresh_error": null
+		},
+		"radio_preview": {
+			"id": "00000000-0000-4000-8000-000000000031",
+			"seed": {
+				"kind": "track",
+				"identifier": "GCYGuZGE6DA",
+				"title": "Амура - Я хочу любить"
+			},
+			"entries": [
+				{
+					"video_id": "GCYGuZGE6DA",
+					"title": "Амура - Я хочу любить",
+					"uploader": "Fixture Artist",
+					"duration_seconds": 180,
+					"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+					"artist": "Амура",
+					"uploader_url": "https://www.youtube.com/@fixture",
+					"index": 0,
+					"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+					"unavailable": null
+				}
+			]
+		},
+		"channels": [
+			{
+				"id": "123456789012345678",
+				"name": "Music",
+				"can_connect": true,
+				"can_speak": true,
+				"guild_id": "987654321098765432",
+				"guild_name": "Fixture server"
+			}
+		],
+		"signed_out": {
+			"code": "signed_out"
+		},
+		"busy": {
+			"detail": "Discovery is busy. Try again shortly."
+		},
+		"search_expired": {
+			"detail": "These results expired. Refresh the search."
+		},
+		"search_next": {
+			"entries": [
+				{
+					"video_id": "AAAAAAAAA10",
+					"title": "Fixture track 10",
+					"uploader": "Fixture Artist",
+					"duration_seconds": 180,
+					"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+					"artist": "Амура",
+					"uploader_url": "https://www.youtube.com/@fixture",
+					"index": 10,
+					"source_url": "https://www.youtube.com/watch?v=AAAAAAAAA10",
+					"unavailable": null
+				}
+			],
+			"next_offset": null,
+			"snapshot_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			"latest_snapshot_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			"refreshing": false,
+			"refresh_error": null
+		},
+		"seeked": {
+			"request_id": "00000000-0000-4000-8000-000000000023",
+			"code": "ok",
+			"entry_id": null,
+			"replayed": false,
+			"snapshot": {
+				"revision": 5,
+				"queue_revision": 3,
+				"state": "paused",
+				"current": {
+					"id": "00000000-0000-4000-8000-000000000002",
+					"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+					"video_id": "GCYGuZGE6DA",
+					"title": "Амура - Я хочу любить",
+					"uploader": "Fixture Artist",
+					"duration_seconds": 180,
+					"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+					"artist": "Амура",
+					"uploader_url": "https://www.youtube.com/@fixture",
+					"added_by": {
+						"id": "00000000-0000-4000-8000-000000000001",
+						"name": "Fixture Listener",
+						"avatar": "0abc"
+					},
+					"origin": "manual"
+				},
+				"upcoming": [
+					{
+						"id": "00000000-0000-4000-8000-000000000003",
+						"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+						"video_id": "GCYGuZGE6DA",
+						"title": null,
+						"uploader": null,
+						"duration_seconds": null,
+						"thumbnail_url": null,
+						"artist": null,
+						"uploader_url": null,
+						"added_by": null,
+						"origin": "manual"
+					}
+				],
+				"recently_played": [
+					{
+						"id": "00000000-0000-4000-8000-000000000004",
+						"played_at": "2026-09-21T12:00:00Z",
+						"entry": {
+							"id": "00000000-0000-4000-8000-000000000002",
+							"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+							"video_id": "GCYGuZGE6DA",
+							"title": "Амура - Я хочу любить",
+							"uploader": "Fixture Artist",
+							"duration_seconds": 180,
+							"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+							"artist": "Амура",
+							"uploader_url": "https://www.youtube.com/@fixture",
+							"added_by": {
+								"id": "00000000-0000-4000-8000-000000000001",
+								"name": "Fixture Listener",
+								"avatar": "0abc"
+							},
+							"origin": "manual"
+						}
+					}
+				],
+				"voice_state": "connected",
+				"channel_id": "123456789012345678",
+				"playback_id": "00000000-0000-4000-8000-000000000006",
+				"volume": 1,
+				"crossfade_seconds": 5,
+				"position_seconds": 75,
+				"position_updated_at": "2026-09-21T12:00:45Z",
+				"last_issue": null,
+				"radio": {
+					"state": "off",
+					"session_id": null,
+					"seed": null,
+					"initiator": null,
+					"error": null,
+					"event_id": null,
+					"action": null,
+					"actor": null
+				}
+			},
+			"added_count": 0,
+			"skipped_count": 0,
+			"removed_count": 0,
+			"restored_count": 0,
+			"undo_id": null,
+			"undo_expires_at": null,
+			"actor": null,
+			"entries": []
+		},
+		"playback_conflict": {
+			"request_id": "00000000-0000-4000-8000-000000000020",
+			"code": "playback_conflict",
+			"entry_id": null,
+			"replayed": false,
+			"snapshot": {
+				"revision": 3,
+				"queue_revision": 3,
+				"state": "playing",
+				"current": {
+					"id": "00000000-0000-4000-8000-000000000002",
+					"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+					"video_id": "GCYGuZGE6DA",
+					"title": "Амура - Я хочу любить",
+					"uploader": "Fixture Artist",
+					"duration_seconds": 180,
+					"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+					"artist": "Амура",
+					"uploader_url": "https://www.youtube.com/@fixture",
+					"added_by": {
+						"id": "00000000-0000-4000-8000-000000000001",
+						"name": "Fixture Listener",
+						"avatar": "0abc"
+					},
+					"origin": "manual"
+				},
+				"upcoming": [
+					{
+						"id": "00000000-0000-4000-8000-000000000003",
+						"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+						"video_id": "GCYGuZGE6DA",
+						"title": null,
+						"uploader": null,
+						"duration_seconds": null,
+						"thumbnail_url": null,
+						"artist": null,
+						"uploader_url": null,
+						"added_by": null,
+						"origin": "manual"
+					}
+				],
+				"recently_played": [
+					{
+						"id": "00000000-0000-4000-8000-000000000004",
+						"played_at": "2026-09-21T12:00:00Z",
+						"entry": {
+							"id": "00000000-0000-4000-8000-000000000002",
+							"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+							"video_id": "GCYGuZGE6DA",
+							"title": "Амура - Я хочу любить",
+							"uploader": "Fixture Artist",
+							"duration_seconds": 180,
+							"thumbnail_url": "https://i.ytimg.com/vi/GCYGuZGE6DA/hqdefault.jpg",
+							"artist": "Амура",
+							"uploader_url": "https://www.youtube.com/@fixture",
+							"added_by": {
+								"id": "00000000-0000-4000-8000-000000000001",
+								"name": "Fixture Listener",
+								"avatar": "0abc"
+							},
+							"origin": "manual"
+						}
+					}
+				],
+				"voice_state": "connected",
+				"channel_id": "123456789012345678",
+				"playback_id": "00000000-0000-4000-8000-000000000005",
+				"volume": 1,
+				"crossfade_seconds": 5,
+				"position_seconds": 42.5,
+				"position_updated_at": "2026-09-21T12:00:42.500000Z",
+				"last_issue": null,
+				"radio": {
+					"state": "off",
+					"session_id": null,
+					"seed": null,
+					"initiator": null,
+					"error": null,
+					"event_id": null,
+					"action": null,
+					"actor": null
+				}
+			},
+			"added_count": 0,
+			"skipped_count": 0,
+			"removed_count": 0,
+			"restored_count": 0,
+			"undo_id": null,
+			"undo_expires_at": null,
+			"actor": null,
+			"entries": []
+		}
+	},
+	"cases": [
+		{
+			"name": "empty session",
+			"setup": "empty session",
+			"request": {
+				"method": "GET",
+				"path": "/api/state"
+			},
+			"response": {
+				"status": 200,
+				"body": "idle"
+			}
+		},
+		{
+			"name": "confirmed output",
+			"setup": "confirmed output",
+			"request": {
+				"method": "GET",
+				"path": "/api/state"
+			},
+			"response": {
+				"status": 200,
+				"body": "playing"
+			}
+		},
+		{
+			"name": "paused at measured position",
+			"setup": "paused at measured position",
+			"request": {
+				"method": "GET",
+				"path": "/api/state"
+			},
+			"response": {
+				"status": 200,
+				"body": "paused"
+			}
+		},
+		{
+			"name": "radio exhausted while audio continues",
+			"setup": "radio exhausted while audio continues",
+			"request": {
+				"method": "GET",
+				"path": "/api/state"
+			},
+			"response": {
+				"status": 200,
+				"body": "radio_waiting"
+			}
+		},
+		{
+			"name": "issue includes affected entry",
+			"setup": "issue includes affected entry",
+			"request": {
+				"method": "GET",
+				"path": "/api/state"
+			},
+			"response": {
+				"status": 200,
+				"body": "playback_issue"
+			}
+		},
+		{
+			"name": "add link with pending metadata",
+			"setup": "add link with pending metadata",
+			"request": {
+				"method": "POST",
+				"path": "/api/queue",
+				"json": {
+					"source_url": "https://music.youtube.com/watch?v=GCYGuZGE6DA&list=PLfixture12345"
+				},
+				"headers": {
+					"Idempotency-Key": "00000000-0000-4000-8000-000000000020"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": "added"
+			}
+		},
+		{
+			"name": "remove",
+			"setup": "remove",
+			"request": {
+				"method": "DELETE",
+				"path": "/api/queue/00000000-0000-4000-8000-000000000003",
+				"headers": {
+					"Idempotency-Key": "00000000-0000-4000-8000-000000000020"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": "removed"
+			}
+		},
+		{
+			"name": "restore",
+			"setup": "restore",
+			"request": {
+				"method": "POST",
+				"path": "/api/queue/undo",
+				"json": {
+					"undo_id": "00000000-0000-4000-8000-000000000021"
+				},
+				"headers": {
+					"Idempotency-Key": "00000000-0000-4000-8000-000000000022"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": "restored"
+			}
+		},
+		{
+			"name": "replay same removal after profile rename",
+			"setup": "same removal key retried after a profile rename and a volume change",
+			"request": {
+				"method": "DELETE",
+				"path": "/api/queue/00000000-0000-4000-8000-000000000003",
+				"headers": {
+					"Idempotency-Key": "00000000-0000-4000-8000-000000000020"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": "replayed"
+			}
+		},
+		{
+			"name": "stale queue revision",
+			"setup": "stale queue revision",
+			"request": {
+				"method": "POST",
+				"path": "/api/queue/clear",
+				"json": {
+					"expected_queue_revision": 2
+				},
+				"headers": {
+					"Idempotency-Key": "00000000-0000-4000-8000-000000000020"
+				}
+			},
+			"response": {
+				"status": 409,
+				"body": "queue_conflict"
+			}
+		},
+		{
+			"name": "expired undo",
+			"setup": "expired undo",
+			"request": {
+				"method": "POST",
+				"path": "/api/queue/undo",
+				"json": {
+					"undo_id": "00000000-0000-4000-8000-000000000021"
+				},
+				"headers": {
+					"Idempotency-Key": "00000000-0000-4000-8000-000000000020"
+				}
+			},
+			"response": {
+				"status": 410,
+				"body": "undo_unavailable"
+			}
+		},
+		{
+			"name": "known search version with update available",
+			"setup": "known search version with update available",
+			"request": {
+				"method": "GET",
+				"path": "/api/catalog/search?q=Fixture&source=youtube_music&offset=0&snapshot_id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+			},
+			"response": {
+				"status": 200,
+				"body": "search_stale"
+			}
+		},
+		{
+			"name": "cached playlist with duplicate and unavailable occurrences",
+			"setup": "authenticated owner opens cached playlist",
+			"request": {
+				"method": "POST",
+				"path": "/api/youtube/playlists",
+				"headers": {
+					"Idempotency-Key": "00000000-0000-4000-8000-000000000030"
+				},
+				"json": {
+					"source_url": "https://www.youtube.com/playlist?list=PLfixture12345"
+				}
+			},
+			"response": {
+				"status": 202,
+				"body": "playlist_ready"
+			}
+		},
+		{
+			"name": "radio preview does not enqueue",
+			"setup": "authenticated owner requests recommendations",
+			"request": {
+				"method": "POST",
+				"path": "/api/radio/preview",
+				"headers": {
+					"Idempotency-Key": "00000000-0000-4000-8000-000000000031"
+				},
+				"json": {
+					"kind": "track",
+					"source_url": "https://www.youtube.com/watch?v=GCYGuZGE6DA",
+					"title": "Амура - Я хочу любить"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": "radio_preview"
+			}
+		},
+		{
+			"name": "channel permissions and guild",
+			"setup": "channel permissions and guild",
+			"request": {
+				"method": "GET",
+				"path": "/api/channels"
+			},
+			"response": {
+				"status": 200,
+				"body": "channels"
+			}
+		},
+		{
+			"name": "unauthenticated state",
+			"setup": "no session cookie",
+			"request": {
+				"method": "GET",
+				"path": "/api/state"
+			},
+			"response": {
+				"status": 401,
+				"body": "signed_out"
+			}
+		},
+		{
+			"name": "discovery capacity",
+			"setup": "discovery raises a controlled CatalogBusy with the fixture detail",
+			"request": {
+				"method": "GET",
+				"path": "/api/catalog/search?q=Fixture"
+			},
+			"response": {
+				"status": 429,
+				"headers": {
+					"retry-after": "5"
+				},
+				"body": "busy"
+			}
+		},
+		{
+			"name": "expired search version",
+			"setup": "requested snapshot no longer available",
+			"request": {
+				"method": "GET",
+				"path": "/api/catalog/search?q=Fixture&snapshot_id=dddddddddddddddddddddddddddddddd"
+			},
+			"response": {
+				"status": 410,
+				"body": "search_expired"
+			}
+		},
+		{
+			"name": "next search page keeps accepted version",
+			"setup": "same retained search snapshot, next offset",
+			"request": {
+				"method": "GET",
+				"path": "/api/catalog/search?q=Fixture&source=youtube_music&offset=10&snapshot_id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+			},
+			"response": {
+				"status": 200,
+				"body": "search_next"
+			}
+		},
+		{
+			"name": "seek while paused preserves logical listen",
+			"setup": "paused fixture at 42.5 seconds",
+			"request": {
+				"method": "PUT",
+				"path": "/api/player/seek",
+				"headers": {
+					"Idempotency-Key": "00000000-0000-4000-8000-000000000023"
+				},
+				"json": {
+					"position_seconds": 75,
+					"expected_playback_id": "00000000-0000-4000-8000-000000000005"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": "seeked"
+			}
+		},
+		{
+			"name": "stale playback control",
+			"setup": "current playback attempt is the playing fixture",
+			"request": {
+				"method": "POST",
+				"path": "/api/player/skip",
+				"headers": {
+					"Idempotency-Key": "00000000-0000-4000-8000-000000000020"
+				},
+				"json": {
+					"expected_playback_id": "00000000-0000-4000-8000-000000000099"
+				}
+			},
+			"response": {
+				"status": 409,
+				"body": "playback_conflict"
+			}
+		}
+	],
+	"sse": {
+		"request": {
+			"method": "GET",
+			"path": "/api/events",
+			"headers": {
+				"Last-Event-ID": "1"
+			}
+		},
+		"state_body": "playing",
+		"auth_body": "signed_out",
+		"close_after_auth": true
+	}
+}

@@ -2,6 +2,10 @@
 
 Parent: [Project README](../README.md)
 
+The deployed architecture below is being replaced by a separately tested engine.
+See [Engine API and isolated migration](engine-api.md) for its ownership, contracts
+and migration procedure. It is not connected to the running frontend yet.
+
 ## Backend modules
 
 - `domain/` defines immutable values, commands and FSM transitions without

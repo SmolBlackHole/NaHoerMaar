@@ -2,6 +2,10 @@
 
 Parent: [Project README](../README.md)
 
+The parallel backend rewrite has separate [engine/API development notes](engine-api.md).
+The commands below still launch the deployed implementation; they do not migrate
+its database or switch it to the new engine.
+
 Python 3.12+ and Node.js 24.11+ with npm are required.
 
 ## Set up

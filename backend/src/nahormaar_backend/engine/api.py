@@ -1,0 +1,487 @@
+# SPDX-FileCopyrightText: 2026 SmolBlackHole
+#
+# SPDX-License-Identifier: MPL-2.0
+
+"""Engine-native HTTP operations and committed-state event delivery."""
+
+import asyncio
+import logging
+from collections.abc import AsyncGenerator, Callable
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from dataclasses import asdict
+from typing import Annotated, Literal, cast
+from urllib.parse import urlsplit
+from uuid import UUID
+
+from fastapi import FastAPI, Header, Query, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
+from fastapi.sse import EventSourceResponse, ServerSentEvent
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.exc import SQLAlchemyError
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+
+from ..application.auth import ACCESS_CHECK_SECONDS, SESSION_COOKIE, Auth
+from ..domain.identity import AuthError
+from .domain.catalog import MediaReference, TrackFinding, TrackPage
+from .catalog import Catalog
+from .domain.playback import Control, Join, Seek, SetCrossfade, SetVolume
+from .domain.queue import Add, Clear, Contributor, Move, Remove, Undo
+from .domain.radio import RadioStrategy, RetryRadio, StartRadio, StopRadio
+from .domain.sessions import SessionSnapshot
+from .http_auth import AuthBoundary, CurrentUser, auth_router
+from .providers import ProviderError, UnsupportedCapability
+from .runtime import Services
+from .session import Command
+
+type OperationID = Annotated[UUID, Header(alias="Idempotency-Key")]
+_LOGGER = logging.getLogger(__name__)
+
+
+class Input(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+
+class AddInput(Input):
+    track_ids: tuple[UUID, ...] = Field(min_length=1, max_length=100)
+    skip_duplicates: bool = False
+
+
+class ClearInput(Input):
+    expected_queue_revision: int = Field(ge=0)
+    contributor_id: UUID | None = None
+
+
+class MoveInput(Input):
+    expected_queue_revision: int = Field(ge=0)
+    before_entry_id: UUID | None
+
+
+class ControlInput(Input):
+    action: Literal["play", "pause", "skip", "stop", "leave"]
+    expected_attempt_id: UUID | None = None
+
+
+class SeekInput(Input):
+    seconds: float = Field(ge=0)
+    expected_attempt_id: UUID
+
+
+class VolumeInput(Input):
+    volume: float = Field(ge=0, le=1)
+
+
+class CrossfadeInput(Input):
+    seconds: Literal[0, 3, 4, 5, 6, 7]
+
+
+class JoinInput(Input):
+    channel_id: str = Field(pattern=r"^[1-9][0-9]{0,19}$")
+
+
+class LinkInput(Input):
+    source_url: str = Field(min_length=1, max_length=2048)
+    provider: str | None = Field(default=None, max_length=40)
+    refresh: bool = False
+
+
+class RadioInput(Input):
+    seed: MediaReference
+    expected_generation: UUID | None
+
+
+async def state_document(
+    services: Services, snapshot: SessionSnapshot
+) -> dict[str, object]:
+    identifiers = {entry.track_id for entry in snapshot.queue.entries} | {
+        record.track_id for record in snapshot.history
+    }
+    if snapshot.checkpoint.track_id:
+        identifiers.add(snapshot.checkpoint.track_id)
+    tracks = await services.metadata.get_many(tuple(identifiers))
+    radio = snapshot.strategy
+    return cast(
+        dict[str, object],
+        jsonable_encoder(
+            {
+                "session": asdict(snapshot.settings)
+                | {
+                    "channel_id": str(snapshot.settings.channel_id)
+                    if snapshot.settings.channel_id
+                    else None
+                },
+                "queue": snapshot.queue.entries,
+                "checkpoint": snapshot.checkpoint,
+                "playback": snapshot.playback,
+                "history": snapshot.history,
+                "radio": {
+                    "mode": "radio",
+                    "generation": radio.generation,
+                    "seed": radio.seed,
+                    "state": radio.state,
+                    "initiator": radio.initiator,
+                    "error": radio.error,
+                }
+                if isinstance(radio, RadioStrategy)
+                else {"mode": "manual"},
+                "tracks": {str(track.id): track for track in tracks},
+            }
+        ),
+    )
+
+
+async def event_stream(
+    services: Services, token: str | None
+) -> AsyncGenerator[ServerSentEvent]:
+    """Always send a resync snapshot; the in-memory bus is not a durable log."""
+    async with services.session.events.subscribe() as changes:
+        initial: SessionSnapshot | None = services.session.snapshot
+        while True:
+            try:
+                await services.auth.authenticate(token)
+                if initial is not None:
+                    document = await state_document(services, initial)
+                    await services.auth.authenticate(token)
+                    yield ServerSentEvent(
+                        event="state", id=str(initial.settings.revision), data=document
+                    )
+                    initial = None
+                    continue
+                async with asyncio.timeout(ACCESS_CHECK_SECONDS):
+                    change = await changes.get()
+                if change is None:
+                    return
+                document = await state_document(services, change.after)
+                await services.auth.authenticate(token)
+                yield ServerSentEvent(
+                    event="change",
+                    id=str(change.after.settings.revision),
+                    data={
+                        "action": change.action,
+                        "outcome": jsonable_encoder(change.outcome),
+                        "state": document,
+                    },
+                )
+            except TimeoutError:
+                continue
+            except AuthError as error:
+                yield ServerSentEvent(event="auth", data={"code": error.code})
+                return
+            except SQLAlchemyError:
+                yield ServerSentEvent(event="auth", data={"code": "auth_unavailable"})
+                return
+
+
+def create_app(
+    runtime: Callable[[], AbstractAsyncContextManager[Services]], *, public_origin: str
+) -> FastAPI:
+    active: Services | None = None
+
+    def services() -> Services:
+        if active is None:
+            raise AuthError("backend_unavailable", 503)
+        return active
+
+    def auth() -> Auth:
+        return services().auth
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
+        nonlocal active
+        async with runtime() as opened:
+            if opened.auth.settings.public_origin != public_origin:
+                raise ValueError("HTTP and authentication origins must agree.")
+            active = opened
+            try:
+                yield
+            finally:
+                opened.session.events.close()
+                active = None
+
+    app = FastAPI(title="NaHörMaar engine", lifespan=lifespan)
+    app.add_middleware(AuthBoundary, service=auth)
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=[
+            urlsplit(public_origin).hostname or "localhost",
+            "localhost",
+            "127.0.0.1",
+            "[::1]",
+        ],
+    )
+    app.include_router(auth_router(auth))
+
+    @app.exception_handler(AuthError)
+    async def auth_error(request: Request, error: AuthError) -> JSONResponse:
+        return JSONResponse({"code": error.code}, status_code=error.status)
+
+    @app.exception_handler(ValueError)
+    @app.exception_handler(LookupError)
+    async def invalid(request: Request, error: Exception) -> JSONResponse:
+        return JSONResponse(
+            {
+                "code": "not_found"
+                if isinstance(error, LookupError)
+                else "invalid_request"
+            },
+            status_code=404 if isinstance(error, LookupError) else 422,
+        )
+
+    @app.exception_handler(RuntimeError)
+    @app.exception_handler(SQLAlchemyError)
+    async def unavailable(request: Request, error: Exception) -> JSONResponse:
+        if isinstance(error, UnsupportedCapability):
+            return JSONResponse(
+                {"code": "unsupported_source", "message": str(error)}, status_code=422
+            )
+        if isinstance(error, ProviderError):
+            return JSONResponse(
+                {"code": "provider_unavailable", "retryable": error.retryable},
+                status_code=502,
+            )
+        _LOGGER.error("engine.api.failed: %s", type(error).__name__)
+        return JSONResponse({"code": "backend_unavailable"}, status_code=503)
+
+    async def mutate(
+        command: Command,
+        operation: UUID,
+        user: CurrentUser,
+        *,
+        attempt: UUID | None = None,
+    ) -> JSONResponse:
+        value = services()
+        reply = await value.session.request(
+            operation,
+            command,
+            actor=Contributor(**asdict(user.account.profile)),
+            expected_attempt_id=attempt,
+        )
+        code = reply.outcome.code
+        status = (
+            200
+            if code == "ok"
+            else 409
+            if code.endswith("conflict") or code == "undo_unavailable"
+            else 404
+            if code == "entry_not_found"
+            else 422
+        )
+        return JSONResponse(
+            {
+                "state": await state_document(value, reply.snapshot),
+                "outcome": jsonable_encoder(reply.outcome),
+                "replayed": reply.replayed,
+            },
+            status_code=status,
+        )
+
+    @app.get("/api/session")
+    async def state() -> dict[str, object]:
+        return await state_document(services(), services().session.snapshot)
+
+    @app.get("/api/channels")
+    async def channels() -> list[dict[str, object]]:
+        return cast(
+            list[dict[str, object]],
+            [
+                asdict(channel)
+                | {"id": str(channel.id), "guild_id": str(channel.guild_id)}
+                for channel in services().voice.channels()
+            ],
+        )
+
+    @app.get("/api/events", response_class=EventSourceResponse)
+    async def events(request: Request) -> AsyncGenerator[ServerSentEvent]:
+        async for event in event_stream(
+            services(), request.cookies.get(SESSION_COOKIE)
+        ):
+            yield event
+
+    @app.post("/api/queue")
+    async def add(
+        body: AddInput, operation: OperationID, user: CurrentUser
+    ) -> JSONResponse:
+        return await mutate(Add(body.track_ids, body.skip_duplicates), operation, user)
+
+    @app.delete("/api/queue/{entry_id}")
+    async def remove(
+        entry_id: UUID, operation: OperationID, user: CurrentUser
+    ) -> JSONResponse:
+        return await mutate(Remove(entry_id), operation, user)
+
+    @app.put("/api/queue/{entry_id}/position")
+    async def move(
+        entry_id: UUID, body: MoveInput, operation: OperationID, user: CurrentUser
+    ) -> JSONResponse:
+        return await mutate(
+            Move(entry_id, body.before_entry_id, body.expected_queue_revision),
+            operation,
+            user,
+        )
+
+    @app.post("/api/queue/clear")
+    async def clear(
+        body: ClearInput, operation: OperationID, user: CurrentUser
+    ) -> JSONResponse:
+        return await mutate(
+            Clear(body.expected_queue_revision, body.contributor_id), operation, user
+        )
+
+    @app.post("/api/queue/undo/{undo_id}")
+    async def undo(
+        undo_id: UUID, operation: OperationID, user: CurrentUser
+    ) -> JSONResponse:
+        return await mutate(Undo(undo_id), operation, user)
+
+    @app.post("/api/playback/control")
+    async def control(
+        body: ControlInput, operation: OperationID, user: CurrentUser
+    ) -> JSONResponse:
+        if (
+            body.action in {"pause", "skip", "stop"}
+            and body.expected_attempt_id is None
+        ):
+            raise ValueError("This control needs the current playback attempt.")
+        return await mutate(
+            Control(body.action), operation, user, attempt=body.expected_attempt_id
+        )
+
+    @app.put("/api/playback/position")
+    async def seek(
+        body: SeekInput, operation: OperationID, user: CurrentUser
+    ) -> JSONResponse:
+        return await mutate(
+            Seek(body.seconds), operation, user, attempt=body.expected_attempt_id
+        )
+
+    @app.put("/api/playback/volume")
+    async def volume(
+        body: VolumeInput, operation: OperationID, user: CurrentUser
+    ) -> JSONResponse:
+        return await mutate(SetVolume(body.volume), operation, user)
+
+    @app.put("/api/playback/crossfade")
+    async def crossfade(
+        body: CrossfadeInput, operation: OperationID, user: CurrentUser
+    ) -> JSONResponse:
+        return await mutate(SetCrossfade(body.seconds), operation, user)
+
+    @app.put("/api/connection")
+    async def join(
+        body: JoinInput, operation: OperationID, user: CurrentUser
+    ) -> JSONResponse:
+        channel_id = int(body.channel_id)
+        if channel_id > 2**63 - 1:
+            raise ValueError("Channel ID exceeds the supported integer range.")
+        return await mutate(Join(channel_id), operation, user)
+
+    @app.post("/api/radio")
+    async def radio(
+        body: RadioInput, operation: OperationID, user: CurrentUser
+    ) -> JSONResponse:
+        return await mutate(
+            StartRadio(body.seed, body.expected_generation), operation, user
+        )
+
+    @app.post("/api/radio/{generation}/{action}")
+    async def radio_control(
+        generation: UUID,
+        action: Literal["stop", "retry"],
+        operation: OperationID,
+        user: CurrentUser,
+    ) -> JSONResponse:
+        return await mutate(
+            StopRadio(generation) if action == "stop" else RetryRadio(generation),
+            operation,
+            user,
+        )
+
+    @app.get("/api/catalog/search")
+    async def search(
+        q: Annotated[str, Query(min_length=1, max_length=200)],
+        provider: str = "youtube_music",
+        refresh: bool = False,
+    ) -> object:
+        value = await services().catalog.search(
+            q, provider_key=provider, refresh=refresh
+        )
+        return await discovery_document(value.version, value.value, services().catalog)
+
+    @app.post("/api/catalog/playlist")
+    async def playlist(body: LinkInput) -> object:
+        value = await services().catalog.playlist(
+            body.source_url, provider_key=body.provider, refresh=body.refresh
+        )
+        return {
+            "playlist": value.value.reference,
+            "title": value.value.title,
+            **await discovery_document(
+                value.version, value.value.page, services().catalog, playlist=True
+            ),
+        }
+
+    @app.post("/api/catalog/track")
+    async def track(body: LinkInput) -> object:
+        return await services().catalog.track(
+            body.source_url, provider_key=body.provider
+        )
+
+    @app.get("/api/catalog/{kind}/{version}")
+    async def snapshot(
+        kind: Literal["search", "playlist"],
+        version: UUID,
+        offset: Annotated[int, Query(ge=0)] = 0,
+        limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    ) -> object:
+        catalog = services().catalog
+        value = (
+            catalog.playlist_snapshot(version).value.page
+            if kind == "playlist"
+            else catalog.search_snapshot(version).value
+        )
+        return await discovery_document(
+            version,
+            value,
+            catalog,
+            playlist=kind == "playlist",
+            offset=offset,
+            limit=limit,
+        )
+
+    async def discovery_document(
+        version: UUID,
+        page: TrackPage,
+        catalog: Catalog,
+        *,
+        playlist: bool = False,
+        offset: int = 0,
+        limit: int = 20,
+    ) -> dict[str, object]:
+        visible = page.entries[offset : offset + limit]
+        tracks = await services().metadata.get_many(
+            tuple(
+                entry.reference.identity
+                for entry in visible
+                if isinstance(entry, TrackFinding)
+            )
+        )
+        by_identity = {track.identity: track.id for track in tracks}
+        return {
+            "version": version,
+            "offset": offset,
+            "total": len(page.entries),
+            "error": page.error,
+            "entries": [
+                {
+                    "position": offset + index,
+                    "track_id": by_identity[entry.reference.identity]
+                    if isinstance(entry, TrackFinding)
+                    else None,
+                    "finding": entry,
+                }
+                for index, entry in enumerate(visible)
+            ],
+            "refresh": catalog.refresh_status(version, playlist=playlist),
+        }
+
+    return app
