@@ -29,6 +29,7 @@ pid_file = pathlib.Path(sys.argv[1])
 pending_file = pid_file.with_suffix(".pending")
 pending_file.write_text(str(child.pid), encoding="ascii")
 pending_file.replace(pid_file)
+print(child.pid, flush=True)
 time.sleep(60)
 """
 
@@ -130,20 +131,21 @@ def test_cancellation_terminates_descendants(tmp_path: Path) -> None:
     child_pid_file = tmp_path / "cancelled-child.pid"
 
     async def cancel_process() -> int:
+        child_ready: asyncio.Future[int] = asyncio.get_running_loop().create_future()
         task = asyncio.create_task(
             run_process(
                 [sys.executable, "-c", _SPAWN_DESCENDANT, child_pid_file],
                 timeout=10,
+                on_stdout_line=lambda line: child_ready.set_result(int(line)),
             )
         )
-        async with asyncio.timeout(2):
-            while not child_pid_file.exists():
-                await asyncio.sleep(0.01)
-        child_pid = int(child_pid_file.read_text(encoding="ascii"))
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
-        return child_pid
+        try:
+            async with asyncio.timeout(2):
+                return await asyncio.shield(child_ready)
+        finally:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
 
     child_pid = asyncio.run(cancel_process())
     assert not psutil.pid_exists(child_pid)
