@@ -248,13 +248,22 @@ def create_app(
                 watcher.cancel()
                 await asyncio.gather(watcher, return_exceptions=True)
 
+    error_responses: dict[int | str, dict[str, object]] = {
+        status: {"model": ApiError, "description": description}
+        for status, description in (
+            (401, "Unauthorized"),
+            (403, "Forbidden"),
+            (404, "Not Found"),
+            (409, "Conflict"),
+            (422, "Unprocessable Content"),
+            (502, "Bad Gateway"),
+            (503, "Service Unavailable"),
+        )
+    }
     app = FastAPI(
         title="NaHörMaar engine",
         lifespan=lifespan,
-        responses={
-            status: {"model": ApiError}
-            for status in (401, 403, 404, 409, 422, 502, 503)
-        },
+        responses=error_responses,
     )
     app.add_middleware(AuthBoundary, service=auth)
     app.add_middleware(
@@ -390,7 +399,8 @@ def create_app(
             yield event
 
     mutation_errors: dict[int | str, dict[str, object]] = {
-        status: {"model": MutationView | ApiError} for status in (404, 409, 422)
+        status: {**error_responses[status], "model": MutationView | ApiError}
+        for status in (404, 409, 422)
     }
 
     @app.post("/api/queue", response_model=MutationView, responses=mutation_errors)

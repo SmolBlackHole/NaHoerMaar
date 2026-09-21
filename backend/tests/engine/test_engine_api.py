@@ -3,9 +3,10 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import asyncio
+import http.client
 import json
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import replace
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -330,8 +331,6 @@ def test_playlist_refresh_preserves_version_title_and_pagination(
 
 
 def test_schema_export_never_opens_runtime() -> None:
-    from contextlib import AbstractAsyncContextManager
-
     def forbidden() -> AbstractAsyncContextManager[Services]:
         raise AssertionError("Schema generation tried to start services")
 
@@ -361,6 +360,24 @@ def test_schema_export_never_opens_runtime() -> None:
     assert schema["paths"]["/api/events"]["get"]["x-sse-payloads"]["change"][
         "$ref"
     ].endswith("/ChangeView")
+
+
+def test_schema_response_descriptions_do_not_depend_on_python(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def forbidden() -> AbstractAsyncContextManager[Services]:
+        raise AssertionError("Schema generation tried to start services")
+
+    monkeypatch.setitem(http.client.responses, 422, "Unprocessable Entity")
+    python312 = create_app(forbidden, public_origin="http://localhost").openapi()
+    monkeypatch.setitem(http.client.responses, 422, "Unprocessable Content")
+    python314 = create_app(forbidden, public_origin="http://localhost").openapi()
+
+    assert python312 == python314
+    assert (
+        python312["paths"]["/api/queue"]["post"]["responses"]["422"]["description"]
+        == "Unprocessable Content"
+    )
 
 
 def test_http_playback_guards_and_recovery_share_session(tmp_path: Path) -> None:
