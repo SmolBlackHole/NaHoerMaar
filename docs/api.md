@@ -12,6 +12,7 @@ Protected calls need a session cookie; mutations also need the configured origin
 and CSRF token. Queue, playback, connection and radio commands additionally use
 an `Idempotency-Key` UUID.
 
-The existing frontend still uses the old contract and cannot control this backend
-until its separate adaptation. See the [rewrite status](../refactoring.md) for
-cutover evidence and the outstanding Discord listening acceptance.
+The Nuxt proxy forwards this contract directly. The player client resolves track
+references into display entries without sending that projection back to the API.
+See [engine verification](engine-api.md#verification) for the checked boundaries
+and the outstanding Discord listening acceptance.

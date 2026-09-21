@@ -2,6 +2,7 @@
 import {
 	musicSource,
 	selectedSources,
+	selectedTrackIds,
 	reconcileSelection,
 	importCounts,
 	type CatalogTrack,
@@ -81,9 +82,9 @@ watch(
 async function startRadio() {
 	if (!radio.preview) return;
 	if (
-		await player.mutate("/api/radio/start", "POST", {
-			preview_id: radio.preview.id,
-			expected_session_id: player.snapshot?.radio?.session_id ?? null,
+		await player.mutate("/api/radio", "POST", {
+			seed: radio.preview.seed,
+			expected_generation: player.snapshot?.radio?.generation ?? null,
 		})
 	)
 		panelOpen.value = false;
@@ -151,8 +152,8 @@ async function submit() {
 }
 
 async function addResult(item: CatalogTrack) {
-	if (!item.source_url || item.unavailable) return;
-	await player.add(item.source_url);
+	if (!item.track_id || item.unavailable) return;
+	await player.addMany([item.track_id]);
 }
 
 function toggle(index: number) {
@@ -173,12 +174,11 @@ async function importSelection() {
 	if (importing.value || preview.value?.state !== "ready" || !selection.value.length) return;
 	importing.value = true;
 	try {
-		const urls = [...selection.value];
+		const trackIds = selectedTrackIds(preview.value.entries, selected.value);
 		const importedPreview = preview.value.id;
 		const importedSelection = selected.value;
 		const skip = skipDuplicates.value;
-		if (!(await library.validatePreview()) || preview.value?.id !== importedPreview) return;
-		if (await player.addMany(urls, skip)) {
+		if (await player.addMany(trackIds, skip)) {
 			if (preview.value?.id === importedPreview && selected.value === importedSelection)
 				selected.value = new Set();
 			if (preview.value?.id === importedPreview) panelOpen.value = false;
@@ -293,19 +293,12 @@ onBeforeUnmount(library.dispose);
 							@click="radio.source && radio.open(radio.source)"
 						/>
 					</div>
-					<PlayerCatalogList
-						v-else
-						:entries="radio.preview?.entries ?? []"
-						:loading="radio.loading"
-						:enabled="player.enabled"
-						@add="addResult"
-					/>
-					<p
-						v-if="radio.preview && !radio.preview.entries.length"
-						class="py-6 text-sm text-muted"
-					>
-						No recommendations available for this {{ radio.source?.kind }}. Try another
-						starting point.
+					<p v-else class="py-6 text-sm text-muted" role="status">
+						{{
+							radio.loading
+								? "Preparing radio…"
+								: "Start radio to automatically find and queue similar tracks as you listen."
+						}}
 					</p>
 				</div>
 				<template v-else>
@@ -509,10 +502,8 @@ onBeforeUnmount(library.dispose);
 						:icon="icons.radio"
 						color="primary"
 						class="min-h-11 ml-auto"
-						:disabled="
-							!player.enabled || radio.loading || !radio.preview?.entries.length
-						"
-						:loading="player.isPending('/api/radio/start')"
+						:disabled="!player.enabled || radio.loading || !radio.preview"
+						:loading="player.isPending('/api/radio')"
 						@click="startRadio"
 					/>
 				</div>

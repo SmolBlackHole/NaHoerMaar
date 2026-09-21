@@ -30,11 +30,10 @@ server sessions, saved playlists, reactions and richer listening recaps are on t
 
 ## Development
 
-The backend has switched to the new engine and its native API. The existing
-frontend still needs adaptation and cannot control this API yet. Authentication
-remains available. See the [engine API](docs/engine-api.md) and
-[cutover status](refactoring.md) for current contracts and the remaining listening
-acceptance.
+The backend and Nuxt dashboard use the new engine's native API, including
+track-ID queue operations, versioned discovery and live session updates.
+See the [engine API](docs/engine-api.md) for current contracts and the remaining
+Discord listening acceptance.
 
 Install Python 3.12+ and Node.js 24.11+ with npm. From the repository root, run:
 

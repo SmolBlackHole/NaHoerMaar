@@ -6,6 +6,7 @@ export type PlaybackAction = "play" | "pause" | "skip" | "stop";
 
 export interface QueueEntry {
 	id: string;
+	track_id: string;
 	source_url: string;
 	video_id: string | null;
 	title: string | null;
@@ -44,6 +45,8 @@ export function groupHistory(history: readonly HistoryEntry[]): RecentTrack[] {
 }
 
 export interface PlayerState {
+	session_id: string;
+	attempt_id: string | null;
 	radio: RadioStatus;
 	revision: number;
 	queue_revision: number;
@@ -82,11 +85,8 @@ export interface VoiceChannel {
 }
 
 export interface MutationResult {
-	request_id: string;
 	code: string;
-	entry_id: string | null;
 	replayed: boolean;
-	snapshot: PlayerState;
 	added_count: number;
 	skipped_count: number;
 	removed_count: number;
@@ -227,13 +227,14 @@ export function playbackPosition(state: PlayerState, now: number): number {
 
 export function canControl(state: PlayerState | null, action: PlaybackAction): boolean {
 	if (!state || state.last_issue?.fatal) return false;
-	if (action === "stop" || action === "skip") return state.current !== null;
+	if (action === "stop" || action === "skip")
+		return state.current !== null && state.attempt_id !== null;
 	if (action === "pause") return state.state === "playing";
 	return (
 		state.voice_state === "connected" &&
 		(state.state === "paused" ||
 			state.state === "error" ||
-			(state.state === "idle" && state.upcoming.length > 0))
+			(state.state === "idle" && (state.upcoming.length > 0 || state.current !== null)))
 	);
 }
 

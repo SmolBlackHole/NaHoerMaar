@@ -32,7 +32,7 @@ describe("server sessions", () => {
 		await client.restore();
 		expect(client.profile.value?.name).toBe("Alice");
 		fetcher.mockResolvedValue(Response.json({}));
-		await client.request("/api/state");
+		await client.request("/api/session");
 		expect(new Headers(fetcher.mock.lastCall?.[1]?.headers).has("X-CSRF-Token")).toBe(false);
 		await client.request("/api/queue", { method: "POST", body: "{}" });
 		expect(new Headers(fetcher.mock.lastCall?.[1]?.headers).get("X-CSRF-Token")).toBe(
@@ -49,7 +49,7 @@ describe("server sessions", () => {
 		await client.restore();
 		expect(client.status.value).toBe(expected);
 		expect(client.profile.value).toBeNull();
-		await expect(client.request("/api/state")).rejects.toBeInstanceOf(SessionLost);
+		await expect(client.request("/api/session")).rejects.toBeInstanceOf(SessionLost);
 	});
 	it("keeps network failure separate from denial and permits retry", async () => {
 		const { client, fetcher } = setup();

@@ -3,10 +3,8 @@ const player = usePlayerStore();
 const { icons } = useTheme();
 const radio = computed(() => player.snapshot?.radio);
 function control(action: "retry" | "stop") {
-	if (radio.value?.session_id)
-		void player.mutate(`/api/radio/${action}`, "POST", {
-			expected_session_id: radio.value.session_id,
-		});
+	if (radio.value?.generation)
+		void player.mutate(`/api/radio/${radio.value.generation}/${action}`, "POST");
 }
 </script>
 
@@ -14,7 +12,7 @@ function control(action: "retry" | "stop") {
 	<div v-if="radio && radio.state !== 'off'" class="radio-status" aria-label="Active radio">
 		<UIcon :name="icons.radio" class="size-5 shrink-0 text-primary" />
 		<div class="min-w-0 flex-1">
-			<p class="text-sm text-highlighted truncate">Radio · {{ radio.seed?.title }}</p>
+			<p class="text-sm text-highlighted truncate">Radio · {{ radio.title }}</p>
 			<p class="mt-1 text-xs text-muted" role="status">
 				{{
 					radio.error ||
@@ -35,7 +33,7 @@ function control(action: "retry" | "stop") {
 				color="neutral"
 				class="min-h-11"
 				:disabled="!player.enabled"
-				:loading="player.isPending('/api/radio/retry')"
+				:loading="player.isPending(`/api/radio/${radio.generation}/retry`)"
 				@click="control('retry')"
 			/>
 			<UButton
@@ -44,7 +42,7 @@ function control(action: "retry" | "stop") {
 				color="neutral"
 				class="min-h-11"
 				:disabled="!player.enabled"
-				:loading="player.isPending('/api/radio/stop')"
+				:loading="player.isPending(`/api/radio/${radio.generation}/stop`)"
 				@click="control('stop')"
 			/>
 		</div>

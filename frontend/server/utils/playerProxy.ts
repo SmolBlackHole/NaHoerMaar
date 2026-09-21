@@ -8,10 +8,10 @@ import {
 } from "h3";
 
 const routes: Record<string, RegExp> = {
-	GET: /^\/api\/(auth\/(session|discord(?:\/callback)?)|state|channels|events|catalog\/search|youtube\/playlists\/[a-f0-9-]{36})$/,
-	POST: /^\/api\/(auth\/logout|queue(?:\/clear|\/batch|\/undo|\/[a-f0-9-]{36}\/move)?|player\/(play|pause|skip|stop)|youtube\/playlists|radio\/(preview|start|stop|retry))$/,
-	PUT: /^\/api\/(profile(?:\/appearance)?|player\/(volume|seek|crossfade)|voice\/channel)$/,
-	DELETE: /^\/api\/(queue\/[a-f0-9-]{36}|voice\/channel|youtube\/playlists\/[a-f0-9-]{36})$/,
+	GET: /^\/api\/(auth\/(session|discord(?:\/callback)?)|session|channels|events|catalog\/search|catalog\/(search|playlist)\/[a-f0-9-]{36})$/,
+	POST: /^\/api\/(auth\/logout|queue(?:\/clear|\/undo\/[a-f0-9-]{36})?|playback\/control|catalog\/(track|playlist)|radio(?:\/[a-f0-9-]{36}\/(stop|retry))?)$/,
+	PUT: /^\/api\/(profile(?:\/appearance)?|playback\/(volume|position|crossfade)|connection|queue\/[a-f0-9-]{36}\/position)$/,
+	DELETE: /^\/api\/queue\/[a-f0-9-]{36}$/,
 };
 
 export function playerProxy(backendUrl: () => string, publicOrigin: () => string) {
@@ -32,8 +32,12 @@ export function playerProxy(backendUrl: () => string, publicOrigin: () => string
 			throw createError({ statusCode: 404, statusMessage: "Unknown player endpoint" });
 
 		const target = new URL(url.pathname, backendUrl());
-		if (url.pathname === "/api/catalog/search") {
-			for (const name of ["q", "offset", "source", "snapshot_id"])
+		if (url.pathname.startsWith("/api/catalog/")) {
+			const allowed =
+				url.pathname === "/api/catalog/search"
+					? ["q", "provider", "refresh"]
+					: ["offset", "limit"];
+			for (const name of allowed)
 				for (const value of url.searchParams.getAll(name))
 					target.searchParams.append(name, value);
 		}

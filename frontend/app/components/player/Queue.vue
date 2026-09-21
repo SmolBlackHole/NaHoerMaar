@@ -402,7 +402,7 @@ async function clearQueue() {
 							:icon="icons.ellipsis"
 							:loading="
 								player.isPending('/api/queue/' + entry.id) ||
-								player.isPending('/api/queue/' + entry.id + '/move')
+								player.isPending('/api/queue/' + entry.id + '/position')
 							"
 							:aria-label="'Options for ' + trackTitle(entry)"
 							color="neutral"
@@ -433,7 +433,7 @@ async function clearQueue() {
 						<UButton
 							type="submit"
 							label="Move"
-							:loading="player.isPending('/api/queue/' + entry.id + '/move')"
+							:loading="player.isPending('/api/queue/' + entry.id + '/position')"
 							color="neutral"
 							:disabled="!player.enabled"
 						/>

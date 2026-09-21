@@ -19,23 +19,35 @@ export function usePlayerNotifications() {
 	const actionTitle = (result: MutationResult, n: number, verb: string) =>
 		`${result.actor?.name || "You"} ${verb} ${n === 1 ? "a track" : `${n} tracks`}`;
 	watch(
-		() => player.snapshot?.radio,
-		(radio, previous) => {
-			if (
-				!radio?.event_id ||
-				!previous ||
-				radio.event_id === previous.event_id ||
-				seen.has(radio.event_id)
-			)
-				return;
-			seen.add(radio.event_id);
-			toast.add({
-				id: `radio-${radio.event_id}`,
-				title: radio.actor
-					? `${radio.actor.name} ${radio.action === "stopped" ? "ended" : radio.action === "retried" ? "retried" : "started"} the radio`
-					: "Radio ended",
-				description: radio.seed?.title,
-			});
+		() => player.activity,
+		(activity) => {
+			if (!activity || seen.has(activity.id)) return;
+			seen.add(activity.id);
+			const { action, result, own } = activity;
+			if (["StartRadio", "StopRadio", "RetryRadio"].includes(action)) {
+				toast.add({
+					title: `${result.actor?.name || "A listener"} ${action === "StopRadio" ? "ended" : action === "RetryRadio" ? "retried" : "started"} the radio`,
+					description: player.snapshot?.radio.title ?? undefined,
+				});
+			} else if (
+				!own &&
+				result.actor &&
+				(result.added_count || result.removed_count || result.restored_count)
+			) {
+				const verb = result.removed_count
+					? "removed"
+					: result.restored_count
+						? "restored"
+						: "added";
+				toast.add({
+					title: actionTitle(
+						result,
+						result.removed_count || result.restored_count || result.added_count,
+						verb,
+					),
+					description: trackDescription(result.entries, result.skipped_count),
+				});
+			}
 		},
 	);
 	function trackDescription(entries: QueueEntry[], skipped = 0, loading = false) {
@@ -81,9 +93,10 @@ export function usePlayerNotifications() {
 									label: "Undo",
 									onClick: () => {
 										if (!player.enabled) return;
-										void player.mutate("/api/queue/undo", "POST", {
-											undo_id: result.undo_id,
-										});
+										void player.mutate(
+											`/api/queue/undo/${result.undo_id}`,
+											"POST",
+										);
 									},
 								},
 							]
@@ -97,11 +110,11 @@ export function usePlayerNotifications() {
 							undoTimers.delete(id);
 						}, remaining),
 					);
-			} else if (request.path === "/api/queue/batch" || request.path === "/api/queue") {
+			} else if (request.path === "/api/queue") {
 				addedToast(result, `request-${request.id}`);
-			} else if (request.path === "/api/queue/undo") {
+			} else if (request.path.startsWith("/api/queue/undo/")) {
 				for (const [id, timer] of undoTimers) {
-					if (request.body !== JSON.stringify({ undo_id: id.slice(5) })) continue;
+					if (request.path !== `/api/queue/undo/${id.slice(5)}`) continue;
 					clearTimeout(timer);
 					undoTimers.delete(id);
 					toast.remove(id);
@@ -110,7 +123,7 @@ export function usePlayerNotifications() {
 					title: actionTitle(result, result.restored_count, "restored"),
 					description: trackDescription(result.entries),
 				});
-			} else if (request.path.endsWith("/move")) {
+			} else if (request.path.endsWith("/position")) {
 				toast.add({ title: "Queue order updated" });
 			} else if (
 				request.path === "/api/queue/clear" ||
@@ -215,7 +228,7 @@ export function usePlayerNotifications() {
 									label: "Add to queue again",
 									disabled: !player.enabled,
 									onClick: () => {
-										void player.add(entry.source_url);
+										void player.addMany([entry.track_id]);
 									},
 								},
 							]
@@ -267,10 +280,7 @@ export function usePlayerNotifications() {
 						actions: existing.actions.map((action) => ({
 							...action,
 							disabled: !player.enabled,
-							loading:
-								player.isPending("/api/queue/undo") &&
-								player.activeRequest?.body ===
-									JSON.stringify({ undo_id: id.slice(5) }),
+							loading: player.isPending(`/api/queue/undo/${id.slice(5)}`),
 						})),
 					});
 			}

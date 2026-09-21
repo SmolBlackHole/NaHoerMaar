@@ -2,11 +2,11 @@
 
 Parent: [Project README](README.md)
 
-Active backend rewrite: [scope, phases and acceptance criteria](refactoring.md).
+Backend rewrite: [architecture and API](docs/engine-api.md).
 The new engine and native API now run on a fresh database. Legacy removal and
 offline verification are complete; coordinated Discord listening acceptance
-is still open. The [earlier refactor](TODO.md) is historical context.
-The existing frontend needs a separate adaptation to the new API.
+is still open.
+The frontend now uses the native API; live playback acceptance remains separate.
 
 Product milestones below: phases 1, 3, 4 and 5 complete. Earlier live playback failure and disconnect checks
 passed, as did concurrent queue additions in two browser tabs. Phase 6 is
@@ -19,7 +19,7 @@ refactor.
 ## Current scope
 
 - Server selection from the bot's joined servers, one shared queue and one active voice channel
-- YouTube links, search and playlists through the native engine API; Nuxt adaptation pending
+- YouTube links, search and playlists through the native engine API and Nuxt dashboard
 - `/pspsps` summons the bot to a whitelisted user's current Discord voice channel
 - Restarts restore the last channel and track position, including volume and pause state
 - Several people can add, remove and reorder tracks at the same time
@@ -326,10 +326,11 @@ responsibilities of the reorganized modules.
 
 ## Playback controller cleanup
 
-Implemented through phases 1 through 4 of the [backend refactor](TODO.md).
+Implemented in the earlier backend refactor and superseded by the
+[native engine](docs/engine-api.md).
 The Session owns ordered commands and commits, Queue owns edits and undo, and
 Radio owns recommendations and refill. Playback executes the FSM's lifecycle
-decisions and audio effects. Phase 5 verifies their integration; live listening
+decisions and audio effects. Offline checks verify their integration; live listening
 and reconnect acceptance remain open.
 
 - [x] Make the existing FSM the single authority for playback and voice-state
@@ -349,8 +350,8 @@ and reconnect acceptance remain open.
   acceptance after the isolated integration and real offline audio checks
 
 Acceptance: playback-state changes go through explicit FSM events; HTTP/SSE
-contracts and queue semantics remain compatible. Interruption retry, join/resume
-and confirmed-start history follow the explicit acceptance cases in TODO.md.
+contracts follow the native engine API. Interruption retry, join/resume and
+confirmed-start history are covered by the [engine checks](docs/engine-api.md#verification).
 No generic state-machine framework, Spotify integration or multi-server queues
 are included.
 

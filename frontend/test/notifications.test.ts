@@ -9,6 +9,7 @@ const getPlayer = vi.hoisted(() => vi.fn());
 vi.mock("../app/stores/player", () => ({ usePlayerStore: getPlayer }));
 
 const track: QueueEntry = {
+	track_id: "track",
 	id: "entry",
 	source_url: "https://youtu.be/Pqp9fDRp1lw",
 	video_id: "Pqp9fDRp1lw",
@@ -22,6 +23,8 @@ const track: QueueEntry = {
 	origin: "manual",
 };
 const state: PlayerState = {
+	session_id: "session",
+	attempt_id: null,
 	revision: 1,
 	queue_revision: 1,
 	state: "idle",
@@ -38,13 +41,11 @@ const state: PlayerState = {
 	last_issue: null,
 	radio: {
 		state: "off",
-		session_id: null,
+		generation: null,
+		title: null,
 		seed: null,
 		initiator: null,
 		error: null,
-		event_id: null,
-		action: null,
-		actor: null,
 	},
 };
 const scopes: ReturnType<typeof effectScope>[] = [];
@@ -55,7 +56,7 @@ afterEach(() => {
 });
 
 function setup() {
-	const player = reactive({ ...createPlayerClient(), add: vi.fn().mockResolvedValue(true) });
+	const player = reactive({ ...createPlayerClient(), addMany: vi.fn().mockResolvedValue(true) });
 	player.snapshot = { ...state };
 	player.connection = "live";
 	getPlayer.mockReturnValue(player);
@@ -84,11 +85,42 @@ function setup() {
 }
 
 describe("player notifications", () => {
+	it("announces remote edits once, without duplicating own HTTP notices or radio refills", async () => {
+		const { player, toast } = setup();
+		const result: MutationResult = {
+			code: "ok",
+			replayed: false,
+			added_count: 1,
+			removed_count: 0,
+			restored_count: 0,
+			skipped_count: 0,
+			entries: [track],
+			actor: { id: "kai", name: "Kai", avatar: "0001" },
+			undo_id: null,
+			undo_expires_at: null,
+		};
+		player.activity = { id: "session:2", action: "Add", result, own: false };
+		await nextTick();
+		expect(toast.toasts.value[0]?.title).toBe("Kai added a track");
+		expect(toast.toasts.value[0]?.description).toBe("A track");
+		player.activity = { ...player.activity };
+		await nextTick();
+		player.activity = { id: "session:3", action: "Add", result, own: true };
+		await nextTick();
+		player.activity = {
+			id: "session:4",
+			action: "RadioLoaded",
+			result: { ...result, actor: null },
+			own: false,
+		};
+		await nextTick();
+		expect(toast.add).toHaveBeenCalledOnce();
+	});
 	it("announces each playback issue once across new snapshots and reconnects", async () => {
 		const { player, toast } = setup();
 		const issue: NonNullable<PlayerState["last_issue"]> = {
-			id: "failure-1",
 			entry_id: track.id,
+			id: "failure-1",
 			entry: { ...track, title: "You’re here that’s the thing" },
 			fatal: false,
 			code: "playback_failed",
@@ -102,7 +134,7 @@ describe("player notifications", () => {
 			"You’re here that’s the thing\nThe audio source couldn't be opened.",
 		);
 		await toast.toasts.value[0]?.actions?.[0]?.onClick?.(new Event("click") as MouseEvent);
-		expect(player.add).toHaveBeenCalledWith(track.source_url);
+		expect(player.addMany).toHaveBeenCalledWith([track.track_id]);
 		player.connection = "connecting";
 		await nextTick();
 		player.snapshot = { ...state, revision: 2, last_issue: { ...issue } };
@@ -118,11 +150,8 @@ describe("player notifications", () => {
 		vi.useFakeTimers();
 		const { player, toast } = setup();
 		const result: MutationResult = {
-			request_id: "remove",
 			code: "ok",
-			entry_id: null,
 			replayed: false,
-			snapshot: state,
 			added_count: 0,
 			skipped_count: 0,
 			removed_count: 1,
@@ -169,11 +198,8 @@ describe("player notifications", () => {
 		vi.useFakeTimers();
 		const { player, toast } = setup();
 		const result: MutationResult = {
-			request_id: "remove",
 			code: "ok",
-			entry_id: null,
 			replayed: false,
-			snapshot: state,
 			added_count: 0,
 			skipped_count: 0,
 			removed_count: 1,
@@ -192,13 +218,11 @@ describe("player notifications", () => {
 		player.completed = {
 			request: {
 				id: "restore",
-				path: "/api/queue/undo",
+				path: "/api/queue/undo/undo",
 				method: "POST",
-				body: JSON.stringify({ undo_id: "undo" }),
 			},
 			result: {
 				...result,
-				request_id: "restore",
 				replayed: true,
 				undo_id: null,
 				undo_expires_at: null,
@@ -215,13 +239,10 @@ describe("player notifications", () => {
 	it("reports actual import counts and clears recovery actions at sign-out", async () => {
 		const { player, toast } = setup();
 		player.completed = {
-			request: { id: "batch", path: "/api/queue/batch", method: "POST" },
+			request: { id: "batch", path: "/api/queue", method: "POST" },
 			result: {
-				request_id: "batch",
 				code: "ok",
-				entry_id: null,
 				replayed: false,
-				snapshot: state,
 				added_count: 2,
 				skipped_count: 3,
 				removed_count: 0,
@@ -252,11 +273,8 @@ describe("player notifications", () => {
 		const unknown = { ...track, title: null };
 		player.snapshot = { ...state, upcoming: [unknown] };
 		const result: MutationResult = {
-			request_id: "add",
 			code: "ok",
-			entry_id: track.id,
 			replayed: false,
-			snapshot: player.snapshot,
 			added_count: 1,
 			skipped_count: 0,
 			removed_count: 0,

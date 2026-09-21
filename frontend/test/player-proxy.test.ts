@@ -122,28 +122,27 @@ describe("local API proxy", () => {
 			[
 				"catalog/search?q=" +
 					encodeURIComponent("Амура & remix") +
-					"&offset=10&source=youtube_music&snapshot_id=pinned-version&ignored=1",
+					"&provider=youtube_music&refresh=true&ignored=1",
 				"GET",
 			],
-			["youtube/playlists", "POST"],
-			[`youtube/playlists/${id}`, "GET"],
-			[`youtube/playlists/${id}`, "DELETE"],
-			["queue/batch", "POST"],
-			["queue/undo", "POST"],
+			["catalog/playlist", "POST"],
+			[`catalog/playlist/${id}?offset=20&limit=100&ignored=1`, "GET"],
+			[`queue/${id}`, "DELETE"],
+			["queue", "POST"],
+			[`queue/undo/${id}`, "POST"],
 		]) {
 			const response = await fetch(`${frontend}/api/${path}`, {
 				method,
 				headers: { "idempotency-key": id, "content-type": "application/json" },
-				body: method === "POST" ? '{"source_urls":["example"]}' : undefined,
+				body: method === "POST" ? '{"track_ids":["example"]}' : undefined,
 			});
 			expect(response.status).toBe(200);
 		}
 		expect(new URL(calls[0]!.url!, backend).searchParams.get("q")).toBe("Амура & remix");
-		expect(new URL(calls[0]!.url!, backend).searchParams.get("offset")).toBe("10");
-		expect(new URL(calls[0]!.url!, backend).searchParams.get("source")).toBe("youtube_music");
-		expect(new URL(calls[0]!.url!, backend).searchParams.get("snapshot_id")).toBe(
-			"pinned-version",
-		);
+		expect(new URL(calls[2]!.url!, backend).searchParams.get("offset")).toBe("20");
+		expect(new URL(calls[2]!.url!, backend).searchParams.get("limit")).toBe("100");
+		expect(new URL(calls[0]!.url!, backend).searchParams.get("provider")).toBe("youtube_music");
+		expect(new URL(calls[0]!.url!, backend).searchParams.get("refresh")).toBe("true");
 		expect(calls[0]!.url).not.toContain("ignored");
 		expect(calls.map((call) => call.method)).toEqual([
 			"GET",
@@ -153,18 +152,18 @@ describe("local API proxy", () => {
 			"POST",
 			"POST",
 		]);
-		expect(calls[5]?.url).toBe("/api/queue/undo");
+		expect(calls[5]?.url).toBe(`/api/queue/undo/${id}`);
 		expect(calls[4]).toEqual({
-			url: "/api/queue/batch",
+			url: "/api/queue",
 			method: "POST",
 			key: id,
-			body: '{"source_urls":["example"]}',
+			body: '{"track_ids":["example"]}',
 		});
 	});
 
 	it.each([
-		["player/seek", { position_seconds: 75, expected_playback_id: "123" }],
-		["player/crossfade", { seconds: 5 }],
+		["playback/position", { seconds: 75, expected_attempt_id: "123" }],
+		["playback/crossfade", { seconds: 5 }],
 		["profile/appearance", { mode: "light", primaryColor: "amber" }],
 	])("forwards PUT /api/%s", async (path, body) => {
 		const backend = await listen(
@@ -259,7 +258,7 @@ describe("local API proxy", () => {
 			{ host: "example.org" },
 		]) {
 			const status = await new Promise<number | undefined>((resolve, reject) => {
-				const request = httpRequest(`${frontend}/api/state`, { headers }, (response) => {
+				const request = httpRequest(`${frontend}/api/session`, { headers }, (response) => {
 					response.resume();
 					resolve(response.statusCode);
 				});

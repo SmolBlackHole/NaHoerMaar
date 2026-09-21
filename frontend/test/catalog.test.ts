@@ -1,14 +1,15 @@
+import { discovery, track } from "./engine-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	musicSource,
 	selectedSources,
+	selectedTrackIds,
+	catalogPage,
 	reconcileSelection,
 	queuePresence,
 	importCounts,
 	catalogEntry,
-	type SearchPage,
 	type CatalogTrack,
-	type PlaylistPreview,
 } from "../shared/catalog";
 import { createCatalogClient } from "../app/player/catalog";
 import type { PlayerState } from "../shared/player";
@@ -17,6 +18,7 @@ const video = "https://www.youtube.com/watch?v=Pqp9fDRp1lw";
 const playlist = "https://www.youtube.com/playlist?list=PL12345678901234";
 const entry = (index = 1, changes: Partial<CatalogTrack> = {}): CatalogTrack => ({
 	index,
+	track_id: "track",
 	source_url: video,
 	video_id: "Pqp9fDRp1lw",
 	title: "Амура",
@@ -27,19 +29,6 @@ const entry = (index = 1, changes: Partial<CatalogTrack> = {}): CatalogTrack => 
 	duration_seconds: null,
 	unavailable: null,
 	...changes,
-});
-const preview = (state: PlaylistPreview["state"] = "loading"): PlaylistPreview => ({
-	id: "preview",
-	source_url: playlist,
-	state,
-	title: "Example",
-	entries: [entry()],
-	limit: 100,
-	truncated: false,
-	error: null,
-	snapshot_id: "original",
-	refreshing: false,
-	refresh_error: null,
 });
 function deferred<T>() {
 	let resolve!: (value: T) => void;
@@ -80,93 +69,7 @@ describe("duplicate awareness", () => {
 		expect(urls).toHaveLength(4);
 	});
 });
-
-const page = (snapshot: string, changes: Partial<SearchPage> = {}): SearchPage => ({
-	entries: [entry(1, { title: snapshot })],
-	next_offset: 10,
-	snapshot_id: snapshot,
-	latest_snapshot_id: snapshot,
-	refreshing: false,
-	refresh_error: null,
-	...changes,
-});
-
-describe("controlled refresh", () => {
-	it("keeps shown results and pins subsequent pages until an update is accepted", async () => {
-		vi.useFakeTimers();
-		const request = vi
-			.fn<typeof fetch>()
-			.mockResolvedValueOnce(Response.json(page("old")))
-			.mockResolvedValueOnce(Response.json(page("old", { refreshing: true })))
-			.mockResolvedValueOnce(Response.json(page("old", { latest_snapshot_id: "new" })))
-			.mockResolvedValueOnce(Response.json(page("new")))
-			.mockResolvedValueOnce(
-				Response.json(
-					page("old", {
-						entries: [entry(11, { video_id: "second" })],
-						next_offset: null,
-						latest_snapshot_id: "new",
-					}),
-				),
-			);
-		const client = createCatalogClient(request);
-		await client.search("song");
-		await client.search("song");
-		expect(client.results.value[0]?.title).toBe("old");
-		await vi.advanceTimersByTimeAsync(1000);
-		expect(client.results.value[0]?.title).toBe("old");
-		expect(client.searchUpdate.value?.snapshot_id).toBe("new");
-		await client.loadMore();
-		expect(String(request.mock.calls[4]![0])).toContain(
-			"offset=10&source=youtube_music&snapshot_id=old",
-		);
-		expect(client.results.value).toHaveLength(2);
-		client.applySearchUpdate();
-		expect(client.results.value.map((item) => item.title)).toEqual(["new"]);
-		expect(client.nextOffset.value).toBe(10);
-		client.dispose();
-	});
-	it("does not combine an expired result page with a fresh search", async () => {
-		const request = vi
-			.fn<typeof fetch>()
-			.mockResolvedValueOnce(Response.json(page("old")))
-			.mockResolvedValueOnce(
-				Response.json({ detail: "Refresh the search." }, { status: 410 }),
-			)
-			.mockResolvedValueOnce(Response.json(page("new")));
-		const client = createCatalogClient(request);
-		await client.search("song");
-		await client.loadMore();
-		expect(client.searchExpired.value).toBe(true);
-		expect(client.results.value[0]?.title).toBe("old");
-		await client.search("song");
-		client.applySearchUpdate();
-		expect(client.results.value.map((item) => item.title)).toEqual(["new"]);
-		client.dispose();
-	});
-	it("retains the displayed playlist during refresh and import validation", async () => {
-		const old = preview("ready");
-		const updated = {
-			...old,
-			snapshot_id: "updated",
-			entries: [entry(1, { title: "New" }), entry(2)],
-		};
-		const request = vi
-			.fn<typeof fetch>()
-			.mockResolvedValueOnce(Response.json(old))
-			.mockResolvedValueOnce(Response.json(updated))
-			.mockResolvedValueOnce(Response.json(updated));
-		const client = createCatalogClient(request);
-		await client.openPreview(playlist);
-		await client.openPreview(playlist, true);
-		expect(client.preview.value?.entries[0]?.title).toBe(old.entries[0]?.title);
-		expect(client.previewUpdate.value?.entries).toHaveLength(2);
-		expect(await client.validatePreview()).toBe(true);
-		expect(client.preview.value?.snapshot_id).toBe("original");
-		client.applyPreviewUpdate();
-		expect(client.preview.value?.snapshot_id).toBe("updated");
-		client.dispose();
-	});
+describe("selection refresh", () => {
 	it("matches unique songs after reorder, drops removed songs and leaves new songs unchecked", () => {
 		const old = [
 			entry(1, { video_id: "a" }),
@@ -189,24 +92,7 @@ describe("controlled refresh", () => {
 		]).toEqual([]);
 		expect(selectedSources(duplicates, new Set([1, 2]))).toEqual([video, video]);
 	});
-	it("ignores late pages from a replaced search even if the request ignores abort", async () => {
-		const late = deferred<Response>();
-		const request = vi
-			.fn<typeof fetch>()
-			.mockResolvedValueOnce(Response.json(page("old")))
-			.mockReturnValueOnce(late.promise)
-			.mockResolvedValueOnce(Response.json(page("different")));
-		const client = createCatalogClient(request);
-		await client.search("song");
-		const pending = client.loadMore();
-		await client.search("another");
-		late.resolve(Response.json(page("old", { entries: [entry(11)] })));
-		await pending;
-		expect(client.results.value.map((item) => item.title)).toEqual(["different"]);
-		client.dispose();
-	});
 });
-
 describe("music sources", () => {
 	it("keeps mixed video/playlist links as single songs with an explicit playlist option", () => {
 		for (const url of [
@@ -244,198 +130,168 @@ describe("music sources", () => {
 	});
 });
 
-describe("discovery client", () => {
-	it("defaults to Music and discards its pending page when switching to Videos", async () => {
-		const page = deferred<Response>();
+describe("native discovery", () => {
+	it("defaults to Music and discards old results when switching provider", async () => {
+		const late = deferred<Response>();
 		const request = vi
 			.fn<typeof fetch>()
-			.mockResolvedValueOnce(Response.json({ entries: [entry()], next_offset: 10 }))
-			.mockReturnValueOnce(page.promise)
-			.mockResolvedValueOnce(
-				Response.json({ entries: [entry(1, { title: "Video" })], next_offset: null }),
-			);
+			.mockReturnValueOnce(late.promise)
+			.mockResolvedValueOnce(Response.json(discovery("video")));
 		const client = createCatalogClient(request);
-		await client.search("same query");
-		expect(request.mock.calls[0]![0]).toBe(
-			"/api/catalog/search?q=same%20query&offset=0&source=youtube_music",
-		);
-		const pending = client.loadMore();
+		const pending = client.search("same query");
 		client.searchSource.value = "youtube";
-		await client.search(client.query.value);
-		expect(request.mock.calls[2]![0]).toBe(
-			"/api/catalog/search?q=same%20query&offset=0&source=youtube",
-		);
-		page.resolve(Response.json({ entries: [entry(11)], next_offset: 20 }));
+		await client.search("same query");
+		late.resolve(Response.json(discovery("music")));
 		await pending;
-		expect(client.results.value.map((track) => track.title)).toEqual(["Video"]);
-		expect(client.nextOffset.value).toBeNull();
+		expect(request.mock.calls[0]![0]).toBe(
+			"/api/catalog/search?q=same%20query&provider=youtube_music&refresh=true",
+		);
+		expect(request.mock.calls[1]![0]).toContain("provider=youtube&refresh=true");
+		expect(client.results.value[0]?.title).toBe("video");
 		client.dispose();
 	});
-	it("requires reopening an expired ready preview before import", async () => {
+	it("pins pagination until refreshed results are accepted", async () => {
+		vi.useFakeTimers();
+		const old = discovery("old", {
+			total: 2,
+			refresh: { latest_version: "old", refreshing: true, error: null },
+		});
+		const second = discovery("old", { offset: 1, total: 2 });
+		second.entries[0]!.position = 1;
+		second.entries[0]!.finding.reference!.identity.external_id = "another";
 		const request = vi
 			.fn<typeof fetch>()
-			.mockResolvedValueOnce(Response.json(preview("ready")))
+			.mockResolvedValueOnce(Response.json(old))
 			.mockResolvedValueOnce(
 				Response.json(
-					{ detail: "This playlist preview expired. Open the playlist again." },
-					{ status: 410 },
+					discovery("old", {
+						refresh: { latest_version: "new", refreshing: false, error: null },
+					}),
 				),
-			);
+			)
+			.mockResolvedValueOnce(Response.json(discovery("new")))
+			.mockResolvedValueOnce(Response.json(second));
 		const client = createCatalogClient(request);
-		await client.openPreview(playlist);
-		expect(await client.validatePreview()).toBe(false);
-		expect(client.previewError.value).toContain("expired");
+		await client.search("song");
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(client.results.value[0]?.title).toBe("old");
+		expect(client.searchUpdate.value?.snapshot_id).toBe("new");
+		await client.loadMore();
+		expect(request.mock.calls[3]![0]).toBe("/api/catalog/search/old?offset=1");
+		expect(client.results.value).toHaveLength(2);
+		client.applySearchUpdate();
+		expect(client.results.value[0]?.title).toBe("new");
 		client.dispose();
 	});
-	it("ignores stale search responses even when transport does not honor abort", async () => {
-		const first = deferred<Response>();
-		const second = deferred<Response>();
+	it("keeps displayed data when a version expires", async () => {
 		const request = vi
 			.fn<typeof fetch>()
-			.mockReturnValueOnce(first.promise)
-			.mockReturnValueOnce(second.promise);
+			.mockResolvedValueOnce(Response.json(discovery("old", { total: 2 })))
+			.mockResolvedValueOnce(Response.json({ code: "not_found" }, { status: 404 }));
 		const client = createCatalogClient(request);
-		const older = client.search("old");
-		const newer = client.search("Амура");
-		second.resolve(Response.json({ entries: [entry()], next_offset: 10 }));
-		await newer;
-		first.resolve(Response.json({ entries: [entry(2, { title: "Old" })], next_offset: null }));
-		await older;
-		expect(client.query.value).toBe("Амура");
-		expect(client.results.value[0]?.title).toBe("Амура");
-		expect(client.searching.value).toBe(false);
-		expect(request.mock.calls[1]![0]).toContain(encodeURIComponent("Амура"));
+		await client.search("song");
+		await client.loadMore();
+		expect(client.searchExpired.value).toBe(true);
+		expect(client.results.value[0]?.title).toBe("old");
 		client.dispose();
 	});
-	it("keeps a closed search closed when its response arrives", async () => {
-		const response = deferred<Response>();
-		const client = createCatalogClient(() => response.promise);
-		const searching = client.search("example");
-		client.clearSearch();
-		response.resolve(Response.json({ entries: [entry()], next_offset: 10 }));
-		await searching;
-		expect(client.query.value).toBe("");
-		expect(client.results.value).toEqual([]);
-		expect(client.nextOffset.value).toBeNull();
-	});
-	it("appends pages without duplicate videos and stops at the last page", async () => {
+	it("ignores delayed pagination after a new query", async () => {
+		const late = deferred<Response>();
 		const request = vi
 			.fn<typeof fetch>()
-			.mockResolvedValueOnce(Response.json({ entries: [entry()], next_offset: 10 }))
-			.mockResolvedValueOnce(
-				Response.json({
-					entries: [entry(11), entry(12, { video_id: "bWHJbIm1TAA" })],
-					next_offset: null,
-				}),
-			);
-		const client = createCatalogClient(request);
-		await client.search("music");
-		await client.loadMore();
-		expect(client.results.value.map((item) => item.video_id)).toEqual([
-			"Pqp9fDRp1lw",
-			"bWHJbIm1TAA",
-		]);
-		expect(request.mock.calls[1]![0]).toContain("offset=10");
-		await client.loadMore();
-		expect(request).toHaveBeenCalledTimes(2);
-		client.dispose();
-	});
-	it("keeps loaded results on a page failure and retries the same offset", async () => {
-		const request = vi
-			.fn<typeof fetch>()
-			.mockResolvedValueOnce(Response.json({ entries: [entry()], next_offset: 10 }))
-			.mockRejectedValueOnce(new Error("Try again"))
-			.mockResolvedValueOnce(Response.json({ entries: [], next_offset: null }));
-		const client = createCatalogClient(request);
-		await client.search("music");
-		await client.loadMore();
-		expect(client.results.value).toHaveLength(1);
-		expect(client.searchError.value).toBe("Try again");
-		expect(client.loadingMore.value).toBe(false);
-		await client.loadMore();
-		expect(request.mock.calls[2]![0]).toBe(request.mock.calls[1]![0]);
-		expect(client.searchError.value).toBe("");
-		client.dispose();
-	});
-	it("does not append an old page after a new query, even if abort is ignored", async () => {
-		const page = deferred<Response>();
-		const request = vi
-			.fn<typeof fetch>()
-			.mockResolvedValueOnce(Response.json({ entries: [entry()], next_offset: 10 }))
-			.mockReturnValueOnce(page.promise)
-			.mockResolvedValueOnce(
-				Response.json({
-					entries: [entry(1, { video_id: "new", title: "New" })],
-					next_offset: null,
-				}),
-			);
+			.mockResolvedValueOnce(Response.json(discovery("old", { total: 2 })))
+			.mockReturnValueOnce(late.promise)
+			.mockResolvedValueOnce(Response.json(discovery("new")));
 		const client = createCatalogClient(request);
 		await client.search("old");
-		const more = client.loadMore();
-		await client.loadMore();
-		expect(request).toHaveBeenCalledTimes(2);
+		const pending = client.loadMore();
 		await client.search("new");
-		page.resolve(Response.json({ entries: [entry(11)], next_offset: 20 }));
-		await more;
-		expect(client.results.value.map((item) => item.title)).toEqual(["New"]);
-		expect(client.nextOffset.value).toBeNull();
+		late.resolve(Response.json(discovery("old")));
+		await pending;
+		expect(client.results.value.map((item) => item.title)).toEqual(["new"]);
 		expect(client.loadingMore.value).toBe(false);
 		client.dispose();
 	});
-	it("shows expiry and stops polling", async () => {
+	it("loads all bounded playlist occurrences without collapsing duplicates", async () => {
+		const initial = discovery("list", { total: 2, title: "Playlist" });
+		const full = {
+			...initial,
+			entries: [...initial.entries, { ...initial.entries[0]!, position: 1 }],
+		};
+		const request = vi
+			.fn<typeof fetch>()
+			.mockResolvedValueOnce(Response.json(initial))
+			.mockResolvedValueOnce(Response.json(full));
+		const client = createCatalogClient(request);
+		await client.openPreview(playlist);
+		expect(request.mock.calls[0]![0]).toBe("/api/catalog/playlist");
+		expect(request.mock.calls[1]![0]).toBe("/api/catalog/playlist/list?limit=100");
+		expect(selectedTrackIds(client.preview.value!.entries, new Set([0, 1]))).toEqual([
+			track.id,
+			track.id,
+		]);
+		expect(client.preview.value?.title).toBe("Playlist");
+		client.dispose();
+	});
+	it("retains a visible playlist until its update is accepted", async () => {
+		const request = vi
+			.fn<typeof fetch>()
+			.mockResolvedValueOnce(Response.json(discovery("old")))
+			.mockResolvedValueOnce(Response.json(discovery("new")));
+		const client = createCatalogClient(request);
+		await client.openPreview(playlist);
+		await client.openPreview(playlist, true);
+		expect(client.preview.value?.id).toBe("old");
+		expect(client.previewUpdate.value?.id).toBe("new");
+		client.applyPreviewUpdate();
+		expect(client.preview.value?.id).toBe("new");
+		client.dispose();
+	});
+	it("polls playlist refresh and stages the new version", async () => {
 		vi.useFakeTimers();
+		const old = discovery("old", {
+			title: "Playlist",
+			refresh: { latest_version: "old", refreshing: true, error: null },
+		});
 		const request = vi
 			.fn<typeof fetch>()
-			.mockResolvedValueOnce(Response.json(preview()))
+			.mockResolvedValueOnce(Response.json(old))
 			.mockResolvedValueOnce(
-				Response.json({ detail: "Preview expired. Open it again." }, { status: 410 }),
-			);
-		const client = createCatalogClient(request);
-		await client.openPreview(playlist);
-		await vi.advanceTimersByTimeAsync(10_000);
-		expect(client.previewError.value).toContain("expired");
-		expect(request).toHaveBeenCalledTimes(2);
-		request.mockResolvedValue(Response.json(preview("cancelled")));
-		client.dispose();
-	});
-	it("does not let an in-flight poll undo cancellation", async () => {
-		const progress = deferred<Response>();
-		const request = vi
-			.fn<typeof fetch>()
-			.mockResolvedValueOnce(Response.json(preview()))
-			.mockReturnValueOnce(progress.promise)
-			.mockResolvedValueOnce(Response.json(preview("cancelled")));
-		const client = createCatalogClient(request);
-		await client.openPreview(playlist);
-		await client.cancelPreview();
-		progress.resolve(Response.json(preview("ready")));
-		await progress.promise;
-		await Promise.resolve();
-		expect(client.preview.value?.state).toBe("cancelled");
-		client.dispose();
-	});
-	it("cancels a preview that was closed before its creation response arrived", async () => {
-		const response = deferred<Response>();
-		const request = vi
-			.fn<typeof fetch>()
-			.mockReturnValueOnce(response.promise)
-			.mockImplementation(async () => Response.json(preview("cancelled")));
-		const client = createCatalogClient(request);
-		const opening = client.openPreview(playlist);
-		const id = new Headers(request.mock.calls[0]![1]?.headers).get("idempotency-key");
-		client.closePreview();
-		response.resolve(Response.json(preview()));
-		await opening;
-		expect(client.preview.value).toBeNull();
-		expect(client.previewUrl.value).toBe("");
-		expect(
-			request.mock.calls
-				.slice(1)
-				.every(
-					([url, options]) =>
-						url === `/api/youtube/playlists/${id}` && options?.method === "DELETE",
+				Response.json(
+					discovery("old", {
+						refresh: { latest_version: "new", refreshing: false, error: null },
+					}),
 				),
-		).toBe(true);
-		expect(request).toHaveBeenCalledTimes(3);
+			)
+			.mockResolvedValueOnce(Response.json(discovery("new")));
+		const client = createCatalogClient(request);
+		await client.openPreview(playlist);
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(client.preview.value?.id).toBe("old");
+		expect(client.previewUpdate.value?.id).toBe("new");
+		expect(client.previewUpdate.value?.title).toBe("Playlist");
+		client.dispose();
+	});
+	it("cancels locally without creating or deleting a remote preview job", async () => {
+		const late = deferred<Response>();
+		const request = vi.fn<typeof fetch>().mockReturnValueOnce(late.promise);
+		const client = createCatalogClient(request);
+		const pending = client.openPreview(playlist);
+		client.closePreview();
+		late.resolve(Response.json(discovery()));
+		await pending;
+		expect(client.preview.value).toBeNull();
+		expect(client.previewPending.value).toBe(false);
+		expect(request).toHaveBeenCalledOnce();
+		expect(request.mock.calls[0]![1]?.signal?.aborted).toBe(true);
+		client.dispose();
+	});
+	it("keeps unavailable slots visible and unselectable", () => {
+		const native = discovery();
+		native.entries[0]!.track_id = null;
+		native.entries[0]!.finding.reason = "Private";
+		const entries = catalogPage(native).entries;
+		expect(entries[0]?.unavailable).toBe("Private");
+		expect(selectedTrackIds(entries, new Set([0]))).toEqual([]);
 	});
 });

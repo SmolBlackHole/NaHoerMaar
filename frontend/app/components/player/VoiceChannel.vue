@@ -195,30 +195,28 @@ const status = computed(() => {
 						color="neutral"
 						variant="outline"
 						:loading="
-							player.isPending('/api/voice/channel', 'PUT') ||
+							player.isPending('/api/connection', 'PUT') ||
 							player.snapshot?.voice_state === 'connecting'
 						"
 						:aria-busy="
-							player.isPending('/api/voice/channel', 'PUT') ||
+							player.isPending('/api/connection', 'PUT') ||
 							player.snapshot?.voice_state === 'connecting'
 						"
 						:disabled="
 							!player.enabled || !available?.can_connect || !available?.can_speak
 						"
-						@click="
-							player.mutate('/api/voice/channel', 'PUT', { channel_id: selected })
-						"
+						@click="player.mutate('/api/connection', 'PUT', { channel_id: selected })"
 					/>
 					<UButton
 						v-if="connected"
 						label="Leave"
-						:loading="player.isPending('/api/voice/channel', 'DELETE')"
-						:aria-busy="player.isPending('/api/voice/channel', 'DELETE')"
+						:loading="player.isControlPending('leave')"
+						:aria-busy="player.isControlPending('leave')"
 						:icon="icons.logOut"
 						color="neutral"
 						variant="ghost"
 						:disabled="!player.enabled"
-						@click="player.mutate('/api/voice/channel', 'DELETE')"
+						@click="player.mutate('/api/playback/control', 'POST', { action: 'leave' })"
 					/>
 				</div>
 			</section>

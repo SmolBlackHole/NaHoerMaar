@@ -10,6 +10,7 @@ import {
 } from "../shared/player";
 
 const entry: QueueEntry = {
+	track_id: "track",
 	id: "3aaf410e-77dd-4719-9299-a4cedbbce459",
 	source_url: "https://music.youtube.com/watch?v=Pqp9fDRp1lw",
 	video_id: "Pqp9fDRp1lw",

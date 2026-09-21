@@ -4,10 +4,16 @@ Parent: [Project README](../README.md)
 
 The backend runs one listening session through the engine and its native API.
 The old business core, routes and data importer have been removed. The frontend
-still needs adaptation to this API; the remaining Discord listening acceptance
-is tracked in the [rewrite plan](../refactoring.md).
+uses this API directly; the remaining Discord listening acceptance
+is described under [engine verification](engine-api.md#verification).
 
 ## Ownership
+
+The Nuxt client uses the native wire types in `frontend/shared/engine.ts`.
+It resolves track IDs into a display model for the existing components; requests
+always use native commands and identifiers. Playback controls target an attempt,
+while video rendering keeps the logical play ID across seeks and reconnects.
+Discovery pages remain pinned to a version until the listener accepts an update.
 
 | Module | Responsibility |
 | --- | --- |
@@ -137,6 +143,6 @@ the configured origin and session-bound CSRF token. Account IDs and contributor
 values come from authentication, never client-supplied attribution.
 
 There is currently one shared queue and one active voice connection across the
-bot's servers. Independent server sessions, Spotify matching and the frontend
-API adaptation are separate work. See the [API contract](engine-api.md),
+bot's servers. Independent server sessions and Spotify matching are separate
+work. See the [API contract](engine-api.md),
 [development guide](development.md) and [roadmap](../ROADMAP.md).

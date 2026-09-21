@@ -5,7 +5,7 @@ Parent: [Project README](../README.md)
 The normal backend start and local service now run the new engine. Read the
 [engine/API development notes](engine-api.md) before restarting. The first cutover
 uses `data/engine.sqlite3`; subsequent starts reopen it. Existing data was not imported.
-The frontend still speaks the old API and cannot control the backend yet.
+The frontend uses the native engine API for discovery and session controls.
 
 Python 3.12+ and Node.js 24.11+ with npm are required.
 
@@ -32,12 +32,11 @@ npm run dev
 ```
 
 Open `http://localhost:3012`. On PowerShell systems that block `npm.ps1`,
-use `npm.cmd run dev`. Authentication remains available, but playback, queue
-and discovery need the separately planned frontend adaptation to the native API.
+use `npm.cmd run dev`. Sign in to load the current session, queue and history.
 
 The Nuxt server forwards requests to `http://127.0.0.1:8000`; set
-`NUXT_BACKEND_URL` when using another port. Do not use this old frontend as
-acceptance for the new engine. Use the documented [native API](engine-api.md).
+`NUXT_BACKEND_URL` when using another port. Its route allowlist and discovery
+parameters follow the documented [native API](engine-api.md).
 
 ## Configure Discord
 
@@ -96,8 +95,8 @@ Signing out affects other tabs using that session and leaves music playing.
 
 The [API explorer](http://127.0.0.1:8000/docs) describes the new endpoints.
 API calls require the authentication session cookie, and mutations also require
-its CSRF token and configured origin. The old dashboard cannot control this API
-until its separately planned adaptation.
+its CSRF token and configured origin. The dashboard retains the original
+idempotency key and command body when checking a lost mutation response.
 
 Every playback or queue mutation needs a UUID in its `Idempotency-Key` header. Generate one with
 `[guid]::NewGuid().ToString()` in PowerShell. Reuse it only when retrying the same

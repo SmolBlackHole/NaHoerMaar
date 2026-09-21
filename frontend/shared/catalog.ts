@@ -1,4 +1,5 @@
 import { youtubeVideoId, type QueueEntry, type PlayerState } from "./player";
+import type { DiscoveryPage } from "./engine";
 
 export function queuePresence(sourceUrl: string | null, state: PlayerState | null): string | null {
 	const id = sourceUrl && youtubeVideoId(sourceUrl);
@@ -34,6 +35,39 @@ export interface CatalogTrack extends Omit<
 	index: number;
 	source_url: string | null;
 	unavailable: string | null;
+}
+
+export function catalogPage(page: DiscoveryPage): SearchPage {
+	return {
+		entries: page.entries.map(({ position, track_id, finding }) => ({
+			...finding.metadata,
+			track_id: track_id ?? "",
+			index: position,
+			source_url: finding.reference?.source_url ?? null,
+			video_id:
+				finding.reference?.identity.namespace === "youtube"
+					? finding.reference.identity.external_id
+					: null,
+			unavailable: finding.reason ?? (!track_id ? "Track unavailable" : null),
+		})),
+		next_offset:
+			page.offset + page.entries.length < page.total
+				? page.offset + page.entries.length
+				: null,
+		snapshot_id: page.version,
+		latest_snapshot_id: page.refresh.latest_version,
+		refreshing: page.refresh.refreshing,
+		refresh_error: page.refresh.error ?? page.error,
+	};
+}
+
+export function selectedTrackIds(
+	entries: readonly CatalogTrack[],
+	selected: ReadonlySet<number>,
+): string[] {
+	return entries
+		.filter((item) => selected.has(item.index) && item.track_id && !item.unavailable)
+		.map((item) => item.track_id);
 }
 
 export interface PlaylistPreview {

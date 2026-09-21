@@ -13,7 +13,7 @@ function playedAt(value: string) {
 	}).format(new Date(value));
 }
 async function requeue(item: RecentTrack) {
-	await player.add(item.entry.source_url);
+	await player.addMany([item.entry.track_id]);
 }
 </script>
 
@@ -71,8 +71,8 @@ async function requeue(item: RecentTrack) {
 						:title="`Queue ${trackTitle(item.entry)} again`"
 						class="recent-add ml-auto size-11 shrink-0 justify-center"
 						:disabled="!player.enabled"
-						:loading="player.isAdding(item.entry.source_url)"
-						:aria-busy="player.isAdding(item.entry.source_url)"
+						:loading="player.isAdding(item.entry.track_id)"
+						:aria-busy="player.isAdding(item.entry.track_id)"
 						@click="requeue(item)"
 					/>
 					<PlayerRadioAction :entry="item.entry" />

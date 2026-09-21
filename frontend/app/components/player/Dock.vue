@@ -14,7 +14,7 @@ const seekEnabled = computed(
 	() =>
 		player.enabled &&
 		player.snapshot?.voice_state === "connected" &&
-		!!player.snapshot.playback_id &&
+		!!player.snapshot.attempt_id &&
 		!!current.value?.duration_seconds &&
 		["playing", "paused"].includes(player.snapshot.state),
 );
@@ -22,7 +22,7 @@ const seekMaximum = computed(() =>
 	Math.max(0, Math.ceil(current.value?.duration_seconds ?? 0) - 1),
 );
 const timelinePosition = computed(() =>
-	seekDraft.value && seekDraft.value.playbackId === player.snapshot?.playback_id
+	seekDraft.value && seekDraft.value.playbackId === player.snapshot?.attempt_id
 		? seekDraft.value.position
 		: position.value,
 );
@@ -49,13 +49,13 @@ function cancelSeek() {
 	hoverPosition.value = null;
 	keyboardPreview.value = false;
 }
-watch(() => player.snapshot?.playback_id, cancelSeek);
+watch(() => player.snapshot?.attempt_id, cancelSeek);
 function beginSeek() {
-	seekTarget.value = seekEnabled.value ? (player.snapshot?.playback_id ?? null) : null;
+	seekTarget.value = seekEnabled.value ? (player.snapshot?.attempt_id ?? null) : null;
 }
 function previewSeek(event: Event) {
 	if (!seekTarget.value) beginSeek();
-	if (seekTarget.value && seekTarget.value === player.snapshot?.playback_id)
+	if (seekTarget.value && seekTarget.value === player.snapshot?.attempt_id)
 		seekDraft.value = {
 			position: (event.target as HTMLInputElement).valueAsNumber,
 			playbackId: seekTarget.value,
@@ -81,7 +81,7 @@ function seekKey(event: KeyboardEvent) {
 }
 async function commitSeek() {
 	const draft = seekDraft.value;
-	if (draft && draft.playbackId === player.snapshot?.playback_id && seekEnabled.value)
+	if (draft && draft.playbackId === player.snapshot?.attempt_id && seekEnabled.value)
 		await player.seek(draft.position, draft.playbackId);
 	seekDraft.value = null;
 	seekTarget.value = null;
@@ -106,7 +106,7 @@ watch(
 	{ immediate: true },
 );
 async function setVolume() {
-	await player.mutate("/api/player/volume", "PUT", { volume: volume.value / 100 });
+	await player.mutate("/api/playback/volume", "PUT", { volume: volume.value / 100 });
 	volume.value = Math.round((player.snapshot?.volume ?? 1) * 100);
 }
 const crossfade = ref(0);
@@ -119,7 +119,7 @@ watch(
 );
 async function setCrossfade(seconds: number) {
 	crossfade.value = seconds;
-	await player.mutate("/api/player/crossfade", "PUT", { seconds });
+	await player.mutate("/api/playback/crossfade", "PUT", { seconds });
 	crossfade.value = player.snapshot?.crossfade_seconds ?? 0;
 }
 </script>
@@ -148,7 +148,7 @@ async function setCrossfade(seconds: number) {
 				<UButton
 					:icon="icons.stop"
 					aria-label="Stop playback"
-					:loading="player.isPending('/api/player/stop')"
+					:loading="player.isControlPending('stop')"
 					color="neutral"
 					variant="ghost"
 					class="size-10 justify-center"
@@ -164,8 +164,8 @@ async function setCrossfade(seconds: number) {
 				color="neutral"
 				:loading="
 					player.snapshot?.state === 'loading' ||
-					player.isPending('/api/player/play') ||
-					player.isPending('/api/player/pause')
+					player.isControlPending('play') ||
+					player.isControlPending('pause')
 				"
 				:disabled="!player.enabled || !canControl(player.snapshot, action)"
 				@click="player.control(action)"
@@ -174,7 +174,7 @@ async function setCrossfade(seconds: number) {
 				<UButton
 					:icon="icons.skip"
 					aria-label="Skip track"
-					:loading="player.isPending('/api/player/skip')"
+					:loading="player.isControlPending('skip')"
 					color="neutral"
 					variant="ghost"
 					class="size-10 justify-center"
@@ -267,7 +267,7 @@ async function setCrossfade(seconds: number) {
 								:disabled="
 									!player.enabled ||
 									player.snapshot?.crossfade_seconds === undefined ||
-									player.isPending('/api/player/crossfade')
+									player.isPending('/api/playback/crossfade')
 								"
 								@update:model-value="setCrossfade($event ? 5 : 0)"
 							/>
@@ -283,7 +283,7 @@ async function setCrossfade(seconds: number) {
 								aria-label="Crossfade duration"
 								:aria-valuetext="`${crossfade} seconds`"
 								:disabled="
-									!player.enabled || player.isPending('/api/player/crossfade')
+									!player.enabled || player.isPending('/api/playback/crossfade')
 								"
 								@change="setCrossfade(crossfade)"
 							/>

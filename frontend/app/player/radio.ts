@@ -1,5 +1,6 @@
 import { ref, shallowRef } from "vue";
 import type { RadioPreview, RadioSource } from "../../shared/radio";
+import type { Track, DiscoveryPage, MediaReference } from "../../shared/engine";
 
 export function createRadioClient(request: typeof fetch) {
 	const source = shallowRef<RadioSource | null>(null);
@@ -18,13 +19,12 @@ export function createRadioClient(request: typeof fetch) {
 		error.value = "";
 		loading.value = true;
 		try {
-			const response = await request("/api/radio/preview", {
+			const response = await request(`/api/catalog/${value.kind}`, {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
-					"Idempotency-Key": crypto.randomUUID(),
 				},
-				body: JSON.stringify(value),
+				body: JSON.stringify({ source_url: value.source_url }),
 				signal: AbortSignal.any([controller.signal, AbortSignal.timeout(40_000)]),
 			});
 			if (!response.ok) {
@@ -35,8 +35,16 @@ export function createRadioClient(request: typeof fetch) {
 						: "Could not load radio. Try again.",
 				);
 			}
-			const data = (await response.json()) as RadioPreview;
-			if (current === version.value) preview.value = data;
+			const data: Track | DiscoveryPage = await response.json();
+			const seed: MediaReference =
+				value.kind === "playlist"
+					? (data as DiscoveryPage).playlist!
+					: {
+							identity: (data as Track).identity,
+							kind: "track",
+							source_url: (data as Track).source_url,
+						};
+			if (current === version.value) preview.value = { seed };
 		} catch (reason) {
 			if (current === version.value)
 				error.value =

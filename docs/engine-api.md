@@ -1,12 +1,12 @@
 # Engine API
 
-Parent: [Architecture](architecture.md). Implementation status: [rewrite plan](../refactoring.md).
+Parent: [Architecture](architecture.md).
 
 The normal backend entry point and local service now run this engine on a fresh
-database. The remaining Discord listening acceptance is tracked in the rewrite
-plan. The frontend still uses the
-old API and needs adaptation before it can control the new backend. No legacy
-route or event-format compatibility is promised.
+database. The frontend uses the native API for discovery, queue operations,
+playback controls and live updates. The remaining Discord listening acceptance
+is described under [verification](#verification). No legacy route or event-format
+compatibility is promised.
 
 ## Startup and fresh data
 

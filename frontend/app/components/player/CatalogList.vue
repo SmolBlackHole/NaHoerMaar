@@ -71,8 +71,8 @@ const player = usePlayerStore();
 				:aria-label="`Add ${trackTitle(catalogEntry(item))} to queue`"
 				:title="`Add ${trackTitle(catalogEntry(item))} to queue`"
 				:disabled="!enabled || !!item.unavailable || !item.source_url"
-				:loading="!!item.source_url && player.isAdding(item.source_url)"
-				:aria-busy="!!item.source_url && player.isAdding(item.source_url)"
+				:loading="!!item.source_url && player.isAdding(item.track_id)"
+				:aria-busy="!!item.source_url && player.isAdding(item.track_id)"
 				@click="emit('add', item)"
 			/>
 			<PlayerRadioAction

@@ -1,4 +1,12 @@
 import { computed, ref, shallowRef } from "vue";
+import {
+	presentSession,
+	presentTrack,
+	type Track,
+	type SessionState,
+	type Outcome,
+	type MutationReply,
+} from "../../shared/engine";
 import type {
 	MutationResult,
 	PlaybackAction,
@@ -15,7 +23,9 @@ export interface PendingRequest {
 
 const messages: Record<string, string> = {
 	radio_conflict: "The radio changed. Check the current radio and try again.",
-	radio_preview_expired: "This radio preview expired. Open it again before starting.",
+	not_connected: "Join a voice channel before controlling playback.",
+	nothing_playing: "There is no current track to control.",
+	invalid_seek: "That position is outside the current track.",
 	undo_unavailable: "Undo has expired or was already used. The queue is unchanged.",
 	queue_conflict: "The queue changed. Check the updated queue and try again.",
 	playback_conflict: "The track changed before your action arrived. The player is up to date.",
@@ -32,7 +42,11 @@ const messages: Record<string, string> = {
 export function createPlayerClient(
 	request: typeof fetch = (...args) => fetch(...args),
 	openEvents: (url: string) => EventSource = (url) => new EventSource(url),
-	auth?: { lost: (code: string) => void; check: () => Promise<void> },
+	auth?: {
+		lost: (code: string) => void;
+		check: () => Promise<void>;
+		userId?: () => string | undefined;
+	},
 ) {
 	const snapshot = shallowRef<PlayerState | null>(null);
 	const connection = ref<"connecting" | "live" | "offline">("connecting");
@@ -42,6 +56,13 @@ export function createPlayerClient(
 	const pending = ref(false);
 	const activeRequest = shallowRef<PendingRequest | null>(null);
 	const completed = shallowRef<{ request: PendingRequest; result: MutationResult } | null>(null);
+	const activity = shallowRef<{
+		id: string;
+		action: string;
+		result: MutationResult;
+		own: boolean;
+	} | null>(null);
+	const resolving = ref<string | null>(null);
 	const uncertain = shallowRef<PendingRequest | null>(null);
 	const error = ref<string | null>(null);
 	const enabled = computed(
@@ -50,15 +71,35 @@ export function createPlayerClient(
 			!!snapshot.value &&
 			!snapshot.value.last_issue?.fatal &&
 			!pending.value &&
+			!resolving.value &&
 			!uncertain.value,
 	);
 	let events: EventSource | undefined;
 	let disposed = false;
 	let generation = 0;
+	let tracks: Record<string, Track> = {};
+	function presentOutcome(outcome: Outcome): MutationResult {
+		return {
+			...outcome,
+			replayed: false,
+			entries: outcome.entries.map((item) => presentTrack(tracks[item.track_id], item)),
+		};
+	}
 
-	function accept(state: PlayerState) {
-		if (snapshot.value && state.revision < snapshot.value.revision) return false;
-		snapshot.value = state;
+	function accept(state: SessionState) {
+		if (!Number.isSafeInteger(state.session?.revision) || !Array.isArray(state.queue))
+			throw new Error("Invalid session state");
+		if (
+			snapshot.value?.session_id === state.session.id &&
+			state.session.revision < snapshot.value.revision
+		)
+			return false;
+		if (snapshot.value?.session_id !== state.session.id) tracks = {};
+		tracks = { ...tracks, ...state.tracks };
+		snapshot.value = presentSession(
+			state,
+			snapshot.value?.session_id === state.session.id ? snapshot.value : null,
+		);
 		return true;
 	}
 
@@ -91,20 +132,28 @@ export function createPlayerClient(
 		stream.onopen = () => {
 			if (events === stream && !disposed) connection.value = "connecting";
 		};
-		stream.addEventListener("state", (event) => {
+		const receive = (event: Event, change: boolean) => {
 			if (events !== stream || disposed) return;
 			try {
-				const state = JSON.parse((event as MessageEvent).data) as PlayerState;
-				if (!Number.isSafeInteger(state.revision) || !Array.isArray(state.upcoming))
-					throw new Error("invalid state");
+				const data = JSON.parse((event as MessageEvent).data);
+				const state: SessionState = change ? data.state : data;
 				if (!accept(state)) return;
+				if (change)
+					activity.value = {
+						id: `${state.session.id}:${state.session.revision}`,
+						action: data.action,
+						result: presentOutcome(data.outcome),
+						own: !!data.outcome.actor && data.outcome.actor.id === auth?.userId?.(),
+					};
 				const reconnected = connection.value !== "live";
 				connection.value = "live";
 				if (reconnected) void refreshChannels();
 			} catch {
 				connection.value = "offline";
 			}
-		});
+		};
+		stream.addEventListener("state", (event) => receive(event, false));
+		stream.addEventListener("change", (event) => receive(event, true));
 		stream.onerror = () => {
 			if (events === stream && !disposed) {
 				connection.value = "offline";
@@ -136,22 +185,30 @@ export function createPlayerClient(
 				body: command.body,
 				signal: AbortSignal.timeout(30_000),
 			});
-			const result = (await response.json()) as Partial<MutationResult>;
+			const result = (await response.json()) as Partial<MutationReply> & { code?: string };
 			if (version !== generation) return false;
-			if (result.snapshot) accept(result.snapshot);
-			if (response.status >= 500 && !result.snapshot) throw new Error("unknown outcome");
+			if (result.state) accept(result.state);
+			if (response.status >= 500 && !result.state) throw new Error("unknown outcome");
 			uncertain.value = null;
-			if (!response.ok || result.code !== "ok") {
+			if (!response.ok || result.outcome?.code !== "ok") {
 				error.value =
 					response.status === 422
-						? "The request is invalid. Queue entries must use single YouTube video links."
-						: (messages[result.code ?? ""] ??
+						? "The request is invalid. Check your selection and try again."
+						: (messages[result.outcome?.code ?? result.code ?? ""] ??
 							"The action was rejected. Refresh the connection and try again.");
 				return false;
 			}
-			if (!result.snapshot || result.request_id !== command.id)
-				throw new Error("unknown outcome");
-			completed.value = { request: command, result: result as MutationResult };
+			if (!result.state || !result.outcome) throw new Error("unknown outcome");
+			completed.value = {
+				request: command,
+				result: {
+					...result.outcome,
+					replayed: !!result.replayed,
+					entries: result.outcome.entries.map((item) =>
+						presentTrack(tracks[item.track_id], item),
+					),
+				},
+			};
 			return true;
 		} catch {
 			if (version !== generation) return false;
@@ -177,20 +234,21 @@ export function createPlayerClient(
 	}
 
 	function control(action: PlaybackAction) {
-		return mutate(`/api/player/${action}`, "POST", {
-			expected_playback_id: snapshot.value?.playback_id ?? null,
+		return mutate("/api/playback/control", "POST", {
+			action,
+			expected_attempt_id: snapshot.value?.attempt_id ?? null,
 		});
 	}
 
-	function seek(positionSeconds: number, playbackId: string) {
-		return mutate("/api/player/seek", "PUT", {
-			position_seconds: positionSeconds,
-			expected_playback_id: playbackId,
+	function seek(positionSeconds: number, attemptId: string) {
+		return mutate("/api/playback/position", "PUT", {
+			seconds: positionSeconds,
+			expected_attempt_id: attemptId,
 		});
 	}
 
 	function move(entryId: string, beforeId: string | null, revision: number) {
-		return mutate(`/api/queue/${entryId}/move`, "POST", {
+		return mutate(`/api/queue/${entryId}/position`, "PUT", {
 			before_entry_id: beforeId,
 			expected_queue_revision: revision,
 		});
@@ -208,11 +266,51 @@ export function createPlayerClient(
 		);
 	}
 
-	function isAdding(sourceUrl: string) {
+	function isAdding(trackId: string) {
 		return (
-			isPending("/api/queue") &&
-			activeRequest.value?.body === JSON.stringify({ source_url: sourceUrl })
+			resolving.value === trackId ||
+			(isPending("/api/queue") &&
+				!!JSON.parse(activeRequest.value?.body ?? "{}").track_ids?.includes(trackId))
 		);
+	}
+	function isControlPending(action: PlaybackAction | "leave") {
+		return (
+			isPending("/api/playback/control") &&
+			JSON.parse(activeRequest.value?.body ?? "{}").action === action
+		);
+	}
+	async function add(sourceUrl: string) {
+		if (!enabled.value) return false;
+		const version = generation;
+		resolving.value = sourceUrl;
+		error.value = null;
+		try {
+			const response = await request("/api/catalog/track", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ source_url: sourceUrl }),
+				signal: AbortSignal.timeout(35_000),
+			});
+			if (!response.ok) throw new Error("Could not resolve this track. Try again.");
+			const track: Track = await response.json();
+			if (version !== generation) return false;
+			tracks[track.id] = track;
+			resolving.value = null;
+			return await addMany([track.id]);
+		} catch (reason) {
+			if (version === generation)
+				error.value =
+					reason instanceof Error ? reason.message : "Could not resolve this track.";
+			return false;
+		} finally {
+			if (version === generation) resolving.value = null;
+		}
+	}
+	function addMany(trackIds: string[], skipDuplicates = false) {
+		return mutate("/api/queue", "POST", {
+			track_ids: trackIds,
+			skip_duplicates: skipDuplicates,
+		});
 	}
 
 	function dispose() {
@@ -230,9 +328,17 @@ export function createPlayerClient(
 		pending.value = false;
 		activeRequest.value = null;
 		completed.value = null;
+		activity.value = null;
+		resolving.value = null;
+		tracks = {};
 	}
 
 	return {
+		activity,
+		resolving,
+		add,
+		addMany,
+		isControlPending,
 		snapshot,
 		connection,
 		channels,
