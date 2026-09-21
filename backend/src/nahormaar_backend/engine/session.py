@@ -19,10 +19,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from .catalog import Catalog
 from .audio import AudioPlayer, VoiceTransport
 from .domain.playback import Control, Effect, PlaybackCommand, PlaybackMessage, decide
+from nahormaar_backend.domain.identity import Contributor
 from .domain.queue import (
     Add,
     Clear,
-    Contributor,
     Move,
     Outcome,
     Queue,

@@ -172,6 +172,7 @@ def test_domain_imports_without_legacy_core_or_io_libraries() -> None:
             "adapter_modules = sorted(sys.modules); "
             "from nahormaar_backend.engine.api import create_app; "
             "from nahormaar_backend.engine.commands import DiscordCommands; "
+            "import nahormaar_backend.__main__; "
             "print(json.dumps([domain_modules, core_modules, adapter_modules, sorted(sys.modules)]))",
             str(source),
         ],
@@ -188,9 +189,14 @@ def test_domain_imports_without_legacy_core_or_io_libraries() -> None:
     assert "nahormaar_backend.engine.domain.catalog" in loaded
     assert "nahormaar_backend.engine.providers" in loaded
     assert "nahormaar_backend.engine.audio" in loaded
+    shared_domain = {
+        "nahormaar_backend.domain",
+        "nahormaar_backend.domain.identity",
+    }
     assert not any(
         name.startswith("nahormaar_backend.")
         and not name.startswith("nahormaar_backend.engine")
+        and name not in shared_domain
         for name in with_storage
     )
     assert not {"discord", "sqlalchemy", "httpx", "yt_dlp", "ytmusicapi"}.intersection(
@@ -208,7 +214,7 @@ def test_domain_imports_without_legacy_core_or_io_libraries() -> None:
     assert not any(
         name.startswith("nahormaar_backend.")
         and not name.startswith("nahormaar_backend.engine")
-        and name not in technical_modules
+        and name not in technical_modules | shared_domain
         for name in with_adapter
     )
     assert not {"discord", "httpx", "yt_dlp", "ytmusicapi"}.intersection(with_adapter)

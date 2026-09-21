@@ -11,7 +11,8 @@ from enum import StrEnum
 from uuid import UUID, uuid4
 
 from .catalog import MediaReference
-from .queue import Contributor, QueueEntry
+from nahormaar_backend.domain.identity import Contributor
+from .queue import QueueEntry
 
 RADIO_TARGET = 3
 RADIO_POOL = 50

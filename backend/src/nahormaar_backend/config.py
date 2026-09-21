@@ -84,7 +84,7 @@ class AuthSettings:
             origin,
             values.get("DISCORD_CLIENT_ID", "").strip(),
             values.get("DISCORD_CLIENT_SECRET", "").strip(),
-            Path(values.get("DATABASE_PATH") or "data/player.sqlite3").resolve(),
+            Path(values.get("DATABASE_PATH") or "data/engine.sqlite3").resolve(),
             Path(values.get("ACCESS_PATH") or "access.toml").resolve(),
         )
 
@@ -147,7 +147,7 @@ class Settings:
             raise ConfigurationError("Node.js 22+ is required.")
         ffmpeg = ffmpeg_executable(values.get("FFMPEG_PATH"))
         executable_version(ffmpeg, "-version")
-        database = Path(values.get("DATABASE_PATH") or "data/player.sqlite3").resolve()
+        database = Path(values.get("DATABASE_PATH") or "data/engine.sqlite3").resolve()
         return cls(token, database, ffmpeg, node_path)
 
 

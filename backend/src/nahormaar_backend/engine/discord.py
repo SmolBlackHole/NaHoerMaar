@@ -12,6 +12,7 @@ attempt or prepared source. The composition root owns the Discord client.
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import logging
 import threading
 from collections.abc import Callable
@@ -78,6 +79,15 @@ class _Prepared:
 
 class DiscordOutput:
     """One AudioPlayer + VoiceTransport; shared instance, closed once by runtime."""
+
+    @staticmethod
+    def validate_dependencies() -> None:
+        if importlib.util.find_spec("davey") is None:
+            raise VoiceError("Discord DAVE voice support is unavailable.")
+        try:
+            discord.opus.Encoder()
+        except (discord.opus.OpusNotLoaded, OSError) as error:
+            raise VoiceError("Discord Opus encoding support is unavailable.") from error
 
     def __init__(
         self,

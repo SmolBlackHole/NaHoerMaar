@@ -48,7 +48,7 @@ where = ["backend/src"]
 "nahormaar_backend" = [
     "py.typed",
     "avatars.json",
-    "persistence/migrations/script.py.mako",
+    "engine/migrations/script.py.mako",
 ]
 
 [tool.pytest.ini_options]

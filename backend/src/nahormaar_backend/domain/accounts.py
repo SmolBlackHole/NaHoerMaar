@@ -6,7 +6,7 @@
 
 from dataclasses import dataclass
 
-from .models import Contributor
+from .identity import Contributor
 from .preferences import Appearance
 
 

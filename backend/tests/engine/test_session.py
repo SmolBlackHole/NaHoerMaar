@@ -21,10 +21,10 @@ from nahormaar_backend.engine.domain.metadata import (
     MetadataSource,
     TrackMetadata,
 )
+from nahormaar_backend.domain.identity import Contributor
 from nahormaar_backend.engine.domain.queue import (
     Add,
     Clear,
-    Contributor,
     Move,
     QueueOrigin,
     Remove,

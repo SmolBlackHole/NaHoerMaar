@@ -2,9 +2,11 @@
 
 Parent: [Project README](README.md)
 
-Active backend refactor: [scope, phases and acceptance criteria](TODO.md).
-Its phases 1 through 4 are implemented; phase 5 covers final integration and
-audio acceptance. Coordinated live Discord acceptance is still pending.
+Active backend rewrite: [scope, phases and acceptance criteria](refactoring.md).
+The new engine and native API now run on a fresh database. Legacy removal and
+offline verification are complete; coordinated Discord listening acceptance
+is still open. The [earlier refactor](TODO.md) is historical context.
+The existing frontend needs a separate adaptation to the new API.
 
 Product milestones below: phases 1, 3, 4 and 5 complete. Earlier live playback failure and disconnect checks
 passed, as did concurrent queue additions in two browser tabs. Phase 6 is
@@ -17,7 +19,7 @@ refactor.
 ## Current scope
 
 - Server selection from the bot's joined servers, one shared queue and one active voice channel
-- YouTube links, search and playlists, controlled through a Nuxt dashboard
+- YouTube links, search and playlists through the native engine API; Nuxt adaptation pending
 - `/pspsps` summons the bot to a whitelisted user's current Discord voice channel
 - Restarts restore the last channel and track position, including volume and pause state
 - Several people can add, remove and reorder tracks at the same time

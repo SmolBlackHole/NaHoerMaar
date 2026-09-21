@@ -62,7 +62,7 @@ async def open_engine(
             )
             if revision != REVISION:
                 raise ValueError(
-                    "Explicitly migrate an isolated database before starting the engine."
+                    "Initialize an engine database before opening its services."
                 )
         sessions = async_sessionmaker(engine, expire_on_commit=False, autobegin=False)
         metadata = MetadataStore(sessions, clock=clock)

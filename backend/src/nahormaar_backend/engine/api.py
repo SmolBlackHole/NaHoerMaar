@@ -26,7 +26,7 @@ from ..domain.identity import AuthError
 from .domain.catalog import MediaReference, TrackFinding, TrackPage
 from .catalog import Catalog
 from .domain.playback import Control, Join, Seek, SetCrossfade, SetVolume
-from .domain.queue import Add, Clear, Contributor, Move, Remove, Undo
+from .domain.queue import Add, Clear, Move, Remove, Undo
 from .domain.radio import RadioStrategy, RetryRadio, StartRadio, StopRadio
 from .domain.sessions import SessionSnapshot
 from .http_auth import AuthBoundary, CurrentUser, auth_router
@@ -173,7 +173,10 @@ async def event_stream(
 
 
 def create_app(
-    runtime: Callable[[], AbstractAsyncContextManager[Services]], *, public_origin: str
+    runtime: Callable[[], AbstractAsyncContextManager[Services]],
+    *,
+    public_origin: str,
+    shutdown_event: asyncio.Event | None = None,
 ) -> FastAPI:
     active: Services | None = None
 
@@ -192,11 +195,22 @@ def create_app(
             if opened.auth.settings.public_origin != public_origin:
                 raise ValueError("HTTP and authentication origins must agree.")
             active = opened
+
+            async def stop_streams() -> None:
+                if shutdown_event is not None:
+                    await shutdown_event.wait()
+                    opened.session.events.close()
+
+            watcher = asyncio.create_task(stop_streams(), name="engine-http-shutdown")
             try:
                 yield
             finally:
+                if shutdown_event is not None:
+                    shutdown_event.set()
                 opened.session.events.close()
                 active = None
+                watcher.cancel()
+                await asyncio.gather(watcher, return_exceptions=True)
 
     app = FastAPI(title="NaHörMaar engine", lifespan=lifespan)
     app.add_middleware(AuthBoundary, service=auth)
@@ -253,7 +267,7 @@ def create_app(
         reply = await value.session.request(
             operation,
             command,
-            actor=Contributor(**asdict(user.account.profile)),
+            actor=user.account.profile,
             expected_attempt_id=attempt,
         )
         code = reply.outcome.code

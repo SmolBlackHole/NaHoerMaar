@@ -10,7 +10,8 @@ from enum import StrEnum
 from math import isfinite
 from uuid import UUID, uuid4
 
-from .queue import Contributor, Outcome, Queue, QueueOrigin
+from nahormaar_backend.domain.identity import Contributor
+from .queue import Outcome, Queue, QueueOrigin
 from .radio import ManualStrategy, RadioStrategy
 
 

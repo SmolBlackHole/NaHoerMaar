@@ -23,7 +23,6 @@ from typing import BinaryIO, cast
 import discord
 from discord.oggparse import OggError, OggStream
 
-from ..application.audio import TrackError
 
 _PCM_FRAME_BYTES = 3_840
 _SAMPLES_PER_FRAME = 960
@@ -354,7 +353,7 @@ def _ffmpeg_arguments(
             if not _HEADER_NAME.fullmatch(name) or any(
                 marker in value for marker in ("\r", "\n", "\0")
             ):
-                raise TrackError("The audio stream contains invalid HTTP headers.")
+                raise ValueError("The audio stream contains invalid HTTP headers.")
             header_lines.append(f"{name}: {value}")
         arguments.extend(("-headers", "\r\n".join(header_lines) + "\r\n"))
     if source.startswith(("http://", "https://")):

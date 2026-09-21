@@ -7,17 +7,13 @@ import secrets
 import time
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlsplit
-from uuid import uuid4
 
 import httpx
 import pytest
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from nahormaar_backend.api import create_app
 from nahormaar_backend.application.auth import (
-    LOGIN_COOKIE,
-    SESSION_COOKIE,
     SESSION_SECONDS,
     Auth,
     csrf_token,
@@ -28,17 +24,7 @@ from nahormaar_backend.domain.identity import AuthError, DiscordIdentity
 from nahormaar_backend.integrations.discord_oauth import DiscordOAuth
 from nahormaar_backend.persistence.database import database_engine
 from nahormaar_backend.persistence.models import LoginRow, SessionRow
-from nahormaar_backend.persistence.player_store import SQLiteStore
-from test_api import (
-    AUTH_HEADERS,
-    TEST_TOKEN,
-    VIDEO,
-    Harness,
-    headers,
-    mutation,
-    next_state,
-    running_server,
-)
+from nahormaar_backend.engine.schema import upgrade
 
 
 class Provider:
@@ -59,8 +45,12 @@ class Provider:
 
 def auth_service(tmp_path: Path) -> tuple[Auth, Provider, list[float]]:
     path = tmp_path / "auth.sqlite3"
-    with SQLiteStore(path):
-        pass
+    engine = database_engine(path)
+    try:
+        with engine.begin() as connection:
+            upgrade(connection)
+    finally:
+        engine.dispose()
     access = tmp_path / "access.toml"
     access.write_text('discord_ids = ["1"]', encoding="utf-8")
     provider, clock = Provider(), [time.time()]
@@ -264,169 +254,3 @@ def test_public_origin_must_be_explicit_and_canonical(
 ) -> None:
     with pytest.raises(ConfigurationError):
         AuthSettings(origin, "123", "test-secret", tmp_path / "db", tmp_path / "access")
-
-
-def test_every_player_endpoint_requires_session_and_mutations_require_csrf(
-    tmp_path: Path,
-) -> None:
-    async def scenario() -> None:
-        harness = Harness(tmp_path / "player.sqlite3")
-        async with harness.client() as client:
-            client.cookies.clear()
-            for method, path in [
-                ("GET", "/api/state"),
-                ("GET", "/api/events"),
-                ("GET", "/api/channels"),
-                ("GET", "/api/catalog/search?q=music"),
-                ("POST", "/api/youtube/playlists"),
-                ("GET", f"/api/youtube/playlists/{uuid4()}"),
-                ("POST", "/api/queue"),
-                ("PUT", "/api/player/volume"),
-                ("PUT", "/api/profile"),
-            ]:
-                response = await client.request(method, path)
-                assert response.status_code == 401, path
-                assert response.headers["cache-control"] == "no-store"
-            client.cookies.set(SESSION_COOKIE, TEST_TOKEN)
-            for extra in (
-                {"X-CSRF-Token": ""},
-                {"Origin": "https://evil.invalid"},
-                {"Origin": ""},
-            ):
-                response = await client.post(
-                    "/api/queue", json={"source_url": VIDEO}, headers=headers() | extra
-                )
-                assert response.status_code == 403
-            requests: list[tuple[str, dict[str, object]]] = [
-                ("/api/queue", {"source_url": VIDEO}),
-                ("/api/queue/batch", {"source_urls": [VIDEO]}),
-            ]
-            for path, body in requests:
-                assert (
-                    await client.post(
-                        path,
-                        json=body
-                        | {
-                            "added_by": {
-                                "id": str(uuid4()),
-                                "name": "Forged",
-                                "avatar": "0002",
-                            }
-                        },
-                        headers=headers(),
-                    )
-                ).status_code == 422
-            key = headers()
-            added = mutation(
-                await client.post("/api/queue", json={"source_url": VIDEO}, headers=key)
-            )
-            assert (
-                await client.put(
-                    "/api/profile", json={"name": "New name", "avatar": "0118"}
-                )
-            ).status_code == 200
-            retry = mutation(
-                await client.post("/api/queue", json={"source_url": VIDEO}, headers=key)
-            )
-            assert retry.replayed and retry.entry_id == added.entry_id
-            assert (
-                retry.snapshot.upcoming[0].added_by
-                == added.snapshot.upcoming[0].added_by
-            )
-            state = (await client.get("/api/auth/session")).json()
-            assert state["profile"]["name"] == "New name"
-            assert "discord_id" not in state
-            assert (await client.post("/api/auth/logout")).status_code == 204
-            assert (await client.get("/api/state")).status_code == 401
-
-    asyncio.run(scenario())
-
-
-def test_oauth_routes_rotate_cookie_and_clean_callback_url(tmp_path: Path) -> None:
-    async def scenario() -> None:
-        harness, provider = Harness(tmp_path / "player.sqlite3"), Provider()
-        app = create_app(
-            harness.runtime,
-            auth_settings=harness.auth_settings,
-            identity_provider=provider,
-        )
-        async with (
-            app.router.lifespan_context(app),
-            httpx.AsyncClient(
-                transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8000"
-            ) as client,
-        ):
-            begin = await client.get(
-                "/api/auth/discord", headers={"X-Forwarded-Host": "evil.invalid"}
-            )
-            assert begin.status_code == 303
-            assert (
-                "HttpOnly" in begin.headers["set-cookie"]
-                and "SameSite=lax" in begin.headers["set-cookie"]
-            )
-            state = parse_qs(urlsplit(begin.headers["location"]).query)["state"][0]
-            callback = await client.get(
-                "/api/auth/discord/callback",
-                params={"state": state, "code": "single-use-code"},
-            )
-            assert callback.headers["location"] == "/"
-            assert len(callback.headers.get_list("set-cookie")) == 2
-            assert (
-                SESSION_COOKIE in client.cookies and LOGIN_COOKIE not in client.cookies
-            )
-            assert (await client.get("/api/auth/session")).status_code == 200
-            replay = await client.get(
-                "/api/auth/discord/callback",
-                params={"state": state, "code": "single-use-code"},
-            )
-            assert replay.headers["location"] == "/login?error=login_expired"
-            assert provider.calls == 1
-
-    asyncio.run(scenario())
-
-
-@pytest.mark.parametrize("change", ["logout", "expire", "revoke"])
-def test_idle_sse_closes_within_five_seconds_after_access_is_lost(
-    tmp_path: Path, change: str
-) -> None:
-    async def scenario() -> None:
-        harness = Harness(tmp_path / "player.sqlite3")
-        shutdown = asyncio.Event()
-        async with (
-            running_server(
-                create_app(
-                    harness.runtime,
-                    shutdown_event=shutdown,
-                    auth_settings=harness.auth_settings,
-                ),
-                shutdown,
-            ) as (url, _, _),
-            httpx.AsyncClient(
-                base_url=url, cookies={SESSION_COOKIE: TEST_TOKEN}, headers=AUTH_HEADERS
-            ) as client,
-        ):
-            async with client.stream("GET", "/api/events") as stream:
-                lines = stream.aiter_lines()
-                await next_state(lines)
-                started = time.monotonic()
-                if change == "revoke":
-                    harness.auth_settings.access_path.write_text(
-                        "discord_ids = []", encoding="utf-8"
-                    )
-                elif change == "logout":
-                    assert (await client.post("/api/auth/logout")).status_code == 204
-                else:
-                    engine = database_engine(harness.path)
-                    try:
-                        with Session(engine) as db, db.begin():
-                            db.execute(update(SessionRow).values(expires_at=0))
-                    finally:
-                        engine.dispose()
-                async with asyncio.timeout(5):
-                    events = [line async for line in lines]
-                assert "event: auth" in events
-                assert not any(line.startswith("event: state") for line in events)
-                assert time.monotonic() - started < 5
-                assert (await client.get("/api/state")).status_code in (401, 403)
-
-    asyncio.run(scenario())

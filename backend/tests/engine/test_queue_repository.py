@@ -13,7 +13,8 @@ from sqlalchemy import delete, text
 from sqlalchemy.exc import IntegrityError
 
 from nahormaar_backend.engine.domain.metadata import TrackMetadata
-from nahormaar_backend.engine.domain.queue import Contributor, QueueEntry, QueueOrigin
+from nahormaar_backend.domain.identity import Contributor
+from nahormaar_backend.engine.domain.queue import QueueEntry, QueueOrigin
 from nahormaar_backend.engine.domain.sessions import ListeningSession
 from nahormaar_backend.engine.domain.tracks import MediaIdentity, Track
 from nahormaar_backend.engine.persistence import (

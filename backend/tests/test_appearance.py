@@ -5,17 +5,18 @@
 import asyncio
 from pathlib import Path
 
-from nahormaar_backend.application.auth import SESSION_COOKIE, csrf_token
+from nahormaar_backend.application.auth import SESSION_COOKIE, csrf_token, digest
 from nahormaar_backend.domain.preferences import Appearance
-from test_api import Harness
+from nahormaar_backend.persistence.accounts import Accounts
+from engine.test_catalog import TIME
+from engine.test_engine_api import DISCORD_ID, TOKEN, fixture
 
 
 def test_appearance_is_saved_per_account_and_survives_restart(tmp_path: Path) -> None:
-    harness = Harness(tmp_path / "player.sqlite3")
     appearance = Appearance(mode="light", primaryColor="amber", fontFamily="Inter")
 
     async def scenario() -> None:
-        async with harness.client() as client:
+        async with fixture(tmp_path) as (client, services, _provider, _audio):
             saved = await client.put(
                 "/api/profile/appearance", json=appearance.model_dump()
             )
@@ -25,7 +26,18 @@ def test_appearance_is_saved_per_account_and_survives_restart(tmp_path: Path) ->
                 "appearance"
             ] == saved.json()
             other_token = "b" * 43
-            harness.account("2", other_token, "Other listener")
+            services.auth.settings.access_path.write_text(
+                f'discord_ids = ["{DISCORD_ID}", "2"]', encoding="utf-8"
+            )
+            services.auth.accounts.create_session(
+                "2",
+                "Other listener",
+                "0001",
+                digest(other_token),
+                TIME.timestamp() + 3600,
+                TIME.timestamp(),
+                None,
+            )
             client.cookies.clear()
             client.cookies.set(SESSION_COOKIE, other_token)
             client.headers["X-CSRF-Token"] = csrf_token(other_token)
@@ -37,10 +49,14 @@ def test_appearance_is_saved_per_account_and_survives_restart(tmp_path: Path) ->
                     "/api/profile/appearance", json={"primaryColor": "rose"}
                 )
             ).status_code == 200
-        async with harness.client() as client:
-            assert (await client.get("/api/auth/session")).json()[
-                "appearance"
-            ] == appearance.model_dump()
+        accounts = Accounts(tmp_path / "engine.db")
+        try:
+            saved_account = accounts.session(digest(TOKEN), TIME.timestamp())
+            assert saved_account and saved_account[0].appearance == appearance
+            other = accounts.session(digest(other_token), TIME.timestamp())
+            assert other and other[0].appearance.primaryColor == "rose"
+        finally:
+            accounts.close()
 
     asyncio.run(scenario())
 
@@ -49,7 +65,7 @@ def test_appearance_rejects_invalid_choices_and_requires_session_csrf(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
-        async with Harness(tmp_path / "player.sqlite3").client() as client:
+        async with fixture(tmp_path) as (client, _services, _provider, _audio):
             for invalid in (
                 {"mode": "invalid"},
                 {"fontFamily": "arbitrary CSS"},

@@ -15,10 +15,14 @@ import httpx
 import pytest
 from fastapi.encoders import jsonable_encoder
 from starlette.types import Message, Receive, Scope, Send
+from sqlalchemy import update
+from sqlalchemy.orm import Session as DatabaseSession
 
 from nahormaar_backend.application.auth import Auth, SESSION_COOKIE, csrf_token, digest
 from nahormaar_backend.config import AuthSettings
 from nahormaar_backend.domain.identity import DiscordIdentity
+from nahormaar_backend.persistence.database import database_engine as account_engine
+from nahormaar_backend.persistence.models import SessionRow
 from nahormaar_backend.engine.api import create_app, event_stream
 from nahormaar_backend.engine.audio import PlayableSource, VoiceChannel
 from nahormaar_backend.engine.domain.catalog import (
@@ -330,6 +334,56 @@ def test_http_playback_guards_and_recovery_share_session(tmp_path: Path) -> None
     asyncio.run(scenario())
 
 
+def test_native_routes_require_session_and_mutations_require_csrf(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        async with fixture(tmp_path) as (client, _services, _provider, _audio):
+            client.cookies.clear()
+            for method, path in (
+                ("GET", "/api/session"),
+                ("GET", "/api/events"),
+                ("GET", "/api/channels"),
+                ("GET", "/api/catalog/search?q=music"),
+                ("POST", "/api/catalog/playlist"),
+                ("POST", "/api/catalog/track"),
+                ("GET", f"/api/catalog/playlist/{uuid4()}"),
+                ("POST", "/api/queue"),
+                ("PUT", "/api/playback/volume"),
+                ("PUT", "/api/connection"),
+                ("POST", "/api/radio"),
+                ("PUT", "/api/profile"),
+            ):
+                response = await client.request(method, path)
+                assert response.status_code == 401, path
+                assert response.headers["cache-control"] == "no-store"
+            client.cookies.set(SESSION_COOKIE, TOKEN)
+            for extra in (
+                {"x-csrf-token": ""},
+                {"origin": ""},
+                {"origin": "https://wrong.invalid"},
+            ):
+                response = await client.post(
+                    "/api/queue", json={"track_ids": [str(uuid4())]}, headers=extra
+                )
+                assert response.status_code == 403
+            response = await client.post(
+                "/api/queue",
+                headers={"Idempotency-Key": str(uuid4())},
+                json={
+                    "track_ids": [str(uuid4())],
+                    "added_by": {
+                        "id": str(uuid4()),
+                        "name": "Forged",
+                        "avatar": "0001",
+                    },
+                },
+            )
+            assert response.status_code == 422
+
+    asyncio.run(scenario())
+
+
 def test_authentication_profiles_csrf_and_live_revocation(tmp_path: Path) -> None:
     async def scenario() -> None:
         async with fixture(tmp_path) as (client, services, _provider, _audio):
@@ -537,7 +591,10 @@ def test_oauth_cookie_lifecycle_and_replay(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_real_sse_response_resynchronizes_and_closes_cleanly(tmp_path: Path) -> None:
+@pytest.mark.parametrize("ending", ["shutdown", "logout", "expire", "revoke"])
+def test_real_sse_response_resynchronizes_and_closes_cleanly(
+    tmp_path: Path, ending: str
+) -> None:
     async def scenario() -> None:
         async with fixture(tmp_path) as (_client, services, _provider, _audio):
 
@@ -545,7 +602,10 @@ def test_real_sse_response_resynchronizes_and_closes_cleanly(tmp_path: Path) -> 
             async def borrow() -> AsyncGenerator[Services]:
                 yield services
 
-            app = create_app(borrow, public_origin="http://localhost")
+            shutdown = asyncio.Event()
+            app = create_app(
+                borrow, public_origin="http://localhost", shutdown_event=shutdown
+            )
 
             async def transport(scope: Scope, receive: Receive, send: Send) -> None:
                 async def observed_send(message: Message) -> None:
@@ -555,7 +615,25 @@ def test_real_sse_response_resynchronizes_and_closes_cleanly(tmp_path: Path) -> 
                     ] == "http.response.body" and b"event: state" in message.get(
                         "body", b""
                     ):
-                        services.session.events.close()
+                        if ending == "shutdown":
+                            shutdown.set()
+                        elif ending == "logout":
+                            assert (
+                                await _client.post("/api/auth/logout")
+                            ).status_code == 204
+                        elif ending == "revoke":
+                            services.auth.settings.access_path.write_text(
+                                "discord_ids = []", encoding="utf-8"
+                            )
+                        else:
+                            engine = account_engine(
+                                services.auth.settings.database_path
+                            )
+                            try:
+                                with DatabaseSession(engine) as db, db.begin():
+                                    db.execute(update(SessionRow).values(expires_at=0))
+                            finally:
+                                engine.dispose()
 
                 await app(scope, receive, observed_send)
 
@@ -567,9 +645,10 @@ def test_real_sse_response_resynchronizes_and_closes_cleanly(tmp_path: Path) -> 
                     cookies={SESSION_COOKIE: TOKEN},
                 ) as client,
             ):
-                response = await client.get(
-                    "/api/events", headers={"Last-Event-ID": "outdated"}
-                )
+                async with asyncio.timeout(5):
+                    response = await client.get(
+                        "/api/events", headers={"Last-Event-ID": "outdated"}
+                    )
                 assert response.status_code == 200
                 assert response.headers["content-type"].startswith("text/event-stream")
                 assert response.headers["cache-control"] == "no-store"
@@ -580,6 +659,9 @@ def test_real_sse_response_resynchronizes_and_closes_cleanly(tmp_path: Path) -> 
                     if line.startswith("data: ")
                 )
                 assert json.loads(data)["queue"] == []
+                if ending != "shutdown":
+                    assert "event: auth" in response.text
+                    assert (await client.get("/api/session")).status_code in (401, 403)
 
     asyncio.run(scenario())
 

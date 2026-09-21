@@ -12,7 +12,7 @@ import socket
 import uvicorn
 from uvicorn.config import LOGGING_CONFIG
 
-from .api import create_app
+from .engine.bootstrap import create_application
 
 
 class AccessLogFilter(logging.Filter):
@@ -33,6 +33,9 @@ class LocalServer(uvicorn.Server):
         super().__init__(config)
         self._shutdown_event = shutdown_event
 
+    async def on_tick(self, counter: int) -> bool:
+        return self._shutdown_event.is_set() or await super().on_tick(counter)
+
     async def shutdown(self, sockets: list[socket.socket] | None = None) -> None:
         self._shutdown_event.set()
         await super().shutdown(sockets)
@@ -51,7 +54,7 @@ def main() -> None:
     }
     shutdown_event = asyncio.Event()
     config = uvicorn.Config(
-        create_app(shutdown_event=shutdown_event),
+        create_application(shutdown_event=shutdown_event),
         host="127.0.0.1",
         port=8000,
         workers=1,
@@ -59,7 +62,9 @@ def main() -> None:
         timeout_graceful_shutdown=5,
         log_config=log_config,
     )
-    LocalServer(config, shutdown_event).run()
+    # Reserve the API port before the lifespan can log a second bot into Discord.
+    with config.bind_socket() as listener:
+        LocalServer(config, shutdown_event).run(sockets=[listener])
 
 
 if __name__ == "__main__":

@@ -9,12 +9,13 @@ import threading
 import time
 from collections import deque
 from io import BytesIO
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
 
-from nahormaar_backend.integrations.audio_sources import FFmpegSource
+from nahormaar_backend.integrations.audio_sources import FFmpegSource, _ffmpeg_arguments
 
 
 def source_state(
@@ -107,3 +108,23 @@ def test_unknown_duration_alone_is_not_a_failure() -> None:
     assert not source._ended_early()
     assert source.read() == b""
     assert source.current_error is None
+
+
+def test_ffmpeg_header_arguments_are_discrete_and_reject_injection() -> None:
+    arguments = _ffmpeg_arguments(
+        Path("ffmpeg.exe"),
+        "https://example.invalid/audio?sig=secret",
+        (("User-Agent", "NaHoerMaar"), ("Cookie", "token=secret")),
+    )
+    assert arguments[0] == "ffmpeg.exe"
+    assert arguments[arguments.index("-headers") + 1] == (
+        "User-Agent: NaHoerMaar\r\nCookie: token=secret\r\n"
+    )
+    assert arguments[arguments.index("-rw_timeout") + 1] == "15000000"
+    assert "-reconnect" not in arguments
+    with pytest.raises(ValueError, match="invalid HTTP headers"):
+        _ffmpeg_arguments(
+            Path("ffmpeg.exe"),
+            "https://example.invalid/audio",
+            (("Authorization", "safe\r\nInjected: value"),),
+        )

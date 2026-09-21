@@ -8,7 +8,8 @@ from uuid import uuid4
 
 import pytest
 
-from nahormaar_backend.engine.domain.queue import Contributor, QueueEntry, QueueOrigin
+from nahormaar_backend.domain.identity import Contributor
+from nahormaar_backend.engine.domain.queue import QueueEntry, QueueOrigin
 
 
 def test_repeated_tracks_have_independent_queue_entry_ids() -> None:

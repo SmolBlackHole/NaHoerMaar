@@ -49,7 +49,8 @@ from .domain.metadata import (
     MetadataSource,
     TrackMetadata,
 )
-from .domain.queue import Contributor, Outcome, QueueEntry, QueueOrigin, Removal
+from nahormaar_backend.domain.identity import Contributor
+from .domain.queue import Outcome, QueueEntry, QueueOrigin, Removal
 from .domain.sessions import (
     ListeningSession,
     PlaybackCheckpoint,
@@ -642,7 +643,7 @@ class _ReceiptRow(Base):
     fingerprint: Mapped[str]
     actor_id: Mapped[UUID | None]
     outcome: Mapped[Outcome] = mapped_column(_DomainJSON(Outcome))
-    # This is a one-way migration artifact but not a legacy command or response path. It is not used by the new core.
+    # Retain the nullable column from the applied engine_0001 schema. No writer uses it.
     imported_outcome: Mapped[dict[str, object] | None] = mapped_column(JSON)
 
 

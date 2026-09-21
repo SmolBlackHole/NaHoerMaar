@@ -1,10 +1,41 @@
-# Engine API and isolated migration
+# Engine API
 
 Parent: [Architecture](architecture.md). Implementation status: [rewrite plan](../refactoring.md).
 
-This describes the parallel engine, not the currently deployed backend. The
-frontend still uses the old API. No legacy route or event-format compatibility
-is promised by the new engine. Live cutover is a separately coordinated step.
+The normal backend entry point and local service now run this engine on a fresh
+database. The remaining Discord listening acceptance is tracked in the rewrite
+plan. The frontend still uses the
+old API and needs adaptation before it can control the new backend. No legacy
+route or event-format compatibility is promised.
+
+## Startup and fresh data
+
+`python -m nahormaar_backend` calls `engine/bootstrap.py:create_application`.
+It loads configuration once and reserves the local API port before starting
+Discord. The application lifespan then validates voice dependencies, initializes
+the database and its single listening session, waits for Discord readiness,
+opens engine services and registers `/pspsps`. Presence and daily bio updates
+have their own tasks; they do not own playback state.
+
+For the agreed fresh start, use `DATABASE_PATH=data/engine.sqlite3` in `.env`.
+This is also the default when the variable is absent/empty. An explicit existing
+path is respected, so an old `data/player.sqlite3` setting must be changed before
+the coordinated restart. A legacy/foreign schema is rejected, never overwritten
+or imported. Leave the old database in place as the rollback artifact.
+
+The initializer creates the engine schema and one session atomically. Reopening
+an engine database retains that session's identity, queue, checkpoint and settings.
+Multiple listening sessions are rejected by this single-session composition.
+The initial fresh start has no queue, history or accounts; sign in again to create
+an account and configure preferences. `access.toml` and OAuth configuration are
+unchanged. The old core and its optional copy importer have been removed.
+
+Shutdown signals SSE subscribers before HTTP waits for open responses to finish.
+The Session then saves measured playback intent/position and settles audio work;
+providers, database and Auth close before the Discord gateway. Failure and
+cancellation during startup also clean up owned tasks and resources.
+An unexpected gateway exit terminates the engine lifespan and signals the HTTP
+server to stop rather than leaving an unavailable API process behind.
 
 ## Ownership and composition
 
@@ -26,39 +57,13 @@ then submits `Join` to the same Session as HTTP. `:3` follows confirmed connecti
 not merely request acceptance. Registering commands or connecting a real client
 is not part of the offline tests or automatic engine import.
 
-## Copy migration
+## Schema management
 
-`engine/migration.py:migrate_copy(source, destination, now=...)` is an explicit
-offline operation. Supply a consistent copy with legacy Alembic revision `0011`,
-an absent destination path and a timezone-aware migration timestamp. The source
-opens read-only. The destination is created exclusively; failure removes the
-incomplete destination. An existing destination is never overwritten.
-
-The new schema has its own frozen Alembic history under `engine/migrations/`.
-The old application's migration chain does not discover or execute it. For a
-fresh empty engine database, call `engine/schema.py:upgrade` with an explicit
-SQLAlchemy connection. Migrating user data uses `migrate_copy`, not `upgrade` alone.
-
-Migration preserves queue occurrence IDs and order, history IDs, account IDs,
-contributor snapshots, account preferences, login/session data, operation IDs,
-fingerprints, undo anchors/deadlines, revisions, channel, volume, crossfade,
-position and playing/paused intent. Pending old receipts become interrupted,
-matching old recovery behavior. Imported receipts reserve their original IDs;
-they are not an API that executes old commands. Their original result payload,
-single-entry ID and HTTP status are retained as migration evidence, separate
-from the engine's domain outcome.
-
-URL aliases share one track. Duplicate queue/playlist occurrences remain separate.
-Known metadata is merged without fabricating artist identities from display names.
-An unknown source retains its exact reference under the `legacy` namespace and
-is counted in the migration report. Conflicting known identities abort migration.
-No provider is contacted and no temporary stream URL is extracted or stored.
-
-Old history provides confirmed start times, not end measurements. Unknown ends
-stay unknown. A confirmed current checkpoint must match the latest history record;
-its logical play ID survives restoration. Unconfirmed current playback keeps no
-play ID until output is confirmed. An inconsistent checkpoint aborts migration
-rather than guessing and accidentally adding another listen.
+The frozen Alembic chain lives under `engine/migrations/`. The normal entry point
+uses `engine/schema.py:initialize(path)` to establish the schema and shared
+listening session together. Explicit tooling can call `upgrade(connection)` or
+use the root `alembic.ini`. See [database development](development.md#database-changes).
+There is no old-data import or legacy API fallback.
 
 ## Authentication
 
@@ -151,13 +156,16 @@ emits `event: auth` and closes the stream. Shutdown closes subscriptions.
 
 ## Verification
 
-All engine tests run with plugin autoload disabled, the engine-only confcutdir and
-a fresh temporary database directory. `test_migration.py` uses constructed legacy
-databases. `test_engine_api.py` exercises the ASGI app with controlled providers
-and transports; `test_engine_commands.py` uses Discord interaction fixtures.
-They do not use the running service, active queue, live credentials or Discord.
+The shared backend test isolation blocks real Discord login, external sockets
+and the running dev-server ports, and uses temporary databases and synthetic
+credentials. `test_engine_api.py` exercises the native ASGI app, including
+authorization, account preferences and SSE logout/expiry/revocation.
+`test_engine_commands.py` uses Discord interaction fixtures.
+`test_bootstrap.py` covers initialization, rejected databases, the Alembic CLI,
+Discord readiness/failure/cancellation, presence and restart through the actual
+composition with controlled external dependencies.
 
 The six optional `test_playback_pipeline.py` cases use real local FFmpeg/Opus and
 recorded synthetic tones. Enable `NAHORMAAR_ENGINE_AUDIO_TESTS=1` only in a separately
 agreed resource window. Passing offline tests does not replace the planned live
-Discord listening and restart acceptance before cutover.
+Discord listening acceptance, which remains a separate open step after cutover.

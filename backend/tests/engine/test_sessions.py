@@ -10,7 +10,8 @@ from uuid import uuid4
 
 import pytest
 
-from nahormaar_backend.engine.domain.queue import Contributor, QueueOrigin
+from nahormaar_backend.domain.identity import Contributor
+from nahormaar_backend.engine.domain.queue import QueueOrigin
 from nahormaar_backend.engine.domain.sessions import (
     ListeningSession,
     PlaybackCheckpoint,

@@ -9,30 +9,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from enum import StrEnum
-from re import fullmatch
 from uuid import UUID, uuid4
+
+from ...domain.identity import Contributor
 
 
 class QueueOrigin(StrEnum):
     MANUAL = "manual"
     RADIO = "radio"
-
-
-@dataclass(frozen=True, slots=True)
-class Contributor:
-    """Account identity and the display values captured when a track was added."""
-
-    id: UUID
-    name: str
-    avatar: str
-
-    def __post_init__(self) -> None:
-        if not 1 <= len(self.name) <= 32 or self.name != self.name.strip():
-            raise ValueError(
-                "A contributor needs a trimmed name of 1 to 32 characters."
-            )
-        if not fullmatch(r"[0-9a-f]{4}", self.avatar):
-            raise ValueError("Invalid contributor avatar.")
 
 
 @dataclass(frozen=True, slots=True)
