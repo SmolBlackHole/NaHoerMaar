@@ -24,7 +24,7 @@ from .persistence import (
     write_transaction,
 )
 
-REVISION = "engine_0001"
+REVISION = "engine_0002"
 
 
 def metadata() -> MetaData:
@@ -52,8 +52,8 @@ def upgrade(connection: Connection) -> None:
 async def initialize(path: Path) -> UUID:
     """Initialize an empty database or reopen the one shared listening session.
 
-    An old/foreign schema is never upgraded or replaced. Schema creation and
-    session identity commit together, so a failed first start can be retried.
+    The previous engine revision is upgraded in place. Old or foreign schemas
+    are never replaced. Schema changes and session identity commit together.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     engine = database_engine(path)
@@ -74,6 +74,8 @@ async def initialize(path: Path) -> UUID:
                     raise ValueError(
                         "Database is not empty; choose a fresh DATABASE_PATH."
                     )
+                await connection.run_sync(upgrade)
+            elif heads == ("engine_0001",):
                 await connection.run_sync(upgrade)
             elif heads != (REVISION,):
                 raise ValueError(

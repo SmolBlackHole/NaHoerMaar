@@ -69,9 +69,7 @@ export function presentSession(
 		state,
 		current,
 		upcoming: value.queue.map(entry),
-		recently_played: value.history
-			.filter((item) => item.ended_at !== null)
-			.map((item) => ({
+		recently_played: value.history.map((item) => ({
 				id: item.id,
 				played_at: item.started_at,
 				entry: entry({ ...item, id: item.entry_id }),

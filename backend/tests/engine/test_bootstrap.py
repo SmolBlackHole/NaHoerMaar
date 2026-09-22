@@ -82,6 +82,44 @@ def test_initialize_empty_database_reopens_one_identity(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
+def test_initialize_upgrades_previous_engine_revision_without_losing_session(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "previous.db"
+    root = Path(__file__).resolve().parents[3]
+    config = Config(str(root / "alembic.ini"))
+    config.set_main_option("sqlalchemy.url", f"sqlite:///{path.as_posix()}")
+    command.upgrade(config, "engine_0001")
+    original = ListeningSession(channel_id=123, volume=0.4)
+
+    async def scenario() -> None:
+        engine = database_engine(path)
+        try:
+            sessions = async_sessionmaker(engine, expire_on_commit=False, autobegin=False)
+            async with write_transaction(sessions) as db:
+                await ListeningSessionRepository(db).add(original)
+        finally:
+            await engine.dispose()
+
+        assert await initialize(path) == original.id
+        engine = database_engine(path)
+        try:
+            async with engine.connect() as connection:
+                assert await connection.run_sync(
+                    lambda conn: MigrationContext.configure(conn).get_current_revision()
+                ) == REVISION
+                assert not await connection.run_sync(
+                    lambda conn: compare_metadata(MigrationContext.configure(conn), metadata())
+                )
+            sessions = async_sessionmaker(engine, expire_on_commit=False, autobegin=False)
+            async with sessions.begin() as db:
+                assert await ListeningSessionRepository(db).get(original.id) == original
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
 def test_alembic_cli_targets_engine_schema_and_rejects_old_revision(
     tmp_path: Path,
 ) -> None:

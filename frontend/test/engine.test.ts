@@ -60,7 +60,7 @@ describe("engine presentation", () => {
 		expect(state.last_issue?.id).toBe("record");
 		expect(state.recently_played[0]?.entry.id).toBe(occurrence.id);
 	});
-	it("preserves repeated queue occurrences and hides an ongoing history record", () => {
+	it("preserves repeated queue occurrences and shows an ongoing confirmed play", () => {
 		const value = playing();
 		value.queue = [occurrence, { ...occurrence, id: "second", position: 1 }];
 		value.history = [
@@ -75,6 +75,7 @@ describe("engine presentation", () => {
 		];
 		const state = presentSession(value);
 		expect(state.upcoming.map((item) => item.id)).toEqual([occurrence.id, "second"]);
-		expect(state.recently_played).toEqual([]);
+		expect(state.recently_played[0]?.id).toBe("play");
+		expect(state.recently_played[0]?.entry.id).toBe(occurrence.id);
 	});
 });

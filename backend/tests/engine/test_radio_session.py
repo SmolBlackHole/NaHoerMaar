@@ -258,3 +258,78 @@ def test_queue_can_be_full_before_radio_result_and_closed_session_cancels_fetch(
             await provider.close()
 
     asyncio.run(scenario())
+
+
+def test_radio_reopens_with_seed_initiator_and_remaining_pool(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        async with isolated_database(tmp_path / "radio-restart.sqlite3") as sessions:
+            tracks = await tracks_in(sessions)
+            provider = ControlledMusic(tracks[:6])
+            provider.release.set()
+            catalog = Catalog(
+                (provider,), MetadataStore(sessions, clock=lambda: TIME), clock=lambda: TIME
+            )
+            identifier = uuid4()
+            owner = await Session.open(sessions, identifier, clock=lambda: TIME, catalog=catalog)
+            await owner.request(uuid4(), StartRadio(REFERENCE, None), actor=ACTOR)
+            await until(lambda: len(owner.snapshot.queue.entries) == 3)
+            original = owner.snapshot.strategy
+            entries = owner.snapshot.queue.entries
+            assert isinstance(original, RadioStrategy)
+            assert provider.calls == 1
+            await owner.close()
+
+            owner = await Session.open(sessions, identifier, clock=lambda: TIME, catalog=catalog)
+            assert owner.snapshot.strategy == original
+            assert owner.snapshot.queue.entries == entries
+            assert provider.calls == 1
+            await owner.request(uuid4(), Remove(entries[0].id), actor=ACTOR)
+            await until(lambda: len(owner.snapshot.queue.entries) == 3)
+            assert owner.snapshot.queue.entries[-1].track_id == tracks[3].id
+            assert provider.calls == 1
+            restored = owner.snapshot.strategy
+            assert isinstance(restored, RadioStrategy)
+            assert restored.initiator == ACTOR
+            await owner.request(uuid4(), StopRadio(original.generation), actor=ACTOR)
+            await owner.close()
+
+            owner = await Session.open(sessions, identifier, clock=lambda: TIME, catalog=catalog)
+            assert isinstance(owner.snapshot.strategy, ManualStrategy)
+            await owner.close()
+            await catalog.close()
+            await provider.close()
+
+    asyncio.run(scenario())
+
+
+def test_restart_retries_only_the_cancelled_radio_request(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        async with isolated_database(tmp_path / "radio-loading.sqlite3") as sessions:
+            tracks = await tracks_in(sessions)
+            provider = ControlledMusic(tracks[:5])
+            catalog = Catalog(
+                (provider,), MetadataStore(sessions, clock=lambda: TIME), clock=lambda: TIME
+            )
+            identifier = uuid4()
+            owner = await Session.open(sessions, identifier, clock=lambda: TIME, catalog=catalog)
+            await owner.request(uuid4(), StartRadio(REFERENCE, None), actor=ACTOR)
+            await provider.started.wait()
+            loading = owner.snapshot.strategy
+            assert isinstance(loading, RadioStrategy)
+            assert loading.state is RadioState.LOADING
+            await owner.close()
+            assert provider.cleaned.is_set()
+
+            provider.release.set()
+            owner = await Session.open(sessions, identifier, clock=lambda: TIME, catalog=catalog)
+            await until(lambda: len(owner.snapshot.queue.entries) == 3)
+            assert provider.calls == 2
+            restored = owner.snapshot.strategy
+            assert isinstance(restored, RadioStrategy)
+            assert restored.generation == loading.generation
+            assert restored.initiator == ACTOR
+            await owner.close()
+            await catalog.close()
+            await provider.close()
+
+    asyncio.run(scenario())

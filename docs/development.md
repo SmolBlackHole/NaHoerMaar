@@ -2,9 +2,11 @@
 
 Parent: [Documentation index](README.md)
 
-This guide covers local setup, Discord configuration and changes to the API or
-database. The [engine API](engine-api.md) owns the public contract, and
-[testing and acceptance](testing.md) owns checks and live listening evidence.
+This guide covers local setup, running the services and changes to the API or
+database. [Discord setup](discord-setup.md) covers the Developer Portal,
+bot installation, sign-in and the whitelist. The [engine API](engine-api.md)
+owns the public contract, and [testing and acceptance](testing.md) owns checks
+and live listening evidence.
 Python 3.12+ and Node.js 24.11+ with npm are required.
 
 ## Contents
@@ -42,59 +44,22 @@ Open the repository root in VS Code. Use **Python: Select Interpreter** to selec
 
 ## Configure Discord
 
-Copy `.env.example` to `.env` and set `DISCORD_TOKEN`.
-Environment variables override `.env` values. Invite the bot with the
-`bot` and `applications.commands` scopes and View Channel, Connect and Speak
-permissions for the voice channels you want to use.
+Follow [Set up Discord](discord-setup.md) to create your own application,
+install the bot, register the OAuth redirect and add Discord user IDs to
+`access.toml`.
+Copy `.env.example` to `.env` for the credentials. Environment variables
+override `.env` values. Both local files stay out of Git.
 
 The bot discovers its joined servers and voice channels automatically; no guild
-ID is configured. `GET /api/channels` lists them with permissions. Select a channel
-through `PUT /api/connection`, or use `/pspsps` in Discord after configuration.
+ID is configured. `GET /api/channels` lists them with permissions. Select a
+channel through `PUT /api/connection`, or use `/pspsps` in Discord. Changes to
+the whitelist take effect without a restart; removing someone closes their
+live updates within five seconds. The Logs page holds only recent messages in
+memory and clears on restart.
 
-For dashboard sign-in, set these additional values in `.env`:
-
-```dotenv
-DISCORD_CLIENT_ID=YOUR_APPLICATION_ID
-DISCORD_CLIENT_SECRET=YOUR_CLIENT_SECRET
-PUBLIC_ORIGIN=http://localhost:3012
-```
-
-In the application's OAuth2 settings, register
-`http://localhost:3012/api/auth/discord/callback` as a redirect URI. Use the same
-host and port when opening the dashboard. The bot token and OAuth client secret
-are different credentials.
-
-Copy `access.example.toml` to `access.toml` and add the Discord user IDs allowed
-to use the bot as quoted strings in `discord_ids`. Enable Discord's Developer
-Mode to copy a user's ID. All listed users can control playback and edit the
-whole queue. Changes take effect without a restart; removing someone closes
-their live updates within five seconds. A missing or invalid access file blocks
-access. Both `.env` and `access.toml` stay out of Git.
-
-Add a subset of those IDs to `admin_ids` to grant access to the live Logs page.
-The log view holds only recent messages in memory and is cleared on restart.
-
-Use `/pspsps` in Discord to bring the bot to your current voice channel. The
-command checks this same whitelist on every call; a dashboard account is not
-required. Its replies are visible only to you. Join a regular voice channel first;
-the bot needs View Channel, Connect and Speak there. Calling it in the bot's
-current channel leaves active playback alone. If playback was interrupted, it
-resumes at the retained position; if there is no current track, queued work starts.
-An explicit pause remains paused. Moving channels follows the same behavior as
-the dashboard. A successful command replies `:3`.
-
-The API runtime registers `/pspsps` globally during Discord login, so it is
-available on the bot's servers without configuring guild IDs. Command
-registration failures are logged without preventing music playback.
-
-Sessions last seven days and survive backend restarts. Names and avatars belong
-to the account and work across devices. An old browser profile can suggest a
-name and avatar at first sign-in, but its past queue entries are not reassigned.
-Signing out affects other tabs using that session and leaves music playing.
-
-Appearance preferences are saved with the signed-in account. The **Cookies**
-action in the sidebar opens the browser's YouTube consent settings. Covers and
-video previews load only after consent; Discord audio works without it.
+Session and account storage are described in
+[architecture](architecture.md#storage-and-access); profile and cookie controls
+are covered in [listening together](listening.md#your-profile-and-browser).
 
 ## Start the services
 
@@ -115,8 +80,9 @@ multiple workers would each start a bot and own a different player. Keep FastAPI
 internal and route dashboard requests through Nuxt. `PUBLIC_ORIGIN` fixes the
 allowed browser origin and OAuth redirect; forwarded host headers do not override
 it. The dev command reads the root `.env`. A deployed Nuxt server needs the same
-value in its environment, with HTTPS for secure cookies. Deployment remains a
-separate step.
+value in its environment, with HTTPS for secure cookies. See
+[Hosting considerations](hosting.md) before moving the services to an always-on
+machine.
 
 Start the dashboard in another terminal:
 
@@ -141,11 +107,15 @@ intent, so the next startup stays disconnected.
 
 Position checkpoints are also saved every five seconds. After a crash playback
 can rewind by roughly that interval. A restart during crossfade resumes the
-incoming track without replaying the outgoing tail. Radio replenishment remains
-off after restarting; entries it already queued remain available. If the saved
-channel is gone or inaccessible, the dashboard reports the issue and retains the
-interrupted track and position for a manual join. Coordinate a restart with
-people listening in the channel.
+incoming track without replaying the outgoing tail. An active Radio resumes with
+its original source and initiator. It keeps the tracks already in the queue and
+fills any open places without adding those tracks again. A search interrupted by
+the restart is retried. If the saved channel is gone or inaccessible, the
+dashboard reports the issue and retains the interrupted track and position for
+a manual join. Coordinate a restart with people listening in the channel.
+The first upgrade from `engine_0001` cannot restore a Radio that was already
+running before this change: that version did not save its source. Start that
+Radio again after upgrading. Later restarts retain it.
 
 ## Update the frontend API contract
 
@@ -195,7 +165,7 @@ minute.
 The playback/catalog mappings live in
 [engine/persistence.py](../backend/src/nahormaar_backend/engine/persistence.py);
 account mappings live in [persistence/models.py](../backend/src/nahormaar_backend/persistence/models.py).
-Their combined metadata is owned by `engine/schema.py`. The frozen Alembic
+Their combined metadata is owned by `engine/schema.py`. The Alembic revision
 chain lives under `engine/migrations/versions/`.
 
 `alembic.ini` targets `data/engine.sqlite3`, not the retired player database.
@@ -207,10 +177,11 @@ Use an isolated database by changing `sqlalchemy.url` before developing migratio
 .venv\Scripts\python.exe -m alembic revision --autogenerate -m "Describe the change"
 ```
 
-Review generated migrations. Startup currently accepts only the pinned engine
-revision and initializes a fresh database atomically; it does not automatically
-upgrade an older or unrelated schema. When introducing a new engine revision,
-update that explicit startup policy and its tests as part of the schema change.
+Review generated migrations. Startup initializes a fresh database atomically and
+upgrades the known `engine_0001` revision to `engine_0002`, which adds Radio
+state. It rejects older or unrelated schemas rather than replacing their data.
+When introducing another engine revision, update the explicit startup policy and
+its tests as part of the schema change.
 Never rewrite an already applied migration or point development tooling at a live
 database. No migration from the retired player data is provided.
 

@@ -51,6 +51,7 @@ from .domain.metadata import (
 )
 from nahormaar_backend.domain.identity import Contributor
 from .domain.queue import Outcome, QueueEntry, QueueOrigin, Removal
+from .domain.radio import RadioStrategy
 from .domain.sessions import (
     ListeningSession,
     PlaybackCheckpoint,
@@ -320,6 +321,39 @@ class ListeningSessionRepository:
         row.crossfade_seconds = value.crossfade_seconds
         row.revision, row.queue_revision = value.revision, value.queue_revision
         await self._session.flush()
+
+
+class _RadioStrategyRow(Base):
+    __tablename__ = "radio_strategies"
+
+    session_id: Mapped[UUID] = mapped_column(
+        ForeignKey("listening_sessions.id", ondelete="CASCADE"), primary_key=True
+    )
+    strategy: Mapped[RadioStrategy] = mapped_column(_DomainJSON(RadioStrategy))
+
+
+class RadioStrategyRepository:
+    """Keep the active queue-filling policy in the Session transaction."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get(self, session_id: UUID) -> RadioStrategy | None:
+        row = await self._session.get(_RadioStrategyRow, session_id)
+        return row.strategy if row is not None else None
+
+    async def save(self, session_id: UUID, strategy: RadioStrategy) -> None:
+        row = await self._session.get(_RadioStrategyRow, session_id)
+        if row is None:
+            self._session.add(_RadioStrategyRow(session_id=session_id, strategy=strategy))
+        else:
+            row.strategy = strategy
+        await self._session.flush()
+
+    async def clear(self, session_id: UUID) -> None:
+        await self._session.execute(
+            delete(_RadioStrategyRow).where(_RadioStrategyRow.session_id == session_id)
+        )
 
 
 class _ArtistRow(Base):

@@ -2,20 +2,65 @@
 
 Parent: [Documentation index](README.md)
 
-The backend runs one listening session through the engine and its API. The
-frontend uses this API directly. The remaining Discord listening check has a
-[separate acceptance procedure](testing.md#live-acceptance).
+NaHörMaar has one listening session. A listener searches through the catalog,
+adds a track to the queue, and the engine sends audio to Discord. The dashboard
+reads the resulting state through HTTP and live events. This page explains the
+boundaries behind that path; the exact endpoint shapes live in the
+[engine API](engine-api.md).
 
 ## Contents
 
 - [Architecture](#architecture)
   - [Contents](#contents)
+  - [Command and event flow](#command-and-event-flow)
   - [Frontend ownership](#frontend-ownership)
   - [Backend ownership](#backend-ownership)
-  - [Command and event flow](#command-and-event-flow)
   - [Catalog, metadata and radio](#catalog-metadata-and-radio)
   - [Audio and recovery](#audio-and-recovery)
   - [Storage and access](#storage-and-access)
+
+## Command and event flow
+
+A search or playlist link goes to the catalog. Its provider returns findings
+that the dashboard can display and select without changing playback. Once a
+listener adds a selection, the request enters the Session inbox. That is where
+queue order, attribution and playback state are decided. The Session commits a
+new state before telling other listeners about it or starting an audio effect.
+
+```mermaid
+flowchart LR
+    HTTP[HTTP commands] --> Inbox[Session inbox]
+    Discord[Discord commands and callbacks] --> Inbox
+    Inbox --> Policy[Queue rules and playback FSM]
+    Policy --> Commit[SQLAlchemy transaction]
+    Commit --> State[Committed snapshot and receipt]
+    State --> Bus[Post-commit event bus]
+    State --> Effects[Playback effects]
+    Effects --> IO[Provider and audio / voice]
+    IO --> Inbox
+    Bus --> SSE[Authenticated SSE]
+    Bus --> Refill[Radio refill observer]
+    Refill --> Inbox
+```
+
+A command checks its revision or attempt precondition inside the inbox. Queue,
+checkpoint, history, receipt and revision updates commit before state is exposed.
+A failed transaction cannot publish success. A repeated operation ID from the
+same actor and command returns its durable result with current state; conflicting
+reuse fails. Accepted work survives cancellation of its HTTP caller.
+
+The playback FSM chooses the next state and declares effects; it does not reach
+into the database or start background work. The playback controller runs those
+effects after commit. Resolver, voice and audio results carry attempt,
+connection or preparation IDs, so late results cannot modify their successors.
+History begins only after confirmed media output, once per logical play. Pause,
+seek, retry and restart retain that play identity.
+
+The in-memory event bus is separate from the transaction and from SSE transport.
+Normal subscribers have bounded FIFOs; overflow detaches a slow consumer.
+Radio listens for committed changes and refills against the current queue. SSE
+starts with a complete snapshot, checks access during idle periods and before
+delivery, and resynchronizes on reconnect. It is not a durable activity log.
 
 ## Frontend ownership
 
@@ -65,7 +110,7 @@ The following paths are relative to `backend/src/nahormaar_backend/`.
 | `engine/bootstrap.py`                                               | Production composition: configuration, schema, Discord readiness, commands, presence and lifetime |
 | `engine/runtime.py`                                                 | Own injected resources and compose metadata, catalog and Session                                  |
 | `engine/session.py`                                                 | Serialize mutations, own committed state and transactions, deliver post-commit events             |
-| `engine/domain/queue.py`                                            | Pure queue editing, revision conflicts, attribution and 12-second Undo                            |
+| `engine/domain/queue.py`                                            | Pure queue editing, revision conflicts, attribution and Undo handling                              |
 | `engine/domain/playback.py`                                         | Pure FSM decisions: next state and typed effects                                                  |
 | `engine/playback.py`                                                | Execute effects, manage resolver/preload tasks and report correlated results                      |
 | `engine/domain/radio.py`                                            | Manual and radio queue-filling strategies                                                         |
@@ -93,42 +138,6 @@ client in. Provider capabilities are defined in `engine/providers.py`, and the
 catalog uses the supplied providers. The composition closes supplied adapters
 and providers once, including on partial startup failure.
 
-## Command and event flow
-
-```mermaid
-flowchart LR
-    HTTP[HTTP commands] --> Inbox[Session inbox]
-    Discord[Discord commands and callbacks] --> Inbox
-    Inbox --> Policy[Queue rules and playback FSM]
-    Policy --> Commit[SQLAlchemy transaction]
-    Commit --> State[Committed snapshot and receipt]
-    State --> Bus[Post-commit event bus]
-    State --> Effects[Playback effects]
-    Effects --> IO[Provider and audio / voice]
-    IO --> Inbox
-    Bus --> SSE[Authenticated SSE]
-    Bus --> Refill[Radio refill observer]
-    Refill --> Inbox
-```
-
-A command checks its revision or attempt precondition inside the inbox. Queue,
-checkpoint, history, receipt and revision updates commit before state is exposed.
-A failed transaction cannot publish success. A repeated operation ID from the
-same actor and command returns its durable result with current state; conflicting
-reuse fails. Accepted work survives cancellation of its HTTP caller.
-
-The FSM contains playback policy, without database access or background tasks.
-Its effects execute after commit. Resolver, voice and audio results carry attempt,
-connection or preparation IDs, so late results cannot modify their successors.
-History begins only after confirmed media output, once per logical play.
-Pause, seek, retry and restart retain that play identity.
-
-The in-memory event bus is separate from the transaction and from SSE transport.
-Normal subscribers have bounded FIFOs; overflow detaches a slow consumer.
-The radio observer coalesces invalidations and recomputes against current state.
-SSE starts with a complete snapshot, checks access during idle periods and before
-delivery, and resynchronizes on reconnect. It is not a durable activity log.
-
 ## Catalog, metadata and radio
 
 Providers translate source-specific results into domain findings and own source
@@ -136,11 +145,20 @@ recognition, search, playlists, recommendations and audio resolution. The catalo
 chooses the provider; it does not know YouTube response shapes. Temporary audio
 URLs and headers stay in memory and are never track metadata.
 
-Tracks have persistent IDs and source identities. Artist entities use explicit
-provider identities; display text alone does not invent an artist. Queue
-occurrences and playback records reference tracks instead of copying their
-metadata. Adding the same track twice creates two independently editable entries.
-Contributor snapshots preserve attribution even after a profile changes.
+A provider finding is an observation of a source, not a queue item. The catalog
+resolves its source identity to a persistent track ID, and metadata merges new
+observations with what is already known about that track. Artist entities need
+explicit provider identities; a display name alone does not create one. This
+lets later searches refresh a title or cover without rewriting every place the
+song has been used.
+
+A queue entry is one request for that track. It carries its own ID, position,
+origin and contributor snapshot. Two requests for the same track remain two
+entries that can be moved or removed independently. A playback record is
+different again: it records a confirmed play, not every time someone queued a
+song or the bot tried to resolve one. Playback records also reference the track
+instead of copying its metadata. Contributor snapshots keep the name attached
+to a request or play even if the profile changes later.
 
 Searches, playlists and track observations use bounded caches with shared refresh
 work. Search and track observations are fresh for five minutes, playlist
@@ -156,8 +174,10 @@ Generation and request IDs reject stale results after stop or seed changes.
 Provider work runs outside the inbox; results re-enter it for a single queue
 commit. Pausing suspends refill. An unexpected voice disconnect suspends playback
 and retains radio mode; an explicit Leave, Stop or full queue clear ends it.
-Radio is not restored automatically after a process restart, but its queued
-entries remain.
+The active strategy is stored in the Session transaction with queue changes.
+After a process restart, Radio keeps its source, initiator and unused candidates.
+An interrupted provider request is retried; queued and recently played tracks
+are excluded from the refill.
 
 ## Audio and recovery
 
@@ -175,9 +195,10 @@ their ownership is released.
 Checkpoints record measured position, playing/paused intent and the chosen
 channel. They refresh every five seconds and on clean shutdown. Startup restores
 the same listening-session identity, rejoins its saved channel and resumes the
-retained track. Explicit pause stays paused. Explicit Leave clears automatic
-rejoin intent; an unexpected disconnect suspends without an immediate rejoin loop.
-Joining again resumes through the same FSM, including `/pspsps`.
+retained track. A confirmed current play remains in the history without counting
+again after a restart. Explicit pause stays paused. Explicit Leave clears
+automatic rejoin intent; an unexpected disconnect suspends without an immediate
+rejoin loop. Joining again resumes through the same FSM, including `/pspsps`.
 
 Shutdown closes SSE before HTTP drain, settles Session work, freezes output and
 saves its checkpoint, then closes effects, catalog/provider work, storage, Auth
@@ -195,6 +216,7 @@ the [development guide](development.md#database-changes).
 
 Discord OAuth uses `identify` and PKCE. Login attempts are browser-bound and
 single-use. Seven-day session cookies are HTTP-only; only their hashes are stored.
+Account sessions survive backend restarts.
 Every protected request checks the current whitelist. Mutations also require
 the configured origin and session-bound CSRF token. Account IDs and contributor
 values come from authentication, never client-supplied attribution.

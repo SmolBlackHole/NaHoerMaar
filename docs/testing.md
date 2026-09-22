@@ -122,7 +122,9 @@ resumed and then continued at the same point. A seek changed the displayed and
 stored position. The play occurrence and history count did not change during
 seek, pause or restart. Two browser tabs showed the same queue, and switching
 views or collapsing the sidebar did not reset playback. Existing queue entries
-were not manually changed. The first restart ended the active radio as designed.
+were not manually changed. The first restart ended the active radio under the
+previous implementation; Radio restoration now has isolated tests but still
+needs a coordinated live check.
 
 During both restarts, the dashboard temporarily showed an unavailable login
 screen even though the session was valid. The frontend now retains a known

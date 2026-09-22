@@ -72,6 +72,7 @@ from .persistence import (
     PlaybackCheckpointRepository,
     PlaybackRecordRepository,
     QueueRepository,
+    RadioStrategyRepository,
     TrackRepository,
     write_transaction,
 )
@@ -186,6 +187,12 @@ class Session:
             checkpoint = await PlaybackCheckpointRepository(database).get(
                 session_id
             ) or PlaybackCheckpoint(session_id)
+            strategy = await RadioStrategyRepository(database).get(session_id)
+            if strategy is not None and strategy.state is RadioState.LOADING:
+                strategy = replace(
+                    strategy, state=RadioState.ACTIVE, request_id=None, error=None
+                )
+                await RadioStrategyRepository(database).save(session_id, strategy)
             history = await PlaybackRecordRepository(database).recent(session_id)
             if checkpoint.play_id and not any(
                 record.id == checkpoint.play_id for record in history
@@ -210,6 +217,7 @@ class Session:
                 queue,
                 checkpoint,
                 history,
+                strategy or ManualStrategy(),
                 playback=PlaybackRuntime(phase=PlaybackPhase.SUSPENDED)
                 if checkpoint.track_id
                 else PlaybackRuntime(),
@@ -234,6 +242,8 @@ class Session:
             if owner._playback:
                 owner._playback.audio.set_volume(settings.volume)
                 await owner._submit(Control.RESTORE)
+            if catalog is not None and strategy is not None:
+                await owner._submit(RefillRadio())
         except BaseException:
             await owner.close()
             raise
@@ -499,6 +509,12 @@ class Session:
                         await records.update(record)
                 if after.checkpoint != before.checkpoint:
                     await PlaybackCheckpointRepository(database).save(after.checkpoint)
+                if strategy != before.strategy:
+                    radio = RadioStrategyRepository(database)
+                    if isinstance(strategy, RadioStrategy):
+                        await radio.save(session_id, strategy)
+                    else:
+                        await radio.clear(session_id)
             if envelope.request_id is not None:
                 await operations.add(
                     Receipt(
