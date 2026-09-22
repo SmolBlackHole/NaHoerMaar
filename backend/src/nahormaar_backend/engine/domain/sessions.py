@@ -177,6 +177,7 @@ class PlaybackRuntime:
     waiting_for_queue: bool = False
     preparation: Preparation | None = None
     failed_preparation: UUID | None = None
+    preparation_retries: int = 0
     outgoing_play_id: UUID | None = None
     transition_id: UUID | None = None
     error: str | None = None

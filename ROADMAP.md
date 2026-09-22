@@ -38,6 +38,10 @@ remain open.
   preserving pause state and volume without counting another play. Save the
   audio position every five seconds and on clean shutdown. Explicitly leaving
   clears automatic rejoin; old database schemas are not imported
+- [ ] Reproduce and fix the report that the last played track disappears after a
+  bot restart. Compare the saved checkpoint and latest history record with the
+  API snapshot and Recently played view; keep the current track and its history
+  visible without creating another play or losing the saved position
 
 | Control       | Behavior                                                                               |
 | ------------- | -------------------------------------------------------------------------------------- |
@@ -222,12 +226,15 @@ cached results visible with a clear indication that they could not be updated.
   queued tracks priority and limiting repeats
 - [x] Let users stop radio without stopping the current track. Check which
   recommendation sources work without a personal YouTube Music login
+- [ ] Restore an active radio after a backend restart, including its source and
+  initiator. Resume replenishment without duplicating recommendations already
+  in the queue; an explicit Stop, Leave or full queue clear must still end radio
 
 Radio fills towards three upcoming tracks. Queue entries and history retain their
-radio origin and initiator. Explicit Stop, Leave, clearing the entire queue and a
-backend restart disable replenishment; pausing suspends it. An unexpected voice
-disconnect retains the radio strategy for rejoin. Ending radio alone leaves the
-current track and upcoming queue intact.
+radio origin and initiator. Explicit Stop, Leave and clearing the entire queue
+disable replenishment; pausing suspends it. A backend restart currently disables
+replenishment too. An unexpected voice disconnect retains the radio strategy
+for rejoin. Ending radio alone leaves the current track and upcoming queue intact.
 
 ## Lyrics for the current track
 

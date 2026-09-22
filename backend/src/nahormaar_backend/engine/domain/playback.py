@@ -33,6 +33,8 @@ from .sessions import (
     SessionSnapshot,
 )
 
+PREPARATION_RETRY_MARGIN_SECONDS = 20
+
 
 class Control(StrEnum):
     PLAY = "play"
@@ -241,6 +243,7 @@ def decide(
             retries=state.retries + 1 if retry else 0,
             waiting_for_queue=False,
             failed_preparation=None,
+            preparation_retries=0,
             error=None,
         )
         effects.append(StartAttempt(identifier, checkpoint.track_id))
@@ -397,7 +400,7 @@ def decide(
             settings=replace(snapshot.settings, crossfade_seconds=message.seconds),
         )
         discard()
-        state = replace(state, failed_preparation=None)
+        state = replace(state, failed_preparation=None, preparation_retries=0)
     elif message is Control.STOP:
         stop_output()
         finish(checkpoint.play_id, PlaybackEndReason.STOPPED)
@@ -518,7 +521,12 @@ def decide(
         if state.preparation is None or state.preparation.id != message.preparation_id:
             return unchanged
         state = (
-            replace(state, preparation=replace(state.preparation, ready=True))
+            replace(
+                state,
+                preparation=replace(state.preparation, ready=True),
+                failed_preparation=None,
+                preparation_retries=0,
+            )
             if message.accepted
             else replace(
                 state, failed_preparation=state.preparation.entry_id, preparation=None
@@ -567,6 +575,7 @@ def decide(
             duration_seconds=message.duration_seconds,
             retries=0,
             failed_preparation=None,
+            preparation_retries=0,
         )
     elif isinstance(message, CrossfadeCompleted):
         if (
@@ -589,10 +598,27 @@ def decide(
         if state.waiting_for_queue and snapshot.queue.entries and state.connection_id:
             advance(PlaybackEndReason.COMPLETED)
 
-    # Prepare only the actual head, once per attempt/head/settings combination.
+    # A transient source failure gets one later retry while there is still time
+    # to buffer a fade. A second failure falls back to a normal track start.
     head = snapshot.queue.entries[0] if snapshot.queue.entries else None
     if state.preparation and (head is None or head.id != state.preparation.entry_id):
         discard()
+    if state.failed_preparation and (
+        head is None or head.id != state.failed_preparation
+    ):
+        state = replace(state, failed_preparation=None, preparation_retries=0)
+    if (
+        message is Control.CHECKPOINT
+        and head
+        and head.id == state.failed_preparation
+        and state.preparation_retries == 0
+        and state.phase is PlaybackPhase.PLAYING
+        and progress is not None
+        and state.duration_seconds is not None
+        and state.duration_seconds - progress.position_seconds
+        > snapshot.settings.crossfade_seconds + PREPARATION_RETRY_MARGIN_SECONDS
+    ):
+        state = replace(state, failed_preparation=None, preparation_retries=1)
     if (
         state.phase in (PlaybackPhase.PLAYING, PlaybackPhase.PAUSED)
         and state.attempt_id

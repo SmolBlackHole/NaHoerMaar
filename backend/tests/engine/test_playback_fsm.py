@@ -219,6 +219,57 @@ def test_crossfade_keeps_tail_history_and_ignores_outgoing_completion() -> None:
     assert completed.history[0].ended_at is None
 
 
+def test_failed_preload_retries_once_before_falling_back_to_normal_start() -> None:
+    state = apply(playing(), SetCrossfade(5))
+    first = state.playback.preparation
+    assert first is not None
+    state = apply(state, Prepared(first.id, False))
+    assert state.playback.preparation is None
+    assert apply(state, Control.RECONCILE).playback.preparation is None
+
+    connection = VoiceConnection(state.playback.connection_id or uuid4(), 123)
+    too_late = decide(
+        state,
+        Control.CHECKPOINT,
+        now=TIME,
+        progress=AudioProgress(attempt(state), 100),
+        connection=connection,
+    )
+    assert too_late.snapshot.playback.preparation is None
+    retry = decide(
+        state,
+        Control.CHECKPOINT,
+        now=TIME,
+        progress=AudioProgress(attempt(state), 10),
+        connection=connection,
+    )
+    assert retry.snapshot.playback.preparation is not None
+    assert retry.snapshot.playback.preparation.id != first.id
+    assert retry.snapshot.playback.preparation_retries == 1
+    second = retry.snapshot.playback.preparation
+    assert second is not None
+    state = apply(retry.snapshot, Prepared(second.id, False))
+    assert state.playback.preparation is None
+    no_third = decide(
+        state,
+        Control.CHECKPOINT,
+        now=TIME,
+        progress=AudioProgress(attempt(state), 20),
+        connection=connection,
+    )
+    assert no_third.snapshot.playback.preparation is None
+    assert not no_third.effects
+    next_entry = state.queue.entries[1]
+    changed_head = replace(
+        state,
+        queue=Queue(state.settings.id, state.queue.entries[1:]),
+    )
+    fresh = apply(changed_head, Control.RECONCILE)
+    assert fresh.playback.preparation is not None
+    assert fresh.playback.preparation.entry_id == next_entry.id
+    assert fresh.playback.preparation_retries == 0
+
+
 def test_failed_transition_restarts_same_unconfirmed_entry_not_next_one() -> None:
     state = apply(playing(), SetCrossfade(5))
     assert state.playback.preparation

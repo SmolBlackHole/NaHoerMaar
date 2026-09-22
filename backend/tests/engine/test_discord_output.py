@@ -19,6 +19,7 @@ from nahormaar_backend.engine import discord as adapter
 from nahormaar_backend.engine.audio import (
     AudioCompleted,
     AudioEndReason,
+    AudioError,
     AudioEvent,
     AudioStarted,
     CrossfadeCompleted,
@@ -202,6 +203,49 @@ def test_targeted_resources_and_crossfade_callbacks(
         assert len([fact for fact in facts if isinstance(fact, AudioCompleted)]) == 1
         await output.disconnect(connection)
         assert output.connection is None
+        await output.close()
+
+    asyncio.run(scenario())
+
+
+def test_play_waits_for_audio_and_does_not_start_an_empty_stream(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def scenario() -> None:
+        monkeypatch.setattr(adapter, "CrossfadeSource", Mixer)
+        buffer = Buffer()
+        buffer.ready.clear()
+        client, _, voice = transport()
+        output = adapter.DiscordOutput(
+            client,
+            tmp_path / "unused",
+            buffer_factory=lambda _source, _position: cast(BufferedAudio, buffer),
+        )
+        await output.connect(123, uuid4())
+        pending = asyncio.create_task(output.play(SOURCE, uuid4(), lambda _: None))
+        await until(buffer.waiting.is_set)
+        voice.play.assert_not_called()
+        buffer.ready.set()
+        await pending
+        voice.play.assert_called_once()
+        await output.close()
+
+        class EmptyBuffer(Buffer):
+            def wait_ready(self, frames: int) -> bool:
+                return False
+
+        empty = EmptyBuffer()
+        client, _, voice = transport()
+        output = adapter.DiscordOutput(
+            client,
+            tmp_path / "unused",
+            buffer_factory=lambda _source, _position: cast(BufferedAudio, empty),
+        )
+        await output.connect(123, uuid4())
+        with pytest.raises(AudioError, match="initial frame"):
+            await output.play(SOURCE, uuid4(), lambda _: None)
+        voice.play.assert_not_called()
+        assert empty.cleaned and output.progress is None
         await output.close()
 
     asyncio.run(scenario())

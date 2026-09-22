@@ -318,14 +318,19 @@ class DiscordOutput:
             if self._output:
                 raise AudioError("Previous output must be stopped first.")
             buffer = await self._create_buffer(source, position_seconds)
-            _LOGGER.info(
-                "engine.audio.output_attached attempt=%s audio_pid=%s position=%.3f",
-                attempt_id,
-                getattr(buffer, "process_id", None),
-                position_seconds,
-            )
             attempt = _Attempt(attempt_id, source, notify)
             try:
+                ready_started = time.monotonic()
+                if not await asyncio.to_thread(buffer.wait_ready, 1):
+                    raise AudioError("Audio source did not produce an initial frame.")
+                _LOGGER.info(
+                    "engine.audio.buffer_ready attempt=%s audio_pid=%s "
+                    "position=%.3f elapsed=%.3f",
+                    attempt_id,
+                    getattr(buffer, "process_id", None),
+                    position_seconds,
+                    time.monotonic() - ready_started,
+                )
                 output = _Output(
                     CrossfadeSource(
                         buffer,
@@ -345,8 +350,9 @@ class DiscordOutput:
                 if paused:
                     voice.pause()
             except BaseException:
-                voice.stop()
-                self._output = None
+                if self._output is not None:
+                    voice.stop()
+                    self._output = None
                 await asyncio.to_thread(buffer.cleanup)
                 raise
 
