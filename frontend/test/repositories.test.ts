@@ -3,6 +3,7 @@ import { createHttpTransport, ApiFailure, SessionLost } from "../app/repositorie
 import { createAccountRepository } from "../app/repositories/account";
 import { createSessionRepository } from "../app/repositories/session";
 import { createCatalogRepository } from "../app/repositories/catalog";
+import { createDiagnosticsRepository } from "../app/repositories/diagnostics";
 
 function setup() {
 	const fetcher = vi.fn<typeof fetch>();
@@ -17,6 +18,7 @@ function setup() {
 		account: createAccountRepository(json),
 		session: createSessionRepository(json),
 		catalog: createCatalogRepository(json),
+		diagnostics: createDiagnosticsRepository(json),
 	};
 }
 describe("repositories and shared transport", () => {
@@ -24,7 +26,8 @@ describe("repositories and shared transport", () => {
 		const { fetcher, session } = setup();
 		fetcher.mockResolvedValueOnce(Response.json(null, { status: 400 }));
 		await expect(session.channels()).rejects.toMatchObject({
-			status: 400, data: { code: "http_error", retryable: false },
+			status: 400,
+			data: { code: "http_error", retryable: false },
 		});
 	});
 	it("keeps wire payloads, idempotency keys and CSRF at the boundary", async () => {
@@ -56,6 +59,15 @@ describe("repositories and shared transport", () => {
 		await expect(account.session()).resolves.toEqual({ profile: "restored" });
 		await expect(account.logout()).rejects.toBeInstanceOf(SessionLost);
 		expect(fetcher).toHaveBeenCalledTimes(2);
+	});
+	it("requests only log entries newer than the last received entry", async () => {
+		const { fetcher, diagnostics } = setup();
+		fetcher.mockResolvedValueOnce(Response.json({ entries: [] }));
+		await diagnostics.logs(42);
+		expect(fetcher).toHaveBeenCalledWith(
+			"/api/diagnostics/logs?after=42",
+			expect.objectContaining({ cache: "no-store" }),
+		);
 	});
 	it("preserves structured API errors and reports non-JSON gateway failures", async () => {
 		const { fetcher, catalog } = setup();

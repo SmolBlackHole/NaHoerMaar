@@ -12,7 +12,9 @@ function control(action: "retry" | "stop") {
 	<div v-if="radio && radio.state !== 'off'" class="radio-status" aria-label="Active radio">
 		<UIcon :name="icons.radio" class="size-5 shrink-0 text-primary" />
 		<div class="min-w-0 flex-1">
-			<p class="text-sm text-highlighted truncate">Radio · {{ radio.title }}</p>
+			<UTooltip :text="`Radio · ${radio.title}`">
+				<p class="text-sm text-highlighted truncate">Radio · {{ radio.title }}</p>
+			</UTooltip>
 			<p class="mt-1 text-xs text-muted" role="status">
 				{{
 					radio.error ||

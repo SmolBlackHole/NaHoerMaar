@@ -6,6 +6,7 @@ import { createHttpTransport, type AuthHooks } from "../app/repositories/transpo
 import { createAccountRepository } from "../app/repositories/account";
 import { createCatalogRepository } from "../app/repositories/catalog";
 import { createSessionRepository } from "../app/repositories/session";
+import { createDiagnosticsRepository } from "../app/repositories/diagnostics";
 
 const cleanups: (() => void)[] = [];
 afterEach(() => cleanups.splice(0).forEach((close) => close()));
@@ -28,6 +29,7 @@ export function repositoryFixture(
 		account: createAccountRepository(json),
 		catalog: createCatalogRepository(json),
 		session: createSessionRepository(json, openEvents),
+		diagnostics: createDiagnosticsRepository(json),
 	};
 	app.provide(repositoriesKey, repositories);
 	const scope = effectScope();

@@ -98,6 +98,7 @@ const label = computed(
 		})[player.snapshot?.state ?? "idle"],
 );
 const volume = ref(100);
+const browserVolume = useState<number>("browser-video-volume", () => 0);
 watch(
 	() => player.snapshot?.volume,
 	(value) => {
@@ -129,12 +130,13 @@ async function setCrossfade(seconds: number) {
 		<div class="dock-track flex min-w-0 items-center gap-3">
 			<PlayerTrackArtwork :entry="current" class="dock-cover" />
 			<div class="min-w-0 flex-1">
-				<NuxtLink
-					to="/"
-					class="block truncate text-sm font-semibold text-highlighted hover:underline"
-					:title="current ? trackTitle(current) : undefined"
-					>{{ current ? trackTitle(current) : "Nothing playing" }}</NuxtLink
-				>
+				<UTooltip :text="current ? `Open player: ${trackTitle(current)}` : 'Open player'">
+					<NuxtLink
+						to="/"
+						class="block truncate text-sm font-semibold text-highlighted hover:underline"
+						>{{ current ? trackTitle(current) : "Nothing playing" }}</NuxtLink
+					>
+				</UTooltip>
 				<p class="mt-1 truncate text-xs text-muted">
 					<PlayerArtistLink v-if="current" :entry="current" /><template v-else
 						>Your next track is up to you</template
@@ -156,20 +158,22 @@ async function setCrossfade(seconds: number) {
 					@click="player.control('stop')"
 				/>
 			</UTooltip>
-			<UButton
-				:icon="action === 'pause' ? icons.pause : icons.play"
-				:aria-label="label"
-				size="xl"
-				class="dock-play size-10 justify-center rounded-full"
-				color="neutral"
-				:loading="
-					player.snapshot?.state === 'loading' ||
-					player.isControlPending('play') ||
-					player.isControlPending('pause')
-				"
-				:disabled="!player.enabled || !canControl(player.snapshot, action)"
-				@click="player.control(action)"
-			/>
+			<UTooltip :text="label">
+				<UButton
+					:icon="action === 'pause' ? icons.pause : icons.play"
+					:aria-label="label"
+					size="xl"
+					class="dock-play size-10 justify-center rounded-full"
+					color="neutral"
+					:loading="
+						player.snapshot?.state === 'loading' ||
+						player.isControlPending('play') ||
+						player.isControlPending('pause')
+					"
+					:disabled="!player.enabled || !canControl(player.snapshot, action)"
+					@click="player.control(action)"
+				/>
+			</UTooltip>
 			<UTooltip text="Skip track">
 				<UButton
 					:icon="icons.skip"
@@ -230,7 +234,7 @@ async function setCrossfade(seconds: number) {
 		</div>
 		<div class="dock-volume flex items-center gap-3">
 			<UPopover :ui="{ content: 'w-72 max-w-[calc(100vw-2rem)] p-4' }">
-				<UTooltip text="Volume & crossfade">
+				<UTooltip text="Audio settings: bot volume, video volume and crossfade">
 					<UButton
 						:icon="icons.volume"
 						aria-label="Audio settings"
@@ -241,7 +245,7 @@ async function setCrossfade(seconds: number) {
 				</UTooltip>
 				<template #content>
 					<div class="mb-3 flex items-center justify-between gap-2 text-sm">
-						<label for="bot-volume-popup">Bot volume</label
+						<label for="bot-volume-popup">Discord bot volume</label
 						><output for="bot-volume-popup" class="tabular-nums text-muted"
 							>{{ volume }}%</output
 						>
@@ -258,6 +262,23 @@ async function setCrossfade(seconds: number) {
 						:aria-valuetext="`${volume} percent`"
 						@change="setVolume"
 					/>
+					<div class="mt-5 mb-3 flex items-center justify-between gap-2 text-sm">
+						<label for="browser-volume-popup">Browser video volume</label>
+						<output for="browser-volume-popup" class="tabular-nums text-muted"
+							>{{ browserVolume }}%</output
+						>
+					</div>
+					<input
+						id="browser-volume-popup"
+						v-model.number="browserVolume"
+						type="range"
+						min="0"
+						max="100"
+						step="1"
+						class="volume-slider w-full"
+						:aria-valuetext="`${browserVolume} percent, only on this device`"
+					/>
+					<p class="mt-1 text-xs text-muted">Only your video preview. Starts muted.</p>
 					<div class="mt-5 space-y-3">
 						<div class="flex items-center justify-between gap-3">
 							<span id="crossfade-label" class="text-sm">Crossfade</span>
@@ -299,26 +320,29 @@ async function setCrossfade(seconds: number) {
 							}}
 						</p>
 					</div>
-					<p class="mt-4 text-xs text-muted">For everyone in the channel.</p>
+					<p class="mt-4 text-xs text-muted">
+						Bot volume and crossfade affect everyone in the channel.
+					</p>
 				</template>
 			</UPopover>
-			<label for="bot-volume" class="sr-only">Bot volume for everyone</label>
+			<label for="browser-volume" class="sr-only"
+				>Browser video volume, only on this device</label
+			>
 			<input
-				id="bot-volume"
-				v-model.number="volume"
+				id="browser-volume"
+				v-model.number="browserVolume"
 				type="range"
 				min="0"
 				max="100"
 				step="1"
 				class="volume-slider hidden min-w-0 w-24 lg:block"
-				:disabled="!player.enabled"
-				:aria-valuetext="`${volume} percent`"
-				@change="setVolume"
+				:aria-valuetext="`${browserVolume} percent, only on this device`"
+				title="Browser video volume, only on this device"
 			/>
 			<output
-				for="bot-volume"
+				for="browser-volume"
 				class="hidden w-9 text-right text-xs tabular-nums text-muted lg:block"
-				>{{ volume }}%</output
+				>{{ browserVolume }}%</output
 			>
 		</div>
 	</section>

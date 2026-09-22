@@ -294,6 +294,12 @@ class Session:
             try:
                 reply = await self._execute(envelope)
             except Exception as exc:
+                _LOGGER.error(
+                    "engine.session.command_failed command=%s request=%s error=%s",
+                    type(envelope.message).__name__,
+                    envelope.request_id,
+                    type(exc).__name__,
+                )
                 envelope.result.set_exception(exc)
             else:
                 envelope.result.set_result(reply)
@@ -502,12 +508,49 @@ class Session:
                     consume=consume,
                 )
         self._state = after
+        action = action_for(message)
+        if (
+            before.playback.phase != after.playback.phase
+            or before.playback.connection_id != after.playback.connection_id
+            or before.checkpoint.track_id != after.checkpoint.track_id
+            or before.checkpoint.intent != after.checkpoint.intent
+        ):
+            _LOGGER.info(
+                "engine.session.transition phase=%s->%s intent=%s->%s "
+                "track=%s->%s connected=%s->%s",
+                before.playback.phase,
+                after.playback.phase,
+                before.checkpoint.intent,
+                after.checkpoint.intent,
+                before.checkpoint.track_id,
+                after.checkpoint.track_id,
+                before.playback.connection_id is not None,
+                after.playback.connection_id is not None,
+            )
+        if action != "session.updated":
+            _LOGGER.info(
+                "engine.session.action action=%s outcome=%s request=%s "
+                "revision=%s queue_revision=%s queue_size=%s",
+                action,
+                outcome.code,
+                envelope.request_id,
+                after.settings.revision,
+                after.settings.queue_revision,
+                len(after.queue.entries),
+            )
+        elif queue_changed:
+            _LOGGER.info(
+                "engine.session.queue_updated source=%s queue_revision=%s size=%s",
+                type(message).__name__,
+                after.settings.queue_revision,
+                len(after.queue.entries),
+            )
         if changed:
             self.events.publish(
                 SessionChanged(
                     before,
                     after,
-                    action_for(message),
+                    action,
                     outcome,
                     envelope.request_id,
                 )
@@ -552,9 +595,21 @@ class Session:
             await asyncio.gather(previous, return_exceptions=True)
         if self._catalog is None:
             return
+        _LOGGER.info(
+            "engine.radio.fetching request=%s generation=%s",
+            request.id,
+            request.generation,
+        )
         try:
             candidates = await self._catalog.radio_next(
                 request.seed, limit=RADIO_POOL, continuation=request.continuation
+            )
+            _LOGGER.info(
+                "engine.radio.fetched request=%s count=%s has_more=%s error=%s",
+                request.id,
+                len(candidates.tracks),
+                candidates.continuation is not None,
+                candidates.error is not None,
             )
             result = RadioLoaded(
                 request.generation,
@@ -563,7 +618,12 @@ class Session:
                 candidates.continuation,
                 candidates.error,
             )
-        except Exception:
+        except Exception as error:
+            _LOGGER.warning(
+                "engine.radio.fetch_failed request=%s error=%s",
+                request.id,
+                type(error).__name__,
+            )
             result = RadioLoaded(
                 request.generation,
                 request.id,

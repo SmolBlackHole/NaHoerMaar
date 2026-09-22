@@ -5,6 +5,7 @@
 import asyncio
 import http.client
 import json
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import replace
@@ -168,6 +169,41 @@ async def fixture(
             ) as client:
                 yield client, services, provider, audio
     assert provider.closed and audio.progress is None and voice.connection is None
+
+
+def test_admin_log_tail_requires_role_and_returns_recent_events(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        async with fixture(tmp_path) as (client, services, _provider, _audio):
+            logger = logging.getLogger("nahormaar_backend.engine.test_logs")
+            previous_level = logger.level
+            logger.setLevel(logging.INFO)
+            try:
+                assert (await client.get("/api/diagnostics/logs")).status_code == 403
+                services.auth.settings.access_path.write_text(
+                    f'discord_ids = ["{DISCORD_ID}"]\nadmin_ids = ["{DISCORD_ID}"]',
+                    encoding="utf-8",
+                )
+                assert (await client.get("/api/auth/session")).json()[
+                    "is_admin"
+                ] is True
+                logger.warning("engine.test.marker")
+                response = await client.get("/api/diagnostics/logs")
+                assert response.status_code == 200
+                entries = response.json()["entries"]
+                marker = next(
+                    entry
+                    for entry in entries
+                    if entry["message"] == "engine.test.marker"
+                )
+                assert marker["level"] == "WARNING"
+                assert marker["source"] == "engine.test_logs"
+                assert (
+                    await client.get(f"/api/diagnostics/logs?after={marker['id']}")
+                ).json() == {"entries": []}
+            finally:
+                logger.setLevel(previous_level)
+
+    asyncio.run(scenario())
 
 
 def test_http_discovery_queue_receipts_undo_and_committed_events(
@@ -349,6 +385,7 @@ def test_schema_export_never_opens_runtime() -> None:
     assert set(models["AccountView"]["required"]) == {
         "profile",
         "profile_complete",
+        "is_admin",
         "csrf_token",
         "expires_at",
         "appearance",

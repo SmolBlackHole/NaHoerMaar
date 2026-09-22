@@ -1,74 +1,30 @@
 # Engine API
 
-Parent: [Architecture](architecture.md).
+Parent: [Documentation index](README.md)
 
-The normal backend entry point and local service now run this engine on a fresh
-database. The frontend uses the native API for discovery, queue operations,
-playback controls and live updates. The remaining Discord listening acceptance
-is described under [verification](#verification). No legacy route or event-format
-compatibility is promised.
+The backend and dashboard use this API for discovery, queue operations, playback
+controls and live updates. This page owns the HTTP/SSE contract. Runtime
+ownership is documented in [architecture](architecture.md), and startup,
+configuration, schema changes and recovery in the
+[development guide](development.md). A real Discord listening check remains
+[open](testing.md#live-acceptance).
 
-## Startup and fresh data
+## Contents
 
-`python -m nahormaar_backend` calls `engine/bootstrap.py:create_application`.
-It loads configuration once and reserves the local API port before starting
-Discord. The application lifespan then validates voice dependencies, initializes
-the database and its single listening session, waits for Discord readiness,
-opens engine services and registers `/pspsps`. Presence and daily bio updates
-have their own tasks; they do not own playback state.
-
-For the agreed fresh start, use `DATABASE_PATH=data/engine.sqlite3` in `.env`.
-This is also the default when the variable is absent/empty. An explicit existing
-path is respected, so an old `data/player.sqlite3` setting must be changed before
-the coordinated restart. A legacy/foreign schema is rejected, never overwritten
-or imported. Leave the old database in place as the rollback artifact.
-
-The initializer creates the engine schema and one session atomically. Reopening
-an engine database retains that session's identity, queue, checkpoint and settings.
-Multiple listening sessions are rejected by this single-session composition.
-The initial fresh start has no queue, history or accounts; sign in again to create
-an account and configure preferences. `access.toml` and OAuth configuration are
-unchanged. The old core and its optional copy importer have been removed.
-
-Shutdown signals SSE subscribers before HTTP waits for open responses to finish.
-The Session then saves measured playback intent/position and settles audio work;
-providers, database and Auth close before the Discord gateway. Failure and
-cancellation during startup also clean up owned tasks and resources.
-An unexpected gateway exit terminates the engine lifespan and signals the HTTP
-server to stop rather than leaving an unavailable API process behind.
-
-## Ownership and composition
-
-`engine/runtime.py:open_engine` takes an explicitly constructed `Auth`, provider
-tuple, audio player, voice transport, listening-session ID and clock. It builds
-the metadata store, catalog and Session against the authentication database path.
-It requires schema `engine_0001`; it never reads `.env`, migrates an old database
-or logs a Discord client in automatically. The caller establishes transport
-readiness. HTTP uses `engine/api.py:create_app(runtime_factory, public_origin=...)`.
-
-The composition owns the supplied resources. Session shutdown settles its inbox,
-freezes audio and saves the measured checkpoint before closing effects. Catalog
-tasks, adapters, providers, database and Auth then close. A combined audio/voice
-adapter closes once. Partial startup cleans up already acquired resources.
-
-`engine/commands.py:DiscordCommands` registers `/pspsps` on a supplied client.
-It checks the same live whitelist, member voice channel and bot permissions,
-then submits `Join` to the same Session as HTTP. `:3` follows confirmed connection,
-not merely request acceptance. Registering commands or connecting a real client
-is not part of the offline tests or automatic engine import.
-
-## Schema management
-
-The frozen Alembic chain lives under `engine/migrations/`. The normal entry point
-uses `engine/schema.py:initialize(path)` to establish the schema and shared
-listening session together. Explicit tooling can call `upgrade(connection)` or
-use the root `alembic.ini`. See [database development](development.md#database-changes).
-There is no old-data import or legacy API fallback.
+- [Engine API](#engine-api)
+  - [Contents](#contents)
+  - [Authentication](#authentication)
+  - [State and mutations](#state-and-mutations)
+  - [Discovery and stable selections](#discovery-and-stable-selections)
+  - [Events](#events)
+  - [Diagnostics](#diagnostics)
+  - [Verification](#verification)
 
 ## Authentication
 
-The existing Discord OAuth/PKCE service, live whitelist, cookies, CSRF and
-profile/preferences rules remain in use. Authentication routes remain:
+Discord OAuth with PKCE, a live whitelist, session cookies and CSRF protect the
+API. Profile and appearance preferences belong to the signed-in account.
+Authentication routes are:
 
 - `GET /api/auth/discord` and `GET /api/auth/discord/callback`
 - `GET /api/auth/session`, `POST /api/auth/logout`
@@ -97,22 +53,22 @@ already left the queue, including replayed removals. The same key with a
 different command or actor conflicts. Repeated accepted requests return the
 original outcome and current state without applying another mutation.
 
-| Endpoint | Body / meaning |
-| --- | --- |
-| `POST /api/queue` | `track_ids` in desired order (1..100), optional `skip_duplicates` |
-| `DELETE /api/queue/{entry_id}` | Remove one occurrence |
-| `PUT /api/queue/{entry_id}/position` | `before_entry_id` (null means end), `expected_queue_revision` |
-| `POST /api/queue/clear` | `expected_queue_revision`, optional `contributor_id` |
-| `POST /api/queue/undo/{undo_id}` | Restore within the existing 12-second deadline |
-| `POST /api/playback/control` | `action`: play, pause, skip, stop or leave; optional `expected_attempt_id` |
-| `PUT /api/playback/position` | `seconds`, required `expected_attempt_id` |
-| `PUT /api/playback/volume` | `volume`, 0..1 |
-| `PUT /api/playback/crossfade` | `seconds`, 0 or 3..7 |
-| `GET /api/channels` | Available channels with server names and permissions |
-| `PUT /api/connection` | `channel_id` |
-| `POST /api/radio` | `seed` MediaReference, `expected_generation` (null for manual mode) |
-| `POST /api/radio/{generation}/stop` | Stop automatic queue filling |
-| `POST /api/radio/{generation}/retry` | Retry an exhausted/failed radio fetch |
+| Endpoint                             | Body / meaning                                                             |
+| ------------------------------------ | -------------------------------------------------------------------------- |
+| `POST /api/queue`                    | `track_ids` in desired order (1..100), optional `skip_duplicates`          |
+| `DELETE /api/queue/{entry_id}`       | Remove one occurrence                                                      |
+| `PUT /api/queue/{entry_id}/position` | `before_entry_id` (null means end), `expected_queue_revision`              |
+| `POST /api/queue/clear`              | `expected_queue_revision`, optional `contributor_id`                       |
+| `POST /api/queue/undo/{undo_id}`     | Restore within the existing 12-second deadline                             |
+| `POST /api/playback/control`         | `action`: play, pause, skip, stop or leave; optional `expected_attempt_id` |
+| `PUT /api/playback/position`         | `seconds`, required `expected_attempt_id`                                  |
+| `PUT /api/playback/volume`           | `volume`, 0..1                                                             |
+| `PUT /api/playback/crossfade`        | `seconds`, 0 or 3..7                                                       |
+| `GET /api/channels`                  | Available channels with server names and permissions                       |
+| `PUT /api/connection`                | `channel_id`                                                               |
+| `POST /api/radio`                    | `seed` MediaReference, `expected_generation` (null for manual mode)        |
+| `POST /api/radio/{generation}/stop`  | Stop automatic queue filling                                               |
+| `POST /api/radio/{generation}/retry` | Retry an exhausted/failed radio fetch                                      |
 
 Pause, skip and stop require the currently displayed attempt ID. Seek changes
 that ID. The Session checks it inside its ordered transaction, so a delayed
@@ -152,6 +108,13 @@ positions against a refreshed list, and accepted additions remain replayable
 even after the discovery snapshot expires. Background refresh exposes a new
 version without replacing the old visible ordering or changing a user's selection.
 
+Search and individual track observations stay fresh for five minutes, playlist
+observations for one minute. A stale cached version can be shown while one
+shared refresh runs. `refresh=true` requests a fresh observation without moving
+the visible selection; an unchanged source keeps its version. A failed refresh
+leaves the last known version available. Pagination is limited to the 100
+observed occurrences; it does not fetch beyond that limit.
+
 ## Events
 
 `GET /api/events` is SSE. Each connection first receives `event: state` containing
@@ -169,18 +132,18 @@ subscribers disconnect on overflow and resynchronize on reconnect. Authenticatio
 is rechecked during idle periods and immediately before data delivery; revocation
 emits `event: auth` and closes the stream. Shutdown closes subscriptions.
 
+## Diagnostics
+
+`GET /api/diagnostics/logs` returns up to 200 recent bot log entries. Only
+accounts listed in `admin_ids` may call it; other authenticated users receive
+403. `?after={id}` returns newer entries for the Logs page. The server keeps at
+most 500 entries in memory and discards them on restart. It does not expose the
+process stderr file or a durable audit history.
+
 ## Verification
 
-The shared backend test isolation blocks real Discord login, external sockets
-and the running dev-server ports, and uses temporary databases and synthetic
-credentials. `test_engine_api.py` exercises the native ASGI app, including
-authorization, account preferences and SSE logout/expiry/revocation.
-`test_engine_commands.py` uses Discord interaction fixtures.
-`test_bootstrap.py` covers initialization, rejected databases, the Alembic CLI,
-Discord readiness/failure/cancellation, presence and restart through the actual
-composition with controlled external dependencies.
-
-The six optional `test_playback_pipeline.py` cases use real local FFmpeg/Opus and
-recorded synthetic tones. Enable `NAHORMAAR_ENGINE_AUDIO_TESTS=1` only in a separately
-agreed resource window. Passing offline tests does not replace the planned live
-Discord listening acceptance, which remains a separate open step after cutover.
+The backend API, command and bootstrap tests exercise authorization, account
+preferences, SSE, Discord interaction fixtures, schema initialization and restart
+with isolated dependencies. The six optional audio recordings use local FFmpeg/Opus
+and synthetic tones. The current CI baseline and the still-open live Discord
+check are recorded in [testing and acceptance](testing.md#live-acceptance).

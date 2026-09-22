@@ -188,6 +188,27 @@ def test_unreadable_access_list_fails_closed(
     asyncio.run(scenario())
 
 
+def test_admin_access_is_a_live_subset_of_the_whitelist(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        auth, _, _ = auth_service(tmp_path)
+        try:
+            token = await login(auth)
+            assert not (await auth.authenticate(token)).admin
+            auth.settings.access_path.write_text(
+                'discord_ids = ["1"]\nadmin_ids = ["1"]', encoding="utf-8"
+            )
+            assert (await auth.authenticate(token)).admin
+            auth.settings.access_path.write_text(
+                'discord_ids = ["1"]\nadmin_ids = ["2"]', encoding="utf-8"
+            )
+            with pytest.raises(AuthError, match="access_unavailable"):
+                await auth.authenticate(token)
+        finally:
+            await auth.close()
+
+    asyncio.run(scenario())
+
+
 def test_discord_oauth_uses_identify_pkce_fixed_redirect_and_discards_tokens(
     tmp_path: Path,
 ) -> None:

@@ -1,2 +1,5 @@
 # Discord user IDs allowed to open and control the dashboard
 discord_ids = []
+
+# Optional: a subset of discord_ids allowed to read the live bot logs
+admin_ids = []

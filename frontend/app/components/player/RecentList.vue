@@ -27,14 +27,15 @@ async function requeue(item: RecentTrack) {
 			>
 				<PlayerTrackArtwork :entry="item.entry" class="recent-cover" />
 				<div class="recent-track min-w-0 flex-1 basis-32">
-					<a
-						:href="item.entry.source_url"
-						target="_blank"
-						rel="noopener noreferrer"
-						class="recent-title text-highlighted block truncate text-sm font-medium hover:underline"
-						:title="trackTitle(item.entry)"
-						>{{ trackTitle(item.entry) }}</a
-					>
+					<UTooltip :text="`Open ${trackTitle(item.entry)} in a new tab`">
+						<a
+							:href="item.entry.source_url"
+							target="_blank"
+							rel="noopener noreferrer"
+							class="recent-title text-highlighted block truncate text-sm font-medium hover:underline"
+							>{{ trackTitle(item.entry) }}</a
+						>
+					</UTooltip>
 					<p class="recent-details text-muted mt-1 flex items-center gap-3 text-xs">
 						<PlayerArtistLink :entry="item.entry" class="truncate" />
 						<span class="recent-mobile-duration shrink-0 tabular-nums">{{
@@ -48,12 +49,14 @@ async function requeue(item: RecentTrack) {
 						>
 					</p>
 				</div>
-				<span
+				<UTooltip
 					v-if="item.entry.origin === 'radio'"
-					class="recent-radio text-xs text-muted"
-					:title="`Radio started by ${item.entry.added_by?.name ?? 'a listener'}`"
-					>Radio · {{ item.entry.added_by?.name }}</span
+					:text="`Radio started by ${item.entry.added_by?.name ?? 'a listener'}`"
 				>
+					<span class="recent-radio text-xs text-muted"
+						>Radio · {{ item.entry.added_by?.name ?? "a listener" }}</span
+					>
+				</UTooltip>
 				<span class="recent-duration text-muted text-xs tabular-nums">{{
 					formatTime(item.entry.duration_seconds)
 				}}</span>
@@ -63,18 +66,19 @@ async function requeue(item: RecentTrack) {
 					>{{ playedAt(item.played_at) }}</time
 				>
 				<div class="recent-actions flex items-center ml-auto">
-					<UButton
-						:icon="icons.plus"
-						color="neutral"
-						variant="ghost"
-						:aria-label="`Queue ${trackTitle(item.entry)} again`"
-						:title="`Queue ${trackTitle(item.entry)} again`"
-						class="recent-add ml-auto size-11 shrink-0 justify-center"
-						:disabled="!player.enabled"
-						:loading="player.isAdding(item.entry.track_id)"
-						:aria-busy="player.isAdding(item.entry.track_id)"
-						@click="requeue(item)"
-					/>
+					<UTooltip :text="`Queue ${trackTitle(item.entry)} again`">
+						<UButton
+							:icon="icons.plus"
+							color="neutral"
+							variant="ghost"
+							:aria-label="`Queue ${trackTitle(item.entry)} again`"
+							class="recent-add ml-auto size-11 shrink-0 justify-center"
+							:disabled="!player.enabled"
+							:loading="player.isAdding(item.entry.track_id)"
+							:aria-busy="player.isAdding(item.entry.track_id)"
+							@click="requeue(item)"
+						/>
+					</UTooltip>
 					<PlayerRadioAction :entry="item.entry" />
 				</div>
 			</li>

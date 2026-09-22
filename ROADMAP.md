@@ -2,43 +2,25 @@
 
 Parent: [Project README](README.md)
 
-Backend rewrite: [architecture and API](docs/engine-api.md).
-The new engine and native API now run on a fresh database. Legacy removal and
-offline verification are complete; coordinated Discord listening acceptance
-is still open.
-The frontend now uses the native API; live playback acceptance remains separate.
+This page tracks delivered milestones and unfinished work. For what listeners
+can use today, start with [Listening together](docs/listening.md); for the
+implementation and public contract, see the [documentation index](docs/README.md).
+The [Discord listening acceptance](docs/testing.md#live-acceptance) is still open.
 
-Product milestones below: phases 1, 3, 4 and 5 complete. Earlier live playback failure and disconnect checks
-passed, as did concurrent queue additions in two browser tabs. Phase 6 is
-implemented. Real Discord sign-in, shared-session logout in two tabs and live
-whitelist removal have passed locally. Shared deployment and the visible
-presence check remain open.
-Those earlier live checks do not establish acceptance of the current backend
-refactor.
+Checked items below mean implemented and covered by the relevant local or CI
+checks, not automatically verified by a live listener. Earlier live playback,
+concurrent browser, sign-in, logout and whitelist checks are historical evidence
+from before this engine cutover. Shared deployment and a visible presence check
+remain open.
 
-## Current scope
+## Find a topic
 
-- Server selection from the bot's joined servers, one shared queue and one active voice channel
-- YouTube links, search and playlists through the native engine API and Nuxt dashboard
-- `/pspsps` summons the bot to a whitelisted user's current Discord voice channel
-- Restarts restore the last channel and track position, including volume and pause state
-- Several people can add, remove and reorder tracks at the same time
-- Discord login and a configured whitelist control dashboard access
-
-## Architecture
-
-The Python backend owns the queue, playback and Discord connection. FastAPI and
-the Discord client run in one backend process. SQLAlchemy stores queue entries
-and their order in SQLite; temporary audio URLs are resolved when needed.
-
-The dashboard sends actions over HTTP and receives state updates through
-[Server-Sent Events](https://fastapi.tiangolo.com/tutorial/server-sent-events/).
-Each update carries a revision. On connection or reconnection, the backend sends
-a complete snapshot so every browser starts from the same state.
-
-Local development binds to localhost. Concurrent use can be tested with several
-browser tabs. Discord login and whitelist checks are implemented; a documented
-shared deployment remains separate work.
+| Area                   | Sections                                                                                                                                                                                                                                                              |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Listening and audio    | [Radio](#youtube-music-radio), [lyrics](#lyrics-for-the-current-track), [audio transitions](#next-audio-step), [unattended playback](#unattended-playback)                                                                                                            |
+| People and collections | [Administration](#administration), [reactions](#track-likes-and-dislikes), [saved playlists](#saved-playlists-and-source-synchronization), [statistics](#playback-statistics-and-recap)                                                                               |
+| Reliability and growth | [Playback controller](#playback-controller-cleanup), [deployment and recovery](#deployment-and-recovery), [deferred work](#deferred)                                                                                                                                  |
+| Delivered foundations  | [Queue](#1-queue-and-persistent-player-state), [voice](#2-youtube-streaming-and-discord-voice), [API](#3-api-and-simultaneous-changes), [discovery](#4-search-playlists-and-metadata), [dashboard](#5-control-dashboard), [access](#6-login-whitelist-and-shared-use) |
 
 ## 1. Queue and persistent player state
 
@@ -48,15 +30,14 @@ shared deployment remains separate work.
   Missing metadata must not prevent an entry from being displayed
 - [x] Add, remove, reorder and clear upcoming tracks. Keep the current track
   separate from the upcoming queue
-- [x] Define playback states: idle, loading, playing, paused and error, with
-  explicit FSM events and allowed transitions. Track the Discord connection
-  separately
+- [x] Define playback phases: idle, resolving, starting, playing, paused and
+  suspended, with explicit FSM events and allowed transitions. Track connection
+  state and errors separately
 - [x] Persist queue changes atomically before acknowledging them
 - [x] Restore the last voice channel and track position after a backend restart,
   preserving pause state and volume without counting another play. Save the
   audio position every five seconds and on clean shutdown. Explicitly leaving
-  clears automatic rejoin; older databases without a checkpoint keep the
-  interrupted track first for a manual start
+  clears automatic rejoin; old database schemas are not imported
 
 | Control       | Behavior                                                                               |
 | ------------- | -------------------------------------------------------------------------------------- |
@@ -64,7 +45,7 @@ shared deployment remains separate work.
 | Pause         | Keep the current track and its position                                                |
 | Skip          | Discard the current track and advance once                                             |
 | Stop          | Stop audio and put the current track first; the next start plays it from the beginning |
-| Clear queue   | Remove upcoming tracks; leave the current track playing                                |
+| Clear queue   | Remove upcoming tracks; leave the current track playing; clearing all ends radio       |
 
 Acceptance: queue order and IDs survive a restart. Stop and clear have distinct
 effects. Tests cover an empty queue, repeated videos and an interrupted track.
@@ -130,15 +111,16 @@ with the backend without reloading the page.
 - [x] Accept YouTube video and playlist links, including short links, plus text
   searches. Validate supported sources before extraction
 - [x] Return search results with title, uploader, duration and thumbnail, and
-  support adding selected results. Load more in pages of 10, up to 100 results
+  support adding selected results. Load more in pages of 20, up to 100 results
 - [x] Search YouTube Music songs by default, with an explicit Videos option and
   separate providers behind a shared search interface
 - [x] Cache search results for five minutes and share identical concurrent lookups
 - [x] Detect YouTube playlist links and open a playlist preview. Let users select
   individual tracks or queue the entire playlist in source order, with unavailable
   entries and import limits shown explicitly
-- [x] Bound search results, playlist imports and concurrent extraction work.
-  Expose import progress, cancellation and partial failures through the API
+- [x] Bound search results, playlist observations and concurrent extraction work.
+  Return versioned snapshots with unavailable entries and partial source errors;
+  cancel a closed view's pending request, without undoing committed queue additions
 - [x] Keep metadata separate from temporary stream URLs. A delayed metadata
   result must not recreate an entry someone has already removed
 
@@ -176,7 +158,7 @@ missing thumbnails do not abort an otherwise valid import.
   and preserve the video instance when switching tabs
 - [x] Save appearance settings per account and ask before loading YouTube media,
   with cookie preferences accessible from the footer
-- [x] Group the last 100 started tracks under the queue with play counts, show five
+- [x] Group loaded playback history under the queue with play counts, show five
   songs at first and let users requeue them. Keep skipped tracks, but exclude unplayed removals
 - [x] Make the controls usable on phones. Distinguish an empty queue, loading,
   paused playback, unavailable media and a disconnected bot
@@ -241,10 +223,11 @@ cached results visible with a clear indication that they could not be updated.
 - [x] Let users stop radio without stopping the current track. Check which
   recommendation sources work without a personal YouTube Music login
 
-Radio keeps three upcoming tracks ready. Queue entries and history retain their
-radio origin and initiator. Stop, disconnect, clearing the entire queue and a
-backend restart disable replenishment; pausing suspends it. Ending radio alone
-leaves the current track and upcoming queue intact.
+Radio fills towards three upcoming tracks. Queue entries and history retain their
+radio origin and initiator. Explicit Stop, Leave, clearing the entire queue and a
+backend restart disable replenishment; pausing suspends it. An unexpected voice
+disconnect retains the radio strategy for rejoin. Ending radio alone leaves the
+current track and upcoming queue intact.
 
 ## Lyrics for the current track
 
@@ -314,28 +297,27 @@ At fade start the incoming track becomes current. Compatible Opus packets at
   records from domain and API models, with explicit transaction boundaries for
   player state, history and accounts
 
-Acceptance: the public API, FSM transitions, session handling and restart behavior
-stay unchanged. Existing databases still migrate correctly, and tests follow the
-responsibilities of the reorganized modules.
+Acceptance: the native API, FSM transitions, session handling and restart behavior
+follow their documented contracts. A fresh engine database initializes; an
+existing engine database reopens, and old or foreign schemas are rejected. Tests
+follow the responsibilities of the reorganized modules.
 
-- [ ] When additional media backends need to be supported, introduce narrow
-  ports/protocols for source identification and resolution, and move concrete
-  adapter construction out of application services
+- [x] Define narrow provider capability protocols for identification, search,
+  playlists, recommendations and audio resolution. Construct the YouTube Music
+  and YouTube adapters in the composition root, then inject them into the catalog
 - [ ] When storage needs an alternative implementation, define a persistence
   contract including its errors, so application services can use either backend
 
 ## Playback controller cleanup
 
-Implemented in the earlier backend refactor and superseded by the
-[native engine](docs/engine-api.md).
-The Session owns ordered commands and commits, Queue owns edits and undo, and
-Radio owns recommendations and refill. Playback executes the FSM's lifecycle
-decisions and audio effects. Offline checks verify their integration; live listening
-and reconnect acceptance remain open.
+Implemented in the [engine](docs/architecture.md). The Session owns ordered
+commands, commits and refill scheduling; Queue owns edits and undo. Radio defines
+the fill strategy, providers supply recommendations, and Playback executes the
+FSM's lifecycle decisions and audio effects. Offline checks verify their
+integration; live listening and reconnect acceptance remain open.
 
-- [x] Make the existing FSM the single authority for playback and voice-state
-  transitions. Audit controller branches and direct state replacements, including
-  checkpoint recovery in `Player`, and model missing lifecycle events explicitly
+- [x] Make the engine FSM the authority for playback and voice-state transitions.
+  Model checkpoint recovery and late technical results as explicit lifecycle events
 - [x] Keep the FSM deterministic and free of I/O. Keep audio processes, Discord,
   storage and task cancellation in the application and integration layers
 - [x] Separate command/undo handling, radio replenishment and checkpoint/position
@@ -371,9 +353,9 @@ are included.
   authentication, CSRF protection and disconnect cleanup
 - [x] Share HTTP errors and cancellation deadlines across search, playlists and
   radio. Move discovery workflow into a composable and reuse known media references
-- [ ] Review remaining profile/settings loading and error handling for useful reuse.
-  Keep shared layout effects initialized once and component styles close to their
-  Vue components
+- [x] Coalesce profile loading, handle account changes and session expiry, and
+  preserve unsaved appearance settings through refresh errors. Keep shared layout
+  effects initialized once and component styles close to their Vue components
 - [x] Review shared API types, domain values and view state for duplication.
   Reuse components and helpers where behavior is actually shared, keeping feature
   differences explicit
@@ -392,20 +374,22 @@ mobile layouts without interrupting an active Discord session.
 
 - [x] Update the README around NaHörMaar as a shared music player for Discord
   friend groups, with current capabilities, limitations and links to detailed docs
-- [ ] Review the docs against the implementation, removing obsolete setup steps,
+- [x] Review the docs against the implementation, removing obsolete setup steps,
   old behavior descriptions and duplicated explanations. Distinguish implemented
   behavior, checks still pending and planned features
-- [ ] Separate listener instructions, owner configuration and developer guidance.
+- [x] Separate listener instructions, owner configuration and developer guidance.
   Cover joining a channel, shared controls, queue ownership, radio and recovery;
   explain that browser video and Discord audio have different roles
-- [ ] Keep setup and troubleshooting in the development guide, module ownership
+- [x] Keep setup and troubleshooting in the development guide, module ownership
   and lifecycle decisions in architecture, and request/response contracts in the
   API reference. Link between them rather than repeating the same details
-- [ ] Document configuration, migrations, backup/restore and restart behavior
-  consistently. Mark deployment instructions as pending until verified, and
-  distinguish isolated tests from checks that affect the running bot
-- [ ] Reconcile the roadmap's status and acceptance notes with the current code
-  and completed checks; keep product descriptions consistent across project metadata
+- [x] Document configuration, schema initialization and restart behavior
+  consistently. Distinguish isolated tests from checks that affect the running bot
+- [ ] Validate a backup/restore procedure and shared deployment instructions;
+  see [Deployment and recovery](#deployment-and-recovery)
+- [x] Reconcile the roadmap's status and acceptance notes with the current code
+  and completed checks
+- [ ] Update old product descriptions in package metadata where they remain
 
 Acceptance: a new reader understands what the app does, what is available today
 and how to set it up. Instructions and examples match the current version,

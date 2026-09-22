@@ -36,6 +36,7 @@ from .domain.catalog import (
 )
 from .domain.metadata import TrackMetadata
 from .domain.tracks import ArtistIdentity, MediaIdentity
+from .observability import logged_operation
 from .providers import ProviderError, UnsupportedCapability
 
 _VIDEO_ID = re.compile(r"[A-Za-z0-9_-]{11}")
@@ -309,6 +310,7 @@ class YouTubeProvider:
             )
         return None
 
+    @logged_operation("engine.youtube.request")
     async def _execute(self, args: tuple[str, ...]) -> ProcessResult:
         if self._closed:
             raise ProviderError("The YouTube provider is closed.")

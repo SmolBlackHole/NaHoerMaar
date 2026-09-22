@@ -1,13 +1,25 @@
 # Develop NaHörMaar
 
-Parent: [Project README](../README.md)
+Parent: [Documentation index](README.md)
 
-The normal backend start and local service now run the new engine. Read the
-[engine/API development notes](engine-api.md) before restarting. The first cutover
-uses `data/engine.sqlite3`; subsequent starts reopen it. Existing data was not imported.
-The frontend uses the native engine API for discovery and session controls.
-
+This guide covers local setup, Discord configuration and changes to the API or
+database. The [engine API](engine-api.md) owns the public contract, and
+[testing and acceptance](testing.md) owns checks and live listening evidence.
 Python 3.12+ and Node.js 24.11+ with npm are required.
+
+## Contents
+
+- [Develop NaHörMaar](#develop-nahörmaar)
+  - [Contents](#contents)
+  - [Set up](#set-up)
+  - [Configure Discord](#configure-discord)
+  - [Start the services](#start-the-services)
+    - [Restart and recovery](#restart-and-recovery)
+  - [Update the frontend API contract](#update-the-frontend-api-contract)
+  - [Daily bio](#daily-bio)
+  - [Database changes](#database-changes)
+  - [License inventory](#license-inventory)
+  - [Test and verify](#test-and-verify)
 
 ## Set up
 
@@ -25,24 +37,15 @@ runs. You can override it with `FFMPEG_PATH`. On Linux and macOS, audio processi
 also needs the system Opus library (`libopus0` on Debian/Ubuntu,
 `opus` through Homebrew on macOS).
 
-## Run the dashboard
-
-```powershell
-npm run dev
-```
-
-Open `http://localhost:3012`. On PowerShell systems that block `npm.ps1`,
-use `npm.cmd run dev`. Sign in to load the current session, queue and history.
-
-The Nuxt server forwards requests to `http://127.0.0.1:8000`; set
-`NUXT_BACKEND_URL` when using another port. Its route allowlist and discovery
-parameters follow the documented [native API](engine-api.md).
+Open the repository root in VS Code. Use **Python: Select Interpreter** to select
+`.venv\Scripts\python.exe` on Windows or `.venv/bin/python` on Linux and macOS.
 
 ## Configure Discord
 
 Copy `.env.example` to `.env` and set `DISCORD_TOKEN`.
-Environment variables override `.env` values. Invite the bot with View Channel,
-Connect and Speak permissions for the voice channels you want to use.
+Environment variables override `.env` values. Invite the bot with the
+`bot` and `applications.commands` scopes and View Channel, Connect and Speak
+permissions for the voice channels you want to use.
 
 The bot discovers its joined servers and voice channels automatically; no guild
 ID is configured. `GET /api/channels` lists them with permissions. Select a channel
@@ -68,6 +71,9 @@ whole queue. Changes take effect without a restart; removing someone closes
 their live updates within five seconds. A missing or invalid access file blocks
 access. Both `.env` and `access.toml` stay out of Git.
 
+Add a subset of those IDs to `admin_ids` to grant access to the live Logs page.
+The log view holds only recent messages in memory and is cleared on restart.
+
 Use `/pspsps` in Discord to bring the bot to your current voice channel. The
 command checks this same whitelist on every call; a dashboard account is not
 required. Its replies are visible only to you. Join a regular voice channel first;
@@ -78,25 +84,68 @@ An explicit pause remains paused. Moving channels follows the same behavior as
 the dashboard. A successful command replies `:3`.
 
 The API runtime registers `/pspsps` globally during Discord login, so it is
-available on the bot's servers without configuring guild IDs. The bot invitation
-must include the `applications.commands` scope. Command registration failures
-are logged without preventing music playback.
+available on the bot's servers without configuring guild IDs. Command
+registration failures are logged without preventing music playback.
 
 Sessions last seven days and survive backend restarts. Names and avatars belong
 to the account and work across devices. An old browser profile can suggest a
 name and avatar at first sign-in, but its past queue entries are not reassigned.
 Signing out affects other tabs using that session and leaves music playing.
 
-## Run the API
+Appearance preferences are saved with the signed-in account. The **Cookies**
+action in the sidebar opens the browser's YouTube consent settings. Covers and
+video previews load only after consent; Discord audio works without it.
+
+## Start the services
+
+After setup and Discord configuration, start the backend from the repository
+root in one terminal:
 
 ```powershell
 .venv\Scripts\python.exe -m nahormaar_backend
 ```
 
-The [API explorer](http://127.0.0.1:8000/docs) describes the new endpoints.
+The [API explorer](http://127.0.0.1:8000/docs) describes the endpoints.
 API calls require the authentication session cookie, and mutations also require
 its CSRF token and configured origin. The dashboard retains the original
 idempotency key and command body when checking a lost mutation response.
+
+The server binds to `127.0.0.1:8000` and runs one bot instance. Keep one worker;
+multiple workers would each start a bot and own a different player. Keep FastAPI
+internal and route dashboard requests through Nuxt. `PUBLIC_ORIGIN` fixes the
+allowed browser origin and OAuth redirect; forwarded host headers do not override
+it. The dev command reads the root `.env`. A deployed Nuxt server needs the same
+value in its environment, with HTTPS for secure cookies. Deployment remains a
+separate step.
+
+Start the dashboard in another terminal:
+
+```powershell
+npm run dev
+```
+
+Open `http://localhost:3012`. On PowerShell systems that block `npm.ps1`,
+use `npm.cmd run dev`. Sign in to load the current session, queue and history.
+The Nuxt server forwards requests to `http://127.0.0.1:8000`; set
+`NUXT_BACKEND_URL` when using another port. Its route allowlist and discovery
+parameters follow the [engine API](engine-api.md).
+
+### Restart and recovery
+
+Ctrl+C closes the HTTP event streams, saves the audio position, stops audio and
+disconnects the bot. On the next startup it rejoins the last channel and resolves
+a fresh stream for the same track at the saved position. Volume is restored;
+paused tracks stay paused. The queue and play counts remain unchanged. An idle
+connected bot rejoins without starting the queue. An explicit Leave clears this
+intent, so the next startup stays disconnected.
+
+Position checkpoints are also saved every five seconds. After a crash playback
+can rewind by roughly that interval. A restart during crossfade resumes the
+incoming track without replaying the outgoing tail. Radio replenishment remains
+off after restarting; entries it already queued remain available. If the saved
+channel is gone or inaccessible, the dashboard reports the issue and retains the
+interrupted track and position for a manual join. Coordinate a restart with
+people listening in the channel.
 
 ## Update the frontend API contract
 
@@ -128,53 +177,6 @@ catalog and session. Do not add another fetch wrapper to the profile store.
 Frontend tests inject repositories into a fresh Vue app and real Pinia using
 `test/repository-fixture.ts`. Their fetch and EventSource implementations are
 local doubles; they do not access the live bot, queue or account.
-
-Every playback or queue mutation needs a UUID in its `Idempotency-Key` header. Generate one with
-`[guid]::NewGuid().ToString()` in PowerShell. Reuse it only when retrying the same
-request. See the [engine API contract](engine-api.md) for payloads and conflict handling.
-
-The server binds to `127.0.0.1:8000` and runs one bot instance. Keep one worker;
-multiple workers would each start a bot and own a different player. Keep FastAPI
-internal and route dashboard requests through Nuxt. `PUBLIC_ORIGIN` fixes the
-allowed browser origin and OAuth redirect; forwarded host headers do not override
-it. The dev command reads the root `.env`. A deployed Nuxt server needs the same
-value in its environment, with HTTPS for secure cookies. Deployment remains a
-separate step.
-
-Ctrl+C closes the HTTP event streams, saves the audio position, stops audio and
-disconnects the bot. On the next startup it rejoins the last channel and resolves
-a fresh stream for the same track at the saved position. Volume is restored;
-paused tracks stay paused. The queue and play counts remain unchanged. An idle
-connected bot rejoins without starting the queue. An explicit Leave clears this
-intent, so the next startup stays disconnected.
-
-Position checkpoints are also saved every five seconds. After a crash playback
-can rewind by roughly that interval. A restart during crossfade resumes the
-incoming track without replaying the outgoing tail. Radio replenishment remains
-off after restarting; entries it already queued remain available. If the saved
-channel is gone or inaccessible, the dashboard reports the issue and retains the
-interrupted track and position for a manual join.
-
-The agreed first start of the engine uses an empty database. Previous queue,
-history, accounts and preferences are not imported. Subsequent restarts use the
-new engine's checkpoint behavior. Ask before restarting a bot in active use.
-
-### Playback diagnostics
-
-The backend console includes timestamps and the owning process ID.
-`engine.runtime.ready` identifies the listening session and active schema.
-`engine.audio.completed` records attempt ID, measured position and completion
-reason. `engine.playback.*` reports failed effects or checkpoints;
-`engine.radio.*` reports failed refill work. Audio-buffer and FFmpeg lifecycle
-messages come from the reused technical adapters.
-
-Raw media URLs, headers and tokens are excluded from audio diagnostics. Keep the
-timestamped console output when investigating a cut: history records confirmed
-starts and endings, but it cannot describe everything a Discord listener hears.
-
-Do not start a second bot instance for acceptance. Use the native API and the
-agreed channel on the single running service. The legacy standalone playback
-script has been removed.
 
 ## Daily bio
 
@@ -212,10 +214,6 @@ update that explicit startup policy and its tests as part of the schema change.
 Never rewrite an already applied migration or point development tooling at a live
 database. No migration from the retired player data is provided.
 
-Appearance preferences are saved with the signed-in account. The **Cookies**
-action in the sidebar opens the browser's YouTube consent settings. Covers and
-video previews load only after consent; Discord audio works without it.
-
 ## License inventory
 
 The Licenses page lists installed JavaScript and Python packages, fonts, artwork
@@ -224,62 +222,8 @@ the inventory; run `npm run licenses` to refresh it separately. Packages without
 a bundled license text are marked and link to their source. Run setup first so
 both the Python and Node.js dependencies are available.
 
-## Run checks
+## Test and verify
 
-```powershell
-python scripts/dev.py check
-```
-
-This runs:
-
-- Repository text and documentation link checks.
-- Ruff linting and formatting, strict mypy and Pyright, and pytest for Python.
-- Frontend tests, Nuxt type checking and a production build.
-
-Backend tests use a separate working directory and database per test, synthetic
-Discord credentials and simulated voice connections. Real Discord login, external
-socket connections and connections to the local dev-server ports are blocked.
-HTTP integration tests use an in-process app or a temporary loopback server.
-Audio tests encode generated fixtures locally and never play them in Discord.
-This isolates application state, not host CPU usage. Run resource-heavy audio
-checks only in an agreed window, without active shared listening.
-
-### Backend checks and recorded audio
-
-Run the backend suite on its own:
-
-```powershell
-.venv\Scripts\python.exe -m pytest backend/tests
-```
-
-The standard suite includes generated local audio fixtures for the retained audio
-adapters. Six full engine recordings are opt-in. In an agreed resource window:
-
-```powershell
-$env:NAHORMAAR_ENGINE_AUDIO_TESTS = "1"
-.venv\Scripts\python.exe -m pytest backend/tests/engine/test_playback_pipeline.py --basetemp=tmp/engine-audio-check -p no:cacheprovider
-Remove-Item Env:NAHORMAAR_ENGINE_AUDIO_TESTS
-```
-
-These use the real Session, SQLAlchemy, FFmpeg/Opus and the Discord audio thread.
-Only lookup and network transport are replaced; generated tones reach a local
-recording. They check overlap, pause/seek, source failure and restart behavior.
-They neither log the bot in nor call its live API. Reusing `--basetemp` replaces
-previous output, so choose a fresh directory to retain earlier measurements.
-
-Before live acceptance, agree on a channel, tracks and permission to control or
-restart the bot. Listen to natural completion and crossfade, then check pause/seek,
-disconnect/rejoin, `/pspsps` and restart with playing and paused intent. Keep logs
-and verify queue/history alongside what was actually audible. Clean up only
-agreed test entries. Passing recordings and transport checks cannot replace
-listener confirmation. The cutover's listening check remains open.
-
-Use `npm run check` to check only the frontend. Shell wrappers are available as
-`scripts/check.sh` and `scripts/check.ps1`.
-
-GitHub Actions runs the same checks on Windows and Linux.
-
-## Editor
-
-Open the repository root in VS Code. Use **Python: Select Interpreter** to select
-`.venv\Scripts\python.exe` on Windows or `.venv/bin/python` on Linux and macOS.
+The [testing guide](testing.md) owns local checks, playback diagnostics and the
+still-open live Discord acceptance. Checks with synthetic audio do not contact
+the running bot; coordinate live listening tests separately.

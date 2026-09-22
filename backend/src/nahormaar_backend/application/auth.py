@@ -6,6 +6,7 @@
 
 import asyncio
 import hashlib
+import logging
 import re
 import secrets
 import time
@@ -24,6 +25,7 @@ SESSION_SECONDS = 7 * 24 * 60 * 60
 SESSION_COOKIE = "nahormaar_session"
 LOGIN_COOKIE = "nahormaar_login"
 ACCESS_CHECK_SECONDS = 2.0
+_LOGGER = logging.getLogger(__name__)
 
 
 def digest(value: str) -> str:
@@ -44,6 +46,7 @@ class Authenticated:
     account: Account
     expires_at: float
     csrf: str = field(repr=False)
+    admin: bool = False
 
 
 class Auth:
@@ -80,6 +83,7 @@ class Auth:
             self.clock(),
         ):
             raise AuthError("login_busy", 429)
+        _LOGGER.info("auth.login_started")
         return url, browser
 
     async def callback(
@@ -116,6 +120,7 @@ class Auth:
             now,
             digest(previous) if previous else None,
         )
+        _LOGGER.info("auth.login_completed account=%s", identity.id)
         return token
 
     async def authenticate(
@@ -129,28 +134,38 @@ class Auth:
         if result is None:
             raise AuthError("signed_out")
         account, expires_at = result
+        admin = False
         if check_access:
             try:
-                await asyncio.to_thread(
+                admin = await asyncio.to_thread(
                     require_access, self.settings.access_path, account.discord_id
                 )
             except AuthError as exc:
                 if exc.code == "access_denied":
                     await asyncio.to_thread(self.accounts.revoke, account.profile.id)
+                    _LOGGER.warning(
+                        "auth.session_revoked account=%s reason=access_denied",
+                        account.discord_id,
+                    )
                 raise
-        return Authenticated(account, expires_at, csrf_token(token))
+        return Authenticated(account, expires_at, csrf_token(token), admin)
 
     async def logout(self, token: str) -> None:
         await asyncio.to_thread(self.accounts.logout, digest(token))
+        _LOGGER.info("auth.session_logged_out")
 
     async def profile(self, user: Authenticated, name: str, avatar: str) -> Account:
         if avatar not in self.avatars:
             raise AuthError("invalid_avatar", 422)
-        return await asyncio.to_thread(
+        account = await asyncio.to_thread(
             self.accounts.update_profile, user.account.profile.id, name, avatar
         )
+        _LOGGER.info("auth.profile_updated account=%s", user.account.discord_id)
+        return account
 
     async def appearance(self, user: Authenticated, value: Appearance) -> Appearance:
-        return await asyncio.to_thread(
+        appearance = await asyncio.to_thread(
             self.accounts.update_appearance, user.account.profile.id, value
         )
+        _LOGGER.info("auth.appearance_updated account=%s", user.account.discord_id)
+        return appearance

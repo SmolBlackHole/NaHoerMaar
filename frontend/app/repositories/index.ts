@@ -1,11 +1,13 @@
 import { inject, type InjectionKey } from "vue";
 import type { AccountRepository } from "./account";
 import type { CatalogRepository } from "./catalog";
+import type { DiagnosticsRepository } from "./diagnostics";
 import type { SessionRepository } from "./session";
 
 export interface Repositories {
 	account: AccountRepository;
 	catalog: CatalogRepository;
+	diagnostics: DiagnosticsRepository;
 	session: SessionRepository;
 }
 export const repositoriesKey: InjectionKey<Repositories> = Symbol("repositories");

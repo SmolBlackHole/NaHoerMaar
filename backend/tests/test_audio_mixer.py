@@ -6,6 +6,7 @@ from __future__ import annotations
 
 # pyright: reportPrivateUsage=false
 import audioop
+import logging
 import struct
 import threading
 import time
@@ -15,6 +16,7 @@ from typing import cast
 import pytest
 
 from nahormaar_backend.config import ffmpeg_executable
+from nahormaar_backend.integrations import audio_mixer
 from nahormaar_backend.integrations.audio_mixer import (
     BUFFER_FRAMES,
     BufferedAudio,
@@ -57,6 +59,31 @@ def buffered(value: int, frames: int) -> tuple[Frames, BufferedAudio]:
     audio = BufferedAudio(cast(VolumeSource, source))
     assert audio.wait_ready(min(frames, BUFFER_FRAMES))
     return source, audio
+
+
+def test_buffer_logs_first_frame_and_slow_source_read(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class SlowFrames(Frames):
+        def read_frame(self) -> AudioFrame | None:
+            time.sleep(0.02)
+            return super().read_frame()
+
+    monkeypatch.setattr(audio_mixer, "_SLOW_READ_SECONDS", 0.005)
+    source = SlowFrames(100, 1)
+    with caplog.at_level(logging.INFO):
+        audio = BufferedAudio(cast(VolumeSource, source))
+        try:
+            assert audio.wait_ready(1)
+            audio._thread.join(timeout=1)
+            assert not audio._thread.is_alive()
+        finally:
+            audio.cleanup()
+
+    assert "audio.buffer.first_frame" in caplog.text
+    assert "audio.buffer.read_slow" in caplog.text
+    assert audio.reader_wait_seconds is None
 
 
 def test_complementary_gains_keep_peak_and_fade_on_frame_clock() -> None:

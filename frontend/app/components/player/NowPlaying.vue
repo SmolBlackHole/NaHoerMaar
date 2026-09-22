@@ -15,6 +15,7 @@ const videoId = computed(() => (current.value ? youtubeVideoId(current.value.sou
 const artwork = computed(() => (consent.youtube ? trackArtwork(current.value) : null));
 const preview = ref<"cover" | "video">("cover");
 const videoControls = ref(false);
+const browserVolume = useState<number>("browser-video-volume", () => 0);
 const visibility = useDocumentVisibility();
 const reducedMotion = usePreferredReducedMotion();
 const motionPaused = ref(false);
@@ -135,6 +136,7 @@ watch(loadVideo, (visible) => {
 				:active="loadVideo"
 				:state="player.snapshot?.state ?? 'idle'"
 				:interactive="videoControls"
+				:volume="browserVolume"
 				@ready="videoReady = $event"
 				@blocked="videoBlocked = $event"
 				@failed="videoFailed = true"
@@ -222,8 +224,8 @@ watch(loadVideo, (visible) => {
 					</button>
 					<template #content
 						><p class="max-w-64 p-4 text-sm text-default">
-							Video starts muted. YouTube controls only change your preview. Sync
-							returns it to the bot's position.
+							Video starts muted. Browser video volume and YouTube controls affect
+							only your preview. Sync returns it to the bot's position.
 						</p></template
 					>
 				</UPopover>
@@ -241,14 +243,11 @@ watch(loadVideo, (visible) => {
 					class="media-title"
 					:class="{ 'is-long': current && trackTitle(current).length > 48 }"
 				>
-					<a
-						v-if="current"
-						:href="current.source_url"
-						:title="trackTitle(current)"
-						target="_blank"
-						rel="noopener noreferrer"
-						>{{ trackTitle(current) }}</a
-					>
+					<UTooltip v-if="current" :text="`Open source: ${trackTitle(current)}`">
+						<a :href="current.source_url" target="_blank" rel="noopener noreferrer">{{
+							trackTitle(current)
+						}}</a>
+					</UTooltip>
 					<template v-else>What are we<br />listening to?</template>
 				</h2>
 				<p v-if="!current" class="media-empty-help">
@@ -263,22 +262,29 @@ watch(loadVideo, (visible) => {
 					<UIcon :name="icons.plus" />{{ nextTrack ? "Open queue" : "Add a track" }}
 				</button>
 			</div>
-			<button v-if="current" type="button" class="next-track-cue" @click="emit('queue')">
-				<span class="next-track-label text-xs text-muted">{{
-					nextTrack ? "Coming up" : "Keep it going"
-				}}</span>
-				<PlayerTrackArtwork v-if="nextTrack" :entry="nextTrack" class="size-12!" />
-				<span v-else class="next-track-icon"><UIcon :name="icons.plus" /></span>
-				<span class="min-w-0 text-left">
-					<span class="line-clamp-2 text-sm font-medium text-highlighted">{{
-						nextTrack ? trackTitle(nextTrack) : "Add the next track"
+			<UTooltip
+				v-if="current"
+				:text="
+					nextTrack ? `Open queue: ${trackTitle(nextTrack)}` : 'Open queue to add a track'
+				"
+			>
+				<button type="button" class="next-track-cue" @click="emit('queue')">
+					<span class="next-track-label text-xs text-muted">{{
+						nextTrack ? "Coming up" : "Keep it going"
 					}}</span>
-					<span v-if="nextTrack" class="mt-1 block text-xs text-muted"
-						>{{ player.snapshot?.upcoming.length ?? 0 }} in queue</span
-					>
-				</span>
-				<UIcon :name="icons.arrowRight" class="size-4 shrink-0 text-muted" />
-			</button>
+					<PlayerTrackArtwork v-if="nextTrack" :entry="nextTrack" class="size-12!" />
+					<span v-else class="next-track-icon"><UIcon :name="icons.plus" /></span>
+					<span class="min-w-0 text-left">
+						<span class="line-clamp-2 text-sm font-medium text-highlighted">{{
+							nextTrack ? trackTitle(nextTrack) : "Add the next track"
+						}}</span>
+						<span v-if="nextTrack" class="mt-1 block text-xs text-muted"
+							>{{ player.snapshot?.upcoming.length ?? 0 }} in queue</span
+						>
+					</span>
+					<UIcon :name="icons.arrowRight" class="size-4 shrink-0 text-muted" />
+				</button>
+			</UTooltip>
 		</div>
 		<div
 			v-if="

@@ -4,6 +4,7 @@ import { createHttpTransport } from "../repositories/transport";
 import { createSessionRepository } from "../repositories/session";
 import { createCatalogRepository } from "../repositories/catalog";
 import { createAccountRepository } from "../repositories/account";
+import { createDiagnosticsRepository } from "../repositories/diagnostics";
 
 export default defineNuxtPlugin({
 	name: "repositories",
@@ -19,6 +20,7 @@ export default defineNuxtPlugin({
 			session: createSessionRepository(json),
 			catalog: createCatalogRepository(json),
 			account: createAccountRepository(json),
+			diagnostics: createDiagnosticsRepository(json),
 		});
 	},
 });

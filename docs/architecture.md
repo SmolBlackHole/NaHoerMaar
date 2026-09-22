@@ -1,13 +1,25 @@
 # Architecture
 
-Parent: [Project README](../README.md)
+Parent: [Documentation index](README.md)
 
-The backend runs one listening session through the engine and its native API.
-The old business core, routes and data importer have been removed. The frontend
-uses this API directly; the remaining Discord listening acceptance
-is described under [engine verification](engine-api.md#verification).
+The backend runs one listening session through the engine and its API. The
+frontend uses this API directly. The remaining Discord listening check has a
+[separate acceptance procedure](testing.md#live-acceptance).
 
-## Ownership
+## Contents
+
+- [Architecture](#architecture)
+  - [Contents](#contents)
+  - [Frontend ownership](#frontend-ownership)
+  - [Backend ownership](#backend-ownership)
+  - [Command and event flow](#command-and-event-flow)
+  - [Catalog, metadata and radio](#catalog-metadata-and-radio)
+  - [Audio and recovery](#audio-and-recovery)
+  - [Storage and access](#storage-and-access)
+
+## Frontend ownership
+
+Paths in this section are relative to `frontend/`.
 
 `frontend/shared/api.generated.ts` is generated offline from the public API
 models, including the account and appearance contract. `shared/engine.ts` names
@@ -44,31 +56,42 @@ Track presentation components accept metadata without manufacturing queue entrie
 unsaved local appearance changes. Account changes invalidate pending requests,
 clear private view state and bind the new account's settings.
 
-| Module | Responsibility |
-| --- | --- |
-| `engine/bootstrap.py` | Production composition: configuration, schema, Discord readiness, commands, presence and lifetime |
-| `engine/runtime.py` | Own injected resources and compose metadata, catalog and Session |
-| `engine/session.py` | Serialize mutations, own committed state and transactions, deliver post-commit events |
-| `engine/domain/queue.py` | Pure queue editing, revision conflicts, attribution and 12-second Undo |
-| `engine/domain/playback.py` | Pure FSM decisions: next state and typed effects |
-| `engine/playback.py` | Execute effects, manage resolver/preload tasks and report correlated results |
-| `engine/domain/radio.py` | Manual and radio queue-filling strategies |
-| `engine/catalog.py` | Select providers and coordinate discovery, audio resolution and cache snapshots |
-| `engine/providers.py`, `engine/youtube.py` | Provider protocol and YouTube/Music translation |
-| `engine/metadata.py` | Merge observations into persistent track and artist identities |
-| `engine/persistence.py` | Async SQLAlchemy repositories and explicit transaction boundaries |
-| `engine/discord.py` | Voice and audio adapter; reuse FFmpeg, buffering, mixing and Opus mechanisms |
-| `engine/gateway.py`, `engine/commands.py` | Discord events, presence and whitelist-protected `/pspsps` |
-| `engine/api.py`, `engine/http_auth.py` | Native HTTP/SSE and account authorization |
-| `application/auth.py`, `application/access.py` | OAuth login, session lifecycle and live whitelist |
-| `domain/identity.py`, `domain/accounts.py`, `domain/preferences.py` | Shared account and contributor values |
-| `persistence/accounts.py`, `persistence/models.py` | Account/login storage using short independent transactions |
-| `integrations/` | Reused audio processing, process ownership, provider subprocesses, OAuth and daily bio |
+## Backend ownership
+
+The following paths are relative to `backend/src/nahormaar_backend/`.
+
+| Module                                                              | Responsibility                                                                                    |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `engine/bootstrap.py`                                               | Production composition: configuration, schema, Discord readiness, commands, presence and lifetime |
+| `engine/runtime.py`                                                 | Own injected resources and compose metadata, catalog and Session                                  |
+| `engine/session.py`                                                 | Serialize mutations, own committed state and transactions, deliver post-commit events             |
+| `engine/domain/queue.py`                                            | Pure queue editing, revision conflicts, attribution and 12-second Undo                            |
+| `engine/domain/playback.py`                                         | Pure FSM decisions: next state and typed effects                                                  |
+| `engine/playback.py`                                                | Execute effects, manage resolver/preload tasks and report correlated results                      |
+| `engine/domain/radio.py`                                            | Manual and radio queue-filling strategies                                                         |
+| `engine/catalog.py`                                                 | Select providers and coordinate discovery, audio resolution and cache snapshots                   |
+| `engine/providers.py`, `engine/youtube.py`                          | Provider protocol and YouTube/Music translation                                                   |
+| `engine/metadata.py`                                                | Merge observations into persistent track and artist identities                                    |
+| `engine/persistence.py`                                             | Async SQLAlchemy repositories and explicit transaction boundaries                                 |
+| `engine/discord.py`                                                 | Voice and audio adapter; reuse FFmpeg, buffering, mixing and Opus mechanisms                      |
+| `engine/gateway.py`, `engine/commands.py`                           | Discord events, presence and whitelist-protected `/pspsps`                                        |
+| `engine/api.py`, `engine/http_auth.py`                              | Native HTTP/SSE and account authorization                                                         |
+| `application/auth.py`, `application/access.py`                      | OAuth login, session lifecycle and live whitelist                                                 |
+| `domain/identity.py`, `domain/accounts.py`, `domain/preferences.py` | Shared account and contributor values                                                             |
+| `persistence/accounts.py`, `persistence/models.py`                  | Account/login storage using short independent transactions                                        |
+| `integrations/`                                                     | Reused audio processing, process ownership, provider subprocesses, OAuth and daily bio            |
 
 The event loop is supplied by the application runtime. A Session has one
 bounded inbox (128 pending messages); it waits for work rather than polling.
 It is the only owner that replaces committed playback/queue state. HTTP, Discord
 commands and technical callbacks all use this boundary.
+
+`engine/bootstrap.py` constructs the YouTube Music and YouTube providers and the
+Discord transport. `engine/runtime.py:open_engine` receives those dependencies,
+Auth, the session ID and a clock; it does not read configuration or log a Discord
+client in. Provider capabilities are defined in `engine/providers.py`, and the
+catalog uses the supplied providers. The composition closes supplied adapters
+and providers once, including on partial startup failure.
 
 ## Command and event flow
 
@@ -120,17 +143,21 @@ metadata. Adding the same track twice creates two independently editable entries
 Contributor snapshots preserve attribution even after a profile changes.
 
 Searches, playlists and track observations use bounded caches with shared refresh
-work. Versioned discovery snapshots keep selections stable while fresh results
-arrive. Queue additions use track IDs from the displayed version, not positions
-in a possibly refreshed list.
+work. Search and track observations are fresh for five minutes, playlist
+observations for one minute. Stale data can appear immediately while one shared
+refresh runs; a failed refresh keeps the last known result. Versioned discovery
+snapshots keep selections stable while fresh results arrive. Queue additions use
+track IDs from the displayed version, not positions in a possibly refreshed list.
 
 Manual mode adds nothing automatically. Radio mode fills the queue towards three
 upcoming entries using the seed provider's recommendations. Manual entries count
 towards that target; current/recent/queued or excluded tracks are filtered.
 Generation and request IDs reject stale results after stop or seed changes.
 Provider work runs outside the inbox; results re-enter it for a single queue
-commit. Paused playback is preserved. Radio is not restored automatically after
-a process restart, but its queued entries remain.
+commit. Pausing suspends refill. An unexpected voice disconnect suspends playback
+and retains radio mode; an explicit Leave, Stop or full queue clear ends it.
+Radio is not restored automatically after a process restart, but its queued
+entries remain.
 
 ## Audio and recovery
 
@@ -161,9 +188,10 @@ entry point reserves the API port before Discord login and runs one worker.
 
 The engine schema has a frozen Alembic chain under `engine/migrations/`.
 Startup initializes an empty database and its single listening session atomically.
-It rejects old or foreign databases without replacing them. The approved cutover
-uses `data/engine.sqlite3`; the old database is retained separately and no import
-runs. Account tables share the database but not the Session's playback transactions.
+It reopens an existing engine database and rejects old or foreign schemas without
+replacing or importing them. Account tables share the database but not the
+Session's playback transactions. Database paths and migrations are described in
+the [development guide](development.md#database-changes).
 
 Discord OAuth uses `identify` and PKCE. Login attempts are browser-bound and
 single-use. Seven-day session cookies are HTTP-only; only their hashes are stored.

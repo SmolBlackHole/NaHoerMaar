@@ -72,7 +72,11 @@ export const useProfileStore = defineStore("profile", () => {
 				const value = await account.session();
 				if (version === generation.value) accept(value);
 			} catch (failure) {
-				if (version === generation.value && !(failure instanceof SessionLost))
+				if (
+					version === generation.value &&
+					!(failure instanceof SessionLost) &&
+					!session.value
+				)
 					lost("auth_unavailable");
 			} finally {
 				checking = undefined;

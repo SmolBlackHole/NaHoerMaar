@@ -129,6 +129,7 @@ class FFmpegSource(discord.AudioSource):
         self._duration_seconds = duration_seconds
         self._output_seconds = 0.0
         self._diagnostics: deque[str] = deque(maxlen=8)
+        self._reported_diagnostics: set[str] = set()
         self._diagnostics_lock = threading.Lock()
         self._stderr_thread = threading.Thread(target=self._drain_stderr, daemon=True)
         self._stderr_thread.start()
@@ -157,6 +158,18 @@ class FFmpegSource(discord.AudioSource):
                     with self._diagnostics_lock:
                         if not self._diagnostics or self._diagnostics[-1] != kind:
                             self._diagnostics.append(kind)
+                        report = (
+                            kind != "ffmpeg_message"
+                            and kind not in self._reported_diagnostics
+                        )
+                        if report:
+                            self._reported_diagnostics.add(kind)
+                    if report:
+                        _LOGGER.warning(
+                            "ffmpeg.diagnostic audio_pid=%s kind=%s",
+                            self._pid,
+                            kind,
+                        )
         except OSError as error:
             _LOGGER.warning(
                 "ffmpeg.diagnostics_failed audio_pid=%s error=%s",
@@ -227,18 +240,27 @@ class FFmpegSource(discord.AudioSource):
         except subprocess.TimeoutExpired:
             return_code = self._process.poll()
         self._stderr_thread.join(timeout=0.2)
+        ended_early = self._ended_early()
+        recovered = self._duration_seconds is not None and not ended_early
         if (
             return_code not in (None, 0)
-            or self._terminal_diagnostic()
-            or self._ended_early()
+            or ended_early
+            or (self._terminal_diagnostic() and not recovered)
         ):
             self._current_error = MediaStreamError("FFmpeg stream failed.")
         _LOGGER.log(
             logging.WARNING if self._current_error else logging.INFO,
-            "ffmpeg.eof audio_pid=%s returncode=%s elapsed=%.3f diagnostics=%s",
+            "ffmpeg.eof audio_pid=%s returncode=%s elapsed=%.3f "
+            "output_seconds=%.3f expected_seconds=%s diagnostics=%s",
             self._pid,
             return_code,
             time.monotonic() - self._started_at,
+            self._output_seconds,
+            (
+                f"{max(0.0, self._duration_seconds - self._position_seconds):.3f}"
+                if self._duration_seconds is not None
+                else "unknown"
+            ),
             self._diagnostic_summary(),
         )
         return b""
@@ -357,7 +379,24 @@ def _ffmpeg_arguments(
             header_lines.append(f"{name}: {value}")
         arguments.extend(("-headers", "\r\n".join(header_lines) + "\r\n"))
     if source.startswith(("http://", "https://")):
-        arguments.extend(("-rw_timeout", "15000000"))
+        arguments.extend(
+            (
+                "-rw_timeout",
+                "15000000",
+                "-reconnect",
+                "1",
+                "-reconnect_on_network_error",
+                "1",
+                "-reconnect_streamed",
+                "1",
+                "-reconnect_max_retries",
+                "2",
+                "-reconnect_delay_max",
+                "2",
+                "-reconnect_delay_total_max",
+                "3",
+            )
+        )
     if position_seconds:
         arguments.extend(("-ss", str(position_seconds)))
     arguments.extend(("-i", source, "-map", "0:a:0"))

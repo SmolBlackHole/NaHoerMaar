@@ -72,6 +72,18 @@ export function useDiscovery() {
 			(parsed.value.kind === "video" && player.isAdding(parsed.value.url)),
 	);
 	const loadingPlaylist = computed(() => !previewError.value && previewPending.value);
+	const canReturnToPlaylist = computed(
+		() =>
+			view.value === "radio" &&
+			radio.source?.kind === "playlist" &&
+			radio.source.source_url === previewUrl.value &&
+			!!preview.value,
+	);
+	function backToPlaylist() {
+		if (!canReturnToPlaylist.value) return;
+		radio.dispose();
+		view.value = "playlist";
+	}
 	watch(
 		() => radio.version,
 		() => {
@@ -236,6 +248,8 @@ export function useDiscovery() {
 		counts,
 		submitting,
 		loadingPlaylist,
+		canReturnToPlaylist,
+		backToPlaylist,
 		startRadio,
 		openPlaylist,
 		submit,

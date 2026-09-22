@@ -10,6 +10,7 @@ const account = (): ListenerSession => ({
 	appearance: { ...defaultAppearance },
 	profile: { id: "first", name: "Alice", avatar: "0002" },
 	profile_complete: true,
+	is_admin: false,
 	csrf_token: "session-bound-csrf",
 	expires_at: Date.now() / 1000 + 60,
 });
@@ -117,6 +118,22 @@ describe("server sessions", () => {
 		fetcher.mockResolvedValueOnce(Response.json(account()));
 		await client.restore();
 		expect(client.status).toBe("authenticated");
+	});
+	it("keeps a known session through a temporary outage but still accepts revoked access", async () => {
+		const { client, fetcher } = setup();
+		fetcher.mockResolvedValueOnce(Response.json(account()));
+		await client.restore();
+		const generation = client.generation;
+		fetcher.mockRejectedValueOnce(new TypeError("offline"));
+		await client.restore();
+		expect(client.status).toBe("authenticated");
+		expect(client.profile?.name).toBe("Alice");
+		expect(client.credentials.csrfToken).toBe("session-bound-csrf");
+		expect(client.generation).toBe(generation);
+		fetcher.mockResolvedValueOnce(Response.json({ code: "access_denied" }, { status: 403 }));
+		await client.restore();
+		expect(client.status).toBe("forbidden");
+		expect(client.profile).toBeNull();
 	});
 	it("expires the local session without waiting for a user action", async () => {
 		vi.useFakeTimers();

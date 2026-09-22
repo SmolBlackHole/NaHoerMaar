@@ -6,6 +6,7 @@
 
 import asyncio
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from functools import partial
 from uuid import UUID
@@ -96,6 +97,8 @@ class PlaybackController:
     ) -> None:
         previous = self._jobs.get(lane)
         if previous and lane not in self._cleanup_lanes:
+            if not previous.done():
+                _LOGGER.info("engine.playback.effect_replaced lane=%s", lane)
             previous.cancel()
         if cleanup:
             self._cleanup_lanes.add(lane)
@@ -125,6 +128,13 @@ class PlaybackController:
 
     def apply(self, effects: tuple[Effect, ...]) -> None:
         for effect in effects:
+            if not isinstance(effect, SetVolume):
+                _LOGGER.info(
+                    "engine.playback.effect_dispatched effect=%s attempt=%s preparation=%s",
+                    type(effect).__name__,
+                    getattr(effect, "attempt_id", None),
+                    getattr(effect, "preparation_id", None),
+                )
             match effect:
                 case StartAttempt():
                     self._replace("output", partial(self._start, effect))
@@ -176,7 +186,19 @@ class PlaybackController:
         try:
             if progress := self.audio.progress:
                 await self.audio.stop(progress.attempt_id)
+            started_at = time.monotonic()
+            _LOGGER.info(
+                "engine.playback.resolving attempt=%s track_id=%s",
+                effect.attempt_id,
+                effect.track_id,
+            )
             source = await self._catalog.resolve_audio(effect.track_id)
+            _LOGGER.info(
+                "engine.playback.resolved attempt=%s elapsed=%.3f duration=%s",
+                effect.attempt_id,
+                time.monotonic() - started_at,
+                source.track.metadata.duration_seconds,
+            )
             accepted = await self._report(
                 SourceResolved(
                     effect.attempt_id, source.track.metadata.duration_seconds
@@ -187,6 +209,12 @@ class PlaybackController:
                 or accepted.playback.phase is not PlaybackPhase.STARTING
             ):
                 return
+            _LOGGER.info(
+                "engine.playback.starting attempt=%s position=%.3f paused=%s",
+                effect.attempt_id,
+                accepted.checkpoint.position_seconds,
+                accepted.checkpoint.intent is PlaybackIntent.PAUSED,
+            )
             await self.audio.play(
                 source,
                 effect.attempt_id,
@@ -243,6 +271,13 @@ class PlaybackController:
 
     async def _prepare(self, effect: PrepareNext) -> None:
         try:
+            started_at = time.monotonic()
+            _LOGGER.info(
+                "engine.playback.preparing preparation=%s outgoing=%s track_id=%s",
+                effect.preparation_id,
+                effect.outgoing_attempt_id,
+                effect.track_id,
+            )
             source = await self._catalog.resolve_audio(effect.track_id)
             duration = source.track.metadata.duration_seconds
             accepted = (
@@ -255,6 +290,12 @@ class PlaybackController:
                     seconds=min(effect.seconds, duration / 2),
                     notify=self.notify,
                 )
+            )
+            _LOGGER.info(
+                "engine.playback.prepared preparation=%s accepted=%s elapsed=%.3f",
+                effect.preparation_id,
+                accepted,
+                time.monotonic() - started_at,
             )
             await self._report(Prepared(effect.preparation_id, accepted))
         except asyncio.CancelledError:

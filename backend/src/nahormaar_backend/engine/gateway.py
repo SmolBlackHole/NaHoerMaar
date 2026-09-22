@@ -30,6 +30,17 @@ class DiscordGateway(discord.Client):
 
     async def on_ready(self) -> None:
         self._sent_activity = None
+        _LOGGER.info(
+            "engine.discord.gateway_ready guilds=%s user=%s",
+            len(self.guilds),
+            self.user.id if self.user else None,
+        )
+
+    async def on_resumed(self) -> None:
+        _LOGGER.info("engine.discord.gateway_resumed guilds=%s", len(self.guilds))
+
+    async def on_disconnect(self) -> None:
+        _LOGGER.warning("engine.discord.gateway_disconnected")
 
     async def on_voice_state_update(
         self,
@@ -40,6 +51,7 @@ class DiscordGateway(discord.Client):
         await self.output.on_voice_state_update(member, before, after)
 
     async def on_guild_remove(self, guild: discord.Guild) -> None:
+        _LOGGER.info("engine.discord.guild_removed guild=%s", guild.id)
         await self.output.on_guild_remove(guild)
 
     async def update_presence(self, session: Session, metadata: MetadataStore) -> None:

@@ -36,13 +36,20 @@ class DiscordCommands(app_commands.CommandTree[discord.Client]):
 
     async def register(self) -> None:
         async with asyncio.timeout(10):
-            await self.sync()
+            commands = await self.sync()
+        _LOGGER.info("engine.discord.commands_registered count=%s", len(commands))
 
     @app_commands.guild_only()
     @app_commands.guild_install()
     async def summon(self, interaction: discord.Interaction[discord.Client]) -> None:
         await interaction.response.defer(ephemeral=True, thinking=True)
         message = ":3"
+        outcome = "joined"
+        _LOGGER.info(
+            "engine.discord.summon_requested guild=%s user=%s",
+            interaction.guild_id,
+            interaction.user.id,
+        )
         try:
             await asyncio.to_thread(
                 require_access, self.access_path, str(interaction.user.id)
@@ -55,6 +62,7 @@ class DiscordCommands(app_commands.CommandTree[discord.Client]):
                 or not isinstance(member.voice.channel, discord.VoiceChannel)
             ):
                 message = "Join a voice channel in this server, then call /pspsps."
+                outcome = "no_voice_channel"
             else:
                 channel = member.voice.channel
                 permissions = channel.permissions_for(interaction.guild.me)
@@ -64,6 +72,7 @@ class DiscordCommands(app_commands.CommandTree[discord.Client]):
                     and permissions.speak
                 ):
                     message = "I'm missing permissions in your voice channel."
+                    outcome = "missing_permissions"
                 else:
                     async with self.session.events.subscribe() as changes:
                         result = await self.session.request(
@@ -95,6 +104,7 @@ class DiscordCommands(app_commands.CommandTree[discord.Client]):
                                 if await changes.get() is None:
                                     raise RuntimeError("Session closed.")
         except AuthError as error:
+            outcome = error.code
             message = (
                 "You are not on the whitelist for this bot."
                 if error.code == "access_denied"
@@ -102,7 +112,14 @@ class DiscordCommands(app_commands.CommandTree[discord.Client]):
             )
         except Exception as error:
             _LOGGER.warning("engine.discord.summon_failed: %s", type(error).__name__)
+            outcome = "join_failed"
             message = "I couldn't join your voice channel. Please try again."
+        _LOGGER.info(
+            "engine.discord.summon_completed guild=%s user=%s outcome=%s",
+            interaction.guild_id,
+            interaction.user.id,
+            outcome,
+        )
         await interaction.edit_original_response(
             content=message, allowed_mentions=discord.AllowedMentions.none()
         )

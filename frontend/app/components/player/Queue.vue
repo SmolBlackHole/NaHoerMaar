@@ -322,14 +322,15 @@ async function clearQueue() {
 					</button>
 					<PlayerTrackArtwork :entry="entry" class="queue-cover" />
 					<div class="queue-title min-w-0">
-						<a
-							:href="entry.source_url"
-							target="_blank"
-							rel="noopener noreferrer"
-							class="block truncate text-sm font-medium text-highlighted hover:underline"
-							:title="trackTitle(entry)"
-							>{{ trackTitle(entry) }}</a
-						>
+						<UTooltip :text="`Open ${trackTitle(entry)} in a new tab`">
+							<a
+								:href="entry.source_url"
+								target="_blank"
+								rel="noopener noreferrer"
+								class="block truncate text-sm font-medium text-highlighted hover:underline"
+								>{{ trackTitle(entry) }}</a
+							>
+						</UTooltip>
 						<p class="mt-1 truncate text-xs text-muted">
 							<PlayerArtistLink :entry="entry" />
 						</p>
@@ -356,7 +357,7 @@ async function clearQueue() {
 					<UDropdownMenu
 						:items="[
 							{
-								label: 'Radio from this track',
+								label: 'Start a radio from this track',
 								icon: icons.radio,
 								disabled: !player.enabled,
 								onSelect: () =>
@@ -401,6 +402,7 @@ async function clearQueue() {
 								player.isPending('queue.reordered', entry.id)
 							"
 							:aria-label="'Options for ' + trackTitle(entry)"
+							:title="'Options for ' + trackTitle(entry)"
 							color="neutral"
 							variant="ghost"
 							class="queue-menu size-11 justify-center"

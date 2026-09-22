@@ -35,9 +35,22 @@ class View(BaseModel):
 class AccountView(View):
     profile: Contributor
     profile_complete: bool
+    is_admin: bool
     csrf_token: str
     expires_at: float
     appearance: Appearance
+
+
+class LogEntryView(View):
+    id: int
+    timestamp: datetime
+    level: str
+    source: str
+    message: str
+
+
+class LogsView(View):
+    entries: tuple[LogEntryView, ...]
 
 
 class MetadataView(View):

@@ -15,6 +15,7 @@ import asyncio
 import importlib.util
 import logging
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from math import isfinite
@@ -75,6 +76,7 @@ class _Prepared:
     source: PlayableSource
     buffer: BufferedAudio
     staged: bool = False
+    created_at: float = field(default_factory=time.monotonic)
 
 
 class DiscordOutput:
@@ -197,6 +199,11 @@ class DiscordOutput:
             self._monitor = asyncio.create_task(
                 self._watch(self._connection), name="engine-voice-monitor"
             )
+            _LOGGER.info(
+                "engine.voice.connected connection=%s channel_id=%s",
+                connection_id,
+                channel_id,
+            )
 
     async def disconnect(self, connection_id: UUID) -> None:
         async with self._voice_lock:
@@ -220,6 +227,13 @@ class DiscordOutput:
                 if voice:
                     await voice.disconnect(force=True)
             finally:
+                if connection:
+                    _LOGGER.info(
+                        "engine.voice.disconnected connection=%s lost=%s position=%s",
+                        connection.connection_id,
+                        lost,
+                        progress.position_seconds if progress else None,
+                    )
                 if lost and connection:
                     self._disconnect_handler(VoiceDisconnected(connection, progress))
 
@@ -304,6 +318,12 @@ class DiscordOutput:
             if self._output:
                 raise AudioError("Previous output must be stopped first.")
             buffer = await self._create_buffer(source, position_seconds)
+            _LOGGER.info(
+                "engine.audio.output_attached attempt=%s audio_pid=%s position=%.3f",
+                attempt_id,
+                getattr(buffer, "process_id", None),
+                position_seconds,
+            )
             attempt = _Attempt(attempt_id, source, notify)
             try:
                 output = _Output(
@@ -341,6 +361,9 @@ class DiscordOutput:
             ):
                 return
             attempt.started = True
+        _LOGGER.info(
+            "engine.audio.started attempt=%s position=%.3f", attempt.id, position
+        )
         attempt.notify(AudioStarted(attempt.id, position))
 
     def _completed(self, output: _Output, error: Exception | None) -> None:
@@ -440,6 +463,11 @@ class DiscordOutput:
             self._output.mixer.pause()
             if self._voice:
                 self._voice.pause()
+            _LOGGER.info(
+                "engine.audio.paused attempt=%s position=%.3f",
+                attempt_id,
+                self._output.mixer.position_seconds,
+            )
 
     def resume(self, attempt_id: UUID) -> None:
         if (
@@ -450,6 +478,11 @@ class DiscordOutput:
             self._output.mixer.resume()
             if self._voice:
                 self._voice.resume()
+            _LOGGER.info(
+                "engine.audio.resumed attempt=%s position=%.3f",
+                attempt_id,
+                self._output.mixer.position_seconds,
+            )
 
     def set_volume(self, volume: float) -> None:
         if not isfinite(volume) or not 0 <= volume <= 1:
@@ -505,6 +538,17 @@ class DiscordOutput:
                         )
                     ),
                 )
+                if prepared.staged:
+                    _LOGGER.info(
+                        "engine.audio.prepared preparation=%s outgoing=%s audio_pid=%s "
+                        "position=%.3f duration=%.3f lead_seconds=%.3f",
+                        preparation_id,
+                        outgoing_attempt_id,
+                        getattr(audio, "process_id", None),
+                        output.mixer.position_seconds,
+                        duration,
+                        max(0.0, duration - output.mixer.position_seconds - seconds),
+                    )
             return prepared.staged
         finally:
             if not prepared.staged:
@@ -566,6 +610,11 @@ class DiscordOutput:
                 lambda: self._started(output, attempt),
             )
             if accepted:
+                _LOGGER.info(
+                    "engine.audio.transition preparation=%s prepared_age_seconds=%.3f",
+                    preparation_id,
+                    time.monotonic() - prepared.created_at,
+                )
                 self._prepared = None
             return accepted
         finally:

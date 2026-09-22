@@ -8,6 +8,7 @@ Keep the existing Auth service, cookies, whitelist and CSRF rules. No legacy
 player API or application runtime is imported by this boundary.
 """
 
+import logging
 import secrets
 from collections.abc import Callable
 from typing import Annotated, cast
@@ -29,6 +30,8 @@ from ..config import CALLBACK_PATH
 from ..domain.identity import AuthError
 from ..domain.preferences import Appearance
 from .api_models import AccountView, ApiError
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def current_user(request: Request) -> Authenticated:
@@ -80,6 +83,13 @@ class AuthBoundary:
                     raise AuthError("csrf_failed", 403)
                 request.state.user = user
         except AuthError as error:
+            if error.code in {"access_denied", "origin_forbidden", "csrf_failed"}:
+                _LOGGER.warning(
+                    "auth.request_rejected method=%s path=%s reason=%s",
+                    request.method,
+                    scope["path"],
+                    error.code,
+                )
             await JSONResponse(
                 ApiError(code=error.code).model_dump(), status_code=error.status
             )(scope, receive, private_send)
@@ -103,6 +113,7 @@ def account_document(user: Authenticated) -> AccountView:
     return AccountView(
         profile=user.account.profile,
         profile_complete=user.account.profile_complete,
+        is_admin=user.admin,
         csrf_token=user.csrf,
         expires_at=user.expires_at,
         appearance=user.account.appearance,
@@ -118,6 +129,7 @@ def auth_router(service: Callable[[], Auth]) -> APIRouter:
         try:
             url, browser = await auth.begin(request.cookies.get(LOGIN_COOKIE))
         except AuthError as error:
+            _LOGGER.warning("auth.login_start_failed reason=%s", error.code)
             return RedirectResponse(f"/login?error={error.code}", status_code=303)
         response = RedirectResponse(url, status_code=303)
         response.set_cookie(
@@ -154,6 +166,7 @@ def auth_router(service: Callable[[], Auth]) -> APIRouter:
                 path="/api",
             )
         except AuthError as error:
+            _LOGGER.warning("auth.login_failed reason=%s", error.code)
             response = RedirectResponse(f"/login?error={error.code}", status_code=303)
         response.delete_cookie(
             LOGIN_COOKIE,
@@ -185,7 +198,9 @@ def auth_router(service: Callable[[], Auth]) -> APIRouter:
     @router.put("/api/profile")
     async def profile(body: ProfileInput, user: CurrentUser) -> AccountView:
         account = await service().profile(user, body.name, body.avatar)
-        return account_document(Authenticated(account, user.expires_at, user.csrf))
+        return account_document(
+            Authenticated(account, user.expires_at, user.csrf, user.admin)
+        )
 
     @router.put("/api/profile/appearance")
     async def appearance(body: Appearance, user: CurrentUser) -> Appearance:

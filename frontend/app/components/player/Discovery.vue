@@ -32,6 +32,8 @@ const {
 	counts,
 	submitting,
 	loadingPlaylist,
+	canReturnToPlaylist,
+	backToPlaylist,
 	startRadio,
 	openPlaylist,
 	submit,
@@ -110,7 +112,19 @@ function restoreScroll() {
 					class="hover:underline"
 					>{{ preview?.playlist?.title || "YouTube playlist" }}</a
 				>
-				<span v-else>{{ view === "radio" ? "Radio" : "Find music" }}</span>
+				<div v-else-if="view === 'radio'" class="flex min-w-0 items-center gap-2">
+					<UButton
+						v-if="canReturnToPlaylist"
+						:icon="icons.arrowLeft"
+						label="Back to playlist"
+						color="neutral"
+						variant="ghost"
+						class="-ml-2 min-h-11 px-2"
+						@click="backToPlaylist"
+					/>
+					<span class="truncate">Radio</span>
+				</div>
+				<span v-else>Find music</span>
 			</template>
 			<template #body>
 				<div

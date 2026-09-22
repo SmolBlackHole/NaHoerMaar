@@ -160,6 +160,25 @@ describe("local API proxy", () => {
 			body: '{"track_ids":["example"]}',
 		});
 	});
+	it("forwards the admin log cursor and session cookie only", async () => {
+		let received: { url?: string; cookie?: string } = {};
+		const backend = await listen(createServer((request, response) => {
+			received = { url: request.url, cookie: request.headers.cookie };
+			response.writeHead(200, { "content-type": "application/json" });
+			response.end('{"entries":[]}');
+		}));
+		const frontend: string = await listen(createServer(toNodeListener(createApp().use(
+			playerProxy(() => backend, () => frontend),
+		))));
+		const response = await fetch(`${frontend}/api/diagnostics/logs?after=42&ignored=1`, {
+			headers: { cookie: "private=local; nahormaar_session=session-token" },
+		});
+		expect(response.status).toBe(200);
+		expect(received).toEqual({
+			url: "/api/diagnostics/logs?after=42",
+			cookie: "nahormaar_session=session-token",
+		});
+	});
 
 	it.each([
 		["playback/position", { seconds: 75, expected_attempt_id: "123" }],

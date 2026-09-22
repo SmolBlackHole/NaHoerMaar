@@ -8,6 +8,7 @@ const props = defineProps<{
 	active: boolean;
 	state: PlaybackState;
 	interactive: boolean;
+	volume: number;
 }>();
 const emit = defineEmits<{
 	failed: [];
@@ -30,13 +31,19 @@ function followPlayer() {
 	if (props.active && props.state === "playing") embed.playVideo();
 	else embed.pauseVideo();
 }
+function applyVolume() {
+	if (!ready.value || !embed) return;
+	embed.setVolume(props.volume);
+	if (props.volume === 0) embed.mute();
+	else embed.unMute();
+}
 function align() {
 	if (!ready.value || !embed) return;
 	if (props.active) embed.seekTo(props.getPosition(), true);
 	followPlayer();
 }
 function startPreview() {
-	embed?.mute();
+	applyVolume();
 	align();
 	emit("blocked", false);
 }
@@ -77,8 +84,8 @@ async function initialize() {
 					embed = event.target;
 					embed.getIframe().title = props.title;
 					updateInteraction();
-					embed.mute();
 					ready.value = true;
+					applyVolume();
 					emit("ready", true);
 					align();
 				},
@@ -111,6 +118,7 @@ watch(
 	},
 );
 watch(() => props.state, followPlayer);
+watch(() => props.volume, applyVolume);
 watch(() => props.interactive, updateInteraction);
 onBeforeUnmount(() => {
 	disposed = true;

@@ -42,6 +42,7 @@ from .api_models import (
     DiscoveryView,
     HistoryView,
     ManualView,
+    LogsView,
     MetadataView,
     MutationView,
     OutcomeView,
@@ -53,6 +54,7 @@ from .api_models import (
     SessionView,
     TrackView,
 )
+from .logs import RecentLogs
 
 type OperationID = Annotated[UUID, Header(alias="Idempotency-Key")]
 _LOGGER = logging.getLogger(__name__)
@@ -215,6 +217,7 @@ def create_app(
     shutdown_event: asyncio.Event | None = None,
 ) -> FastAPI:
     active: Services | None = None
+    recent_logs = RecentLogs()
 
     def services() -> Services:
         if active is None:
@@ -227,26 +230,33 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         nonlocal active
-        async with runtime() as opened:
-            if opened.auth.settings.public_origin != public_origin:
-                raise ValueError("HTTP and authentication origins must agree.")
-            active = opened
+        bot_logger = logging.getLogger("nahormaar_backend")
+        bot_logger.addHandler(recent_logs)
+        try:
+            async with runtime() as opened:
+                if opened.auth.settings.public_origin != public_origin:
+                    raise ValueError("HTTP and authentication origins must agree.")
+                active = opened
 
-            async def stop_streams() -> None:
-                if shutdown_event is not None:
-                    await shutdown_event.wait()
+                async def stop_streams() -> None:
+                    if shutdown_event is not None:
+                        await shutdown_event.wait()
+                        opened.session.events.close()
+
+                watcher = asyncio.create_task(
+                    stop_streams(), name="engine-http-shutdown"
+                )
+                try:
+                    yield
+                finally:
+                    if shutdown_event is not None:
+                        shutdown_event.set()
                     opened.session.events.close()
-
-            watcher = asyncio.create_task(stop_streams(), name="engine-http-shutdown")
-            try:
-                yield
-            finally:
-                if shutdown_event is not None:
-                    shutdown_event.set()
-                opened.session.events.close()
-                active = None
-                watcher.cancel()
-                await asyncio.gather(watcher, return_exceptions=True)
+                    active = None
+                    watcher.cancel()
+                    await asyncio.gather(watcher, return_exceptions=True)
+        finally:
+            bot_logger.removeHandler(recent_logs)
 
     error_responses: dict[int | str, dict[str, object]] = {
         status: {"model": ApiError, "description": description}
@@ -366,6 +376,14 @@ def create_app(
     @app.get("/api/session")
     async def state() -> SessionView:
         return await state_document(services(), services().session.snapshot)
+
+    @app.get("/api/diagnostics/logs")
+    async def logs(
+        user: CurrentUser, after: Annotated[int | None, Query(ge=0)] = None
+    ) -> LogsView:
+        if not user.admin:
+            raise AuthError("access_denied", 403)
+        return LogsView(entries=recent_logs.since(after))
 
     @app.get("/api/channels")
     async def channels() -> list[ChannelView]:

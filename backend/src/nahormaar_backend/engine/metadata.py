@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from .domain.catalog import TrackFinding
 from .domain.metadata import MetadataKind, MetadataSource
 from .domain.tracks import Artist, MediaIdentity, Track
+from .observability import logged_operation
 from .persistence import ArtistRepository, TrackRepository, write_transaction
 
 
@@ -50,6 +51,7 @@ class MetadataStore:
         async with self._sessions() as session, session.begin():
             return await TrackRepository(session).get_many(identifiers)
 
+    @logged_operation("engine.metadata.remember")
     async def remember(
         self, findings: tuple[TrackFinding, ...], *, source: MetadataSource
     ) -> tuple[Track, ...]:

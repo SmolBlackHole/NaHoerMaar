@@ -73,6 +73,19 @@ const links = computed(() => [
 			open.value = false;
 		},
 	},
+	...(profile.session?.is_admin
+		? [
+				{
+					label: "Logs",
+					"aria-label": "Bot logs",
+					icon: icons.value.file,
+					to: "/logs",
+					onSelect: () => {
+						open.value = false;
+					},
+				},
+			]
+		: []),
 ]);
 </script>
 

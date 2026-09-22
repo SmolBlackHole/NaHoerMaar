@@ -1,58 +1,59 @@
 # NaHörMaar
 
-A shared music player for Discord friend groups.
+Music for a Discord voice channel, picked together.
 
-Pick songs together, see who added what and keep listening while you hang out.
-The web app is where everyone manages the queue; the bot plays the music in
-your Discord voice channel. Closing the dashboard leaves the music running.
+NaHörMaar is a small social player for friend groups. Everyone uses the web
+dashboard to find songs and shape one shared queue; the bot plays the audio in
+Discord. The music keeps going when you close the dashboard.
 
-## Listening together
+## How it works
 
-- Search YouTube Music, switch to video search or paste a link. Preview playlists
-  and choose which tracks to add.
-- Share one queue with your friends. See who requested each song, change its
-  position and undo removals. Changes appear in everyone's dashboard.
-- Start a radio from a song or playlist and let it keep the queue going.
-  Tracks added by people take priority.
-- Requeue something from Recently played, check play counts and browse the
-  Overview. Cover and optional video views follow the current track.
-- Sign in with Discord and choose your name, avatar and appearance. Access is
-  limited to the owner's whitelist.
+```text
+Friends in the dashboard -> shared queue -> bot -> Discord voice channel
+```
 
-Use `/pspsps` in Discord to call the bot into your voice channel. Playback supports
-pause, seek and shared volume. Backend restarts restore the saved channel, track
-position, volume and pause state without counting another play.
+Search YouTube Music, choose Videos or paste a supported link. Preview a
+playlist before adding tracks. The queue shows who added each song, and changes
+appear for everyone. Radio can keep finding music while tracks added by people
+take priority. Recently played makes it easy to bring a song back.
 
-NaHörMaar is still in development. It currently has **one shared queue and one
-active voice connection**, even if the bot belongs to several servers. Independent
-server sessions, saved playlists, reactions and richer listening recaps are on the
-[roadmap](ROADMAP.md).
+Discord sign-in and the owner's whitelist control access. A whitelisted listener
+can call `/pspsps` to bring the bot into their voice channel. The optional
+browser video is muted; everyone hears the audio in Discord. See
+[Listening together](docs/listening.md) for controls and queue behavior.
 
-## Development
+There is currently **one queue and one active voice connection across the bot's
+servers**. NaHörMaar is still in development. Separate server sessions, saved
+playlists, reactions and listening recaps are [planned](ROADMAP.md), and the
+current [Discord listening acceptance](docs/testing.md#live-acceptance) is not
+yet complete.
 
-The backend and Nuxt dashboard use the new engine's native API, including
-track-ID queue operations, versioned discovery and live session updates.
-See the [engine API](docs/engine-api.md) for current contracts and the remaining
-Discord listening acceptance.
+## Try it locally
 
-Install Python 3.12+ and Node.js 24.11+ with npm. From the repository root, run:
+You need Python 3.12+ and Node.js 24.11+ with npm. From the repository root:
 
 ```powershell
 python scripts/dev.py setup
-python scripts/dev.py check
 ```
 
-See the [development guide](docs/development.md) to configure Discord and try
-playback.
+Then follow the [development guide](docs/development.md) to configure Discord
+sign-in, start the backend and dashboard, and run the checks. The backend and
+Nuxt dashboard use the same [engine API](docs/engine-api.md).
 
-## Documentation
+## Choose your next step
 
-- [Development guide](docs/development.md): setup, Discord configuration and local playback
-- [Architecture](docs/architecture.md): state, persistence, integrations and the dashboard
-- [API](docs/api.md): controls, authentication and live updates
-- [Roadmap](ROADMAP.md): implemented features, open checks and future work
-- [Contributing](CONTRIBUTING.md)
-- [Security policy](SECURITY.md)
+| I want to...                                  | Start here                                |
+| --------------------------------------------- | ----------------------------------------- |
+| Listen with friends                           | [Listening together](docs/listening.md)   |
+| Run or change the project                     | [Development guide](docs/development.md)  |
+| Understand the data flow and responsibilities | [Architecture](docs/architecture.md)      |
+| Use the HTTP/SSE contract                     | [Engine API](docs/engine-api.md)          |
+| See checks and remaining live tests           | [Testing and acceptance](docs/testing.md) |
+| Find all guides                               | [Documentation index](docs/README.md)     |
+| See future work                               | [Roadmap](ROADMAP.md)                     |
+
+[Contributing](CONTRIBUTING.md) and the [security policy](SECURITY.md) cover
+changes and vulnerability reports.
 
 ## License
 

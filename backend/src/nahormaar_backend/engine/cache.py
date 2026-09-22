@@ -5,11 +5,15 @@
 """Bounded observations with shared refresh work and immutable visible versions."""
 
 import asyncio
+import logging
+import time
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Hashable
 from dataclasses import dataclass
 from time import monotonic
 from uuid import UUID, uuid4
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +52,7 @@ class SnapshotCache[K: Hashable, T]:
         retention: float = 900,
         versions: int = 128,
         max_pending: int = 4,
+        name: str = "catalog",
         clock: Callable[[], float] = monotonic,
         error: Callable[[T], str | None] = lambda value: None,
     ) -> None:
@@ -60,6 +65,7 @@ class SnapshotCache[K: Hashable, T]:
             max_pending,
         )
         self._clock, self._error = clock, error
+        self._name = name
         self._latest: OrderedDict[K, _Cached[T]] = OrderedDict()
         self._snapshots: OrderedDict[UUID, tuple[K, float, Snapshot[T]]] = OrderedDict()
         self._pending: dict[K, asyncio.Task[Snapshot[T]]] = {}
@@ -96,6 +102,11 @@ class SnapshotCache[K: Hashable, T]:
                     raise RuntimeError("Catalog discovery is busy. Try again shortly.")
                 cached.error = "Refresh is waiting for other discovery requests."
             else:
+                _LOGGER.info(
+                    "engine.cache.refresh_started name=%s cached=%s",
+                    self._name,
+                    cached is not None,
+                )
                 pending = asyncio.create_task(self._load(key, load))
                 self._pending[key] = pending
                 pending.add_done_callback(
@@ -108,6 +119,7 @@ class SnapshotCache[K: Hashable, T]:
         raise RuntimeError("No catalog result or pending request is available.")
 
     async def _load(self, key: K, load: Callable[[], Awaitable[T]]) -> Snapshot[T]:
+        started = time.monotonic()
         try:
             value = await load()
             previous = self._latest.get(key)
@@ -119,6 +131,11 @@ class SnapshotCache[K: Hashable, T]:
             ):
                 previous.error = error
                 previous.refresh_after = self._clock() + min(self._ttl, 30)
+                _LOGGER.info(
+                    "engine.cache.refresh_kept_previous name=%s elapsed=%.3f",
+                    self._name,
+                    time.monotonic() - started,
+                )
                 return previous.snapshot
             snapshot = (
                 previous.snapshot
@@ -138,11 +155,24 @@ class SnapshotCache[K: Hashable, T]:
             while len(self._snapshots) > self._versions:
                 self._snapshots.popitem(last=False)
             self._prune()
+            _LOGGER.info(
+                "engine.cache.refresh_completed name=%s changed=%s elapsed=%.3f",
+                self._name,
+                previous is None or snapshot.version != previous.snapshot.version,
+                time.monotonic() - started,
+            )
             return snapshot
-        except Exception:
+        except Exception as error:
             if (previous := self._latest.get(key)) is not None:
                 previous.error = "Could not refresh these results. The previous version is still available."
                 previous.refresh_after = self._clock() + min(self._ttl, 30)
+            _LOGGER.warning(
+                "engine.cache.refresh_failed name=%s cached=%s elapsed=%.3f error=%s",
+                self._name,
+                previous is not None,
+                time.monotonic() - started,
+                type(error).__name__,
+            )
             raise
         finally:
             self._pending.pop(key, None)

@@ -5,6 +5,7 @@
 """Route catalog work and persist observations after provider I/O finishes."""
 
 import asyncio
+import logging
 from collections.abc import Callable
 from datetime import datetime
 from time import monotonic
@@ -23,6 +24,7 @@ from .domain.catalog import (
 from .domain.metadata import MetadataKind, MetadataSource
 from .domain.tracks import MediaIdentity, Track
 from .metadata import MetadataStore
+from .observability import logged_operation
 from .providers import (
     PlaybackProvider,
     PlaylistProvider,
@@ -33,6 +35,8 @@ from .providers import (
     TrackProvider,
     UnsupportedCapability,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class Catalog:
@@ -57,14 +61,17 @@ class Catalog:
         self._metadata = metadata
         self._clock = clock
         self._searches = SnapshotCache[tuple[str, str, int], TrackPage](
-            ttl=300, clock=timer, error=lambda page: page.error
+            ttl=300, name="search", clock=timer, error=lambda page: page.error
         )
         self._playlists = SnapshotCache[tuple[str, MediaIdentity, int], PlaylistPage](
-            ttl=60, clock=timer, error=lambda playlist: playlist.page.error
+            ttl=60,
+            name="playlist",
+            clock=timer,
+            error=lambda playlist: playlist.page.error,
         )
         self._tracks = SnapshotCache[
             tuple[str, MediaIdentity], tuple[TrackFinding, MetadataSource]
-        ](ttl=300, clock=timer)
+        ](ttl=300, name="track", clock=timer)
         self._closed = False
 
     def _route(
@@ -98,6 +105,7 @@ class Catalog:
                 return provider, reference
         raise UnsupportedCapability("This media link is not supported.")
 
+    @logged_operation("engine.catalog.search")
     async def search(
         self,
         query: str,
@@ -132,12 +140,20 @@ class Catalog:
                 ),
                 source=source,
             )
+            _LOGGER.info(
+                "engine.catalog.search_loaded provider=%s count=%s has_more=%s partial=%s",
+                provider.key,
+                len(page.entries),
+                page.continuation is not None,
+                page.error is not None,
+            )
             return page
 
         return await self._searches.get(
             (provider.key, query, limit), load, refresh=refresh
         )
 
+    @logged_operation("engine.catalog.playlist")
     async def playlist(
         self,
         source_url: str,
@@ -169,12 +185,20 @@ class Catalog:
                 ),
                 source=source,
             )
+            _LOGGER.info(
+                "engine.catalog.playlist_loaded provider=%s count=%s has_more=%s partial=%s",
+                provider.key,
+                len(playlist.page.entries),
+                playlist.page.continuation is not None,
+                playlist.page.error is not None,
+            )
             return playlist
 
         return await self._playlists.get(
             (provider.key, reference.identity, limit), load, refresh=refresh
         )
 
+    @logged_operation("engine.catalog.track")
     async def track(self, source_url: str, *, provider_key: str | None = None) -> Track:
         provider, reference = self._route(source_url, provider_key)
         if not isinstance(provider, TrackProvider):
@@ -193,6 +217,7 @@ class Catalog:
         (track,) = await self._metadata.remember((finding,), source=source)
         return track
 
+    @logged_operation("engine.catalog.radio_next")
     async def radio_next(
         self,
         seed: MediaReference,
@@ -216,6 +241,13 @@ class Catalog:
             tuple(entry for entry in page.entries if isinstance(entry, TrackFinding)),
             source=source,
         )
+        _LOGGER.info(
+            "engine.catalog.radio_loaded provider=%s count=%s has_more=%s partial=%s",
+            provider.key,
+            len(tracks),
+            page.continuation is not None,
+            page.error is not None,
+        )
         return Recommendations(tracks, page.continuation, page.error)
 
     def search_snapshot(self, version: UUID) -> Snapshot[TrackPage]:
@@ -237,6 +269,7 @@ class Catalog:
             self._searches.close(), self._playlists.close(), self._tracks.close()
         )
 
+    @logged_operation("engine.catalog.resolve_audio")
     async def resolve_audio(
         self, source_url: str | UUID, *, provider_key: str | None = None
     ) -> PlayableSource:

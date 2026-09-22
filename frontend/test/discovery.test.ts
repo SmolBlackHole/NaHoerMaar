@@ -42,7 +42,7 @@ function setup() {
 	});
 	stores.profile.mockReturnValue(profile);
 	stores.player.mockReturnValue(player);
-	stores.radio.mockReturnValue(reactive({ source: null, version: 0 }));
+	stores.radio.mockReturnValue(reactive({ source: null, version: 0, dispose: vi.fn() }));
 	vi.stubGlobal("useToast", () => ({ add: vi.fn() }));
 	const scope = effectScope();
 	scopes.push(scope);
@@ -97,6 +97,23 @@ describe("discovery workflow", () => {
 			"/api/catalog/search/cached?offset=0&limit=20",
 			expect.anything(),
 		);
+	});
+	it("returns from playlist radio without losing the playlist selection", async () => {
+		const { flow, request } = setup();
+		request.mockImplementation(async () => Response.json(playlist("old", ["a", "b"])));
+		await flow.openPlaylist(url);
+		flow.toggle(1);
+		flow.radio.source = { kind: "playlist", source_url: url, title: "old" };
+		flow.view.value = "radio";
+		await nextTick();
+
+		expect(flow.canReturnToPlaylist.value).toBe(true);
+		flow.backToPlaylist();
+
+		expect(flow.view.value).toBe("playlist");
+		expect([...flow.selected.value]).toEqual([0]);
+		expect(flow.preview.value?.playlist?.title).toBe("old");
+		expect(flow.radio.dispose).toHaveBeenCalledOnce();
 	});
 	it("preserves explicit selections after refresh and leaves new tracks unselected", async () => {
 		const { flow, request } = setup();

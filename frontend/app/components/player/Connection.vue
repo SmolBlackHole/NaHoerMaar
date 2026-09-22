@@ -8,36 +8,45 @@ const mounted = useMounted();
 
 <template>
 	<div class="connection-controls">
-		<UButton
-			v-if="player.uncertain"
-			label="Check result"
-			aria-label="Check result"
-			:icon="icons.caution"
-			color="neutral"
-			variant="ghost"
-			class="recovery-button"
-			:loading="player.pending"
-			:aria-busy="player.pending"
-			:disabled="player.pending || player.connection !== 'live'"
-			@click="player.retry()"
-		/>
-		<UButton
+		<UTooltip v-if="player.uncertain" text="Check the result of the last action">
+			<UButton
+				label="Check result"
+				aria-label="Check the result of the last action"
+				:icon="icons.caution"
+				color="neutral"
+				variant="ghost"
+				class="recovery-button"
+				:loading="player.pending"
+				:aria-busy="player.pending"
+				:disabled="player.pending || player.connection !== 'live'"
+				@click="player.retry()"
+			/>
+		</UTooltip>
+		<UTooltip
 			v-if="player.connection !== 'live'"
-			label="Reconnect"
-			:icon="icons.reload"
-			color="neutral"
-			variant="ghost"
-			class="recovery-button"
-			:loading="player.connection === 'connecting'"
-			:aria-busy="player.connection === 'connecting'"
-			:disabled="player.connection === 'connecting'"
-			:aria-label="
+			:text="
 				player.connection === 'connecting'
 					? 'Connecting to the bot'
 					: 'Reconnect to the bot'
 			"
-			@click="player.connect()"
-		/>
+		>
+			<UButton
+				label="Reconnect"
+				:icon="icons.reload"
+				color="neutral"
+				variant="ghost"
+				class="recovery-button"
+				:loading="player.connection === 'connecting'"
+				:aria-busy="player.connection === 'connecting'"
+				:disabled="player.connection === 'connecting'"
+				:aria-label="
+					player.connection === 'connecting'
+						? 'Connecting to the bot'
+						: 'Reconnect to the bot'
+				"
+				@click="player.connect()"
+			/>
+		</UTooltip>
 		<span
 			v-else
 			class="connection-status"

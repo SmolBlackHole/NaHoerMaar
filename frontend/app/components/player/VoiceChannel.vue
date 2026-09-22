@@ -124,17 +124,19 @@ const status = computed(() => {
 					<h2 :id="`${id}-heading`" class="text-highlighted text-sm font-semibold">
 						Discord
 					</h2>
-					<UButton
-						:icon="icons.reload"
-						aria-label="Refresh channels"
-						color="neutral"
-						variant="ghost"
-						size="sm"
-						:loading="player.channelsLoading"
-						:aria-busy="player.channelsLoading"
-						:disabled="player.connection !== 'live'"
-						@click="player.refreshChannels()"
-					/>
+					<UTooltip text="Refresh channels">
+						<UButton
+							:icon="icons.reload"
+							aria-label="Refresh channels"
+							color="neutral"
+							variant="ghost"
+							size="sm"
+							:loading="player.channelsLoading"
+							:aria-busy="player.channelsLoading"
+							:disabled="player.connection !== 'live'"
+							@click="player.refreshChannels()"
+						/>
+					</UTooltip>
 				</div>
 				<p role="status" class="text-xs text-muted">{{ status }}</p>
 				<label :for="`${id}-guild`" class="block text-xs text-muted">Server</label>

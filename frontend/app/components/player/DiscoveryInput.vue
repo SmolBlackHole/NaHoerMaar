@@ -43,17 +43,18 @@ const submitLabel = computed(() =>
 					:aria-invalid="!!error"
 					:aria-describedby="error ? `${id}-error` : undefined"
 				/>
-				<UButton
-					v-if="source"
-					:icon="icons.close"
-					aria-label="Clear search"
-					type="button"
-					color="neutral"
-					variant="ghost"
-					class="search-clear"
-					:disabled="!connected"
-					@click="clear"
-				/>
+				<UTooltip v-if="source" text="Clear search">
+					<UButton
+						:icon="icons.close"
+						aria-label="Clear search"
+						type="button"
+						color="neutral"
+						variant="ghost"
+						class="search-clear"
+						:disabled="!connected"
+						@click="clear"
+					/>
+				</UTooltip>
 				<USelect
 					v-model="provider"
 					:items="[
@@ -76,28 +77,32 @@ const submitLabel = computed(() =>
 					</template>
 				</USelect>
 			</div>
-			<UButton
-				type="submit"
-				:aria-label="submitLabel"
-				:title="submitLabel"
-				:icon="
-					parsed.kind === 'video'
-						? icons.plus
-						: parsed.kind === 'playlist'
-							? icons.list
-							: icons.search
-				"
-				size="lg"
-				color="neutral"
-				variant="solid"
-				class="discovery-submit"
-				:loading="loading"
-				:aria-busy="loading"
-				:disabled="
-					loading || !source.trim() || !connected || (parsed.kind === 'video' && !enabled)
-				"
-				><span class="discovery-submit-label">{{ submitLabel }}</span></UButton
-			>
+			<UTooltip :text="submitLabel">
+				<UButton
+					type="submit"
+					:aria-label="submitLabel"
+					:icon="
+						parsed.kind === 'video'
+							? icons.plus
+							: parsed.kind === 'playlist'
+								? icons.list
+								: icons.search
+					"
+					size="lg"
+					color="neutral"
+					variant="solid"
+					class="discovery-submit"
+					:loading="loading"
+					:aria-busy="loading"
+					:disabled="
+						loading ||
+						!source.trim() ||
+						!connected ||
+						(parsed.kind === 'video' && !enabled)
+					"
+					><span class="discovery-submit-label">{{ submitLabel }}</span></UButton
+				>
+			</UTooltip>
 		</form>
 		<p v-if="error" :id="`${id}-error`" role="alert" class="mt-2 text-sm text-error">
 			{{ error }}

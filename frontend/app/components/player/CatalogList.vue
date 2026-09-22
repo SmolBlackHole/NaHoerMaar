@@ -37,15 +37,15 @@ const player = usePlayerStore();
 			</label>
 			<PlayerTrackArtwork :entry="item" class="catalog-cover" />
 			<div class="catalog-copy">
-				<a
-					v-if="item.source_url"
-					:href="item.source_url"
-					target="_blank"
-					rel="noopener noreferrer"
-					class="catalog-title"
-					:title="trackTitle(item)"
-					>{{ trackTitle(item) }}</a
-				>
+				<UTooltip v-if="item.source_url" :text="`Open ${trackTitle(item)} in a new tab`">
+					<a
+						:href="item.source_url"
+						target="_blank"
+						rel="noopener noreferrer"
+						class="catalog-title"
+						>{{ trackTitle(item) }}</a
+					>
+				</UTooltip>
 				<span v-else class="catalog-title">{{ item.title || "Unavailable video" }}</span>
 				<p class="catalog-detail">
 					<PlayerArtistLink :entry="item" /><span>{{
@@ -62,19 +62,19 @@ const player = usePlayerStore();
 					{{ queuePresence(item.track_id, player.snapshot) }}
 				</p>
 			</div>
-			<UButton
-				v-if="!selectable"
-				:icon="icons.plus"
-				color="neutral"
-				variant="ghost"
-				class="size-11 shrink-0 justify-center"
-				:aria-label="`Add ${trackTitle(item)} to queue`"
-				:title="`Add ${trackTitle(item)} to queue`"
-				:disabled="!enabled || !!item.unavailable || !item.source_url"
-				:loading="!!item.source_url && player.isAdding(item.track_id ?? '')"
-				:aria-busy="!!item.source_url && player.isAdding(item.track_id ?? '')"
-				@click="emit('add', item)"
-			/>
+			<UTooltip v-if="!selectable" :text="`Add ${trackTitle(item)} to queue`">
+				<UButton
+					:icon="icons.plus"
+					color="neutral"
+					variant="ghost"
+					class="size-11 shrink-0 justify-center"
+					:aria-label="`Add ${trackTitle(item)} to queue`"
+					:disabled="!enabled || !!item.unavailable || !item.source_url"
+					:loading="!!item.source_url && player.isAdding(item.track_id ?? '')"
+					:aria-busy="!!item.source_url && player.isAdding(item.track_id ?? '')"
+					@click="emit('add', item)"
+				/>
+			</UTooltip>
 			<PlayerRadioAction
 				v-if="!selectable && item.source_url && !item.unavailable"
 				:entry="item"

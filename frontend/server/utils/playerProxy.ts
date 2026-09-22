@@ -8,7 +8,7 @@ import {
 } from "h3";
 
 const routes: Record<string, RegExp> = {
-	GET: /^\/api\/(auth\/(session|discord(?:\/callback)?)|session|channels|events|catalog\/search|catalog\/(search|playlist)\/[a-f0-9-]{36})$/,
+	GET: /^\/api\/(auth\/(session|discord(?:\/callback)?)|session|channels|events|diagnostics\/logs|catalog\/search|catalog\/(search|playlist)\/[a-f0-9-]{36})$/,
 	POST: /^\/api\/(auth\/logout|queue(?:\/clear|\/undo\/[a-f0-9-]{36})?|playback\/control|catalog\/(track|playlist)|radio(?:\/[a-f0-9-]{36}\/(stop|retry))?)$/,
 	PUT: /^\/api\/(profile(?:\/appearance)?|playback\/(volume|position|crossfade)|connection|queue\/[a-f0-9-]{36}\/position)$/,
 	DELETE: /^\/api\/queue\/[a-f0-9-]{36}$/,
@@ -45,6 +45,10 @@ export function playerProxy(backendUrl: () => string, publicOrigin: () => string
 			for (const name of ["state", "code", "error"])
 				for (const value of url.searchParams.getAll(name))
 					target.searchParams.append(name, value);
+		}
+		if (url.pathname === "/api/diagnostics/logs") {
+			const after = url.searchParams.get("after");
+			if (after && /^\d+$/.test(after)) target.searchParams.set("after", after);
 		}
 		const headers = new Headers({ "accept-encoding": "identity" });
 		for (const name of [
