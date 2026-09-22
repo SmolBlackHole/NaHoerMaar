@@ -11,7 +11,7 @@ from collections.abc import Awaitable, Callable
 from functools import partial
 from uuid import UUID
 
-from .audio import AudioPlayer, VoiceConnection, VoiceTransport
+from .audio import AudioPlayer, AudioSourceNotReady, VoiceConnection, VoiceTransport
 from .catalog import Catalog
 from .domain.playback import (
     Activate,
@@ -233,6 +233,13 @@ class PlaybackController:
         except asyncio.CancelledError:
             await self.audio.stop(effect.attempt_id)
             raise
+        except AudioSourceNotReady:
+            _LOGGER.warning(
+                "engine.playback.source_unready attempt=%s track_id=%s",
+                effect.attempt_id,
+                effect.track_id,
+            )
+            self.notify(AttemptFailed(effect.attempt_id, retryable=True))
         except Exception:
             _LOGGER.exception(
                 "engine.playback.start_failed",

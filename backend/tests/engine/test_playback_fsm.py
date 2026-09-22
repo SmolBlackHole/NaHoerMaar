@@ -112,6 +112,65 @@ def test_selection_confirmation_seek_and_retry_have_one_logical_play() -> None:
     assert state.history[0].end_reason is PlaybackEndReason.FAILED
 
 
+def test_unready_source_retries_one_play_without_consuming_queue_twice() -> None:
+    state = playing()
+    state = replace(state, checkpoint=replace(state.checkpoint, position_seconds=42))
+    current, upcoming = state.checkpoint, state.queue
+    record = state.history[0]
+    old_attempt = attempt(state)
+    connection = VoiceConnection(state.playback.connection_id or uuid4(), 123)
+
+    first = decide(
+        state,
+        AttemptFailed(old_attempt, retryable=True),
+        now=TIME,
+        connection=connection,
+    )
+    retried = first.snapshot
+    assert retried.playback.phase is PlaybackPhase.RESOLVING
+    assert retried.playback.retries == 1 and attempt(retried) != old_attempt
+    assert retried.checkpoint == current and retried.queue == upcoming
+    assert retried.history == state.history
+    assert any(isinstance(effect, StartAttempt) for effect in first.effects)
+    assert apply(retried, AttemptFailed(old_attempt, retryable=True)) == retried
+
+    exhausted = apply(retried, AttemptFailed(attempt(retried), retryable=True))
+    assert exhausted.history[0].id == record.id
+    assert exhausted.history[0].end_reason is PlaybackEndReason.FAILED
+    assert exhausted.checkpoint.entry_id == upcoming.entries[0].id
+    assert len(exhausted.queue.entries) == len(upcoming.entries) - 1
+
+    recovered = apply(retried, SourceResolved(attempt(retried), 120))
+    recovered = apply(recovered, AudioStarted(attempt(recovered), 42.02))
+    assert recovered.checkpoint.play_id == record.id
+    assert len(recovered.history) == 1 and recovered.queue == upcoming
+
+
+def test_unready_source_retries_unconfirmed_entry_without_counting_a_play() -> None:
+    state = apply(initial(count=2), Control.PLAY)
+    current = state.checkpoint.entry_id
+    retried = apply(state, AttemptFailed(attempt(state), retryable=True))
+    assert retried.checkpoint.entry_id == current
+    assert not retried.history and len(retried.queue.entries) == 1
+    exhausted = apply(retried, AttemptFailed(attempt(retried), retryable=True))
+    assert exhausted.checkpoint.entry_id == state.queue.entries[0].id
+    assert not exhausted.history and not exhausted.queue.entries
+
+
+def test_nonretryable_start_failure_still_advances_once() -> None:
+    state = apply(initial(count=2), Control.PLAY)
+    next_entry = state.queue.entries[0]
+    connection = VoiceConnection(state.playback.connection_id or uuid4(), 123)
+    failure = decide(
+        state, AttemptFailed(attempt(state)), now=TIME, connection=connection
+    )
+    assert failure.snapshot.checkpoint.entry_id == next_entry.id
+    assert failure.snapshot.playback.retries == 0
+    assert not failure.snapshot.history
+    assert not failure.snapshot.queue.entries
+    assert sum(isinstance(effect, StartAttempt) for effect in failure.effects) == 1
+
+
 @pytest.mark.parametrize("paused", [False, True])
 def test_transport_loss_wins_over_completion_and_join_resumes(paused: bool) -> None:
     state = playing()

@@ -41,6 +41,10 @@ class AudioError(RuntimeError):
     """Source preparation or output failed; retry is a controller decision."""
 
 
+class AudioSourceNotReady(AudioError):
+    """The resolved source produced no first frame."""
+
+
 class VoiceError(RuntimeError):
     """The requested voice connection could not be established or maintained."""
 

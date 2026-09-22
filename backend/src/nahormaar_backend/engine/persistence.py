@@ -345,7 +345,9 @@ class RadioStrategyRepository:
     async def save(self, session_id: UUID, strategy: RadioStrategy) -> None:
         row = await self._session.get(_RadioStrategyRow, session_id)
         if row is None:
-            self._session.add(_RadioStrategyRow(session_id=session_id, strategy=strategy))
+            self._session.add(
+                _RadioStrategyRow(session_id=session_id, strategy=strategy)
+            )
         else:
             row.strategy = strategy
         await self._session.flush()

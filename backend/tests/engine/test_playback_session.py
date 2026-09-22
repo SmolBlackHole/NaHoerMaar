@@ -18,6 +18,7 @@ from nahormaar_backend.engine.audio import (
     AudioEvent,
     AudioProgress,
     AudioStarted,
+    AudioSourceNotReady,
     CrossfadeCompleted,
     CrossfadeDue,
     PlayableSource,
@@ -302,6 +303,100 @@ def test_committed_lifecycle_pause_seek_and_playing_paused_restart(
             async with sessions.begin() as db:
                 assert len(await PlaybackRecordRepository(db).recent(identifier)) == 1
             await owner.close()
+            await catalog.close()
+            await provider.close()
+
+    asyncio.run(scenario())
+
+
+def test_restart_retries_unready_first_frame_without_new_play(tmp_path: Path) -> None:
+    class OneFailedStart(ControlledOutput):
+        def __init__(self) -> None:
+            super().__init__()
+            self.positions: list[float] = []
+
+        async def play(
+            self,
+            source: PlayableSource,
+            attempt_id: UUID,
+            notify: Callable[[AudioEvent], None],
+            *,
+            position_seconds: float = 0,
+            paused: bool = False,
+        ) -> None:
+            self.positions.append(position_seconds)
+            if len(self.positions) == 1:
+                raise AudioSourceNotReady("No initial frame.")
+            await super().play(
+                source,
+                attempt_id,
+                notify,
+                position_seconds=position_seconds,
+                paused=paused,
+            )
+
+    async def scenario() -> None:
+        async with isolated_database(tmp_path / "retry-start.sqlite3") as sessions:
+            tracks = await tracks_in(sessions)
+            provider = SourceProvider(tracks)
+            catalog = Catalog(
+                (provider,),
+                MetadataStore(sessions, clock=lambda: TIME),
+                clock=lambda: TIME,
+            )
+            identifier = uuid4()
+            audio, voice = ControlledOutput(), ControlledVoice()
+            owner = await Session.open(
+                sessions,
+                identifier,
+                clock=lambda: TIME,
+                catalog=catalog,
+                audio=audio,
+                voice=voice,
+            )
+            await owner.request(
+                uuid4(), Add(tuple(track.id for track in tracks[:2])), actor=ACTOR
+            )
+            await owner.request(uuid4(), Join(123))
+            await until(lambda: audio.progress is not None)
+            audio.confirm()
+            await until(lambda: len(owner.snapshot.history) == 1)
+            play_id = owner.snapshot.checkpoint.play_id
+            queue = owner.snapshot.queue
+            assert audio.progress
+            audio.progress = replace(audio.progress, position_seconds=40)
+            await owner.close()
+
+            recovered_audio, recovered_voice = OneFailedStart(), ControlledVoice()
+            recovered = await Session.open(
+                sessions,
+                identifier,
+                clock=lambda: TIME,
+                catalog=catalog,
+                audio=recovered_audio,
+                voice=recovered_voice,
+            )
+            await until(
+                lambda: (
+                    len(recovered_audio.positions) == 2
+                    and recovered_audio.progress is not None
+                )
+            )
+            assert recovered_audio.positions == [40, 40]
+            assert recovered.snapshot.queue == queue
+            assert recovered.snapshot.checkpoint.play_id == play_id
+            assert len(recovered.snapshot.history) == 1
+            recovered_audio.confirm(40.02)
+            await until(
+                lambda: recovered.snapshot.playback.phase is PlaybackPhase.PLAYING
+            )
+            assert recovered.snapshot.checkpoint.play_id == play_id
+            async with sessions.begin() as database:
+                assert (
+                    len(await PlaybackRecordRepository(database).recent(identifier))
+                    == 1
+                )
+            await recovered.close()
             await catalog.close()
             await provider.close()
 

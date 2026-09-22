@@ -80,6 +80,7 @@ class SourceResolved:
 @dataclass(frozen=True, slots=True)
 class AttemptFailed:
     attempt_id: UUID
+    retryable: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -492,11 +493,12 @@ def decide(
             else PlaybackPhase.PLAYING,
         )
     elif isinstance(message, (AudioCompleted, AttemptFailed)):
-        if (
-            isinstance(message, AudioCompleted)
-            and message.reason is AudioEndReason.INTERRUPTED
-            and state.retries < 1
-        ):
+        retryable = (
+            message.retryable
+            if isinstance(message, AttemptFailed)
+            else message.reason is AudioEndReason.INTERRUPTED
+        )
+        if retryable and state.retries < 1:
             load(retry=True)
         elif (
             isinstance(message, AudioCompleted)

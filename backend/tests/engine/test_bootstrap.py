@@ -95,7 +95,9 @@ def test_initialize_upgrades_previous_engine_revision_without_losing_session(
     async def scenario() -> None:
         engine = database_engine(path)
         try:
-            sessions = async_sessionmaker(engine, expire_on_commit=False, autobegin=False)
+            sessions = async_sessionmaker(
+                engine, expire_on_commit=False, autobegin=False
+            )
             async with write_transaction(sessions) as db:
                 await ListeningSessionRepository(db).add(original)
         finally:
@@ -105,13 +107,22 @@ def test_initialize_upgrades_previous_engine_revision_without_losing_session(
         engine = database_engine(path)
         try:
             async with engine.connect() as connection:
-                assert await connection.run_sync(
-                    lambda conn: MigrationContext.configure(conn).get_current_revision()
-                ) == REVISION
-                assert not await connection.run_sync(
-                    lambda conn: compare_metadata(MigrationContext.configure(conn), metadata())
+                assert (
+                    await connection.run_sync(
+                        lambda conn: MigrationContext.configure(
+                            conn
+                        ).get_current_revision()
+                    )
+                    == REVISION
                 )
-            sessions = async_sessionmaker(engine, expire_on_commit=False, autobegin=False)
+                assert not await connection.run_sync(
+                    lambda conn: compare_metadata(
+                        MigrationContext.configure(conn), metadata()
+                    )
+                )
+            sessions = async_sessionmaker(
+                engine, expire_on_commit=False, autobegin=False
+            )
             async with sessions.begin() as db:
                 assert await ListeningSessionRepository(db).get(original.id) == original
         finally:

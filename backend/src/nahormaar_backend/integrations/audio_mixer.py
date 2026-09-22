@@ -80,10 +80,10 @@ class BufferedAudio:
                     )
                 if frame is None:
                     return
-        except Exception as error:
+        except Exception as failure:
             with self._condition:
                 if not self._stopped:
-                    self._error = error
+                    self._error = failure
         finally:
             with self._condition:
                 self._read_started_at = None

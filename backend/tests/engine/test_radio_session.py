@@ -267,10 +267,14 @@ def test_radio_reopens_with_seed_initiator_and_remaining_pool(tmp_path: Path) ->
             provider = ControlledMusic(tracks[:6])
             provider.release.set()
             catalog = Catalog(
-                (provider,), MetadataStore(sessions, clock=lambda: TIME), clock=lambda: TIME
+                (provider,),
+                MetadataStore(sessions, clock=lambda: TIME),
+                clock=lambda: TIME,
             )
             identifier = uuid4()
-            owner = await Session.open(sessions, identifier, clock=lambda: TIME, catalog=catalog)
+            owner = await Session.open(
+                sessions, identifier, clock=lambda: TIME, catalog=catalog
+            )
             await owner.request(uuid4(), StartRadio(REFERENCE, None), actor=ACTOR)
             await until(lambda: len(owner.snapshot.queue.entries) == 3)
             original = owner.snapshot.strategy
@@ -279,7 +283,9 @@ def test_radio_reopens_with_seed_initiator_and_remaining_pool(tmp_path: Path) ->
             assert provider.calls == 1
             await owner.close()
 
-            owner = await Session.open(sessions, identifier, clock=lambda: TIME, catalog=catalog)
+            owner = await Session.open(
+                sessions, identifier, clock=lambda: TIME, catalog=catalog
+            )
             assert owner.snapshot.strategy == original
             assert owner.snapshot.queue.entries == entries
             assert provider.calls == 1
@@ -293,7 +299,9 @@ def test_radio_reopens_with_seed_initiator_and_remaining_pool(tmp_path: Path) ->
             await owner.request(uuid4(), StopRadio(original.generation), actor=ACTOR)
             await owner.close()
 
-            owner = await Session.open(sessions, identifier, clock=lambda: TIME, catalog=catalog)
+            owner = await Session.open(
+                sessions, identifier, clock=lambda: TIME, catalog=catalog
+            )
             assert isinstance(owner.snapshot.strategy, ManualStrategy)
             await owner.close()
             await catalog.close()
@@ -308,10 +316,14 @@ def test_restart_retries_only_the_cancelled_radio_request(tmp_path: Path) -> Non
             tracks = await tracks_in(sessions)
             provider = ControlledMusic(tracks[:5])
             catalog = Catalog(
-                (provider,), MetadataStore(sessions, clock=lambda: TIME), clock=lambda: TIME
+                (provider,),
+                MetadataStore(sessions, clock=lambda: TIME),
+                clock=lambda: TIME,
             )
             identifier = uuid4()
-            owner = await Session.open(sessions, identifier, clock=lambda: TIME, catalog=catalog)
+            owner = await Session.open(
+                sessions, identifier, clock=lambda: TIME, catalog=catalog
+            )
             await owner.request(uuid4(), StartRadio(REFERENCE, None), actor=ACTOR)
             await provider.started.wait()
             loading = owner.snapshot.strategy
@@ -321,7 +333,9 @@ def test_restart_retries_only_the_cancelled_radio_request(tmp_path: Path) -> Non
             assert provider.cleaned.is_set()
 
             provider.release.set()
-            owner = await Session.open(sessions, identifier, clock=lambda: TIME, catalog=catalog)
+            owner = await Session.open(
+                sessions, identifier, clock=lambda: TIME, catalog=catalog
+            )
             await until(lambda: len(owner.snapshot.queue.entries) == 3)
             assert provider.calls == 2
             restored = owner.snapshot.strategy

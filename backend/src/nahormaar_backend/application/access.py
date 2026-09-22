@@ -22,7 +22,7 @@ def require_access(path: Path, identifier: str) -> bool:
             or not all(discord_id(item) for item in cast(list[object], identifiers))
             or not isinstance(admins, list)
             or not all(discord_id(item) for item in cast(list[object], admins))
-            or not set(admins).issubset(identifiers)
+            or not set(cast(list[str], admins)).issubset(cast(list[str], identifiers))
         ):
             raise ValueError("Invalid access list.")
     except (OSError, ValueError) as exc:

@@ -30,6 +30,7 @@ from .audio import (
     AudioCompleted,
     AudioEndReason,
     AudioError,
+    AudioSourceNotReady,
     AudioEvent,
     AudioProgress,
     AudioStarted,
@@ -322,7 +323,9 @@ class DiscordOutput:
             try:
                 ready_started = time.monotonic()
                 if not await asyncio.to_thread(buffer.wait_ready, 1):
-                    raise AudioError("Audio source did not produce an initial frame.")
+                    raise AudioSourceNotReady(
+                        "Audio source did not produce an initial frame."
+                    )
                 _LOGGER.info(
                     "engine.audio.buffer_ready attempt=%s audio_pid=%s "
                     "position=%.3f elapsed=%.3f",

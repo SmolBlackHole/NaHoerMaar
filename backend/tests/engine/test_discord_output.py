@@ -19,7 +19,7 @@ from nahormaar_backend.engine import discord as adapter
 from nahormaar_backend.engine.audio import (
     AudioCompleted,
     AudioEndReason,
-    AudioError,
+    AudioSourceNotReady,
     AudioEvent,
     AudioStarted,
     CrossfadeCompleted,
@@ -242,7 +242,7 @@ def test_play_waits_for_audio_and_does_not_start_an_empty_stream(
             buffer_factory=lambda _source, _position: cast(BufferedAudio, empty),
         )
         await output.connect(123, uuid4())
-        with pytest.raises(AudioError, match="initial frame"):
+        with pytest.raises(AudioSourceNotReady, match="initial frame"):
             await output.play(SOURCE, uuid4(), lambda _: None)
         voice.play.assert_not_called()
         assert empty.cleaned and output.progress is None
