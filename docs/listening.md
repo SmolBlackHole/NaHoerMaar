@@ -21,11 +21,11 @@ and one active voice connection across all servers where it is installed.
 
 ## Get into the room
 
-Sign in to the dashboard with a Discord account on the owner's whitelist.
+Sign in to the dashboard with a Discord account allowed by an owner or admin.
 Signing in alone does not grant control. Pick an available server and voice
 channel from the sidebar. If you are already in a regular voice channel, type
 `/pspsps` in Discord to call the bot over instead. The command checks the same
-whitelist without requiring a dashboard login. Its reply is visible only to you;
+access policy without requiring a dashboard login. Its reply is visible only to you;
 a successful call gets `:3`.
 
 Calling the bot in its current channel leaves an active or paused track alone.
@@ -37,7 +37,9 @@ you explicitly paused remains paused.
 Friends in the selected voice channel hear the same audio. Other people with
 access can open the dashboard, see the same queue and make requests. Closing a
 browser tab does not stop the music. The instance owner follows
-[Set up Discord](discord-setup.md) to install the bot and manage access.
+[Set up Discord](discord-setup.md) to install the bot. Owners and admins manage
+listeners from the Access page. Admins can remove only people they allowed
+themselves.
 
 ## Your profile and browser
 

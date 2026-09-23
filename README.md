@@ -45,7 +45,7 @@ python scripts/dev.py setup
 ```
 
 Then follow [development](docs/development.md) to configure Discord sign-in and
-the whitelist, start the backend and dashboard, and invite the bot. A listener
+access, start the backend and dashboard, and invite the bot. A listener
 can use the web UI without learning Discord bot commands. `/pspsps` is there
 when someone wants to call the bot into their voice channel.
 

@@ -76,6 +76,15 @@ const links = computed(() => [
 	...(profile.session?.is_admin
 		? [
 				{
+					label: "Access",
+					"aria-label": "Manage listener access",
+					icon: icons.value.user,
+					to: "/access",
+					onSelect: () => {
+						open.value = false;
+					},
+				},
+				{
 					label: "Logs",
 					"aria-label": "Bot logs",
 					icon: icons.value.file,

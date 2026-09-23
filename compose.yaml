@@ -115,7 +115,7 @@ services:
             PGDATABASE: ${POSTGRES_DB:-nahormaar}
             PGUSER: ${POSTGRES_USER:-nahormaar}
             PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
-            EXPECTED_SCHEMA_REVISION: engine_0003
+            EXPECTED_SCHEMA_REVISION: engine_0004
             BACKUP_KEEP: ${BACKUP_KEEP:-14}
         volumes:
             - ./data/backups:/backups

@@ -24,7 +24,7 @@ from .persistence import (
     write_transaction,
 )
 
-REVISION = "engine_0003"
+REVISION = "engine_0004"
 
 
 def metadata() -> MetaData:
@@ -35,6 +35,7 @@ def metadata() -> MetaData:
         AccountBase.metadata.tables["accounts"],
         AccountBase.metadata.tables["sessions"],
         AccountBase.metadata.tables["login_attempts"],
+        AccountBase.metadata.tables["access_events"],
     ):
         table.to_metadata(result)
     return result
@@ -74,7 +75,7 @@ async def initialize(database: str) -> UUID:
                         "Database is not empty; choose a fresh DATABASE_URL."
                     )
                 await connection.run_sync(upgrade)
-            elif heads in (("engine_0001",), ("engine_0002",)):
+            elif heads in (("engine_0001",), ("engine_0002",), ("engine_0003",)):
                 await connection.run_sync(upgrade)
             elif heads != (REVISION,):
                 raise ValueError("Expected engine schema; choose a fresh DATABASE_URL.")

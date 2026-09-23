@@ -6,13 +6,12 @@
 
 import asyncio
 import logging
-from pathlib import Path
 from uuid import NAMESPACE_URL, uuid5
 
 import discord
 from discord import app_commands
 
-from ..application.access import require_access
+from ..application.access import Access
 from ..domain.identity import AuthError
 from .domain.playback import Join
 from .session import Session
@@ -22,10 +21,10 @@ _LOGGER = logging.getLogger(__name__)
 
 class DiscordCommands(app_commands.CommandTree[discord.Client]):
     def __init__(
-        self, client: discord.Client, session: Session, access_path: Path
+        self, client: discord.Client, session: Session, access: Access
     ) -> None:
         super().__init__(client)
-        self.session, self.access_path = session, access_path
+        self.session, self.access = session, access
         self.add_command(
             app_commands.Command(
                 name="pspsps",
@@ -51,9 +50,7 @@ class DiscordCommands(app_commands.CommandTree[discord.Client]):
             interaction.user.id,
         )
         try:
-            await asyncio.to_thread(
-                require_access, self.access_path, str(interaction.user.id)
-            )
+            await self.access.require(str(interaction.user.id))
             member = interaction.user
             if (
                 interaction.guild is None
@@ -106,9 +103,9 @@ class DiscordCommands(app_commands.CommandTree[discord.Client]):
         except AuthError as error:
             outcome = error.code
             message = (
-                "You are not on the whitelist for this bot."
+                "You do not have access to this bot."
                 if error.code == "access_denied"
-                else "The whitelist is currently unavailable."
+                else "Access control is currently unavailable."
             )
         except Exception as error:
             _LOGGER.warning("engine.discord.summon_failed: %s", type(error).__name__)

@@ -21,7 +21,9 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session as DatabaseSession
 
 from nahormaar_backend.application.auth import Auth, SESSION_COOKIE, csrf_token, digest
+from nahormaar_backend.application.access import Access, Operators
 from nahormaar_backend.config import AuthSettings
+from nahormaar_backend.domain.access import AccessRole, DiscordMember
 from nahormaar_backend.domain.identity import DiscordIdentity
 from nahormaar_backend.persistence.database import database_engine as account_engine
 from nahormaar_backend.persistence.models import SessionRow
@@ -116,12 +118,26 @@ class Voice(ControlledVoice):
         return (VoiceChannel(123, "General", 456, "Fixture server", True, True),)
 
 
+class Directory:
+    def members(self) -> tuple[DiscordMember, ...]:
+        return (
+            DiscordMember(
+                "3",
+                "kai",
+                "Kai",
+                "https://cdn.invalid/avatar.png",
+                "456",
+                "Fixture server",
+            ),
+        )
+
+
 @asynccontextmanager
 async def fixture(
     tmp_path: Path,
 ) -> AsyncGenerator[tuple[httpx.AsyncClient, Services, Provider, ControlledOutput]]:
-    path, access = tmp_path / "engine.db", tmp_path / "access.toml"
-    access.write_text(f'discord_ids = ["{DISCORD_ID}"]', encoding="utf-8")
+    path, access_path = tmp_path / "engine.db", tmp_path / "access.toml"
+    access_path.write_text('owner_id = "9"', encoding="utf-8")
     engine = database_engine(database_url(path))
     try:
         async with engine.begin() as connection:
@@ -134,16 +150,19 @@ async def fixture(
             "",
             "",
             database_url(path),
-            access,
+            access_path,
         ),
         ("0001",),
+        access=Access(database_url(path), Operators("9", ())),
         provider=Identity(),
         clock=lambda: TIME.timestamp(),
     )
+    await auth.access.grant("9", DISCORD_ID)
     auth.accounts.create_session(
         DISCORD_ID,
         "Listener",
         "0001",
+        AccessRole.USER,
         digest(TOKEN),
         TIME.timestamp() + 3600,
         TIME.timestamp(),
@@ -156,6 +175,7 @@ async def fixture(
         providers=(provider,),
         audio=audio,
         voice=voice,
+        directory=Directory(),
         clock=lambda: TIME,
     ) as services:
 
@@ -217,10 +237,7 @@ def test_admin_log_tail_requires_role_and_returns_recent_events(tmp_path: Path) 
             logger.setLevel(logging.INFO)
             try:
                 assert (await client.get("/api/diagnostics/logs")).status_code == 403
-                services.auth.settings.access_path.write_text(
-                    f'discord_ids = ["{DISCORD_ID}"]\nadmin_ids = ["{DISCORD_ID}"]',
-                    encoding="utf-8",
-                )
+                services.access.operators = Operators(DISCORD_ID, ())
                 assert (await client.get("/api/auth/session")).json()[
                     "is_admin"
                 ] is True
@@ -240,6 +257,34 @@ def test_admin_log_tail_requires_role_and_returns_recent_events(tmp_path: Path) 
                 ).json() == {"entries": []}
             finally:
                 logger.setLevel(previous_level)
+
+    asyncio.run(scenario())
+
+
+def test_access_admin_api_manages_grants_history_and_member_directory(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        async with fixture(tmp_path) as (client, services, _provider, _audio):
+            assert (await client.get("/api/admin/access")).status_code == 403
+            services.access.operators = Operators(DISCORD_ID, ())
+            state = (await client.get("/api/admin/access")).json()
+            assert state["owner_id"] == DISCORD_ID
+            assert state["grants"] == []
+            members = (await client.get("/api/admin/access/members")).json()
+            assert members["members"][0]["display_name"] == "Kai"
+            granted = await client.put("/api/admin/access/3")
+            assert granted.status_code == 200
+            assert any(item["discord_id"] == "3" for item in granted.json()["grants"])
+            revoked = await client.delete("/api/admin/access/3")
+            assert revoked.status_code == 200
+            assert not any(
+                item["discord_id"] == "3" for item in revoked.json()["grants"]
+            )
+            assert [item["action"] for item in revoked.json()["history"][:2]] == [
+                "revoked",
+                "granted",
+            ]
 
     asyncio.run(scenario())
 
@@ -421,9 +466,11 @@ def test_schema_export_never_opens_runtime() -> None:
     assert "queue.removed" in models["SessionAction"]["enum"]
     assert "request_id" in models["MutationView"]["required"]
     assert set(models["AccountView"]["required"]) == {
+        "discord_id",
         "profile",
         "profile_complete",
         "is_admin",
+        "role",
         "csrf_token",
         "expires_at",
         "appearance",
@@ -623,9 +670,7 @@ def test_authentication_profiles_csrf_and_live_revocation(tmp_path: Path) -> Non
                 )
             stream = event_stream(services, TOKEN)
             assert (await anext(stream)).event == "state"
-            services.auth.settings.access_path.write_text(
-                "discord_ids = []", encoding="utf-8"
-            )
+            await services.access.revoke("9", DISCORD_ID)
             assert (await anext(stream)).event == "auth"
             await stream.aclose()
             assert (await client.get("/api/session")).status_code == 401
@@ -840,9 +885,7 @@ def test_real_sse_response_resynchronizes_and_closes_cleanly(
                                 await _client.post("/api/auth/logout")
                             ).status_code == 204
                         elif ending == "revoke":
-                            services.auth.settings.access_path.write_text(
-                                "discord_ids = []", encoding="utf-8"
-                            )
+                            await services.access.revoke("9", DISCORD_ID)
                         else:
                             engine = account_engine(services.auth.settings.database_url)
                             try:
@@ -904,6 +947,7 @@ def test_partial_startup_closes_all_resources_and_session_tasks(
                 tmp_path / "access.toml",
             ),
             ("0001",),
+            access=Access(database_url(path), Operators("9", ())),
             provider=Identity(),
         )
         provider, audio, voice = Provider(), ControlledOutput(), Voice()

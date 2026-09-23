@@ -53,16 +53,18 @@ domain meaning lives in [Queue and history](queue.md), [Radio](radio.md) and
 [Playback](playback.md).
 
 Account tables store OAuth accounts, browser sessions and pending login
-attempts. Only hashes of browser-session tokens are stored. The Discord
-whitelist remains in `access.toml`; it is live authorization policy, not an
-account table.
+attempts. Only hashes of browser-session tokens are stored. Each account also
+stores its effective role and, for normal listeners, who granted access and
+when. The immutable grant/revoke history lives beside those accounts in
+PostgreSQL. Owner and admin IDs remain in `access.toml` as the operator
+bootstrap boundary.
 
 ## Repositories and transactions
 
 `engine/persistence.py` contains the engine mappings and repositories.
-`persistence/models.py` and `persistence/accounts.py` own the account mappings
-and account access. `engine/schema.py` combines both metadata sets for startup
-and migrations.
+`persistence/models.py` and `persistence/accounts.py` own account, role and
+session storage. `engine/schema.py` combines those mappings with the engine
+metadata for startup and migrations.
 
 Engine repositories run in caller-owned transactions and flush without choosing
 when to commit. `write_transaction()` commits state, history, receipts and
@@ -77,13 +79,15 @@ result through the Session inbox.
 ## Schema ownership
 
 The Alembic chain lives under `engine/migrations/versions/`. The supported head
-is `engine_0003`, also named by `engine/schema.py`. Startup initializes an empty
+is `engine_0004`, also named by `engine/schema.py`. Startup initializes an empty
 database and its one listening session atomically. It upgrades the supported
-`engine_0001` and `engine_0002` revisions in place, and rejects an unknown or
-foreign schema without replacing it.
+`engine_0001`, `engine_0002` and `engine_0003` revisions in place, and rejects an
+unknown or foreign schema without replacing it.
 
 `engine_0002` added durable Radio source state. `engine_0003` widened Discord
 channel IDs to PostgreSQL `BIGINT`, which is required for Discord snowflakes.
+`engine_0004` added account roles, listener grant attribution and the durable
+administration history.
 Applied migrations are immutable history. Add a new revision instead of editing
 an applied one.
 

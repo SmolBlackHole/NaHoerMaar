@@ -11,37 +11,6 @@ and current listening evidence belongs in
 [Testing and acceptance](docs/testing.md#live-acceptance). Completed work leaves
 this page once implementation, tests and its owning documentation agree.
 
-## Now: finish operational acceptance
-
-The rewritten engine and dashboard pass their isolated checks, but shared use is
-not fully accepted until the remaining Discord cases in the
-[live listening table](docs/testing.md#live-acceptance) have been heard and
-matched against state, history and logs. The next coordinated run should close
-natural transitions without crossfade, skip during overlap, Radio refill, voice
-reconnect, clean shutdown and restart, and simultaneous mutations from separate
-accounts. Discord presence should be checked on the same running build.
-
-The Docker Compose path now keeps FastAPI internal, runs one bot worker, stores
-PostgreSQL in a named volume, restarts failed processes and exposes only Nuxt to
-a host reverse proxy. Its isolated image, healthcheck, backup and restore checks
-pass. Operational acceptance still needs one deployment behind HTTPS on the
-intended host. Confirm checkpoint recovery there, then measure search, track
-start and crossfade before publishing a minimum machine recommendation.
-
-Update remaining package metadata that still describes an earlier music-bot
-prototype rather than the current social player.
-
-## Next: administration and access
-
-Add owner and administrator roles for managing the whitelist through the
-dashboard. Administrators should be able to select Discord server members by
-name, with direct user-ID entry when member lookup is unavailable. The backend,
-not the UI, must enforce the role.
-
-Before implementation, decide whether an administrator may manage every grant or
-only grants they created. Record who granted or revoked access and when. This is
-an administration history, separate from the transient diagnostics log.
-
 ## Next: lyrics
 
 Add an optional lyrics view for the current track. Prefer synchronized lyrics
@@ -111,6 +80,17 @@ stable track, artist and account identities where available. Every recap states
 its covered period, when collection began and where older data is incomplete.
 Decide retention and who may inspect another person's statistics before storing
 more personal history.
+
+## Later: runtime health and capacity
+
+Add lightweight self-monitoring for CPU and memory use, event-loop lag, database
+pool pressure, FFmpeg preparation time and playback stalls. Keep short rolling
+measurements and surface actionable failures in diagnostics without turning the
+bot into a separate monitoring platform.
+
+Use those measurements to document realistic minimum hardware only after a
+representative listening run. A Raspberry Pi or small VPS recommendation should
+name the tested workload, audio path and concurrent dashboard activity.
 
 ## Later: independent Discord sessions
 

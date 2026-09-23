@@ -88,7 +88,7 @@ new queue command. Neither SSE nor the event bus is a durable audit log.
 | SQLAlchemy, transactions and migrations | Persistence and schema | [Database](engine/database.md) |
 | HTTP and live events | API | [Engine API](engine-api.md) |
 | Typed client calls and UI state | Nuxt repositories, stores and composables | [Frontend](frontend.md) |
-| Installation and access policy | Discord application and `access.toml` | [Discord setup](discord-setup.md) |
+| Installation and access policy | Access service | [Discord setup](discord-setup.md) |
 
 The code-level engine map and a suggested reading order live in the
 [engine index](engine/). That index is the entry point for implementation detail;
@@ -112,12 +112,15 @@ drain, checkpoint and audio sequence.
 
 ## Access boundary
 
-Discord OAuth identifies dashboard users, while the live whitelist decides who
-may control the shared session. Queue attribution comes from that authenticated
-account, never from a client-supplied user field.
+Discord OAuth identifies dashboard users. Accounts carry their access role.
+The Access service resolves owner and admin roles from `access.toml`; normal
+listener roles and their grant attribution live on the account in PostgreSQL.
+Queue attribution comes from the authenticated account, never from a
+client-supplied user field. Revocation clears the listener role and removes
+active sessions in one transaction.
 
 The [Discord setup guide](discord-setup.md) owns application installation,
-redirects and whitelist configuration. The [Engine API](engine-api.md#authentication)
+redirects and operator configuration. The [Engine API](engine-api.md#authentication)
 owns the authentication routes and HTTP requirements.
 
 ## Current scope

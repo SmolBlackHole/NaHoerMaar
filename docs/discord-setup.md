@@ -24,7 +24,9 @@ This does not involve inviting the original project's bot.
 2. Under **General Information**, copy the **Application ID**. This becomes
    `DISCORD_CLIENT_ID`.
 3. Under **Bot**, generate or reset the bot token and put it in `DISCORD_TOKEN`.
-4. Under **OAuth2**, copy the client secret into `DISCORD_CLIENT_SECRET`. The
+4. Still under **Bot**, enable **Server Members Intent**. NaHörMaar uses the
+   member directory to show names on the Access page.
+5. Under **OAuth2**, copy the client secret into `DISCORD_CLIENT_SECRET`. The
    client secret and bot token are different credentials.
 
 Copy [`.env.example`](../.env.example) to `.env` in the repository root and set
@@ -33,27 +35,35 @@ Git. Discord's [bot setup guide](https://docs.discord.com/developers/quick-start
 shows the current portal screens if their labels move.
 
 NaHörMaar connects through Discord's Gateway. You do not need to configure an
-**Interactions Endpoint URL** in the portal. The bot uses the server and voice
-state intents in code; it does not need Message Content or Server Members intent
-for the current features.
+**Interactions Endpoint URL** in the portal. The bot uses server, voice-state and
+server-member intents. It does not use Message Content. Discord treats the
+member intent as privileged, so it must be enabled both in the portal and in the
+bot code.
 
 ## Install the bot on a server
 
-Keep **Public Bot** off on the **Bot** page if only you should be able to install
-your application. Under **Installation**, enable **Guild Install**. You do not
-need a public install link. On the **OAuth2** page, use the **OAuth2 URL
-Generator**: select the `bot` and `applications.commands` scopes, then choose
-**View Channels**, **Connect** and **Speak** under bot permissions. Copy the
-generated URL and open it while signed in as the application owner. Choose
-**Add to server** and select your server. Your Discord account needs permission
-to manage that server. Check any channel-level permission overrides too: the
-bot must be able to enter and speak in the voice channel you select.
+Enable **Public Bot** on the **Bot** page. Discord requires this before an
+application can keep a default installation link. Public installation does not
+grant access to NaHörMaar: the owner, admins and listeners are still controlled
+by the access policy below.
+
+Under **Installation**, disable **User Install** and keep **Guild Install**
+enabled. Choose **Discord Provided Link**, then set the Guild Install scopes to
+`bot` and `applications.commands`. Give the bot only **View Channels**,
+**Connect** and **Speak**. Discord shows these permissions as the integer
+`3146752`.
+
+Anyone with permission to manage a Discord server can now use the installation
+link to add the bot there. They still cannot sign in to or control this
+NaHörMaar instance unless the owner or an admin grants them access. Check
+channel-level permission overrides too: the bot must be able to enter and speak
+in the voice channel you select.
 
 Discord's [installation guide](https://docs.discord.com/developers/quick-start/getting-started#step-1-creating-an-app)
 explains Guild Install. NaHörMaar discovers the servers and voice channels it
-can see; there is no guild ID to copy into `.env`. **Public Bot** controls who
-can install this application. The whitelist below controls who can use your
-running instance after you have installed it; your friends need not own the app.
+can see; there is no guild ID to copy into `.env`. The Discord installation
+link controls where the bot may be added. The access policy below controls who
+can use your running instance; your friends need not own the app.
 
 ## Set the dashboard sign-in redirect
 
@@ -82,27 +92,36 @@ for the distinction.
 
 ## Allow people to use it
 
-Discord user IDs, rather than names, make up the whitelist. In the desktop
-Discord app, open **User Settings** (the gear at the bottom left), then
+Copy [`access.example.toml`](../access.example.toml) to `access.toml`. Set the
+Discord account that owns this installation and, if needed, additional admins:
+
+```toml
+owner_id = "123456789012345678"
+admin_ids = ["234567890123456789"]
+```
+
+The owner and admins can open **Access** in the dashboard. The page lists members
+from every Discord server connected to the bot and grants normal listener access
+by name. A direct Discord user ID also works when the person is not in that
+directory. Normal listener roles and their grant attribution live on the
+account in PostgreSQL, so they survive restarts with the rest of the application
+data.
+
+The owner may grant or revoke access for anyone. An admin may grant access and
+revoke only grants made by that same admin. Owner and admin roles remain in
+`access.toml` so a database mistake cannot lock every operator out. Changing
+those roles requires a backend restart. Grant and revoke actions are recorded in
+the durable access history, while a revoked person's active dashboard sessions
+end immediately.
+
+Discord user IDs are still useful for direct entry and the operator file. In the
+desktop Discord app, open **User Settings** (the gear at the bottom left), then
 **Advanced**, and enable **Developer Mode**. Right-click a user in a server,
 group chat or DM and choose **Copy User ID**. On mobile, enable Developer Mode
 under **Settings > Advanced**, open a user's profile, then use the three-dot
 menu to copy their ID. Discord documents both paths in its
 [User ID guide](https://support.discord.com/hc/en-us/articles/206346498-Where-can-I-find-my-User-Server-Message-ID).
 
-Copy [`access.example.toml`](../access.example.toml) to `access.toml` and add
-the IDs as quoted strings:
-
-```toml
-discord_ids = ["123456789012345678", "234567890123456789"]
-admin_ids = ["123456789012345678"]
-```
-
-`discord_ids` controls dashboard access, playback, queue edits and `/pspsps`.
-Anyone on that list can change the shared queue, including entries added by
-other people. `admin_ids` must be a subset of `discord_ids`; it grants
-access to the live Logs page, not a user-management screen. The file is read
-again for access checks, so whitelist edits do not need a backend restart.
 Keep `access.toml` out of Git. If it is missing or invalid, access is blocked.
 
 ## Try the connection

@@ -11,6 +11,8 @@ const account = (): ListenerSession => ({
 	profile: { id: "first", name: "Alice", avatar: "0002" },
 	profile_complete: true,
 	is_admin: false,
+	role: "user",
+	discord_id: "243718053362270208",
 	csrf_token: "session-bound-csrf",
 	expires_at: Date.now() / 1000 + 60,
 });

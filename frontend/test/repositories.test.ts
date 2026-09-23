@@ -4,6 +4,7 @@ import { createAccountRepository } from "../app/repositories/account";
 import { createSessionRepository } from "../app/repositories/session";
 import { createCatalogRepository } from "../app/repositories/catalog";
 import { createDiagnosticsRepository } from "../app/repositories/diagnostics";
+import { createAccessRepository } from "../app/repositories/access";
 
 function setup() {
 	const fetcher = vi.fn<typeof fetch>();
@@ -15,6 +16,7 @@ function setup() {
 		credentials,
 		lost,
 		json,
+		access: createAccessRepository(json),
 		account: createAccountRepository(json),
 		session: createSessionRepository(json),
 		catalog: createCatalogRepository(json),
@@ -68,6 +70,17 @@ describe("repositories and shared transport", () => {
 			"/api/diagnostics/logs?after=42",
 			expect.objectContaining({ cache: "no-store" }),
 		);
+	});
+	it("uses the admin access contract for grants and revocations", async () => {
+		const { fetcher, access } = setup();
+		fetcher.mockImplementation(async () => Response.json({ grants: [], history: [] }));
+		await access.members();
+		expect(fetcher.mock.calls[0]?.[0]).toBe("/api/admin/access/members");
+		await access.grant("123");
+		expect(fetcher.mock.calls[1]?.[0]).toBe("/api/admin/access/123");
+		expect(fetcher.mock.calls[1]?.[1]?.method).toBe("PUT");
+		await access.revoke("123");
+		expect(fetcher.mock.calls[2]?.[1]?.method).toBe("DELETE");
 	});
 	it("preserves structured API errors and reports non-JSON gateway failures", async () => {
 		const { fetcher, catalog } = setup();

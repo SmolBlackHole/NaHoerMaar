@@ -16,6 +16,7 @@ from typing import cast
 from fastapi import FastAPI
 
 from ..application.auth import Auth
+from ..application.access import Access
 from ..config import AuthSettings, Settings, environment_values
 from ..integrations.daily_bio import update_daily_bio
 from ..integrations.discord_oauth import DiscordOAuth
@@ -50,6 +51,7 @@ async def open_runtime(
         )
     )
     gateway = DiscordGateway(settings.ffmpeg_path)
+    access = Access.from_file(settings.database_url, auth_settings.access_path)
     closing = False
 
     async def run_client() -> None:
@@ -64,13 +66,19 @@ async def open_runtime(
                 await gateway.wait_until_ready()
             async with open_engine(
                 session_id,
-                auth=Auth(auth_settings, avatars, provider=DiscordOAuth(auth_settings)),
+                auth=Auth(
+                    auth_settings,
+                    avatars,
+                    access=access,
+                    provider=DiscordOAuth(auth_settings),
+                ),
                 providers=(
                     YouTubeMusicProvider(settings.node_path),
                     YouTubeProvider(settings.node_path),
                 ),
                 audio=gateway.output,
                 voice=gateway.output,
+                directory=gateway,
                 clock=lambda: datetime.now(UTC),
             ) as services:
                 profile = tasks.create_task(
@@ -82,7 +90,7 @@ async def open_runtime(
                 )
                 try:
                     commands = DiscordCommands(
-                        gateway, services.session, auth_settings.access_path
+                        gateway, services.session, services.access
                     )
                     try:
                         await commands.register()

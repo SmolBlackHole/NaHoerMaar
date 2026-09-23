@@ -11,15 +11,14 @@ import re
 import secrets
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Protocol
 
 from ..config import AuthSettings
 from ..domain.accounts import Account
 from ..domain.identity import AuthError, DiscordIdentity
 from ..domain.preferences import Appearance
-from ..persistence.accounts import Accounts
-from .access import require_access
+from .access import Access
 
 SESSION_SECONDS = 7 * 24 * 60 * 60
 SESSION_COOKIE = "nahormaar_session"
@@ -46,7 +45,10 @@ class Authenticated:
     account: Account
     expires_at: float
     csrf: str = field(repr=False)
-    admin: bool = False
+
+    @property
+    def admin(self) -> bool:
+        return self.account.role is not None and self.account.role.privileged
 
 
 class Auth:
@@ -55,17 +57,19 @@ class Auth:
         settings: AuthSettings,
         avatars: tuple[str, ...],
         *,
+        access: Access,
         provider: IdentityProvider,
         clock: Callable[[], float] = time.time,
     ) -> None:
         self.settings = settings
-        self.accounts = Accounts(settings.database_url)
+        self.access = access
+        self.accounts = access.accounts
         self.avatars = avatars
         self.provider = provider
         self.clock = clock
 
     async def close(self) -> None:
-        await asyncio.to_thread(self.accounts.close)
+        await self.access.close()
 
     async def begin(self, browser_token: str | None) -> tuple[str, str]:
         browser = (
@@ -108,18 +112,21 @@ class Auth:
         if not code or len(code) > 2048:
             raise AuthError("login_failed")
         identity = await self.provider.identity(code, verifier)
-        await asyncio.to_thread(require_access, self.settings.access_path, identity.id)
+        role = await self.access.require(identity.id)
         token, now = secrets.token_urlsafe(32), self.clock()
-        await asyncio.to_thread(
+        account = await asyncio.to_thread(
             self.accounts.create_session,
             identity.id,
             identity.name,
             secrets.choice(self.avatars),
+            role,
             digest(token),
             now + SESSION_SECONDS,
             now,
             digest(previous) if previous else None,
         )
+        if account is None:
+            raise AuthError("access_denied", 403)
         _LOGGER.info("auth.login_completed account=%s", identity.id)
         return token
 
@@ -134,12 +141,10 @@ class Auth:
         if result is None:
             raise AuthError("signed_out")
         account, expires_at = result
-        admin = False
+        role = account.role
         if check_access:
             try:
-                admin = await asyncio.to_thread(
-                    require_access, self.settings.access_path, account.discord_id
-                )
+                role = await self.access.require(account.discord_id)
             except AuthError as exc:
                 if exc.code == "access_denied":
                     await asyncio.to_thread(self.accounts.revoke, account.profile.id)
@@ -148,7 +153,7 @@ class Auth:
                         account.discord_id,
                     )
                 raise
-        return Authenticated(account, expires_at, csrf_token(token), admin)
+        return Authenticated(replace(account, role=role), expires_at, csrf_token(token))
 
     async def logout(self, token: str) -> None:
         await asyncio.to_thread(self.accounts.logout, digest(token))
@@ -161,7 +166,7 @@ class Auth:
             self.accounts.update_profile, user.account.profile.id, name, avatar
         )
         _LOGGER.info("auth.profile_updated account=%s", user.account.discord_id)
-        return account
+        return replace(account, role=user.account.role)
 
     async def appearance(self, user: Authenticated, value: Appearance) -> Appearance:
         appearance = await asyncio.to_thread(

@@ -34,12 +34,17 @@ from .providers import ProviderError, UnsupportedCapability
 from .runtime import Services
 from .session import Command, action_for
 from .api_models import (
+    AccessEventView,
+    AccessGrantView,
+    AccessView,
     ApiError,
     CatalogEntryView,
     ChangeView,
     ChannelView,
     CheckpointView,
     DiscoveryView,
+    DiscordMembersView,
+    DiscordMemberView,
     HistoryView,
     ManualView,
     LogsView,
@@ -395,6 +400,48 @@ def create_app(
         if not user.admin:
             raise AuthError("access_denied", 403)
         return LogsView(entries=recent_logs.since(after))
+
+    async def access_document(value: Services) -> AccessView:
+        operators = value.access.operators
+        return AccessView(
+            owner_id=operators.owner_id,
+            admin_ids=operators.admin_ids,
+            grants=tuple(
+                AccessGrantView.model_validate(grant)
+                for grant in await value.access.grants()
+            ),
+            history=tuple(
+                AccessEventView.model_validate(event)
+                for event in await value.access.history()
+            ),
+        )
+
+    @app.get("/api/admin/access")
+    async def access_state(user: CurrentUser) -> AccessView:
+        await services().access.require_admin(user.account.discord_id)
+        return await access_document(services())
+
+    @app.put("/api/admin/access/{discord_id}")
+    async def grant_access(discord_id: str, user: CurrentUser) -> AccessView:
+        value = services()
+        await value.access.grant(user.account.discord_id, discord_id)
+        return await access_document(value)
+
+    @app.delete("/api/admin/access/{discord_id}")
+    async def revoke_access(discord_id: str, user: CurrentUser) -> AccessView:
+        value = services()
+        await value.access.revoke(user.account.discord_id, discord_id)
+        return await access_document(value)
+
+    @app.get("/api/admin/access/members")
+    async def discord_members(user: CurrentUser) -> DiscordMembersView:
+        await services().access.require_admin(user.account.discord_id)
+        return DiscordMembersView(
+            members=tuple(
+                DiscordMemberView.model_validate(member)
+                for member in services().directory.members()
+            )
+        )
 
     @app.get("/api/channels")
     async def channels() -> list[ChannelView]:

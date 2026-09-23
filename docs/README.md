@@ -23,7 +23,7 @@ other pages keep the context they need and link to that owner.
 | I want to... | Start here | Continue with |
 | --- | --- | --- |
 | Listen and request music | [Listening](listening.md) | [Radio](engine/radio.md) |
-| Set up Discord and the whitelist | [Discord setup](discord-setup.md) | [Development](development.md) |
+| Set up Discord and access | [Discord setup](discord-setup.md) | [Development](development.md) |
 | Run NaHörMaar locally | [Development](development.md) | [Hosting](hosting.md) |
 | Understand the system | [Architecture](architecture.md) | [Engine](engine/) or [frontend](frontend.md) |
 | Change search or metadata | [Catalog](engine/catalog.md) | [Engine API][api-discovery] |
@@ -60,7 +60,7 @@ whole sequence to change one provider or develop one migration.
 | Page | Owns |
 | --- | --- |
 | [Listening together](listening.md) | Listener-visible controls and behavior |
-| [Set up Discord](discord-setup.md) | Developer Portal, installation, OAuth redirect and whitelist |
+| [Set up Discord](discord-setup.md) | Developer Portal, installation, OAuth redirect and access roles |
 | [Development](development.md) | Local setup, commands and service startup |
 | [Hosting](hosting.md) | Production Compose deployment, HTTPS and host capacity |
 | [Backup and restore](recovery.md) | PostgreSQL dumps, verification, retention and restore procedure |

@@ -11,6 +11,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..domain.identity import Contributor
+from ..domain.access import AccessRole
 from ..domain.preferences import Appearance
 from .cache import RefreshStatus
 from .domain.catalog import MediaReference
@@ -33,9 +34,11 @@ class View(BaseModel):
 
 
 class AccountView(View):
+    discord_id: str
     profile: Contributor
     profile_complete: bool
     is_admin: bool
+    role: AccessRole
     csrf_token: str
     expires_at: float
     appearance: Appearance
@@ -51,6 +54,41 @@ class LogEntryView(View):
 
 class LogsView(View):
     entries: tuple[LogEntryView, ...]
+
+
+class AccessGrantView(View):
+    discord_id: str
+    granted_by: str
+    granted_at: datetime
+    name: str | None
+
+
+class AccessEventView(View):
+    id: UUID
+    action: str
+    discord_id: str
+    actor_id: str
+    occurred_at: datetime
+
+
+class AccessView(View):
+    owner_id: str
+    admin_ids: tuple[str, ...]
+    grants: tuple[AccessGrantView, ...]
+    history: tuple[AccessEventView, ...]
+
+
+class DiscordMemberView(View):
+    discord_id: str
+    name: str
+    display_name: str
+    avatar_url: str | None
+    guild_id: str
+    guild_name: str
+
+
+class DiscordMembersView(View):
+    members: tuple[DiscordMemberView, ...]
 
 
 class MetadataView(View):

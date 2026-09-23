@@ -7,6 +7,7 @@ import { createAccountRepository } from "../app/repositories/account";
 import { createCatalogRepository } from "../app/repositories/catalog";
 import { createSessionRepository } from "../app/repositories/session";
 import { createDiagnosticsRepository } from "../app/repositories/diagnostics";
+import { createAccessRepository } from "../app/repositories/access";
 
 const cleanups: (() => void)[] = [];
 afterEach(() => cleanups.splice(0).forEach((close) => close()));
@@ -26,6 +27,7 @@ export function repositoryFixture(
 	setActivePinia(pinia);
 	const json = createHttpTransport(request, auth);
 	const repositories = {
+		access: createAccessRepository(json),
 		account: createAccountRepository(json),
 		catalog: createCatalogRepository(json),
 		session: createSessionRepository(json, openEvents),

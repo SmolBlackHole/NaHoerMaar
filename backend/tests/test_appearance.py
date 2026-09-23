@@ -6,10 +6,11 @@ import asyncio
 from pathlib import Path
 
 from nahormaar_backend.application.auth import SESSION_COOKIE, csrf_token, digest
+from nahormaar_backend.domain.access import AccessRole
 from nahormaar_backend.domain.preferences import Appearance
 from nahormaar_backend.persistence.accounts import Accounts
 from engine.test_catalog import TIME
-from engine.test_engine_api import DISCORD_ID, TOKEN, fixture
+from engine.test_engine_api import TOKEN, fixture
 
 
 def test_appearance_is_saved_per_account_and_survives_restart(tmp_path: Path) -> None:
@@ -26,13 +27,12 @@ def test_appearance_is_saved_per_account_and_survives_restart(tmp_path: Path) ->
                 "appearance"
             ] == saved.json()
             other_token = "b" * 43
-            services.auth.settings.access_path.write_text(
-                f'discord_ids = ["{DISCORD_ID}", "2"]', encoding="utf-8"
-            )
+            await services.access.grant("9", "2")
             services.auth.accounts.create_session(
                 "2",
                 "Other listener",
                 "0001",
+                AccessRole.USER,
                 digest(other_token),
                 TIME.timestamp() + 3600,
                 TIME.timestamp(),

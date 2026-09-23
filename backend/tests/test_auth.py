@@ -5,6 +5,7 @@
 import asyncio
 import secrets
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlsplit
 
@@ -19,7 +20,9 @@ from nahormaar_backend.application.auth import (
     csrf_token,
     digest,
 )
+from nahormaar_backend.application.access import Access, Operators
 from nahormaar_backend.config import AuthSettings, ConfigurationError
+from nahormaar_backend.domain.access import AccessRole
 from nahormaar_backend.domain.identity import AuthError, DiscordIdentity
 from nahormaar_backend.integrations.discord_oauth import DiscordOAuth
 from nahormaar_backend.persistence.database import database_engine
@@ -53,18 +56,26 @@ def auth_service(tmp_path: Path) -> tuple[Auth, Provider, list[float]]:
             upgrade(connection)
     finally:
         engine.dispose()
-    access = tmp_path / "access.toml"
-    access.write_text('discord_ids = ["1"]', encoding="utf-8")
+    access_path = tmp_path / "access.toml"
+    access_path.write_text('owner_id = "9"\nadmin_ids = ["8"]', encoding="utf-8")
+    access = Access(database, Operators("9", ("8",)))
+    access.accounts.grant_access("1", "9", datetime.now(UTC))
     provider, clock = Provider(), [time.time()]
     settings = AuthSettings(
         "https://music.example.test",
         "123",
         "test-secret",
         database,
-        access,
+        access_path,
     )
     return (
-        Auth(settings, ("0002", "0118"), provider=provider, clock=lambda: clock[0]),
+        Auth(
+            settings,
+            ("0002", "0118"),
+            access=access,
+            provider=provider,
+            clock=lambda: clock[0],
+        ),
         provider,
         clock,
     )
@@ -102,6 +113,7 @@ def test_single_use_browser_bound_login(tmp_path: Path, outcome: str) -> None:
                 assert len(tokens) == 1 and provider.calls == 1
                 user = await auth.authenticate(tokens[0])
                 assert user.account.discord_id == "1"
+                assert user.account.role is AccessRole.USER
                 assert user.expires_at == clock[0] + SESSION_SECONDS
                 assert user.csrf == csrf_token(tokens[0])
                 assert not user.account.profile_complete
@@ -137,7 +149,11 @@ def test_session_rotation_profile_restart_expiry_and_revocation(tmp_path: Path) 
         await auth.profile(user, "My own name", "0118")
         await auth.close()
         auth = Auth(
-            auth.settings, auth.avatars, provider=provider, clock=lambda: clock[0]
+            auth.settings,
+            auth.avatars,
+            access=Access(auth.settings.database_url, Operators("9", ("8",))),
+            provider=provider,
+            clock=lambda: clock[0],
         )
         try:
             saved = await auth.authenticate(token)
@@ -153,14 +169,10 @@ def test_session_rotation_profile_restart_expiry_and_revocation(tmp_path: Path) 
             assert (
                 await auth.authenticate(fresh)
             ).account.profile == saved.account.profile
-            auth.settings.access_path.write_text("discord_ids = []", encoding="utf-8")
-            with pytest.raises(AuthError, match="access_denied"):
-                await auth.authenticate(fresh)
-            auth.settings.access_path.write_text(
-                'discord_ids = ["1"]', encoding="utf-8"
-            )
+            await auth.access.revoke("9", "1")
             with pytest.raises(AuthError, match="signed_out"):
                 await auth.authenticate(fresh)
+            await auth.access.grant("9", "1")
             token = await login(auth)
             clock[0] += SESSION_SECONDS
             with pytest.raises(AuthError, match="signed_out"):
@@ -171,44 +183,20 @@ def test_session_rotation_profile_restart_expiry_and_revocation(tmp_path: Path) 
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize(
-    "content",
-    [None, "broken [", "discord_ids = [1]", 'discord_ids = ["1"]\nextra = true'],
-)
-def test_unreadable_access_list_fails_closed(
-    tmp_path: Path, content: str | None
-) -> None:
+def test_operator_roles_are_loaded_from_configuration(tmp_path: Path) -> None:
     async def scenario() -> None:
-        auth, _, _ = auth_service(tmp_path)
+        auth, provider, _ = auth_service(tmp_path)
         try:
-            token = await login(auth)
-            if content is None:
-                auth.settings.access_path.unlink()
-            else:
-                auth.settings.access_path.write_text(content, encoding="utf-8")
-            with pytest.raises(AuthError, match="access_unavailable"):
-                await auth.authenticate(token)
-        finally:
-            await auth.close()
-
-    asyncio.run(scenario())
-
-
-def test_admin_access_is_a_live_subset_of_the_whitelist(tmp_path: Path) -> None:
-    async def scenario() -> None:
-        auth, _, _ = auth_service(tmp_path)
-        try:
-            token = await login(auth)
-            assert not (await auth.authenticate(token)).admin
-            auth.settings.access_path.write_text(
-                'discord_ids = ["1"]\nadmin_ids = ["1"]', encoding="utf-8"
-            )
-            assert (await auth.authenticate(token)).admin
-            auth.settings.access_path.write_text(
-                'discord_ids = ["1"]\nadmin_ids = ["2"]', encoding="utf-8"
-            )
-            with pytest.raises(AuthError, match="access_unavailable"):
-                await auth.authenticate(token)
+            listener = await login(auth)
+            assert not (await auth.authenticate(listener)).admin
+            assert (await auth.access.require("9")).value == "owner"
+            assert (await auth.access.require("8")).value == "admin"
+            provider.user = DiscordIdentity("9", "Owner")
+            owner = await auth.authenticate(await login(auth))
+            assert owner.account.role is AccessRole.OWNER and owner.admin
+            provider.user = DiscordIdentity("8", "Admin")
+            admin = await auth.authenticate(await login(auth))
+            assert admin.account.role is AccessRole.ADMIN and admin.admin
         finally:
             await auth.close()
 

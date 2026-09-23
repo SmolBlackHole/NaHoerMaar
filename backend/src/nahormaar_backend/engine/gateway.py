@@ -10,6 +10,7 @@ from pathlib import Path
 
 import discord
 
+from ..domain.access import DiscordMember
 from .discord import DiscordOutput
 from .domain.sessions import PlaybackIntent
 from .metadata import MetadataStore
@@ -23,10 +24,35 @@ class DiscordGateway(discord.Client):
     def __init__(self, ffmpeg_path: Path) -> None:
         intents = discord.Intents.none()
         intents.guilds = True
+        intents.members = True
         intents.voice_states = True
         super().__init__(intents=intents)
         self.output = DiscordOutput(self, ffmpeg_path)
         self._sent_activity: dict[str, object] | None = None
+
+    def members(self) -> tuple[DiscordMember, ...]:
+        return tuple(
+            sorted(
+                (
+                    DiscordMember(
+                        str(member.id),
+                        member.name,
+                        member.display_name,
+                        str(member.display_avatar.url),
+                        str(guild.id),
+                        guild.name,
+                    )
+                    for guild in self.guilds
+                    for member in guild.members
+                    if not member.bot
+                ),
+                key=lambda item: (
+                    item.guild_name.casefold(),
+                    item.display_name.casefold(),
+                    item.discord_id,
+                ),
+            )
+        )
 
     async def on_ready(self) -> None:
         self._sent_activity = None

@@ -40,7 +40,7 @@ def interaction() -> Mock:
     "failure",
     [
         None,
-        "whitelist",
+        "access",
         "no_voice",
         "stage",
         "view_channel",
@@ -55,13 +55,11 @@ def test_summon_uses_real_session_and_only_reports_success_after_join(
     async def scenario() -> None:
         async with fixture(tmp_path) as (_http, services, provider, audio):
             client = discord.Client(intents=discord.Intents.none())
-            tree = DiscordCommands(
-                client, services.session, services.auth.settings.access_path
-            )
+            tree = DiscordCommands(client, services.session, services.access)
             track = await services.catalog.track(provider.finding.reference.source_url)
             await services.session.request(uuid4(), Add((track.id,)))
             event = interaction()
-            if failure == "whitelist":
+            if failure == "access":
                 event.user.id = 123
             elif failure == "no_voice":
                 event.user.voice = None

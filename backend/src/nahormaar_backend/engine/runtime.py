@@ -8,12 +8,15 @@ from collections.abc import AsyncGenerator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Protocol
 from uuid import UUID
 
 from alembic.migration import MigrationContext
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from ..application.auth import Auth
+from ..application.access import Access
+from ..domain.access import DiscordMember
 from .audio import AudioPlayer, VoiceTransport
 from .catalog import Catalog
 from .metadata import MetadataStore
@@ -30,6 +33,17 @@ class Services:
     metadata: MetadataStore
     voice: VoiceTransport
     auth: Auth
+    access: Access
+    directory: "MemberDirectory"
+
+
+class MemberDirectory(Protocol):
+    def members(self) -> tuple[DiscordMember, ...]: ...
+
+
+class EmptyMemberDirectory:
+    def members(self) -> tuple[DiscordMember, ...]:
+        return ()
 
 
 @asynccontextmanager
@@ -40,6 +54,7 @@ async def open_engine(
     providers: tuple[Provider, ...],
     audio: AudioPlayer,
     voice: VoiceTransport,
+    directory: MemberDirectory | None = None,
     clock: Callable[[], datetime],
 ) -> AsyncGenerator[Services]:
     """Take ownership of supplied resources. No environment, migration or login.
@@ -72,4 +87,12 @@ async def open_engine(
             sessions, session_id, clock=clock, catalog=catalog, audio=audio, voice=voice
         )
         resources.push_async_callback(session.close)
-        yield Services(session, catalog, metadata, voice, auth)
+        yield Services(
+            session,
+            catalog,
+            metadata,
+            voice,
+            auth,
+            auth.access,
+            directory or EmptyMemberDirectory(),
+        )

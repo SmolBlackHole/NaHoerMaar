@@ -4,7 +4,7 @@
 
 """HTTP authentication boundary for the isolated engine application.
 
-Keep the existing Auth service, cookies, whitelist and CSRF rules. No legacy
+Keep the Auth service, cookies, access roles and CSRF rules. No legacy
 player API or application runtime is imported by this boundary.
 """
 
@@ -110,10 +110,15 @@ class ProfileInput(BaseModel):
 
 
 def account_document(user: Authenticated) -> AccountView:
+    role = user.account.role
+    if role is None:
+        raise AuthError("access_denied", 403)
     return AccountView(
+        discord_id=user.account.discord_id,
         profile=user.account.profile,
         profile_complete=user.account.profile_complete,
         is_admin=user.admin,
+        role=role,
         csrf_token=user.csrf,
         expires_at=user.expires_at,
         appearance=user.account.appearance,
@@ -198,9 +203,7 @@ def auth_router(service: Callable[[], Auth]) -> APIRouter:
     @router.put("/api/profile")
     async def profile(body: ProfileInput, user: CurrentUser) -> AccountView:
         account = await service().profile(user, body.name, body.avatar)
-        return account_document(
-            Authenticated(account, user.expires_at, user.csrf, user.admin)
-        )
+        return account_document(Authenticated(account, user.expires_at, user.csrf))
 
     @router.put("/api/profile/appearance")
     async def appearance(body: Appearance, user: CurrentUser) -> Appearance:

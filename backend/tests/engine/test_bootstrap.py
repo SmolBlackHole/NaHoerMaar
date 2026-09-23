@@ -394,6 +394,7 @@ async def runtime_fixture(
             database_url(path),
             tmp_path / "access.toml",
         )
+        auth.access_path.write_text('owner_id = "1"', encoding="utf-8")
         yield settings, auth, gateways, outputs, providers, calls
         assert all(gateway.closed == 1 for gateway in gateways)
         assert all(provider.closed for provider in providers)

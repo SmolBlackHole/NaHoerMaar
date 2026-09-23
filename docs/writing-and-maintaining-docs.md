@@ -9,11 +9,11 @@ of a rule that must be kept vaguely in sync.
 ## Table of contents
 
 - [Writing and maintaining NaHörMaar documentation](#writing-and-maintaining-nahörmaar-documentation)
-	- [Table of contents](#table-of-contents)
-	- [Choose the owner](#choose-the-owner)
-	- [Define a fact once](#define-a-fact-once)
-	- [Structure and navigation](#structure-and-navigation)
-	- [Review changes](#review-changes)
+  - [Table of contents](#table-of-contents)
+  - [Choose the owner](#choose-the-owner)
+  - [Define a fact once](#define-a-fact-once)
+  - [Structure and navigation](#structure-and-navigation)
+  - [Review changes](#review-changes)
 
 ## Choose the owner
 
@@ -30,7 +30,7 @@ of a rule that must be kept vaguely in sync.
 | SQLAlchemy, transactions, schema and migrations | `docs/engine/database.md` |
 | HTTP, SSE, request and response shapes | `docs/engine-api.md` |
 | Local setup, commands and service startup | `docs/development.md` |
-| Discord Developer Portal and whitelist setup | `docs/discord-setup.md` |
+| Discord Developer Portal and access setup | `docs/discord-setup.md` |
 | Hosting constraints | `docs/hosting.md` |
 | Backup and restore operations | `docs/recovery.md` |
 | Automated checks, diagnostics and live evidence | `docs/testing.md` |

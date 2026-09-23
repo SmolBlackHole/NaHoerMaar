@@ -5,6 +5,7 @@ import { createSessionRepository } from "../repositories/session";
 import { createCatalogRepository } from "../repositories/catalog";
 import { createAccountRepository } from "../repositories/account";
 import { createDiagnosticsRepository } from "../repositories/diagnostics";
+import { createAccessRepository } from "../repositories/access";
 
 export default defineNuxtPlugin({
 	name: "repositories",
@@ -17,6 +18,7 @@ export default defineNuxtPlugin({
 			lost: (code) => profile().lost(code),
 		});
 		app.vueApp.provide(repositoriesKey, {
+			access: createAccessRepository(json),
 			session: createSessionRepository(json),
 			catalog: createCatalogRepository(json),
 			account: createAccountRepository(json),

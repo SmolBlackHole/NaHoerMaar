@@ -23,7 +23,7 @@ that contract. A real Discord listening check remains
 
 ## Authentication
 
-Discord OAuth with PKCE, a live whitelist, session cookies and CSRF protect the
+Discord OAuth with PKCE, role-based access, session cookies and CSRF protect the
 API. Login attempts are browser-bound and single-use. Account sessions survive
 backend restarts, and profile and appearance preferences belong to the signed-in
 account.
@@ -36,6 +36,24 @@ Authentication routes are:
 All other `/api/` requests need a valid session cookie. Mutations also require
 the configured `Origin` and `X-CSRF-Token`. Replies are private and `no-store`.
 Queue attribution comes from the authenticated account, never a request body.
+
+`GET /api/auth/session` includes the Discord ID and the effective `owner`,
+`admin` or `user` role. Operator roles come from `access.toml`; ordinary
+listener roles and their grant attribution live on the account in PostgreSQL.
+Revoking a listener clears that role and also removes their active sessions.
+
+Owners and admins use these administration routes:
+
+| Endpoint | Meaning |
+| --- | --- |
+| `GET /api/admin/access` | Operators, listener grants and recent access history |
+| `PUT /api/admin/access/{discord_id}` | Grant listener access |
+| `DELETE /api/admin/access/{discord_id}` | Revoke listener access and sessions |
+| `GET /api/admin/access/members` | Cached Discord members with guild details |
+
+The owner may revoke any normal grant. An admin may revoke only a grant created
+by that admin. The backend enforces this rule. Owner and admin roles cannot be
+changed through the API.
 
 ## State and mutations
 
@@ -141,7 +159,7 @@ emits `event: auth` and closes the stream. Shutdown closes subscriptions.
 ## Diagnostics
 
 `GET /api/diagnostics/logs` returns up to 200 recent bot log entries. Only
-accounts listed in `admin_ids` may call it; other authenticated users receive
+owner and admin accounts may call it; other authenticated users receive
 403. `?after={id}` returns newer entries for the Logs page. The server keeps at
 most 500 entries in memory and discards them on restart. It does not expose the
 process stderr file or a durable audit history.

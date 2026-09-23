@@ -45,11 +45,12 @@ Open the repository root in VS Code. Use **Python: Select Interpreter** to selec
 
 Follow [Set up Discord](discord-setup.md) to create your own application,
 install the bot, register the OAuth redirect and add Discord user IDs to
-`access.toml`. Copy `.env.example` to `.env` for the credentials. Environment
+`access.toml` for the owner and admins. Copy `.env.example` to `.env` for the
+credentials. Environment
 variables override `.env`; both local files stay out of Git.
 
-Server and channel discovery, the absence of a configured guild ID and whitelist
-management belong to [Set up Discord](discord-setup.md). Runtime access checks,
+Server, channel and member discovery, the absence of a configured guild ID and
+access management belong to [Set up Discord](discord-setup.md). Runtime access checks,
 revocation and the in-memory Logs endpoint belong to the
 [Engine API](engine-api.md#authentication).
 
