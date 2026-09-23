@@ -58,22 +58,22 @@ original outcome and current state without applying another mutation.
 Once the Session accepts a command, cancellation of its HTTP caller does not
 cancel the committed work. A client retry keeps the same idempotency key.
 
-| Endpoint                             | Body / meaning                                                             |
-| ------------------------------------ | -------------------------------------------------------------------------- |
-| `POST /api/queue`                    | `track_ids` in desired order (1..100), optional `skip_duplicates`          |
-| `DELETE /api/queue/{entry_id}`       | Remove one occurrence                                                      |
-| `PUT /api/queue/{entry_id}/position` | `before_entry_id` (null means end), `expected_queue_revision`              |
-| `POST /api/queue/clear`              | `expected_queue_revision`, optional `contributor_id`                       |
-| `POST /api/queue/undo/{undo_id}`     | Restore within the queue's existing Undo deadline                          |
-| `POST /api/playback/control`         | `action`: play, pause, skip, stop or leave; optional `expected_attempt_id` |
-| `PUT /api/playback/position`         | `seconds`, required `expected_attempt_id`                                  |
-| `PUT /api/playback/volume`           | `volume`, 0..1                                                             |
-| `PUT /api/playback/crossfade`        | `seconds`, 0 or 3..7                                                       |
-| `GET /api/channels`                  | Available channels with server names and permissions                       |
-| `PUT /api/connection`                | `channel_id`                                                               |
-| `POST /api/radio`                    | `seed` MediaReference, `expected_generation` (null for manual mode)        |
-| `POST /api/radio/{generation}/stop`  | Stop automatic queue filling                                               |
-| `POST /api/radio/{generation}/retry` | Retry an exhausted/failed radio fetch                                      |
+| Endpoint | Body / meaning |
+| --- | --- |
+| `POST /api/queue` | `track_ids` in desired order (1..100), optional `skip_duplicates` |
+| `DELETE /api/queue/{entry_id}` | Remove one occurrence |
+| `PUT /api/queue/{entry_id}/position` | `before_entry_id` (null means end), `expected_queue_revision` |
+| `POST /api/queue/clear` | `expected_queue_revision`, optional `contributor_id` |
+| `POST /api/queue/undo/{undo_id}` | Restore within the queue's existing Undo deadline |
+| `POST /api/playback/control` | `action`: play, pause, skip, stop or leave; optional `expected_attempt_id` |
+| `PUT /api/playback/position` | `seconds`, required `expected_attempt_id` |
+| `PUT /api/playback/volume` | `volume`, 0..1 |
+| `PUT /api/playback/crossfade` | `seconds`, 0 or 3..7 |
+| `GET /api/channels` | Available channels with server names and permissions |
+| `PUT /api/connection` | `channel_id` |
+| `POST /api/radio` | `seed` MediaReference, `expected_generation` (null for manual mode) |
+| `POST /api/radio/{generation}/stop` | Stop automatic queue filling |
+| `POST /api/radio/{generation}/retry` | Retry an exhausted/failed radio fetch |
 
 Pause, skip and stop require the currently displayed attempt ID. Seek changes
 that ID. The Session checks it inside its ordered transaction, so a delayed

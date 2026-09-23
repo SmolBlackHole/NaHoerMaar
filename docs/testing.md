@@ -115,16 +115,16 @@ history count. Confirm that the running process contains the tested code; if it
 does not, agree on a restart before testing. Keep existing user queue entries in
 place and add only identifiable test entries.
 
-| Check                             | What the listener and dashboard should confirm                                                                           | Status                                                                        |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
-| Natural transition, crossfade off | The next queued track starts exactly once, with no cut or duplicate history entry                                        | Pending                                                                       |
-| Natural crossfade                 | The tracks audibly overlap for the selected duration; title and clock switch when the incoming fade starts               | Heard; UI timing needs a separate observation                                 |
-| Pause, resume and seek            | Sound and position follow the controls without a second play count                                                       | Pause/resume heard; seek state checked                                        |
-| Skip during overlap               | Exactly one successor starts; a late completion callback cannot skip another track                                       | Pending                                                                       |
-| Radio                             | It refills towards three upcoming tracks, respects manually added entries, and stops refilling after End radio           | Pending                                                                       |
-| Voice reconnect                   | An unexpected disconnect retains track and position; rejoin and `/pspsps` resume the intent, including an explicit pause | Pending                                                                       |
-| Restart                           | While playing and while paused, the bot rejoins the saved channel with track, position, volume and pause state intact    | Abrupt stop/restart checked; clean shutdown pending                           |
-| Two browsers                      | Queue/state agree across tabs; page navigation and sidebar toggles do not reload playback or duplicate SSE streams       | Same state and navigation checked; concurrent mutations and SSE count pending |
+| Check | Confirm | Status |
+| --- | --- | --- |
+| Transition, crossfade off | One start; no cut or duplicate history | Pending |
+| Natural crossfade | Audible overlap; title and clock switch at fade start | Heard; UI timing open |
+| Pause, resume and seek | Controls match sound and position; no second play count | Heard and state checked |
+| Skip during overlap | One successor; late callback cannot skip again | Pending |
+| Radio | Three upcoming; manual entries first; End radio stops refill | Pending |
+| Voice reconnect | Track and position survive; `/pspsps` preserves pause intent | Pending |
+| Restart | Rejoin with saved playback state | Abrupt restart checked; clean shutdown open |
+| Two tabs | Shared state; local navigation; one SSE stream each | State checked; concurrency open |
 
 Partial run on 2026-09-22: the listener heard the seven-second transition from
 "Get Lucky" to "We Are Young" and confirmed that playback resumed at the saved

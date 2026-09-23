@@ -59,15 +59,15 @@ still has open cases; automated checks alone do not settle what listeners hear.
 
 ## Find your way
 
-| I want to...                            | Start here                                |
-| --------------------------------------- | ----------------------------------------- |
-| Listen with friends                     | [Listening together](docs/listening.md)   |
-| Set up or change the services           | [Development](docs/development.md)        |
-| Follow a request through the code       | [Architecture](docs/architecture.md)      |
-| Use the HTTP and event contract         | [Engine API](docs/engine-api.md)          |
+| I want to... | Start here |
+| --- | --- |
+| Listen with friends | [Listening together](docs/listening.md) |
+| Set up or change the services | [Development](docs/development.md) |
+| Follow a request through the code | [Architecture](docs/architecture.md) |
+| Use the HTTP and event contract | [Engine API](docs/engine-api.md) |
 | Check behavior and open listening tests | [Testing and acceptance](docs/testing.md) |
-| Browse every guide                      | [Documentation index](docs/README.md)     |
-| See planned work                        | [Roadmap](ROADMAP.md)                     |
+| Browse every guide | [Documentation index](docs/README.md) |
+| See planned work | [Roadmap](ROADMAP.md) |
 
 [Contributing](CONTRIBUTING.md) and the [security policy](SECURITY.md) cover
 changes and vulnerability reports.

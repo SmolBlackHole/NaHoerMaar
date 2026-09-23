@@ -20,20 +20,23 @@ other pages keep the context they need and link to that owner.
 
 ## Choose a starting point
 
-| I want to...                                      | Start here                                | Continue when needed                                                              |
-| ------------------------------------------------- | ----------------------------------------- | --------------------------------------------------------------------------------- |
-| Listen with friends and request music             | [Listening together](listening.md)        | [Radio](engine/radio.md) for its exact refill behavior                            |
-| Set up Discord sign-in, the bot and the whitelist | [Set up Discord](discord-setup.md)        | [Development](development.md) to run the services                                 |
-| Run NaHörMaar locally                             | [Development](development.md)             | [Hosting](hosting.md) for an always-on machine                                    |
-| Understand the whole system                       | [Architecture](architecture.md)           | [Engine documentation](engine/) or [Frontend architecture](frontend.md)           |
-| Work on search, links, playlists or metadata      | [Catalog and metadata](engine/catalog.md) | [Engine API](engine-api.md#discovery-and-stable-selections) for the wire contract |
-| Work on queue ordering or history                 | [Queue and history](engine/queue.md)      | [Database](engine/database.md) for persistence                                    |
-| Work on Radio                                     | [Radio](engine/radio.md)                  | [Catalog and metadata](engine/catalog.md) for provider recommendations            |
-| Work on Discord audio or restart behavior         | [Playback](engine/playback.md)            | [Testing](testing.md#playback-diagnostics) for diagnostics                        |
-| Change tables or migrations                       | [Database](engine/database.md)            | [Backup and restore](recovery.md) for operations                                  |
-| Change the dashboard                              | [Frontend architecture](frontend.md)      | [Engine API](engine-api.md) for its backend contract                              |
-| Call or change an endpoint                        | [Engine API](engine-api.md)               | [Architecture](architecture.md#command-and-event-flow) for the path behind it     |
-| Check behavior or investigate playback            | [Testing and acceptance](testing.md)      | [Roadmap](../ROADMAP.md) for unfinished work                                      |
+| I want to... | Start here | Continue with |
+| --- | --- | --- |
+| Listen and request music | [Listening](listening.md) | [Radio](engine/radio.md) |
+| Set up Discord and the whitelist | [Discord setup](discord-setup.md) | [Development](development.md) |
+| Run NaHörMaar locally | [Development](development.md) | [Hosting](hosting.md) |
+| Understand the system | [Architecture](architecture.md) | [Engine](engine/) or [frontend](frontend.md) |
+| Change search or metadata | [Catalog](engine/catalog.md) | [Engine API][api-discovery] |
+| Change queue order or history | [Queue](engine/queue.md) | [Database](engine/database.md) |
+| Change Radio | [Radio](engine/radio.md) | [Catalog](engine/catalog.md) |
+| Change Discord audio or restart | [Playback](engine/playback.md) | [Testing][playback-diagnostics] |
+| Change tables or migrations | [Database](engine/database.md) | [Recovery](recovery.md) |
+| Change the dashboard | [Frontend](frontend.md) | [Engine API](engine-api.md) |
+| Change an endpoint | [Engine API](engine-api.md) | [Architecture](architecture.md#command-and-event-flow) |
+| Verify behavior | [Testing](testing.md) | [Roadmap](../ROADMAP.md) |
+
+[api-discovery]: engine-api.md#discovery-and-stable-selections
+[playback-diagnostics]: testing.md#playback-diagnostics
 
 ## Read it as a book
 
@@ -54,32 +57,32 @@ whole sequence to change one provider or develop one migration.
 
 ### Product and operation
 
-| Page                                 | Owns                                                         |
-| ------------------------------------ | ------------------------------------------------------------ |
-| [Listening together](listening.md)   | Listener-visible controls and behavior                       |
-| [Set up Discord](discord-setup.md)   | Developer Portal, installation, OAuth redirect and whitelist |
-| [Development](development.md)        | Local setup, commands and service startup                    |
-| [Hosting](hosting.md)                | Host constraints and capacity questions                      |
-| [Backup and restore](recovery.md)    | SQLite copies, verification, retention and restore procedure |
-| [Testing and acceptance](testing.md) | Automated checks, diagnostics and live listening evidence    |
+| Page | Owns |
+| --- | --- |
+| [Listening together](listening.md) | Listener-visible controls and behavior |
+| [Set up Discord](discord-setup.md) | Developer Portal, installation, OAuth redirect and whitelist |
+| [Development](development.md) | Local setup, commands and service startup |
+| [Hosting](hosting.md) | Host constraints and capacity questions |
+| [Backup and restore](recovery.md) | SQLite copies, verification, retention and restore procedure |
+| [Testing and acceptance](testing.md) | Automated checks, diagnostics and live listening evidence |
 
 ### System and contracts
 
-| Page                                 | Owns                                                  |
-| ------------------------------------ | ----------------------------------------------------- |
-| [Architecture](architecture.md)      | End-to-end flow and responsibility boundaries         |
-| [Engine documentation](engine/)      | Engine navigation and domain ownership                |
+| Page | Owns |
+| --- | --- |
+| [Architecture](architecture.md) | End-to-end flow and responsibility boundaries |
+| [Engine documentation](engine/) | Engine navigation and domain ownership |
 | [Frontend architecture](frontend.md) | Generated types, repositories, stores and composables |
-| [Engine API](engine-api.md)          | HTTP, SSE, request and response shapes                |
+| [Engine API](engine-api.md) | HTTP, SSE, request and response shapes |
 
 ### Project documentation
 
-| Page                                                                     | Owns                                                |
-| ------------------------------------------------------------------------ | --------------------------------------------------- |
-| [Writing and maintaining documentation](writing-and-maintaining-docs.md) | Documentation ownership, structure and review rules |
-| [Roadmap](../ROADMAP.md)                                                 | Work that is not implemented                        |
-| [Contributing](../CONTRIBUTING.md)                                       | Change workflow and contribution expectations       |
-| [Security](../SECURITY.md)                                               | Private vulnerability reports                       |
+| Page | Owns |
+| --- | --- |
+| [Writing guide](writing-and-maintaining-docs.md) | Documentation ownership, structure and review rules |
+| [Roadmap](../ROADMAP.md) | Work that is not implemented |
+| [Contributing](../CONTRIBUTING.md) | Change workflow and contribution expectations |
+| [Security](../SECURITY.md) | Private vulnerability reports |
 
 Read the writing guide before adding or moving a page. It keeps the tree from
 drifting back into one large file.

@@ -79,16 +79,16 @@ new queue command. Neither SSE nor the event bus is a durable audit log.
 
 ## Responsibility map
 
-| Area                                                           | Owner                                     | Detailed documentation                    |
-| -------------------------------------------------------------- | ----------------------------------------- | ----------------------------------------- |
-| Search, links, playlists, providers and metadata               | Catalog                                   | [Catalog and metadata](engine/catalog.md) |
-| Ordered requests, attribution, revisions and confirmed history | Queue and Session                         | [Queue and history](engine/queue.md)      |
-| Automatic queue supply                                         | Radio strategy and observer               | [Radio](engine/radio.md)                  |
-| FSM, effects, buffering, crossfade, voice and restart          | Playback                                  | [Playback](engine/playback.md)            |
-| SQLAlchemy, transactions, migrations and durable identities    | Persistence and schema                    | [Database](engine/database.md)            |
-| HTTP and live event contract                                   | API                                       | [Engine API](engine-api.md)               |
-| Typed client calls, shared state and local UI workflows        | Nuxt repositories, stores and composables | [Frontend architecture](frontend.md)      |
-| Discord installation and human access policy                   | Discord application and `access.toml`     | [Set up Discord](discord-setup.md)        |
+| Concern | Owner | Details |
+| --- | --- | --- |
+| Search, links and metadata | Catalog | [Catalog](engine/catalog.md) |
+| Queue order, attribution and history | Queue and Session | [Queue](engine/queue.md) |
+| Automatic queue supply | Radio strategy and observer | [Radio](engine/radio.md) |
+| FSM, audio, voice and restart | Playback | [Playback](engine/playback.md) |
+| SQLAlchemy, transactions and migrations | Persistence and schema | [Database](engine/database.md) |
+| HTTP and live events | API | [Engine API](engine-api.md) |
+| Typed client calls and UI state | Nuxt repositories, stores and composables | [Frontend](frontend.md) |
+| Installation and access policy | Discord application and `access.toml` | [Discord setup](discord-setup.md) |
 
 The code-level engine map and a suggested reading order live in the
 [engine index](engine/). That index is the entry point for implementation detail;

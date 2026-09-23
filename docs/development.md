@@ -93,15 +93,15 @@ documented separately in [Back up and restore NaHörMaar](recovery.md).
 
 Use the guide for the boundary you are changing:
 
-| Change                                                | Read and update                           |
-| ----------------------------------------------------- | ----------------------------------------- |
-| Search, links, playlists, providers or metadata       | [Catalog and metadata](engine/catalog.md) |
-| Queue behavior or history                             | [Queue and history](engine/queue.md)      |
-| Radio refill and lifecycle                            | [Radio](engine/radio.md)                  |
-| FSM, audio, crossfade, reconnect or restart           | [Playback](engine/playback.md)            |
-| SQLAlchemy models, repositories or migrations         | [Database](engine/database.md)            |
-| Repositories, stores, generated types or UI workflows | [Frontend architecture](frontend.md)      |
-| HTTP, SSE or public models                            | [Engine API](engine-api.md)               |
+| Change | Read and update |
+| --- | --- |
+| Search, links, playlists, providers or metadata | [Catalog and metadata](engine/catalog.md) |
+| Queue behavior or history | [Queue and history](engine/queue.md) |
+| Radio refill and lifecycle | [Radio](engine/radio.md) |
+| FSM, audio, crossfade, reconnect or restart | [Playback](engine/playback.md) |
+| SQLAlchemy models, repositories or migrations | [Database](engine/database.md) |
+| Repositories, stores, generated types or UI workflows | [Frontend architecture](frontend.md) |
+| HTTP, SSE or public models | [Engine API](engine-api.md) |
 
 After a public API change, regenerate the frontend contract as described in
 [Frontend architecture](frontend.md#change-the-api-contract). Do not edit

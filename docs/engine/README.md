@@ -18,13 +18,13 @@ part instead of repeating their rules in one architecture page.
 
 ## Choose a topic
 
-| Question                                                                  | Owner                              |
-| ------------------------------------------------------------------------- | ---------------------------------- |
-| How do links, searches, providers and metadata become tracks?             | [Catalog and metadata](catalog.md) |
-| What is a queue entry, and when does history begin?                       | [Queue and history](queue.md)      |
-| How does Radio refill without taking over manual requests?                | [Radio](radio.md)                  |
-| How do the FSM, effects, Discord audio and restart recovery fit together? | [Playback](playback.md)            |
-| What is stored, when does it commit, and how do migrations work?          | [Database](database.md)            |
+| Question | Owner |
+| --- | --- |
+| Links, searches and providers become tracks? | [Catalog](catalog.md) |
+| Queue entries and confirmed history? | [Queue](queue.md) |
+| Radio refill and manual priority? | [Radio](radio.md) |
+| FSM, audio, Discord and restart recovery? | [Playback](playback.md) |
+| Storage, commits and migrations? | [Database](database.md) |
 
 The [architecture overview](../architecture.md) shows how these owners connect.
 The [Engine API](../engine-api.md) owns request, response and event shapes. These
@@ -32,16 +32,29 @@ pages describe the implementation boundaries behind that contract.
 
 ## Code map
 
-| Paths under `backend/src/nahormaar_backend/`                                               | Documentation owner                                                                                  |
-| ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `engine/session.py`, `engine/events.py`, `engine/runtime.py`                               | [Architecture](../architecture.md#command-and-event-flow)                                            |
-| `engine/catalog.py`, `engine/providers.py`, `engine/youtube.py`, `engine/metadata.py`      | [Catalog and metadata](catalog.md)                                                                   |
-| `engine/domain/queue.py`, queue handling in `engine/session.py`                            | [Queue and history](queue.md)                                                                        |
-| `engine/domain/radio.py`, Radio work in `engine/session.py`                                | [Radio](radio.md)                                                                                    |
-| `engine/domain/playback.py`, `engine/playback.py`, `engine/discord.py`, audio integrations | [Playback](playback.md)                                                                              |
-| `engine/persistence.py`, `engine/schema.py`, `engine/migrations/`, `persistence/`          | [Database](database.md)                                                                              |
-| `engine/api.py`, `engine/api_models.py`, `engine/http_auth.py`                             | [Engine API](../engine-api.md)                                                                       |
-| `engine/bootstrap.py`, `engine/gateway.py`, `engine/commands.py`                           | [Architecture](../architecture.md#composition-and-lifetime) and [Discord setup](../discord-setup.md) |
+| Path under `backend/src/nahormaar_backend/` | Guide |
+| --- | --- |
+| `engine/session.py` | [Architecture](../architecture.md#command-and-event-flow) |
+| `engine/events.py` | [Architecture](../architecture.md#command-and-event-flow) |
+| `engine/runtime.py` | [Architecture](../architecture.md#command-and-event-flow) |
+| `engine/catalog.py` | [Catalog](catalog.md) |
+| `engine/providers.py` | [Catalog](catalog.md) |
+| `engine/youtube.py` | [Catalog](catalog.md) |
+| `engine/metadata.py` | [Catalog](catalog.md) |
+| `engine/domain/queue.py` | [Queue](queue.md) |
+| Queue work in `engine/session.py` | [Queue](queue.md) |
+| `engine/domain/radio.py` | [Radio](radio.md) |
+| Radio work in `engine/session.py` | [Radio](radio.md) |
+| `engine/domain/playback.py` | [Playback](playback.md) |
+| `engine/playback.py` | [Playback](playback.md) |
+| `engine/discord.py` and audio integrations | [Playback](playback.md) |
+| `engine/persistence.py` | [Database](database.md) |
+| `engine/schema.py` and `engine/migrations/` | [Database](database.md) |
+| `persistence/` | [Database](database.md) |
+| `engine/api.py` and `engine/api_models.py` | [Engine API](../engine-api.md) |
+| `engine/http_auth.py` | [Engine API](../engine-api.md) |
+| `engine/bootstrap.py` | [Composition](../architecture.md#composition-and-lifetime) |
+| `engine/gateway.py` and `engine/commands.py` | [Discord setup](../discord-setup.md) |
 
 ## Reading order
 

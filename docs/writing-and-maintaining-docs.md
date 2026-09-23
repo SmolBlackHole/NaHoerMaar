@@ -17,24 +17,24 @@ of a rule that must be kept vaguely in sync.
 
 ## Choose the owner
 
-| Content                                            | Owner                     |
-| -------------------------------------------------- | ------------------------- |
-| Project purpose, name, first setup link and status | Root `README.md`          |
-| Listener-visible behavior                          | `docs/listening.md`       |
-| System flow and responsibility map                 | `docs/architecture.md`    |
-| Frontend boundaries and generated types            | `docs/frontend.md`        |
-| Catalog, metadata and discovery caches             | `docs/engine/catalog.md`  |
-| Queue occurrences, revisions and history           | `docs/engine/queue.md`    |
-| Radio strategy and refill behavior                 | `docs/engine/radio.md`    |
-| Playback FSM, audio output and restart behavior    | `docs/engine/playback.md` |
-| SQLAlchemy, transactions, schema and migrations    | `docs/engine/database.md` |
-| HTTP, SSE, request and response shapes             | `docs/engine-api.md`      |
-| Local setup, commands and service startup          | `docs/development.md`     |
-| Discord Developer Portal and whitelist setup       | `docs/discord-setup.md`   |
-| Hosting constraints                                | `docs/hosting.md`         |
-| Backup and restore operations                      | `docs/recovery.md`        |
-| Automated checks, diagnostics and live evidence    | `docs/testing.md`         |
-| Work that is not implemented                       | `ROADMAP.md`              |
+| Content | Owner |
+| --- | --- |
+| Project purpose, name, first setup link and status | Root `README.md` |
+| Listener-visible behavior | `docs/listening.md` |
+| System flow and responsibility map | `docs/architecture.md` |
+| Frontend boundaries and generated types | `docs/frontend.md` |
+| Catalog, metadata and discovery caches | `docs/engine/catalog.md` |
+| Queue occurrences, revisions and history | `docs/engine/queue.md` |
+| Radio strategy and refill behavior | `docs/engine/radio.md` |
+| Playback FSM, audio output and restart behavior | `docs/engine/playback.md` |
+| SQLAlchemy, transactions, schema and migrations | `docs/engine/database.md` |
+| HTTP, SSE, request and response shapes | `docs/engine-api.md` |
+| Local setup, commands and service startup | `docs/development.md` |
+| Discord Developer Portal and whitelist setup | `docs/discord-setup.md` |
+| Hosting constraints | `docs/hosting.md` |
+| Backup and restore operations | `docs/recovery.md` |
+| Automated checks, diagnostics and live evidence | `docs/testing.md` |
+| Work that is not implemented | `ROADMAP.md` |
 
 If a paragraph fits two rows, split the facts by authority and link between the
 owners. The API reference may name what a Radio endpoint does; the Radio page
@@ -72,6 +72,10 @@ Use contextual links where another owner answers the next question. A final pile
 of unrelated links does not replace navigation in the paragraph that needs it.
 When adding or moving a page, update the nearest branch index and the root index
 when readers need a new entry point.
+
+Keep table source compact: use one space around cell text and three dashes in
+separator cells. Do not pad columns to the same source width. Shorten headings
+and split overloaded rows before accepting editor word-wrap as the layout.
 
 Describe implemented behavior by default. Put unfinished work in the roadmap and
 say plainly when a future boundary must be mentioned. Do not let a desired design
