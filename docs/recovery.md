@@ -1,15 +1,25 @@
 # Back up and restore NaHörMaar
 
-Parent: [Documentation index](README.md) | [Hosting considerations](hosting.md)
+Parent: [Documentation index](README.md)
 
 NaHörMaar keeps the player, queue, Radio, history, accounts and browser sessions
-in one SQLite database. `DATABASE_PATH` selects that file and defaults to
-`data/engine.sqlite3`.
+in one SQLite database. [Database](engine/database.md) owns its schema,
+repositories and transaction boundaries. `DATABASE_PATH` selects that file and
+defaults to `data/engine.sqlite3`.
 
 The recovery command creates a consistent backup while the backend is running.
 Restoring is different: stop the backend before replacing its database. The
 dashboard can stay built or served, but it cannot control the player while the
 backend is offline.
+
+## Table of contents
+
+- [Back up and restore NaHörMaar](#back-up-and-restore-nahörmaar)
+  - [Table of contents](#table-of-contents)
+  - [Create and check a backup](#create-and-check-a-backup)
+  - [Schedule a daily backup](#schedule-a-daily-backup)
+  - [Restore into a fresh database](#restore-into-a-fresh-database)
+  - [Replace the active database](#replace-the-active-database)
 
 ## Create and check a backup
 
@@ -67,7 +77,7 @@ the database and write to the backup directory.
 A cron entry for a checkout at `/srv/nahormaar` looks like this:
 
 ```cron
-0 3 * * * cd /srv/nahormaar && .venv/bin/python -m nahormaar_backend.recovery backup >> data/backups/backup.log 2>&1
+0 3 * * * cd /srv/nahormaar && mkdir -p data/backups && .venv/bin/python -m nahormaar_backend.recovery backup >> data/backups/backup.log 2>&1
 ```
 
 For systemd, use a one-shot service and timer:

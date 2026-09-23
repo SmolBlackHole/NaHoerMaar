@@ -1,10 +1,19 @@
 # Hosting considerations
 
-Parent: [Documentation index](README.md) | [Development](development.md)
+Parent: [Documentation index](README.md)
 
 NaHörMaar can run on an always-on home server or a VPS. We have not yet
 benchmarked a production deployment on either, so these are requirements and
 things to measure, not a minimum server specification.
+
+## Table of contents
+
+- [Hosting considerations](#hosting-considerations)
+  - [Table of contents](#table-of-contents)
+  - [What the host runs](#what-the-host-runs)
+  - [Home server or Raspberry Pi](#home-server-or-raspberry-pi)
+  - [VPS](#vps)
+  - [Check capacity before choosing](#check-capacity-before-choosing)
 
 ## What the host runs
 
@@ -15,8 +24,8 @@ The host also needs Node.js for the music provider, FFmpeg for audio and the
 system Opus library on Linux. Start with the versions in
 [Development](development.md#set-up).
 
-Keep the database on persistent storage and follow the tested
-[backup and restore procedure](recovery.md). Run the dashboard behind HTTPS with
+Keep the [database](engine/database.md) on persistent storage and follow the
+tested [backup and restore procedure](recovery.md). Run the dashboard behind HTTPS with
 a stable public origin if friends need access from outside your home.
 Set `PUBLIC_ORIGIN` to that origin and register its exact OAuth callback in the
 [Discord Developer Portal](discord-setup.md#set-the-dashboard-sign-in-redirect).

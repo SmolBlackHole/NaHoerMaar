@@ -5,7 +5,8 @@ Parent: [Documentation index](README.md)
 Local checks, generated audio recordings and listening in Discord establish
 different things. Use this page to choose the right check and to see which live
 behaviors still need confirmation. Setup and configuration live in the
-[development guide](development.md).
+[development guide](development.md); the playback model behind the diagnostics
+lives in [Playback](engine/playback.md).
 
 ## Checks that do not touch the live bot
 
@@ -98,7 +99,7 @@ playback script has been removed.
 
 ## Live acceptance
 
-The source commit's CI baseline is [run 35662755161](https://github.com/SmolBlackHole/NaHoerMaar/actions/runs/35662755161)
+The historical CI baseline is [run 35662755161](https://github.com/SmolBlackHole/NaHoerMaar/actions/runs/35662755161)
 for commit `a36e598`: Windows and Linux jobs each passed 527 backend tests
 (6 skipped), 121 frontend tests, API type generation, type checks and build.
 The six skipped cases are the optional real FFmpeg/Opus recordings above. CI

@@ -2,60 +2,88 @@
 
 Parent: [Project README](../README.md)
 
-The [project README](../README.md) introduces NaHörMaar and explains why it
-exists. These pages answer the next questions separately: how to listen, how a
-request travels through the system, how to run it, and what its API promises.
+The [project README](../README.md) explains what NaHörMaar is and why it exists.
+This index routes from that introduction to listener guides, system design,
+engine domains, operation and the public API. Each fact has one owning page;
+other pages keep the context they need and link to that owner.
+
+## Table of contents
+
+- [NaHörMaar documentation](#nahörmaar-documentation)
+  - [Table of contents](#table-of-contents)
+  - [Choose a starting point](#choose-a-starting-point)
+  - [Read it as a book](#read-it-as-a-book)
+  - [Documentation ownership](#documentation-ownership)
+    - [Product and operation](#product-and-operation)
+    - [System and contracts](#system-and-contracts)
+    - [Project documentation](#project-documentation)
 
 ## Choose a starting point
 
-| I want to... | Start here | Then, if needed |
-| ------------ | ---------- | --------------- |
-| Join friends and request music | [Listening together](listening.md) | [Discord setup](discord-setup.md) for the owner who sets up access |
-| Set up the Discord application and whitelist | [Discord setup](discord-setup.md) | [Development](development.md) to start the services |
-| Run the bot and dashboard | [Development](development.md) | [Hosting considerations](hosting.md) for an always-on machine, [Backup and restore](recovery.md) for its data |
-| Understand who owns queue, Radio and playback | [Architecture](architecture.md) | [Engine API](engine-api.md) for the public contract |
-| Change the frontend | [Frontend ownership](architecture.md#frontend-ownership) | [API type generation](development.md#update-the-frontend-api-contract) |
-| Call or change an endpoint | [Engine API](engine-api.md) | [Architecture](architecture.md#command-and-event-flow) for the path behind it |
-| Review what is unfinished | [Roadmap](../ROADMAP.md) | [Live acceptance](testing.md#live-acceptance) for unproven behavior |
+| I want to...                                      | Start here                                | Continue when needed                                                              |
+| ------------------------------------------------- | ----------------------------------------- | --------------------------------------------------------------------------------- |
+| Listen with friends and request music             | [Listening together](listening.md)        | [Radio](engine/radio.md) for its exact refill behavior                            |
+| Set up Discord sign-in, the bot and the whitelist | [Set up Discord](discord-setup.md)        | [Development](development.md) to run the services                                 |
+| Run NaHörMaar locally                             | [Development](development.md)             | [Hosting](hosting.md) for an always-on machine                                    |
+| Understand the whole system                       | [Architecture](architecture.md)           | [Engine documentation](engine/) or [Frontend architecture](frontend.md)           |
+| Work on search, links, playlists or metadata      | [Catalog and metadata](engine/catalog.md) | [Engine API](engine-api.md#discovery-and-stable-selections) for the wire contract |
+| Work on queue ordering or history                 | [Queue and history](engine/queue.md)      | [Database](engine/database.md) for persistence                                    |
+| Work on Radio                                     | [Radio](engine/radio.md)                  | [Catalog and metadata](engine/catalog.md) for provider recommendations            |
+| Work on Discord audio or restart behavior         | [Playback](engine/playback.md)            | [Testing](testing.md#playback-diagnostics) for diagnostics                        |
+| Change tables or migrations                       | [Database](engine/database.md)            | [Backup and restore](recovery.md) for operations                                  |
+| Change the dashboard                              | [Frontend architecture](frontend.md)      | [Engine API](engine-api.md) for its backend contract                              |
+| Call or change an endpoint                        | [Engine API](engine-api.md)               | [Architecture](architecture.md#command-and-event-flow) for the path behind it     |
+| Check behavior or investigate playback            | [Testing and acceptance](testing.md)      | [Roadmap](../ROADMAP.md) for unfinished work                                      |
 
-For a guided read, go from the [project README](../README.md) to
-[listening together](listening.md), then [follow a request through the architecture](architecture.md#command-and-event-flow).
-After that, use the development, API or testing page that matches your work.
+## Read it as a book
 
-## Where information belongs
+For a guided introduction:
 
-The pages have different jobs. A listener should not have to read an endpoint
-reference to find out what Stop does; an API client should not have to infer a
-response shape from a UI description.
+1. [Project README](../README.md): purpose, origin and current boundary.
+2. [Listening together](listening.md): what the group can do.
+3. [Architecture](architecture.md): how one request crosses the system.
+4. [Engine documentation](engine/): catalog, queue, Radio, playback and database.
+5. [Frontend architecture](frontend.md): repositories, stores and local workflows.
+6. Choose [Development](development.md), [Engine API](engine-api.md) or
+   [Testing](testing.md) for the work in front of you.
 
-### Using NaHörMaar
+The reference pages are also direct entry points. You do not need to read the
+whole sequence to change one provider or develop one migration.
 
-[Listening together](listening.md) owns the visible behavior: sign-in, finding
-music, queue controls, playback, browser audio and Radio. The
-[project README](../README.md) owns the short introduction, origin and current
-product boundary.
+## Documentation ownership
 
-### Building and running it
+### Product and operation
 
-[Architecture](architecture.md) follows a request through the frontend, engine,
-providers, storage and Discord output. It explains state and module ownership.
-[Development](development.md) owns local setup, starting services, restarts and
-updating generated API types. [Discord setup](discord-setup.md) owns the portal,
-installation, OAuth redirect and whitelist. [Hosting considerations](hosting.md)
-covers what a home server or VPS would need; it is not a tested deployment recipe.
-[Backup and restore](recovery.md) owns database copies, retention, scheduling and
-the offline restore procedure. [Testing](testing.md) owns the checks, diagnostic
-procedure and live listening evidence.
+| Page                                 | Owns                                                         |
+| ------------------------------------ | ------------------------------------------------------------ |
+| [Listening together](listening.md)   | Listener-visible controls and behavior                       |
+| [Set up Discord](discord-setup.md)   | Developer Portal, installation, OAuth redirect and whitelist |
+| [Development](development.md)        | Local setup, commands and service startup                    |
+| [Hosting](hosting.md)                | Host constraints and capacity questions                      |
+| [Backup and restore](recovery.md)    | SQLite copies, verification, retention and restore procedure |
+| [Testing and acceptance](testing.md) | Automated checks, diagnostics and live listening evidence    |
 
-### Contracts and unfinished work
+### System and contracts
 
-[Engine API](engine-api.md) is the HTTP and SSE reference. Its request, response
-and event shapes are the public contract, independent of how the dashboard
-chooses to display them. [Roadmap](../ROADMAP.md) holds features and fixes that
-are not complete. [Contributing](../CONTRIBUTING.md) explains how to change these
-pages without maintaining a second version of the same rule, and the
-[security policy](../SECURITY.md) covers private vulnerability reports.
+| Page                                 | Owns                                                  |
+| ------------------------------------ | ----------------------------------------------------- |
+| [Architecture](architecture.md)      | End-to-end flow and responsibility boundaries         |
+| [Engine documentation](engine/)      | Engine navigation and domain ownership                |
+| [Frontend architecture](frontend.md) | Generated types, repositories, stores and composables |
+| [Engine API](engine-api.md)          | HTTP, SSE, request and response shapes                |
 
-Behavior descriptions refer to the current implementation unless marked as
-future work. In particular, separate queues per Discord server are planned,
-not available today.
+### Project documentation
+
+| Page                                                                     | Owns                                                |
+| ------------------------------------------------------------------------ | --------------------------------------------------- |
+| [Writing and maintaining documentation](writing-and-maintaining-docs.md) | Documentation ownership, structure and review rules |
+| [Roadmap](../ROADMAP.md)                                                 | Work that is not implemented                        |
+| [Contributing](../CONTRIBUTING.md)                                       | Change workflow and contribution expectations       |
+| [Security](../SECURITY.md)                                               | Private vulnerability reports                       |
+
+Read the writing guide before adding or moving a page. It keeps the tree from
+drifting back into one large file.
+
+Behavior descriptions refer to the implemented version unless they say
+otherwise. The [project status](../README.md#where-it-stands) owns the current
+product boundary; unfinished work belongs in the [roadmap](../ROADMAP.md).

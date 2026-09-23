@@ -4,15 +4,16 @@ Parent: [Documentation index](README.md)
 
 The backend and dashboard use this API for discovery, queue operations, playback
 controls and live updates. This page owns the HTTP/SSE contract. Runtime
-ownership is documented in [architecture](architecture.md), and startup,
-configuration, schema changes and recovery in the
-[development guide](development.md). A real Discord listening check remains
+ownership is documented in [architecture](architecture.md). The engine pages own
+[catalog](engine/catalog.md), [queue](engine/queue.md), [Radio](engine/radio.md),
+[playback](engine/playback.md) and [database](engine/database.md) behavior behind
+that contract. A real Discord listening check remains
 [open](testing.md#live-acceptance).
 
-## Contents
+## Table of contents
 
 - [Engine API](#engine-api)
-  - [Contents](#contents)
+  - [Table of contents](#table-of-contents)
   - [Authentication](#authentication)
   - [State and mutations](#state-and-mutations)
   - [Discovery and stable selections](#discovery-and-stable-selections)
@@ -23,7 +24,9 @@ configuration, schema changes and recovery in the
 ## Authentication
 
 Discord OAuth with PKCE, a live whitelist, session cookies and CSRF protect the
-API. Profile and appearance preferences belong to the signed-in account.
+API. Login attempts are browser-bound and single-use. Account sessions survive
+backend restarts, and profile and appearance preferences belong to the signed-in
+account.
 Authentication routes are:
 
 - `GET /api/auth/discord` and `GET /api/auth/discord/callback`
@@ -52,6 +55,8 @@ information. `state.tracks` also supplies metadata for outcome entries that have
 already left the queue, including replayed removals. The same key with a
 different command or actor conflicts. Repeated accepted requests return the
 original outcome and current state without applying another mutation.
+Once the Session accepts a command, cancellation of its HTTP caller does not
+cancel the committed work. A client retry keeps the same idempotency key.
 
 | Endpoint                             | Body / meaning                                                             |
 | ------------------------------------ | -------------------------------------------------------------------------- |
@@ -59,7 +64,7 @@ original outcome and current state without applying another mutation.
 | `DELETE /api/queue/{entry_id}`       | Remove one occurrence                                                      |
 | `PUT /api/queue/{entry_id}/position` | `before_entry_id` (null means end), `expected_queue_revision`              |
 | `POST /api/queue/clear`              | `expected_queue_revision`, optional `contributor_id`                       |
-| `POST /api/queue/undo/{undo_id}`     | Restore within the existing 12-second deadline                             |
+| `POST /api/queue/undo/{undo_id}`     | Restore within the queue's existing Undo deadline                          |
 | `POST /api/playback/control`         | `action`: play, pause, skip, stop or leave; optional `expected_attempt_id` |
 | `PUT /api/playback/position`         | `seconds`, required `expected_attempt_id`                                  |
 | `PUT /api/playback/volume`           | `volume`, 0..1                                                             |
@@ -98,8 +103,9 @@ carry `version`, `offset`, `total`, `next_offset`, `source_has_more`, `entries`,
 `source_has_more` reports an upstream continuation beyond its bounded contents.
 Every playlist version includes `playlist: {title, reference}`, also after a
 refresh; search responses set it to null. Each result contains `track_id`,
-source `position`, `reference`, `metadata` and `unavailable`. Unavailable rows
-have no track ID. There is no background preview job to create or cancel.
+source `position`, nullable `reference`, `metadata` and `unavailable`.
+Unavailable rows have no track ID and may have no reference. There is no
+background preview job to create or cancel.
 
 Clients select the track IDs from the displayed snapshot and submit them to
 `POST /api/queue`. Repeated playlist occurrences may supply the same track ID
@@ -108,12 +114,12 @@ positions against a refreshed list, and accepted additions remain replayable
 even after the discovery snapshot expires. Background refresh exposes a new
 version without replacing the old visible ordering or changing a user's selection.
 
-Search and individual track observations stay fresh for five minutes, playlist
-observations for one minute. A stale cached version can be shown while one
-shared refresh runs. `refresh=true` requests a fresh observation without moving
-the visible selection; an unchanged source keeps its version. A failed refresh
-leaves the last known version available. Pagination is limited to the 100
-observed occurrences; it does not fetch beyond that limit.
+A stale cached version can be shown while one shared refresh runs.
+`refresh=true` requests a fresh observation without moving the visible
+selection; an unchanged source keeps its version. A failed refresh leaves the
+last known version available. Pagination stays within the observed snapshot; it
+does not fetch beyond that limit. Freshness, retention and
+process lifetime belong to [Catalog and metadata](engine/catalog.md#cache-and-refresh-behavior).
 
 ## Events
 
@@ -145,5 +151,5 @@ process stderr file or a durable audit history.
 The backend API, command and bootstrap tests exercise authorization, account
 preferences, SSE, Discord interaction fixtures, schema initialization and restart
 with isolated dependencies. The six optional audio recordings use local FFmpeg/Opus
-and synthetic tones. The current CI baseline and the still-open live Discord
-check are recorded in [testing and acceptance](testing.md#live-acceptance).
+and synthetic tones. Recorded CI evidence and the still-open live Discord check
+belong in [testing and acceptance](testing.md#live-acceptance).

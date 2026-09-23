@@ -1,11 +1,21 @@
 # Set up Discord
 
-Parent: [Development](development.md) | [Documentation index](README.md)
+Parent: [Documentation index](README.md)
 
 Your NaHörMaar instance needs its own Discord application for two jobs: its bot
 plays music in a voice channel, and Discord sign-in identifies the people using
 your dashboard. You also need to manage the server where you will install it.
 This does not involve inviting the original project's bot.
+
+## Table of contents
+
+- [Set up Discord](#set-up-discord)
+  - [Table of contents](#table-of-contents)
+  - [Create the application and collect its credentials](#create-the-application-and-collect-its-credentials)
+  - [Install the bot on a server](#install-the-bot-on-a-server)
+  - [Set the dashboard sign-in redirect](#set-the-dashboard-sign-in-redirect)
+  - [Allow people to use it](#allow-people-to-use-it)
+  - [Try the connection](#try-the-connection)
 
 ## Create the application and collect its credentials
 
@@ -90,7 +100,7 @@ admin_ids = ["123456789012345678"]
 
 `discord_ids` controls dashboard access, playback, queue edits and `/pspsps`.
 Anyone on that list can change the shared queue, including entries added by
-other people. `admin_ids` must be a subset of `discord_ids`; it currently grants
+other people. `admin_ids` must be a subset of `discord_ids`; it grants
 access to the live Logs page, not a user-management screen. The file is read
 again for access checks, so whitelist edits do not need a backend restart.
 Keep `access.toml` out of Git. If it is missing or invalid, access is blocked.
