@@ -35,6 +35,17 @@ To run the backend suite alone:
 .venv\Scripts\python.exe -m pytest backend/tests
 ```
 
+The database recovery checks create, verify and restore only temporary SQLite
+files. Run them separately with:
+
+```powershell
+.venv\Scripts\python.exe -m pytest backend/tests/test_recovery.py
+```
+
+They cover account data, queue order, Radio, history and the playback checkpoint.
+The operational restore command and scheduler examples are documented in
+[Back up and restore NaHörMaar](recovery.md).
+
 Six full engine recordings are opt-in. In an agreed resource window:
 
 ```powershell

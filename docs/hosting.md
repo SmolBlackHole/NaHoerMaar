@@ -15,8 +15,9 @@ The host also needs Node.js for the music provider, FFmpeg for audio and the
 system Opus library on Linux. Start with the versions in
 [Development](development.md#set-up).
 
-Keep the database on persistent storage and back it up. Run the dashboard behind
-HTTPS with a stable public origin if friends need access from outside your home.
+Keep the database on persistent storage and follow the tested
+[backup and restore procedure](recovery.md). Run the dashboard behind HTTPS with
+a stable public origin if friends need access from outside your home.
 Set `PUBLIC_ORIGIN` to that origin and register its exact OAuth callback in the
 [Discord Developer Portal](discord-setup.md#set-the-dashboard-sign-in-redirect).
 Keep FastAPI on loopback; expose the Nuxt dashboard through a reverse proxy.

@@ -185,6 +185,10 @@ its tests as part of the schema change.
 Never rewrite an already applied migration or point development tooling at a live
 database. No migration from the retired player data is provided.
 
+Schema migrations change the database format. Backups and operational restores
+have a separate procedure in [Back up and restore NaHörMaar](recovery.md). Rehearse
+a restore into another database path before relying on a backup for the first time.
+
 ## License inventory
 
 The Licenses page lists installed JavaScript and Python packages, fonts, artwork

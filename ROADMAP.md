@@ -457,8 +457,10 @@ listening time have distinct meanings, and each recap states its covered period.
 
 - [ ] Provide a documented deployment path with HTTPS, persistent data and
   automatic process restart after a crash, using the saved playback checkpoint
-- [ ] Schedule database backups and define retention and a restore procedure
-- [ ] Test restoration into a fresh instance, including queue order, account
+- [x] Provide a database backup command for an external daily scheduler, keeping
+  the newest 14 verified backups by default. Document Windows Task Scheduler,
+  cron and systemd timer setup, plus the offline replacement procedure
+- [x] Test restoration into a fresh instance, including queue order, account
   profiles and available playback statistics, with credentials configured separately
 
 ## Deferred

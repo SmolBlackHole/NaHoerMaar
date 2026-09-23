@@ -12,7 +12,7 @@ request travels through the system, how to run it, and what its API promises.
 | ------------ | ---------- | --------------- |
 | Join friends and request music | [Listening together](listening.md) | [Discord setup](discord-setup.md) for the owner who sets up access |
 | Set up the Discord application and whitelist | [Discord setup](discord-setup.md) | [Development](development.md) to start the services |
-| Run the bot and dashboard | [Development](development.md) | [Hosting considerations](hosting.md) for an always-on machine, [Testing](testing.md) for checks |
+| Run the bot and dashboard | [Development](development.md) | [Hosting considerations](hosting.md) for an always-on machine, [Backup and restore](recovery.md) for its data |
 | Understand who owns queue, Radio and playback | [Architecture](architecture.md) | [Engine API](engine-api.md) for the public contract |
 | Change the frontend | [Frontend ownership](architecture.md#frontend-ownership) | [API type generation](development.md#update-the-frontend-api-contract) |
 | Call or change an endpoint | [Engine API](engine-api.md) | [Architecture](architecture.md#command-and-event-flow) for the path behind it |
@@ -43,8 +43,9 @@ providers, storage and Discord output. It explains state and module ownership.
 updating generated API types. [Discord setup](discord-setup.md) owns the portal,
 installation, OAuth redirect and whitelist. [Hosting considerations](hosting.md)
 covers what a home server or VPS would need; it is not a tested deployment recipe.
-[Testing](testing.md) owns the checks, diagnostic procedure and live listening
-evidence.
+[Backup and restore](recovery.md) owns database copies, retention, scheduling and
+the offline restore procedure. [Testing](testing.md) owns the checks, diagnostic
+procedure and live listening evidence.
 
 ### Contracts and unfinished work
 
