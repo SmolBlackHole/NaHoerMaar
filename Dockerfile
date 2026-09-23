@@ -13,7 +13,7 @@ ENV NUXT_TELEMETRY_DISABLED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
 RUN apt-get update \
-    && apt-get install --no-install-recommends --yes libopus0 \
+    && apt-get install --no-install-recommends --yes ffmpeg libopus0 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=node /usr/local/bin/node /usr/local/bin/node

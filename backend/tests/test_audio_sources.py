@@ -75,6 +75,22 @@ def test_ffmpeg_diagnostic_logs_category_once_without_raw_stderr(
     assert "private-value" not in caplog.text
 
 
+def test_ffmpeg_diagnostic_identifies_an_unsupported_option(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    source = source_state()
+    source._process.stderr = BytesIO(
+        b"Unrecognized option 'reconnect_max_retries'.\n"
+        b"Error splitting the argument list: Option not found\n"
+    )
+
+    with caplog.at_level(logging.WARNING):
+        source._drain_stderr()
+
+    assert caplog.text.count("kind=unsupported_option") == 1
+    assert "reconnect_max_retries" not in caplog.text
+
+
 @pytest.mark.parametrize(
     "diagnostic",
     [
@@ -84,6 +100,7 @@ def test_ffmpeg_diagnostic_logs_category_once_without_raw_stderr(
         "demux_error",
         "decode_error",
         "interrupted",
+        "unsupported_option",
         "ffmpeg_error",
     ],
 )
@@ -154,8 +171,9 @@ def test_ffmpeg_header_arguments_are_discrete_and_reject_injection() -> None:
     assert arguments[arguments.index("-reconnect") + 1] == "1"
     assert arguments[arguments.index("-reconnect_on_network_error") + 1] == "1"
     assert arguments[arguments.index("-reconnect_streamed") + 1] == "1"
-    assert arguments[arguments.index("-reconnect_max_retries") + 1] == "2"
-    assert arguments[arguments.index("-reconnect_delay_total_max") + 1] == "3"
+    assert arguments[arguments.index("-reconnect_delay_max") + 1] == "2"
+    assert "-reconnect_max_retries" not in arguments
+    assert "-reconnect_delay_total_max" not in arguments
     assert _ffmpeg_arguments(Path("ffmpeg.exe"), "local.opus", ()) == [
         "ffmpeg.exe",
         "-nostdin",

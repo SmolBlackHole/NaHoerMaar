@@ -95,7 +95,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-	<UDashboardPanel id="bot-logs" class="min-h-0 min-w-0">
+	<UDashboardPanel
+		id="bot-logs"
+		class="min-h-0 min-w-0"
+		:ui="{ body: 'pt-4 sm:pt-4' }"
+	>
 		<template #header>
 			<UDashboardNavbar title="Bot logs">
 				<template #leading><UDashboardSidebarCollapse /></template>
@@ -110,7 +114,7 @@ onBeforeUnmount(() => {
 			<div v-if="!profile.session?.is_admin" class="p-6 text-muted" role="alert">
 				Only admins can read bot logs.
 			</div>
-			<div v-else class="logs-page flex min-h-0 flex-col gap-4 py-4 sm:py-6">
+			<div v-else class="logs-page flex min-h-0 flex-col gap-4 pb-4 sm:pb-6">
 				<div class="flex flex-wrap items-end justify-between gap-3">
 					<div>
 						<h1 class="text-highlighted text-xl font-semibold">Live diagnostics</h1>

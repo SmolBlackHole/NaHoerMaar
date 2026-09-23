@@ -108,7 +108,8 @@ def test_selection_confirmation_seek_and_retry_have_one_logical_play() -> None:
     assert state.playback.retries == 1 and state.checkpoint.position_seconds == 50
     assert state.checkpoint.play_id == record.id and len(state.queue.entries) == 2
     state = apply(state, AudioCompleted(attempt(state), 51, AudioEndReason.INTERRUPTED))
-    assert state.checkpoint.entry_id != original.id and len(state.queue.entries) == 1
+    assert state.checkpoint.entry_id != original.id and len(state.queue.entries) == 2
+    assert state.queue.entries[-1].id == original.id
     assert state.history[0].end_reason is PlaybackEndReason.FAILED
 
 
@@ -138,7 +139,8 @@ def test_unready_source_retries_one_play_without_consuming_queue_twice() -> None
     assert exhausted.history[0].id == record.id
     assert exhausted.history[0].end_reason is PlaybackEndReason.FAILED
     assert exhausted.checkpoint.entry_id == upcoming.entries[0].id
-    assert len(exhausted.queue.entries) == len(upcoming.entries) - 1
+    assert len(exhausted.queue.entries) == len(upcoming.entries)
+    assert exhausted.queue.entries[-1].id == current.entry_id
 
     recovered = apply(retried, SourceResolved(attempt(retried), 120))
     recovered = apply(recovered, AudioStarted(attempt(recovered), 42.02))
@@ -149,16 +151,19 @@ def test_unready_source_retries_one_play_without_consuming_queue_twice() -> None
 def test_unready_source_retries_unconfirmed_entry_without_counting_a_play() -> None:
     state = apply(initial(count=2), Control.PLAY)
     current = state.checkpoint.entry_id
+    upcoming = state.queue.entries[0]
     retried = apply(state, AttemptFailed(attempt(state), retryable=True))
     assert retried.checkpoint.entry_id == current
     assert not retried.history and len(retried.queue.entries) == 1
     exhausted = apply(retried, AttemptFailed(attempt(retried), retryable=True))
-    assert exhausted.checkpoint.entry_id == state.queue.entries[0].id
-    assert not exhausted.history and not exhausted.queue.entries
+    assert exhausted.checkpoint.entry_id == upcoming.id
+    assert not exhausted.history and len(exhausted.queue.entries) == 1
+    assert exhausted.queue.entries[0].id == current
 
 
 def test_nonretryable_start_failure_still_advances_once() -> None:
     state = apply(initial(count=2), Control.PLAY)
+    failed_entry = state.checkpoint.entry_id
     next_entry = state.queue.entries[0]
     connection = VoiceConnection(state.playback.connection_id or uuid4(), 123)
     failure = decide(
@@ -167,8 +172,49 @@ def test_nonretryable_start_failure_still_advances_once() -> None:
     assert failure.snapshot.checkpoint.entry_id == next_entry.id
     assert failure.snapshot.playback.retries == 0
     assert not failure.snapshot.history
-    assert not failure.snapshot.queue.entries
+    assert len(failure.snapshot.queue.entries) == 1
+    assert failure.snapshot.queue.entries[0].id == failed_entry
     assert sum(isinstance(effect, StartAttempt) for effect in failure.effects) == 1
+
+
+def test_all_failed_entries_return_to_queue_and_stop_the_failure_sweep() -> None:
+    state = initial(count=3)
+    original = tuple(entry.id for entry in state.queue.entries)
+    state = apply(state, Control.PLAY)
+
+    for _ in range(2):
+        decision = decide(
+            state,
+            AttemptFailed(attempt(state)),
+            now=TIME,
+            connection=VoiceConnection(state.playback.connection_id or uuid4(), 123),
+        )
+        assert any(isinstance(effect, StartAttempt) for effect in decision.effects)
+        state = decision.snapshot
+
+    decision = decide(
+        state,
+        AttemptFailed(attempt(state)),
+        now=TIME,
+        connection=VoiceConnection(state.playback.connection_id or uuid4(), 123),
+    )
+    state = decision.snapshot
+    assert tuple(entry.id for entry in state.queue.entries) == original
+    assert state.checkpoint.intent is PlaybackIntent.STOPPED
+    assert state.playback.phase is PlaybackPhase.IDLE
+    assert state.playback.error == "track_failed"
+    assert not any(isinstance(effect, StartAttempt) for effect in decision.effects)
+
+
+def test_confirmed_audio_resets_the_failed_entry_sweep() -> None:
+    state = apply(initial(count=3), Control.PLAY)
+    state = apply(state, AttemptFailed(attempt(state)))
+    assert state.playback.failed_entry_ids
+
+    state = apply(state, SourceResolved(attempt(state), 120))
+    state = apply(state, AudioStarted(attempt(state), 0.02))
+    assert not state.playback.failed_entry_ids
+    assert state.playback.error is None
 
 
 @pytest.mark.parametrize("paused", [False, True])

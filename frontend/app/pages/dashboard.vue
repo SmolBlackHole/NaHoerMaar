@@ -33,7 +33,7 @@ function dayLabel(date: Date) {
 
 <template>
 	<div class="flex min-h-0 min-w-0 flex-1 flex-col">
-		<UDashboardPanel id="overview" class="min-w-0">
+		<UDashboardPanel id="overview" class="min-w-0" :ui="{ body: 'pt-4 sm:pt-4' }">
 			<template #header>
 				<UDashboardNavbar title="Overview">
 					<template #leading><UDashboardSidebarCollapse /></template>
@@ -49,7 +49,7 @@ function dayLabel(date: Date) {
 				</UDashboardNavbar>
 			</template>
 			<template #body>
-				<div class="space-y-8 py-4 sm:py-6">
+				<div class="space-y-8 pb-4 sm:pb-6">
 					<div class="flex flex-wrap items-end justify-between gap-4">
 						<div>
 							<h1 class="text-highlighted text-2xl font-semibold">What's been on</h1>

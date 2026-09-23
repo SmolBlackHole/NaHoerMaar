@@ -16,6 +16,9 @@ from .queue import Outcome, Queue, QueueOrigin
 from .radio import ManualStrategy, RadioStrategy
 
 
+DEFAULT_CROSSFADE_SECONDS = 7
+
+
 class PlaybackIntent(StrEnum):
     STOPPED = "stopped"
     PLAYING = "playing"
@@ -47,7 +50,7 @@ class ListeningSession:
     volume: float = 1
     revision: int = 0
     queue_revision: int = 0
-    crossfade_seconds: int = 0
+    crossfade_seconds: int = DEFAULT_CROSSFADE_SECONDS
 
     def __post_init__(self) -> None:
         if self.channel_id is not None and (
@@ -180,6 +183,7 @@ class PlaybackRuntime:
     preparation_retries: int = 0
     outgoing_play_id: UUID | None = None
     transition_id: UUID | None = None
+    failed_entry_ids: frozenset[UUID] = frozenset()
     error: str | None = None
 
 

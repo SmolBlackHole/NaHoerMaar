@@ -40,6 +40,8 @@ def _diagnostic_kind(line: bytes) -> str:
         return "http_" + match[1].decode("ascii")
     lowered = line.lower()
     for marker, kind in (
+        (b"unrecognized option", "unsupported_option"),
+        (b"option not found", "unsupported_option"),
         (b"timed out", "timeout"),
         (b"connection reset", "connection_reset"),
         (b"connection refused", "connection_refused"),
@@ -389,12 +391,8 @@ def _ffmpeg_arguments(
                 "1",
                 "-reconnect_streamed",
                 "1",
-                "-reconnect_max_retries",
-                "2",
                 "-reconnect_delay_max",
                 "2",
-                "-reconnect_delay_total_max",
-                "3",
             )
         )
     if position_seconds:

@@ -59,6 +59,7 @@ from nahormaar_backend.domain.identity import Contributor
 from .domain.queue import Outcome, QueueEntry, QueueOrigin, Removal
 from .domain.radio import RadioStrategy
 from .domain.sessions import (
+    DEFAULT_CROSSFADE_SECONDS,
     ListeningSession,
     PlaybackCheckpoint,
     PlaybackEndReason,
@@ -229,7 +230,7 @@ class _ListeningSessionRow(Base):
     volume: Mapped[float]
     revision: Mapped[int] = mapped_column(default=0)
     queue_revision: Mapped[int] = mapped_column(default=0)
-    crossfade_seconds: Mapped[int] = mapped_column(default=0)
+    crossfade_seconds: Mapped[int] = mapped_column(default=DEFAULT_CROSSFADE_SECONDS)
 
     def to_session(self) -> ListeningSession:
         return ListeningSession(

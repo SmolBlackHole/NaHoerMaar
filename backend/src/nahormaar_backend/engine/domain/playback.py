@@ -278,6 +278,30 @@ def decide(
                 and isinstance(snapshot.strategy, RadioStrategy),
             )
 
+    def return_failed_entry() -> frozenset[UUID]:
+        nonlocal snapshot
+        if checkpoint.entry_id is None or checkpoint.track_id is None:
+            return state.failed_entry_ids
+        entry = QueueEntry(
+            snapshot.settings.id,
+            checkpoint.track_id,
+            0,
+            checkpoint.added_by,
+            checkpoint.origin,
+            checkpoint.entry_id,
+        )
+        failed = state.failed_entry_ids | {entry.id}
+        entries = (*snapshot.queue.entries, entry)
+        snapshot = replace(
+            snapshot,
+            queue=Queue(
+                snapshot.settings.id,
+                tuple(item for item in entries if item.id not in failed)
+                + tuple(item for item in entries if item.id in failed),
+            ),
+        )
+        return failed
+
     # Reject old facts before copying their progress or changing any lifecycle.
     if isinstance(
         message, (AudioStarted, AudioCompleted, SourceResolved, AttemptFailed)
@@ -425,6 +449,7 @@ def decide(
             phase=PlaybackPhase.IDLE,
             waiting_for_queue=False,
             duration_seconds=None,
+            failed_entry_ids=frozenset(),
             error=None,
         )
     elif message is Control.PAUSE:
@@ -491,6 +516,8 @@ def decide(
             phase=PlaybackPhase.PAUSED
             if checkpoint.intent is PlaybackIntent.PAUSED
             else PlaybackPhase.PLAYING,
+            failed_entry_ids=frozenset(),
+            error=None,
         )
     elif isinstance(message, (AudioCompleted, AttemptFailed)):
         retryable = (
@@ -513,12 +540,35 @@ def decide(
                 or message.reason is not AudioEndReason.NATURAL
                 or checkpoint.play_id is None
             )
-            advance(
-                PlaybackEndReason.FAILED if failed else PlaybackEndReason.COMPLETED,
-                paused=checkpoint.intent is PlaybackIntent.PAUSED,
-            )
             if failed:
-                state = replace(state, error="track_failed")
+                failed_entries = return_failed_entry()
+                if failed_entries.issuperset(
+                    entry.id for entry in snapshot.queue.entries
+                ):
+                    finish(checkpoint.play_id, PlaybackEndReason.FAILED)
+                    stop_output()
+                    checkpoint = PlaybackCheckpoint(snapshot.settings.id)
+                    state = replace(
+                        state,
+                        phase=PlaybackPhase.IDLE,
+                        duration_seconds=None,
+                        retries=0,
+                        waiting_for_queue=False,
+                        failed_entry_ids=frozenset(),
+                        error="track_failed",
+                    )
+                else:
+                    state = replace(state, failed_entry_ids=failed_entries)
+                    advance(
+                        PlaybackEndReason.FAILED,
+                        paused=checkpoint.intent is PlaybackIntent.PAUSED,
+                    )
+                    state = replace(state, error="track_failed")
+            else:
+                advance(
+                    PlaybackEndReason.COMPLETED,
+                    paused=checkpoint.intent is PlaybackIntent.PAUSED,
+                )
     elif isinstance(message, Prepared):
         if state.preparation is None or state.preparation.id != message.preparation_id:
             return unchanged

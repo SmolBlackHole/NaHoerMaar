@@ -33,6 +33,10 @@ def test_invalid_session_volume_is_rejected(volume: float) -> None:
         ListeningSession(volume=volume)
 
 
+def test_crossfade_is_enabled_for_new_sessions() -> None:
+    assert ListeningSession().crossfade_seconds == 7
+
+
 def test_confirmation_and_replay_have_independent_play_identity() -> None:
     original = PlaybackRecord(uuid4(), uuid4(), uuid4(), datetime.now(UTC))
     finished = replace(

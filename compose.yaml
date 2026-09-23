@@ -54,12 +54,15 @@ services:
         environment:
             ACCESS_PATH: /app/config/access.toml
             DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-nahormaar}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@database:5432/${POSTGRES_DB:-nahormaar}
+            FFMPEG_PATH: /usr/bin/ffmpeg
             NAHORMAAR_BIND_HOST: 0.0.0.0
             NODE_PATH: /usr/local/bin/node
         volumes:
             - ./access.toml:/app/config/access.toml:ro
         expose:
             - "8000"
+        ports:
+            - "127.0.0.1:8000:8000"
         depends_on:
             database:
                 condition: service_healthy

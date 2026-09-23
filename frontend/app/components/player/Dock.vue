@@ -110,18 +110,18 @@ async function setVolume() {
 	await player.setVolume(volume.value / 100);
 	volume.value = Math.round((player.snapshot?.volume ?? 1) * 100);
 }
-const crossfade = ref(0);
+const crossfade = ref(7);
 watch(
 	() => player.snapshot?.crossfade_seconds,
 	(value) => {
-		crossfade.value = value ?? 0;
+		crossfade.value = value ?? 7;
 	},
 	{ immediate: true },
 );
 async function setCrossfade(seconds: number) {
 	crossfade.value = seconds;
 	await player.setCrossfade(seconds as Parameters<typeof player.setCrossfade>[0]);
-	crossfade.value = player.snapshot?.crossfade_seconds ?? 0;
+	crossfade.value = player.snapshot?.crossfade_seconds ?? 7;
 }
 </script>
 
@@ -290,7 +290,7 @@ async function setCrossfade(seconds: number) {
 									player.snapshot?.crossfade_seconds === undefined ||
 									player.isPending('playback.crossfade')
 								"
-								@update:model-value="setCrossfade($event ? 5 : 0)"
+								@update:model-value="setCrossfade($event ? 7 : 0)"
 							/>
 						</div>
 						<div v-if="crossfade > 0" class="flex items-center gap-3">
