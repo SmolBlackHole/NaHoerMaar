@@ -159,6 +159,15 @@ class Auth:
         await asyncio.to_thread(self.accounts.logout, digest(token))
         _LOGGER.info("auth.session_logged_out")
 
+    async def account(self, discord_id: str) -> Account:
+        account = await asyncio.to_thread(self.accounts.account, discord_id)
+        if account is None:
+            raise AuthError("profile_not_found", 404)
+        role = await self.access.role(discord_id)
+        if role is None:
+            raise AuthError("profile_not_found", 404)
+        return replace(account, role=role)
+
     async def profile(self, user: Authenticated, name: str, avatar: str) -> Account:
         if avatar not in self.avatars:
             raise AuthError("invalid_avatar", 422)

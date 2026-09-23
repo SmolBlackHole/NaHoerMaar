@@ -48,14 +48,15 @@ async function open() {
 		]"
 		:content="{ align: 'end' }"
 	>
-		<UButton
-			:icon="icons.ellipsis"
-			:aria-label="`Options for ${trackTitle(entry)}`"
-			:title="`Options for ${trackTitle(entry)}`"
-			color="neutral"
-			variant="ghost"
-			class="size-11 shrink-0 justify-center"
-		/>
+		<UTooltip :text="`Options for ${trackTitle(entry)}`">
+			<UButton
+				:icon="icons.ellipsis"
+				:aria-label="`Options for ${trackTitle(entry)}`"
+				color="neutral"
+				variant="ghost"
+				class="size-11 shrink-0 justify-center"
+			/>
+		</UTooltip>
 	</UDropdownMenu>
 </template>
 

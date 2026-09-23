@@ -26,6 +26,7 @@ from nahormaar_backend.engine.domain.playback import (
     Joined,
     Join,
     PlaybackMessage,
+    PrepareNext,
     Prepared,
     Seek,
     SetCrossfade,
@@ -322,6 +323,32 @@ def test_crossfade_keeps_tail_history_and_ignores_outgoing_completion() -> None:
     ).snapshot
     assert completed.history[1].end_reason is PlaybackEndReason.COMPLETED
     assert completed.history[0].ended_at is None
+
+
+def test_next_track_is_preloaded_when_crossfade_is_disabled() -> None:
+    state = initial()
+    state = replace(
+        state,
+        settings=replace(state.settings, crossfade_seconds=0),
+    )
+    state = apply(state, Control.PLAY)
+    state = apply(state, SourceResolved(attempt(state), 120))
+
+    started = decide(
+        state,
+        AudioStarted(attempt(state), 0.02),
+        now=TIME,
+        connection=VoiceConnection(state.playback.connection_id or uuid4(), 123),
+    )
+
+    preparation = started.snapshot.playback.preparation
+    assert preparation is not None
+    assert any(
+        isinstance(effect, PrepareNext)
+        and effect.preparation_id == preparation.id
+        and effect.seconds == 0
+        for effect in started.effects
+    )
 
 
 def test_failed_preload_retries_once_before_falling_back_to_normal_start() -> None:

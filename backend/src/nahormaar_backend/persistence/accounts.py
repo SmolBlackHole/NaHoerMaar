@@ -55,6 +55,15 @@ class Accounts:
             )
             return AccessRole(value) if value is not None else None
 
+    def account(self, discord_id: str) -> Account | None:
+        with Session(self._engine) as session:
+            row = session.scalar(
+                select(AccountRow).where(AccountRow.discord_id == discord_id)
+            )
+            if row is None or row.name is None or row.avatar is None:
+                return None
+            return account_from_row(row)
+
     def access_grants(self) -> tuple[AccessGrant, ...]:
         with Session(self._engine) as session:
             rows = session.scalars(

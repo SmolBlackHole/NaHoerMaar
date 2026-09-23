@@ -10,6 +10,8 @@ const seekTarget = ref<string | null>(null);
 const seekDraft = ref<{ position: number; playbackId: string } | null>(null);
 const hoverPosition = ref<number | null>(null);
 const keyboardPreview = ref(false);
+const confirmation = ref<"skip" | "stop" | null>(null);
+let lastSkipAt = 0;
 const seekEnabled = computed(
 	() =>
 		player.enabled &&
@@ -123,6 +125,32 @@ async function setCrossfade(seconds: number) {
 	await player.setCrossfade(seconds as Parameters<typeof player.setCrossfade>[0]);
 	crossfade.value = player.snapshot?.crossfade_seconds ?? 7;
 }
+function requestStop() {
+	confirmation.value = "stop";
+}
+async function requestSkip() {
+	const now = Date.now();
+	if (now - lastSkipAt < 1000) {
+		confirmation.value = "skip";
+		lastSkipAt = 0;
+		return;
+	}
+	lastSkipAt = now;
+	await player.control("skip");
+}
+async function confirmControl() {
+	const action = confirmation.value;
+	confirmation.value = null;
+	if (action) await player.control(action);
+}
+const confirmationTitle = computed(() =>
+	confirmation.value === "stop" ? "Stop playback?" : "Skip another track?",
+);
+const confirmationDescription = computed(() =>
+	confirmation.value === "stop"
+		? "The current track stops for everyone and returns to the front of the queue."
+		: "A track was skipped less than a second ago. Confirm before skipping the next one.",
+);
 </script>
 
 <template>
@@ -155,7 +183,7 @@ async function setCrossfade(seconds: number) {
 					variant="ghost"
 					class="size-10 justify-center"
 					:disabled="!player.enabled || !canControl(player.snapshot, 'stop')"
-					@click="player.control('stop')"
+					@click="requestStop"
 				/>
 			</UTooltip>
 			<UTooltip :text="label">
@@ -183,7 +211,7 @@ async function setCrossfade(seconds: number) {
 					variant="ghost"
 					class="size-10 justify-center"
 					:disabled="!player.enabled || !canControl(player.snapshot, 'skip')"
-					@click="player.control('skip')"
+					@click="requestSkip"
 				/>
 			</UTooltip>
 		</div>
@@ -328,23 +356,51 @@ async function setCrossfade(seconds: number) {
 			<label for="browser-volume" class="sr-only"
 				>Browser video volume, only on this device</label
 			>
-			<input
-				id="browser-volume"
-				v-model.number="browserVolume"
-				type="range"
-				min="0"
-				max="100"
-				step="1"
-				class="volume-slider hidden min-w-0 w-24 lg:block"
-				:aria-valuetext="`${browserVolume} percent, only on this device`"
-				title="Browser video volume, only on this device"
-			/>
+			<UTooltip text="Browser video volume, only on this device">
+				<input
+					id="browser-volume"
+					v-model.number="browserVolume"
+					type="range"
+					min="0"
+					max="100"
+					step="1"
+					class="volume-slider hidden min-w-0 w-24 lg:block"
+					:aria-valuetext="`${browserVolume} percent, only on this device`"
+				/>
+			</UTooltip>
 			<output
 				for="browser-volume"
 				class="hidden w-9 text-right text-xs tabular-nums text-muted lg:block"
 				>{{ browserVolume }}%</output
 			>
 		</div>
+		<UModal
+			:open="confirmation !== null"
+			:ui="{ footer: 'justify-end' }"
+			:title="confirmationTitle"
+			:description="confirmationDescription"
+			@update:open="!$event && (confirmation = null)"
+		>
+			<template #footer>
+				<UButton
+					label="Cancel"
+					color="neutral"
+					variant="outline"
+					@click="confirmation = null"
+				/>
+				<UButton
+					:label="confirmation === 'stop' ? 'Stop and return' : 'Skip track'"
+					:color="confirmation === 'stop' ? 'error' : 'primary'"
+					:disabled="!player.enabled"
+					:loading="
+						confirmation === 'stop'
+							? player.isControlPending('stop')
+							: player.isControlPending('skip')
+					"
+					@click="confirmControl"
+				/>
+			</template>
+		</UModal>
 	</section>
 </template>
 

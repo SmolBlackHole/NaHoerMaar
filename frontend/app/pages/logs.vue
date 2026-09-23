@@ -95,11 +95,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-	<UDashboardPanel
-		id="bot-logs"
-		class="min-h-0 min-w-0"
-		:ui="{ body: 'pt-4 sm:pt-4' }"
-	>
+	<UDashboardPanel id="bot-logs" class="min-h-0 min-w-0" :ui="{ body: 'pt-4 sm:pt-4' }">
 		<template #header>
 			<UDashboardNavbar title="Bot logs">
 				<template #leading><UDashboardSidebarCollapse /></template>
@@ -174,9 +170,9 @@ onBeforeUnmount(() => {
 							class="font-semibold"
 							>{{ entry.level }}</span
 						>
-						<span class="text-muted truncate" :title="entry.source">{{
-							entry.source
-						}}</span>
+						<UTooltip :text="entry.source">
+							<span class="text-muted truncate">{{ entry.source }}</span>
+						</UTooltip>
 						<span class="min-w-0 break-all text-highlighted">{{ entry.message }}</span>
 					</div>
 				</div>

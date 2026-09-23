@@ -114,13 +114,16 @@ function dayLabel(date: Date) {
 												class="text-muted text-xs tabular-nums"
 												>{{ day.count }}</span
 											>
-											<div
-												class="w-full rounded-t-sm bg-primary/75"
-												:style="{
-													height: `${Math.max(day.count ? 4 : 0, (day.count / maxStarts) * 80)}%`,
-												}"
-												:title="`${dayLabel(day.date)}: ${day.count} starts`"
-											/>
+											<UTooltip
+												:text="`${dayLabel(day.date)}: ${day.count} starts`"
+											>
+												<div
+													class="w-full rounded-t-sm bg-primary/75"
+													:style="{
+														height: `${Math.max(day.count ? 4 : 0, (day.count / maxStarts) * 80)}%`,
+													}"
+												/>
+											</UTooltip>
 										</div>
 									</div>
 									<figcaption

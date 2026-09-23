@@ -6,6 +6,11 @@ export function createAccountRepository(json: HttpTransport) {
 	return {
 		session: () =>
 			json<ListenerSession>("/api/auth/session", { anonymous: true, timeoutMs: 15_000 }),
+		profile: (discordId: string) =>
+			json<components["schemas"]["ProfileView"]>(
+				`/api/profiles/${encodeURIComponent(discordId)}`,
+				{ timeoutMs: 15_000 },
+			),
 		saveProfile: (body: components["schemas"]["ProfileInput"]) =>
 			json<ListenerSession>("/api/profile", {
 				method: "PUT",

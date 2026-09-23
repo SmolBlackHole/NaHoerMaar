@@ -346,12 +346,12 @@ async function clearQueue() {
 							<span class="tabular-nums">{{
 								formatTime(entry.duration_seconds)
 							}}</span>
-							<span
+							<UTooltip
 								v-if="!dragging && waits[index] != null"
-								class="queue-wait"
-								title="Estimated start, assuming the queue stays in this order"
-								>{{ formatWait(waits[index]!) }}</span
+								text="Estimated start, assuming the queue stays in this order"
 							>
+								<span class="queue-wait">{{ formatWait(waits[index]!) }}</span>
+							</UTooltip>
 						</div>
 					</div>
 					<UDropdownMenu
@@ -395,18 +395,19 @@ async function clearQueue() {
 						]"
 						:content="{ align: 'end', onCloseAutoFocus: focusPosition }"
 					>
-						<UButton
-							:icon="icons.ellipsis"
-							:loading="
-								player.isPending('queue.removed', entry.id) ||
-								player.isPending('queue.reordered', entry.id)
-							"
-							:aria-label="'Options for ' + trackTitle(entry)"
-							:title="'Options for ' + trackTitle(entry)"
-							color="neutral"
-							variant="ghost"
-							class="queue-menu size-11 justify-center"
-						/>
+						<UTooltip :text="'Options for ' + trackTitle(entry)">
+							<UButton
+								:icon="icons.ellipsis"
+								:loading="
+									player.isPending('queue.removed', entry.id) ||
+									player.isPending('queue.reordered', entry.id)
+								"
+								:aria-label="'Options for ' + trackTitle(entry)"
+								color="neutral"
+								variant="ghost"
+								class="queue-menu size-11 justify-center"
+							/>
+						</UTooltip>
 					</UDropdownMenu>
 					<form
 						v-if="placing?.id === entry.id"

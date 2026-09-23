@@ -53,6 +53,7 @@ from .api_models import (
     OutcomeView,
     PlaybackView,
     PlaylistView,
+    ProfileView,
     QueueEntryView,
     RadioView,
     SessionSettingsView,
@@ -441,6 +442,25 @@ def create_app(
                 DiscordMemberView.model_validate(member)
                 for member in services().directory.members()
             )
+        )
+
+    @app.get("/api/profiles/{discord_id}")
+    async def profile(discord_id: str) -> ProfileView:
+        value = services()
+        account = await value.auth.account(discord_id)
+        role = account.role
+        if role is None:
+            raise AuthError("profile_not_found", 404)
+        return ProfileView(
+            discord_id=account.discord_id,
+            profile=account.profile,
+            profile_complete=account.profile_complete,
+            role=role,
+            members=tuple(
+                DiscordMemberView.model_validate(member)
+                for member in value.directory.members()
+                if member.discord_id == discord_id
+            ),
         )
 
     @app.get("/api/channels")

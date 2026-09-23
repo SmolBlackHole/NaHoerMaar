@@ -87,34 +87,37 @@ const status = computed(() => {
 			}
 		"
 	>
-		<button
-			type="button"
-			class="sidebar-voice"
-			:class="{ 'is-collapsed': collapsed, 'is-compact': compact }"
-			:aria-label="`${guildName}, channel: ${channelName}. ${status}`"
-			:title="`${guildName} · ${channelName} · ${status}`"
-		>
-			<UIcon
-				:name="icons.headphones"
-				class="size-5 shrink-0"
-				:class="connected && player.connection === 'live' ? 'text-primary' : 'text-muted'"
-			/>
-			<span v-if="compact" class="header-channel">{{
-				connected ? channelName : "Connect"
-			}}</span>
-			<span v-else-if="!collapsed" class="min-w-0 flex-1 text-left">
-				<span class="block truncate text-sm font-medium text-highlighted">{{
-					channelName
+		<UTooltip :text="`${guildName} · ${channelName} · ${status}`">
+			<button
+				type="button"
+				class="sidebar-voice"
+				:class="{ 'is-collapsed': collapsed, 'is-compact': compact }"
+				:aria-label="`${guildName}, channel: ${channelName}. ${status}`"
+			>
+				<UIcon
+					:name="icons.headphones"
+					class="size-5 shrink-0"
+					:class="
+						connected && player.connection === 'live' ? 'text-primary' : 'text-muted'
+					"
+				/>
+				<span v-if="compact" class="header-channel">{{
+					connected ? channelName : "Connect"
 				}}</span>
-				<span class="mt-0.5 block truncate text-xs text-muted">{{ guildName }}</span>
-				<span role="status" class="sr-only">{{ status }}</span>
-			</span>
-			<UIcon
-				v-if="!collapsed && !compact"
-				:name="icons.chevronsUpDown"
-				class="size-4 text-muted"
-			/>
-		</button>
+				<span v-else-if="!collapsed" class="min-w-0 flex-1 text-left">
+					<span class="block truncate text-sm font-medium text-highlighted">{{
+						channelName
+					}}</span>
+					<span class="mt-0.5 block truncate text-xs text-muted">{{ guildName }}</span>
+					<span role="status" class="sr-only">{{ status }}</span>
+				</span>
+				<UIcon
+					v-if="!collapsed && !compact"
+					:name="icons.chevronsUpDown"
+					class="size-4 text-muted"
+				/>
+			</button>
+		</UTooltip>
 		<template #content>
 			<section
 				:aria-labelledby="`${id}-heading`"

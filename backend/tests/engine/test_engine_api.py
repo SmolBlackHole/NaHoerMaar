@@ -129,6 +129,22 @@ class Directory:
                 "456",
                 "Fixture server",
             ),
+            DiscordMember(
+                DISCORD_ID,
+                "listener",
+                "Listener on Discord",
+                "https://cdn.invalid/listener.png",
+                "456",
+                "Fixture server",
+            ),
+            DiscordMember(
+                DISCORD_ID,
+                "listener",
+                "Listener elsewhere",
+                "https://cdn.invalid/listener.png",
+                "789",
+                "Second server",
+            ),
         )
 
 
@@ -285,6 +301,34 @@ def test_access_admin_api_manages_grants_history_and_member_directory(
                 "revoked",
                 "granted",
             ]
+
+    asyncio.run(scenario())
+
+
+def test_listener_profiles_use_accounts_and_live_discord_details(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        async with fixture(tmp_path) as (client, services, _provider, _audio):
+            response = await client.get(f"/api/profiles/{DISCORD_ID}")
+            assert response.status_code == 200
+            profile = response.json()
+            assert profile["discord_id"] == DISCORD_ID
+            assert profile["profile"]["name"] == "Listener"
+            assert profile["profile"]["avatar"] == "0001"
+            assert profile["role"] == "user"
+            assert [member["guild_name"] for member in profile["members"]] == [
+                "Fixture server",
+                "Second server",
+            ]
+
+            services.access.operators = Operators(DISCORD_ID, ())
+            promoted = await client.get(f"/api/profiles/{DISCORD_ID}")
+            assert promoted.json()["role"] == "owner"
+
+            assert (await client.get("/api/profiles/3")).status_code == 404
+            client.cookies.clear()
+            assert (await client.get(f"/api/profiles/{DISCORD_ID}")).status_code == 401
 
     asyncio.run(scenario())
 

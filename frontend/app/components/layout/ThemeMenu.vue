@@ -62,15 +62,16 @@ const { themeItems } = useThemeMenu({
 		:content="{ align: 'start', collisionPadding: 12 }"
 		:ui="{ content: 'w-56', item: 'min-h-9' }"
 	>
-		<UButton
-			:icon="icons.paintbrush"
-			aria-label="Appearance"
-			title="Appearance"
-			color="neutral"
-			variant="ghost"
-			square
-			class="size-10 shrink-0 justify-center text-muted data-[state=open]:bg-elevated"
-		/>
+		<UTooltip text="Appearance">
+			<UButton
+				:icon="icons.paintbrush"
+				aria-label="Appearance"
+				color="neutral"
+				variant="ghost"
+				square
+				class="size-10 shrink-0 justify-center text-muted data-[state=open]:bg-elevated"
+			/>
+		</UTooltip>
 		<template #chip-leading="{ item }: { item: DropdownMenuItem }">
 			<span class="inline-flex size-5 shrink-0 items-center justify-center">
 				<span

@@ -340,41 +340,44 @@ watch(
 									</template>
 								</UInput>
 								<div class="access-list mt-3" aria-live="polite">
-									<div
+									<UTooltip
 										v-for="member in availableMembers"
 										:key="member.discord_id"
-										class="access-row"
-										:title="`Discord ID: ${member.discord_id}`"
+										:text="`Discord ID: ${member.discord_id}`"
 									>
-										<UAvatar
-											:src="member.avatar_url ?? undefined"
-											:alt="member.display_name"
-											size="sm"
-										/>
-										<div class="min-w-0 flex-1">
-											<p
-												class="truncate text-sm font-medium text-highlighted"
-											>
-												{{ member.display_name }}
-											</p>
-											<p class="text-muted truncate text-xs">
-												@{{ member.name }} · {{ guilds(member) }}
-											</p>
+										<div class="access-row">
+											<UAvatar
+												:src="member.avatar_url ?? undefined"
+												:alt="member.display_name"
+												size="sm"
+											/>
+											<div class="min-w-0 flex-1">
+												<p
+													class="truncate text-sm font-medium text-highlighted"
+												>
+													{{ member.display_name }}
+												</p>
+												<p class="text-muted truncate text-xs">
+													@{{ member.name }} · {{ guilds(member) }}
+												</p>
+											</div>
+											<UButton
+												:label="
+													isBusy(member.discord_id) ? 'Adding…' : 'Allow'
+												"
+												:icon="
+													isBusy(member.discord_id)
+														? undefined
+														: 'i-lucide-user-plus'
+												"
+												color="neutral"
+												variant="soft"
+												size="sm"
+												:disabled="Boolean(busy)"
+												@click="grant(member.discord_id)"
+											/>
 										</div>
-										<UButton
-											:label="isBusy(member.discord_id) ? 'Adding…' : 'Allow'"
-											:icon="
-												isBusy(member.discord_id)
-													? undefined
-													: 'i-lucide-user-plus'
-											"
-											color="neutral"
-											variant="soft"
-											size="sm"
-											:disabled="Boolean(busy)"
-											@click="grant(member.discord_id)"
-										/>
-									</div>
+									</UTooltip>
 									<div v-if="!availableMembers.length" class="empty-state">
 										<UIcon name="i-lucide-users" class="size-5" />
 										<p class="text-sm font-medium text-highlighted">
@@ -449,12 +452,11 @@ watch(
 													)
 												}}
 											</p>
-											<p
-												class="text-muted truncate text-xs"
-												:title="time(grantItem.granted_at)"
-											>
-												Added by {{ displayName(grantItem.granted_by) }}
-											</p>
+											<UTooltip :text="time(grantItem.granted_at)">
+												<p class="text-muted truncate text-xs">
+													Added by {{ displayName(grantItem.granted_by) }}
+												</p>
+											</UTooltip>
 										</div>
 										<UTooltip
 											:text="

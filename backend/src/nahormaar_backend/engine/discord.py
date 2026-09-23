@@ -519,7 +519,7 @@ class DiscordOutput:
         ):
             return False
         duration = output.attempt.source.track.metadata.duration_seconds
-        if duration is None or not isfinite(seconds) or seconds <= 0:
+        if duration is None or not isfinite(seconds) or seconds < 0:
             return False
         audio = await self._create_buffer(source)
         prepared = _Prepared(preparation_id, output, source, audio)

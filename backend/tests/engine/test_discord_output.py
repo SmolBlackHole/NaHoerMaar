@@ -208,6 +208,35 @@ def test_targeted_resources_and_crossfade_callbacks(
     asyncio.run(scenario())
 
 
+def test_prepares_next_track_without_crossfade(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def scenario() -> None:
+        monkeypatch.setattr(adapter, "CrossfadeSource", Mixer)
+        client, _, voice = transport()
+        output = adapter.DiscordOutput(
+            client,
+            tmp_path / "unused",
+            buffer_factory=lambda _source, _position: cast(BufferedAudio, Buffer()),
+        )
+        attempt, preparation = uuid4(), uuid4()
+        await output.connect(123, uuid4())
+        await output.play(SOURCE, attempt, lambda _: None)
+        mixer = cast(Mixer, voice.play.call_args.args[0])
+
+        assert await output.prepare_next(
+            SOURCE,
+            outgoing_attempt_id=attempt,
+            preparation_id=preparation,
+            seconds=0,
+            notify=lambda _: None,
+        )
+        assert mixer.prepared is not None
+        await output.close()
+
+    asyncio.run(scenario())
+
+
 def test_play_waits_for_audio_and_does_not_start_an_empty_stream(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

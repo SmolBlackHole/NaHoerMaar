@@ -91,6 +91,14 @@ class DiscordMembersView(View):
     members: tuple[DiscordMemberView, ...]
 
 
+class ProfileView(View):
+    discord_id: str
+    profile: Contributor
+    profile_complete: bool
+    role: AccessRole
+    members: tuple[DiscordMemberView, ...]
+
+
 class MetadataView(View):
     title: str | None
     artist: str | None

@@ -64,10 +64,12 @@ class AuthBoundary:
             await send(message)
 
         request = Request(scope)
+        expected_origin: str | None = None
         try:
             auth = self.service()
+            expected_origin = auth.settings.public_origin
             origin = request.headers.get("origin")
-            if origin is not None and origin != auth.settings.public_origin:
+            if origin is not None and origin != expected_origin:
                 raise AuthError("origin_forbidden", 403)
             if scope["path"] not in {"/api/auth/discord", CALLBACK_PATH}:
                 user = await auth.authenticate(
@@ -75,7 +77,7 @@ class AuthBoundary:
                     check_access=scope["path"] != "/api/auth/logout",
                 )
                 if request.method not in ("GET", "HEAD", "OPTIONS") and (
-                    origin != auth.settings.public_origin
+                    origin != expected_origin
                     or not secrets.compare_digest(
                         request.headers.get("x-csrf-token", ""), user.csrf
                     )
@@ -85,10 +87,17 @@ class AuthBoundary:
         except AuthError as error:
             if error.code in {"access_denied", "origin_forbidden", "csrf_failed"}:
                 _LOGGER.warning(
-                    "auth.request_rejected method=%s path=%s reason=%s",
+                    "auth.request_rejected method=%s path=%s reason=%s "
+                    "origin=%r expected_origin=%r host=%r forwarded_host=%r "
+                    "forwarded_proto=%r",
                     request.method,
                     scope["path"],
                     error.code,
+                    request.headers.get("origin"),
+                    expected_origin,
+                    request.headers.get("host"),
+                    request.headers.get("x-forwarded-host"),
+                    request.headers.get("x-forwarded-proto"),
                 )
             await JSONResponse(
                 ApiError(code=error.code).model_dump(), status_code=error.status

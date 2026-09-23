@@ -43,6 +43,7 @@ function request(
 }
 
 beforeEach(() => {
+	publicOrigin = "http://localhost:3000";
 	vi.stubGlobal("useRuntimeConfig", () => ({ backendUrl, publicOrigin }));
 });
 
@@ -126,6 +127,76 @@ describe("Nitro API proxy", () => {
 		const missing = await request(`${frontend}/api/future-endpoint`);
 		expect(missing.status).toBe(404);
 		expect(JSON.parse(missing.body)).toEqual({ detail: "Not Found" });
+	});
+
+	it("normalizes an origin rewritten by a trusted frontend proxy", async () => {
+		let receivedOrigin: string | undefined;
+		backendUrl = await listen(
+			createServer((incoming, response) => {
+				receivedOrigin = incoming.headers.origin;
+				response.end("ok");
+			}),
+		);
+		publicOrigin = "https://music.example.com";
+		const frontend = await listen(createServer(toNodeListener(createApp().use(apiProxy))));
+
+		const result = await request(`${frontend}/api/profile`, {
+			method: "PUT",
+			headers: {
+				origin: "http://localhost:3000",
+				"x-forwarded-host": "music.example.com",
+				"x-forwarded-proto": "https",
+			},
+			body: '{}',
+		});
+
+		expect(result.status).toBe(200);
+		expect(receivedOrigin).toBe(publicOrigin);
+	});
+
+	it("normalizes a direct same-origin request while the public origin is external", async () => {
+		let receivedOrigin: string | undefined;
+		backendUrl = await listen(
+			createServer((incoming, response) => {
+				receivedOrigin = incoming.headers.origin;
+				response.end("ok");
+			}),
+		);
+		publicOrigin = "https://music.example.com";
+		const frontend = await listen(createServer(toNodeListener(createApp().use(apiProxy))));
+
+		const result = await request(`${frontend}/api/profile`, {
+			method: "PUT",
+			headers: { origin: new URL(frontend).origin },
+			body: '{}',
+		});
+
+		expect(result.status).toBe(200);
+		expect(receivedOrigin).toBe(publicOrigin);
+	});
+
+	it("keeps an untrusted origin when the public request origin does not match", async () => {
+		let receivedOrigin: string | undefined;
+		backendUrl = await listen(
+			createServer((incoming, response) => {
+				receivedOrigin = incoming.headers.origin;
+				response.end("ok");
+			}),
+		);
+		publicOrigin = "https://music.example.com";
+		const frontend = await listen(createServer(toNodeListener(createApp().use(apiProxy))));
+
+		await request(`${frontend}/api/profile`, {
+			method: "PUT",
+			headers: {
+				origin: "https://elsewhere.example",
+				"x-forwarded-host": "unexpected.example",
+				"x-forwarded-proto": "https",
+			},
+			body: '{}',
+		});
+
+		expect(receivedOrigin).toBe("https://elsewhere.example");
 	});
 
 	it("streams events before the backend response finishes", async () => {

@@ -7,6 +7,9 @@ const name = ref("");
 const avatar = ref(profile.randomAvatar());
 const error = ref("");
 const inputId = useId();
+const changed = computed(
+	() => name.value.trim() !== profile.profile?.name || avatar.value !== profile.profile?.avatar,
+);
 watch(
 	() => profile.profile?.id,
 	() => {
@@ -68,11 +71,21 @@ async function save() {
 		</div>
 		<UButton
 			type="submit"
-			:label="profile.profileComplete ? 'Save profile' : 'Enter the player'"
-			:trailing-icon="icons.arrowRight"
+			:label="
+				profile.profileComplete
+					? changed
+						? 'Save profile'
+						: 'Profile up to date'
+					: 'Enter the player'
+			"
+			:trailing-icon="
+				profile.profileComplete && !changed ? 'i-lucide-check' : icons.arrowRight
+			"
+			:color="profile.profileComplete && !changed ? 'neutral' : 'primary'"
+			:variant="profile.profileComplete && !changed ? 'soft' : 'solid'"
 			size="xl"
 			block
-			:disabled="!name.trim()"
+			:disabled="!name.trim() || (profile.profileComplete && !changed)"
 			:loading="profile.busy"
 		/>
 	</form>

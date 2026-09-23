@@ -651,7 +651,7 @@ def decide(
             advance(PlaybackEndReason.COMPLETED)
 
     # A transient source failure gets one later retry while there is still time
-    # to buffer a fade. A second failure falls back to a normal track start.
+    # to buffer the next track. A second failure falls back to a normal start.
     head = snapshot.queue.entries[0] if snapshot.queue.entries else None
     if state.preparation and (head is None or head.id != state.preparation.entry_id):
         discard()
@@ -679,7 +679,6 @@ def decide(
         and head
         and head.id != state.failed_preparation
         and state.duration_seconds
-        and snapshot.settings.crossfade_seconds
     ):
         preparation = Preparation(head.id)
         effects.append(

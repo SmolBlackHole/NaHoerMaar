@@ -62,6 +62,12 @@ describe("repositories and shared transport", () => {
 		await expect(account.logout()).rejects.toBeInstanceOf(SessionLost);
 		expect(fetcher).toHaveBeenCalledTimes(2);
 	});
+	it("loads listener profiles through the account repository", async () => {
+		const { fetcher, account } = setup();
+		fetcher.mockResolvedValueOnce(Response.json({ discord_id: "123" }));
+		await expect(account.profile("123")).resolves.toEqual({ discord_id: "123" });
+		expect(fetcher.mock.calls[0]?.[0]).toBe("/api/profiles/123");
+	});
 	it("requests only log entries newer than the last received entry", async () => {
 		const { fetcher, diagnostics } = setup();
 		fetcher.mockResolvedValueOnce(Response.json({ entries: [] }));

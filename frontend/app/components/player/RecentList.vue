@@ -41,12 +41,12 @@ async function requeue(item: RecentTrack) {
 						<span class="recent-mobile-duration shrink-0 tabular-nums">{{
 							formatTime(item.entry.duration_seconds)
 						}}</span>
-						<span
+						<UTooltip
 							v-if="item.play_count > 1"
-							class="shrink-0 tabular-nums"
-							title="Playback starts in the last 100 history entries"
-							>{{ item.play_count }} plays</span
+							text="Playback starts in the last 100 history entries"
 						>
+							<span class="shrink-0 tabular-nums">{{ item.play_count }} plays</span>
+						</UTooltip>
 					</p>
 				</div>
 				<UTooltip

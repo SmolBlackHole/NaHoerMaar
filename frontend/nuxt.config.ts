@@ -15,6 +15,11 @@ export default defineNuxtConfig({
 		pageTransition: { name: "page", mode: "out-in" },
 		head: { title: "NaHörMaar", htmlAttrs: { lang: "en" } },
 	},
+	experimental: {
+		appManifest: true,
+		checkOutdatedBuildInterval: 15_000,
+		emitRouteChunkError: "automatic-immediate",
+	},
 	fonts: {
 		providers: { fontsource: false },
 		families: [

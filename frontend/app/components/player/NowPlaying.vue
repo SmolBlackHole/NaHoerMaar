@@ -188,40 +188,44 @@ watch(loadVideo, (visible) => {
 				Enable covers &amp; video
 			</button>
 			<div v-if="preview === 'video'" class="flex items-center gap-2">
-				<button
+				<UTooltip
 					v-if="!videoFailed"
-					type="button"
-					class="media-tool-button"
-					:aria-label="videoControls ? 'Hide YouTube controls' : 'Show YouTube controls'"
-					:title="
-						videoControls ? 'Hide YouTube controls' : 'YouTube controls and quality'
-					"
-					:aria-pressed="videoControls"
-					:disabled="!videoReady || !loadVideo"
-					@click="videoControls = !videoControls"
+					:text="videoControls ? 'Hide YouTube controls' : 'YouTube controls and quality'"
 				>
-					<UIcon :name="icons.settings" />
-				</button>
-				<button
-					v-if="!videoFailed && !videoBlocked"
-					type="button"
-					class="media-tool-button"
-					aria-label="Sync video"
-					title="Sync video"
-					:disabled="!videoReady || !loadVideo"
-					@click="video?.align()"
-				>
-					<UIcon :name="icons.reload" />
-				</button>
-				<UPopover>
 					<button
 						type="button"
 						class="media-tool-button"
-						aria-label="About video preview"
-						title="About video preview"
+						:aria-label="
+							videoControls ? 'Hide YouTube controls' : 'Show YouTube controls'
+						"
+						:aria-pressed="videoControls"
+						:disabled="!videoReady || !loadVideo"
+						@click="videoControls = !videoControls"
 					>
-						<UIcon :name="icons.info" />
+						<UIcon :name="icons.settings" />
 					</button>
+				</UTooltip>
+				<UTooltip v-if="!videoFailed && !videoBlocked" text="Sync video">
+					<button
+						type="button"
+						class="media-tool-button"
+						aria-label="Sync video"
+						:disabled="!videoReady || !loadVideo"
+						@click="video?.align()"
+					>
+						<UIcon :name="icons.reload" />
+					</button>
+				</UTooltip>
+				<UPopover>
+					<UTooltip text="About video preview">
+						<button
+							type="button"
+							class="media-tool-button"
+							aria-label="About video preview"
+						>
+							<UIcon :name="icons.info" />
+						</button>
+					</UTooltip>
 					<template #content
 						><p class="max-w-64 p-4 text-sm text-default">
 							Video starts muted. Browser video volume and YouTube controls affect
