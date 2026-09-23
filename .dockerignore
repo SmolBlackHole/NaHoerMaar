@@ -1,0 +1,27 @@
+# SPDX-FileCopyrightText: 2026 SmolBlackHole
+#
+# SPDX-License-Identifier: MPL-2.0
+
+.git
+.github
+.mypy_cache
+.nuxt
+.output
+.pytest_cache
+.ruff_cache
+.tmp
+.venv
+*.egg-info
+*.log
+__pycache__
+access.toml
+coverage
+data
+dist
+node_modules
+out
+tmp
+
+.env
+.env.*
+!.env.example

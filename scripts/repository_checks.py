@@ -30,7 +30,16 @@ EXCLUDED_DIRECTORIES = frozenset(
     }
 )
 TEXT_FILENAMES = frozenset(
-    {".editorconfig", ".gitattributes", ".gitignore", "CMakeLists.txt", "LICENSE"}
+    {
+        ".dockerignore",
+        ".editorconfig",
+        ".gitattributes",
+        ".gitignore",
+        "CMakeLists.txt",
+        "Dockerfile",
+        "Dockerfile.ci",
+        "LICENSE",
+    }
 )
 TEXT_SUFFIXES = frozenset(
     {

@@ -20,6 +20,7 @@ Python 3.12+ and Node.js 24.11+ with npm are required.
   - [Daily bio](#daily-bio)
   - [License inventory](#license-inventory)
   - [Test and verify](#test-and-verify)
+  - [Run the Linux CI precheck](#run-the-linux-ci-precheck)
 
 ## Set up
 
@@ -143,3 +144,18 @@ python scripts/dev.py check
 Automated tests use isolated state and do not control the live bot. Optional
 audio recordings consume additional CPU, and live Discord checks can interrupt
 music; use the testing guide before running either.
+
+## Run the Linux CI precheck
+
+With Docker Desktop or Docker Engine running, execute the full gate in a clean,
+disposable Linux container:
+
+```powershell
+python scripts/dev.py check-container
+```
+
+The command first checks the working tree, builds `Dockerfile.ci`, then runs the
+same `python scripts/dev.py check` command used by GitHub Actions. Docker removes
+the container after the run and retains the local image as a build cache. The
+precheck mirrors the Linux job's toolchain and system Opus dependency. It does
+not replace the native Windows job in GitHub Actions.

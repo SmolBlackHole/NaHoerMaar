@@ -22,6 +22,17 @@ production build. `npm run check` checks only the frontend. Shell wrappers are
 available as `scripts/check.sh` and `scripts/check.ps1`. GitHub Actions runs the
 standard checks on Windows and Linux.
 
+For a clean Linux precheck before pushing, start Docker and run:
+
+```powershell
+python scripts/dev.py check-container
+```
+
+This builds the repository snapshot with Python 3.12, Node.js 24 and `libopus0`,
+then invokes the same complete gate. It catches clean-environment and Linux-only
+problems locally, while GitHub Actions remains responsible for the Windows job
+and the final hosted-runner result.
+
 Backend tests use a separate working directory and database per test, synthetic
 Discord credentials and simulated voice connections. Real Discord login,
 external socket connections and the local dev-server ports are blocked. HTTP

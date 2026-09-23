@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: 2026 SmolBlackHole
+#
+# SPDX-License-Identifier: MPL-2.0
+
+FROM node:24-bookworm-slim AS node
+
+FROM python:3.12-slim-bookworm
+
+ENV NUXT_TELEMETRY_DISABLED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends --yes libopus0 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
+
+WORKDIR /workspace
+COPY . .
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=cache,target=/root/.npm \
+    python scripts/dev.py setup
+
+CMD ["python", "scripts/dev.py", "check"]

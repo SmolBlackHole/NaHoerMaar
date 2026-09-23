@@ -18,6 +18,7 @@ from repository_checks import run_repository_checks
 
 ROOT = Path(__file__).resolve().parents[1]
 VENV = ROOT / ".venv"
+CI_IMAGE = "nahormaar-ci:local"
 
 
 def _venv_python() -> Path:
@@ -77,11 +78,27 @@ def check() -> None:
     _run((_npm(), "run", "check"))
 
 
+def check_container() -> None:
+    """Run the complete gate in a disposable Linux container."""
+    run_repository_checks(ROOT)
+    docker = shutil.which("docker")
+    if docker is None:
+        raise SystemExit("Docker is required for check-container.")
+    _run((docker, "info", "--format", "Docker {{.ServerVersion}}"))
+    _run((docker, "build", "--file", "Dockerfile.ci", "--tag", CI_IMAGE, "."))
+    _run((docker, "run", "--init", "--rm", CI_IMAGE))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("setup", "check"))
+    commands = {
+        "setup": setup,
+        "check": check,
+        "check-container": check_container,
+    }
+    parser.add_argument("command", choices=commands)
     command = parser.parse_args().command
-    setup() if command == "setup" else check()
+    commands[command]()
 
 
 if __name__ == "__main__":
