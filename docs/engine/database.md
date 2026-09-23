@@ -2,10 +2,11 @@
 
 Parent: [Engine documentation](README.md)
 
-NaHörMaar stores engine and account data in one SQLite database. SQLAlchemy owns
-the mappings and transaction boundaries; Alembic owns schema versions. This page
-explains what is durable, how writes are grouped and how to change the schema.
-Operational copies and restores belong in [Back up and restore NaHörMaar](../recovery.md).
+NaHörMaar stores engine and account data in one PostgreSQL database. SQLAlchemy
+owns the mappings and transaction boundaries. Alembic owns the schema history.
+This page explains what is durable, how writes are grouped and how to change the
+schema. Operational backups and restores belong in
+[Back up and restore NaHörMaar](../recovery.md).
 
 ## Table of contents
 
@@ -16,18 +17,23 @@ Operational copies and restores belong in [Back up and restore NaHörMaar](../re
   - [Repositories and transactions](#repositories-and-transactions)
   - [Schema ownership](#schema-ownership)
   - [Develop a migration](#develop-a-migration)
+  - [Test database changes](#test-database-changes)
   - [Caches are not persistence](#caches-are-not-persistence)
 
 ## One database, separate units of work
 
-`DATABASE_PATH` selects the SQLite file and defaults to `data/engine.sqlite3`.
-It contains the shared listening session and the Discord accounts that may use
-the dashboard. Sharing the file gives backup and deployment one durable unit; it
-does not make account updates part of long playback transactions.
+`DATABASE_URL` selects the PostgreSQL database. Docker Compose builds the URL
+from `POSTGRES_DB`, `POSTGRES_USER` and `POSTGRES_PASSWORD`; a locally started
+backend reads the complete URL from `.env`.
+
+The database contains the shared listening session and the Discord accounts
+that may use the dashboard. Sharing one database gives deployment and recovery
+one durable unit. Account updates still use their own short transactions and do
+not join long playback operations.
 
 The Session owns atomic engine changes. Account login, profile and appearance
-operations use short independent transactions. Provider calls, FFmpeg work,
-Discord I/O and event delivery happen outside both kinds of transaction.
+operations use separate units of work. Provider calls, FFmpeg work, Discord I/O
+and event delivery happen outside database transactions.
 
 ## Stored engine state
 
@@ -41,57 +47,54 @@ The engine stores:
 - mutation receipts, outcomes and revision evidence used for idempotency.
 
 Tracks are the shared reference point. Queue entries and playback records refer
-to them instead of copying the complete metadata payload. A queue occurrence and
-a confirmed play remain distinct rows with their own IDs and attribution. The
-domain meaning of those records lives in [Queue and history](queue.md),
-[Radio](radio.md) and [Playback](playback.md).
+to them instead of copying complete metadata payloads. A queued occurrence and a
+confirmed play remain separate records with their own IDs and attribution. Their
+domain meaning lives in [Queue and history](queue.md), [Radio](radio.md) and
+[Playback](playback.md).
 
-Account tables store OAuth accounts, browser sessions and pending login attempts.
-Only hashes of session tokens are stored. The Discord whitelist remains in
-`access.toml`; it is live authorization policy, not an account table.
+Account tables store OAuth accounts, browser sessions and pending login
+attempts. Only hashes of browser-session tokens are stored. The Discord
+whitelist remains in `access.toml`; it is live authorization policy, not an
+account table.
 
 ## Repositories and transactions
 
-`engine/persistence.py` contains the engine SQLAlchemy mappings and repositories.
-`persistence/models.py` and `persistence/accounts.py` own account mappings and
-account access. `engine/schema.py` combines both metadata sets for migration and
-initialization.
+`engine/persistence.py` contains the engine mappings and repositories.
+`persistence/models.py` and `persistence/accounts.py` own the account mappings
+and account access. `engine/schema.py` combines both metadata sets for startup
+and migrations.
 
-Engine repositories run in caller-owned transactions and flush without deciding
-when to commit. `write_transaction()` reserves SQLite's writer before reading,
-so a read followed by a write cannot deadlock with another short mutation.
-Foreign keys are enabled for every connection. The Session commits state,
-history, receipts and revision changes together, then publishes events and runs
-effects.
+Engine repositories run in caller-owned transactions and flush without choosing
+when to commit. `write_transaction()` commits state, history, receipts and
+revision changes together or rolls all of them back. PostgreSQL enforces foreign
+keys and isolates concurrent transactions; the application does not emulate a
+global writer lock.
 
-Do not hold a transaction open while waiting for a provider, audio source or
-Discord. Complete that work outside the transaction and return a correlated
+Keep transactions short. Do not wait for a provider, audio source or Discord
+while a transaction is open. Complete that work first, then return a correlated
 result through the Session inbox.
 
 ## Schema ownership
 
 The Alembic chain lives under `engine/migrations/versions/`. The supported head
-is named by `engine/schema.py`. Startup creates an empty database and its one
-listening session atomically. It upgrades explicitly supported engine revisions
-in place and rejects an old, unknown or foreign schema without replacing it.
+is `engine_0003`, also named by `engine/schema.py`. Startup initializes an empty
+database and its one listening session atomically. It upgrades the supported
+`engine_0001` and `engine_0002` revisions in place, and rejects an unknown or
+foreign schema without replacing it.
 
-The runtime supports exactly one listening session. Independent queues per
-Discord server require a deliberate schema and runtime change; they are not
-implicit in the existing session table.
+`engine_0002` added durable Radio source state. `engine_0003` widened Discord
+channel IDs to PostgreSQL `BIGINT`, which is required for Discord snowflakes.
+Applied migrations are immutable history. Add a new revision instead of editing
+an applied one.
 
-Startup upgrades `engine_0001` to `engine_0002`. The older revision did not
-store a Radio source, so a Radio that was active before that one-time upgrade
-cannot be reconstructed and must be started again. Radio state created on
-`engine_0002` survives subsequent restarts.
-
-Applied migrations are immutable history. Never edit one to make a newer model
-fit, and never point migration development at the live bot database. There is no
-migration from the retired pre-engine player store.
+The runtime currently supports one shared listening session. Independent queues
+per Discord server require an explicit schema and runtime change; the existing
+session table does not provide that behavior by itself.
 
 ## Develop a migration
 
-`alembic.ini` targets `data/engine.sqlite3`. Change `sqlalchemy.url` to an
-isolated database before generating or testing a migration, then run:
+Alembic reads `DATABASE_URL`. Point it at an isolated development database or
+test schema, then run:
 
 ```powershell
 .venv\Scripts\python.exe -m alembic upgrade head
@@ -99,20 +102,38 @@ isolated database before generating or testing a migration, then run:
 .venv\Scripts\python.exe -m alembic revision --autogenerate -m "Describe the change"
 ```
 
-Review the generated operations. A schema change is complete only when the
-startup policy recognizes its predecessor, focused migration tests cover both a
-fresh database and the supported upgrade, and the current schema still passes
-`alembic check`.
+Review generated operations before keeping them. A schema change is complete
+only when startup recognizes its predecessor, focused tests cover a fresh
+database and the supported upgrade, and `alembic check` reports no drift.
 
-Rehearse operational restore against another database path before relying on a
-backup. The exact backup, verification and replacement commands are in
-[Back up and restore NaHörMaar](../recovery.md).
+Never generate or rehearse a migration against the live bot database. Use the
+test service described below or another disposable PostgreSQL database.
+
+## Test database changes
+
+Start the disposable PostgreSQL service before local backend tests:
+
+```powershell
+docker compose --profile test up -d --wait database-test
+python scripts/dev.py check
+```
+
+The test service listens only on `127.0.0.1:55432` and stores its data in
+`tmpfs`. Tests create isolated schemas and remove only schemas bearing their own
+prefix. The production database and the running bot are not used.
+
+`python scripts/dev.py check-container` starts the same test service and runs the
+complete gate in a clean Linux container. GitHub Actions supplies its own
+PostgreSQL 17 service.
+
+Rehearse operational recovery with a PostgreSQL dump before relying on it. The
+exact commands are in [Back up and restore NaHörMaar](../recovery.md).
 
 ## Caches are not persistence
 
-Discovery snapshots and refresh work live in bounded in-memory caches. They can
+Discovery snapshots and refresh work live in bounded in-memory caches. They may
 disappear on restart without losing queued tracks or metadata already merged
-into the database. The separate Logs buffer is described by the
+into PostgreSQL. The separate Logs buffer is described by the
 [diagnostics API](../engine-api.md#diagnostics).
 
 [Catalog and metadata](catalog.md#cache-and-refresh-behavior) owns discovery

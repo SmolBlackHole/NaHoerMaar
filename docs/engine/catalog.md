@@ -80,7 +80,7 @@ new version; an unchanged result keeps its version. If a refresh fails, the last
 known result stays available and the cache backs off before trying again.
 
 These discovery caches are process-local and intentionally disposable. Durable
-track identities and merged metadata live in SQLite. Restarting the backend
+track identities and merged metadata live in PostgreSQL. Restarting the backend
 clears cached result snapshots, not the catalog data already referenced by the
 queue or history.
 

@@ -21,12 +21,12 @@ natural transitions without crossfade, skip during overlap, Radio refill, voice
 reconnect, clean shutdown and restart, and simultaneous mutations from separate
 accounts. Discord presence should be checked on the same running build.
 
-Self-hosting also needs one complete deployment path with HTTPS, persistent
-SQLite storage and automatic process restart. It should reuse the saved playback
-checkpoint, keep FastAPI internal, run exactly one bot worker and include the
-tested [backup and restore procedure](docs/recovery.md). Measure search, track
-start and crossfade on the intended host before publishing a minimum machine
-recommendation.
+The Docker Compose path now keeps FastAPI internal, runs one bot worker, stores
+PostgreSQL in a named volume, restarts failed processes and exposes only Nuxt to
+a host reverse proxy. Its isolated image, healthcheck, backup and restore checks
+pass. Operational acceptance still needs one deployment behind HTTPS on the
+intended host. Confirm checkpoint recovery there, then measure search, track
+start and crossfade before publishing a minimum machine recommendation.
 
 Update remaining package metadata that still describes an earlier music-bot
 prototype rather than the current social player.

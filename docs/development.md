@@ -55,8 +55,14 @@ revocation and the in-memory Logs endpoint belong to the
 
 ## Start the services
 
-After setup and Discord configuration, start the backend from the repository
-root in one terminal:
+After setup and Discord configuration, start PostgreSQL and wait for it to become
+healthy:
+
+```powershell
+docker compose up -d --wait database
+```
+
+Then start the backend from the repository root in one terminal:
 
 ```powershell
 .venv\Scripts\python.exe -m nahormaar_backend
@@ -79,7 +85,7 @@ Start the dashboard in another terminal:
 npm run dev
 ```
 
-Open `http://localhost:3012`. On PowerShell systems that block `npm.ps1`, use
+Open `http://localhost:3000`. On PowerShell systems that block `npm.ps1`, use
 `npm.cmd run dev`. The Nuxt server forwards API requests to
 `http://127.0.0.1:8000`; set `NUXT_BACKEND_URL` when the backend uses another
 address.
@@ -154,8 +160,8 @@ disposable Linux container:
 python scripts/dev.py check-container
 ```
 
-The command first checks the working tree, builds `Dockerfile.ci`, then runs the
-same `python scripts/dev.py check` command used by GitHub Actions. Docker removes
-the container after the run and retains the local image as a build cache. The
-precheck mirrors the Linux job's toolchain and system Opus dependency. It does
-not replace the native Windows job in GitHub Actions.
+The command starts the disposable PostgreSQL test service, checks the working
+tree, builds `Dockerfile.ci`, then runs the same `python scripts/dev.py check`
+command used by GitHub Actions. Docker removes the gate container after the run
+and retains the image as a build cache. The precheck mirrors the hosted Linux
+job's database, toolchain and system Opus dependency.

@@ -4,11 +4,10 @@
 
 """Alembic environment for engine startup and the standard CLI."""
 
-from pathlib import Path
-
 from alembic import context
 from sqlalchemy import Connection, make_url
 
+from nahormaar_backend.config import database_url, environment_values
 from nahormaar_backend.engine.schema import metadata
 from nahormaar_backend.persistence.database import database_engine
 
@@ -17,7 +16,6 @@ def run(connection: Connection) -> None:
     context.configure(
         connection=connection,
         target_metadata=metadata(),
-        render_as_batch=True,
         transactional_ddl=True,
     )
     with context.begin_transaction():
@@ -26,9 +24,13 @@ def run(connection: Connection) -> None:
 
 config = context.config
 connection = config.attributes.get("connection")
+configured_url = config.get_main_option("sqlalchemy.url") or database_url(
+    environment_values()
+)
 if context.is_offline_mode():
+    url = make_url(configured_url)
     context.configure(
-        url=config.get_main_option("sqlalchemy.url"),
+        url=url,
         target_metadata=metadata(),
         literal_binds=True,
     )
@@ -37,12 +39,10 @@ if context.is_offline_mode():
 elif isinstance(connection, Connection):
     run(connection)
 else:
-    url = make_url(config.get_main_option("sqlalchemy.url") or "")
-    if url.get_backend_name() != "sqlite" or not url.database:
-        raise ValueError("Configure a SQLite sqlalchemy.url in alembic.ini.")
-    engine = database_engine(Path(url.database))
+    url = make_url(configured_url)
+    engine = database_engine(url)
     try:
-        with engine.begin() as connection:
-            run(connection)
+        with engine.begin() as migration_connection:
+            run(migration_connection)
     finally:
         engine.dispose()

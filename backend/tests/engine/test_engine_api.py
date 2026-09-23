@@ -40,6 +40,7 @@ from nahormaar_backend.engine.persistence import database_engine
 from nahormaar_backend.engine.runtime import Services, open_engine
 from nahormaar_backend.engine.schema import upgrade
 from nahormaar_backend.engine.youtube import YouTubeProvider
+from .database import database_url
 from .test_catalog import TIME
 from .test_playback_session import ControlledOutput, ControlledVoice
 from .test_radio_session import until
@@ -121,14 +122,20 @@ async def fixture(
 ) -> AsyncGenerator[tuple[httpx.AsyncClient, Services, Provider, ControlledOutput]]:
     path, access = tmp_path / "engine.db", tmp_path / "access.toml"
     access.write_text(f'discord_ids = ["{DISCORD_ID}"]', encoding="utf-8")
-    engine = database_engine(path)
+    engine = database_engine(database_url(path))
     try:
         async with engine.begin() as connection:
             await connection.run_sync(upgrade)
     finally:
         await engine.dispose()
     auth = Auth(
-        AuthSettings("http://localhost", "", "", path, access),
+        AuthSettings(
+            "http://localhost",
+            "",
+            "",
+            database_url(path),
+            access,
+        ),
         ("0001",),
         provider=Identity(),
         clock=lambda: TIME.timestamp(),
@@ -169,6 +176,37 @@ async def fixture(
             ) as client:
                 yield client, services, provider, audio
     assert provider.closed and audio.progress is None and voice.connection is None
+
+
+def test_health_routes_are_public_and_distinguish_startup(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        @asynccontextmanager
+        async def unopened() -> AsyncGenerator[Services]:
+            raise AssertionError("Health requests must not open the engine runtime.")
+            yield
+
+        app = create_app(unopened, public_origin="http://localhost")
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://localhost"
+        ) as client:
+            assert (await client.get("/healthz")).json() == {"status": "ok"}
+            assert (
+                await client.get("/healthz", headers={"host": "backend"})
+            ).status_code == 200
+            assert (
+                await client.get("/healthz", headers={"host": "untrusted.invalid"})
+            ).status_code == 400
+            waiting = await client.get("/readyz")
+            assert waiting.status_code == 503
+            assert waiting.json() == {"status": "starting"}
+
+        async with fixture(tmp_path) as (client, _services, _provider, _audio):
+            client.cookies.clear()
+            ready = await client.get("/readyz")
+            assert ready.status_code == 200
+            assert ready.json() == {"status": "ready"}
+
+    asyncio.run(scenario())
 
 
 def test_admin_log_tail_requires_role_and_returns_recent_events(tmp_path: Path) -> None:
@@ -601,11 +639,24 @@ def test_failed_commit_does_not_publish_success_through_api(tmp_path: Path) -> N
     async def scenario() -> None:
         async with fixture(tmp_path) as (client, services, provider, _audio):
             track = await services.catalog.track(provider.finding.reference.source_url)
-            engine = database_engine(services.auth.settings.database_path)
+            engine = database_engine(services.auth.settings.database_url)
             try:
                 async with engine.begin() as connection:
                     await connection.exec_driver_sql(
-                        "CREATE TRIGGER reject_receipts BEFORE INSERT ON operation_receipts BEGIN SELECT RAISE(ABORT, 'fixture failure'); END"
+                        """
+                        CREATE FUNCTION reject_receipts() RETURNS trigger AS $$
+                        BEGIN
+                            RAISE EXCEPTION 'fixture failure';
+                        END;
+                        $$ LANGUAGE plpgsql
+                        """
+                    )
+                    await connection.exec_driver_sql(
+                        """
+                        CREATE TRIGGER reject_receipts
+                        BEFORE INSERT ON operation_receipts
+                        FOR EACH ROW EXECUTE FUNCTION reject_receipts()
+                        """
                     )
                 async with services.session.events.subscribe() as events:
                     response = await client.post(
@@ -793,9 +844,7 @@ def test_real_sse_response_resynchronizes_and_closes_cleanly(
                                 "discord_ids = []", encoding="utf-8"
                             )
                         else:
-                            engine = account_engine(
-                                services.auth.settings.database_path
-                            )
+                            engine = account_engine(services.auth.settings.database_url)
                             try:
                                 with DatabaseSession(engine) as db, db.begin():
                                     db.execute(update(SessionRow).values(expires_at=0))
@@ -839,7 +888,7 @@ def test_partial_startup_closes_all_resources_and_session_tasks(
 ) -> None:
     async def scenario() -> None:
         path = tmp_path / "startup.db"
-        engine = database_engine(path)
+        engine = database_engine(database_url(path))
         try:
             async with engine.begin() as connection:
                 if failure == "start":
@@ -847,7 +896,13 @@ def test_partial_startup_closes_all_resources_and_session_tasks(
         finally:
             await engine.dispose()
         auth = Auth(
-            AuthSettings("http://localhost", "", "", path, tmp_path / "access.toml"),
+            AuthSettings(
+                "http://localhost",
+                "",
+                "",
+                database_url(path),
+                tmp_path / "access.toml",
+            ),
             ("0001",),
             provider=Identity(),
         )

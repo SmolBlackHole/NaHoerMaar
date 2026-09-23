@@ -49,7 +49,7 @@ def test_appearance_is_saved_per_account_and_survives_restart(tmp_path: Path) ->
                     "/api/profile/appearance", json={"primaryColor": "rose"}
                 )
             ).status_code == 200
-        accounts = Accounts(tmp_path / "engine.db")
+        accounts = Accounts(services.auth.settings.database_url)
         try:
             saved_account = accounts.session(digest(TOKEN), TIME.timestamp())
             assert saved_account and saved_account[0].appearance == appearance

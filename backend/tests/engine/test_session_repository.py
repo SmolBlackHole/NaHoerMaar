@@ -85,7 +85,7 @@ def test_session_history_and_checkpoint_roundtrip_after_reopening(
     owner, track, record, checkpoint = playback
 
     async def scenario() -> None:
-        path = tmp_path / "session.sqlite3"
+        path = tmp_path / "session.db"
         async with isolated_database(path) as sessions:
             async with sessions.begin() as session:
                 await store_playback(session, playback)
@@ -123,7 +123,7 @@ def test_position_pause_and_reconnect_updates_preserve_one_confirmed_play(
     disconnected = replace(owner, channel_id=None, volume=0)
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "session.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "session.db") as sessions:
             async with sessions.begin() as session:
                 await store_playback(session, playback)
             async with sessions.begin() as session:
@@ -161,7 +161,7 @@ def test_stopped_and_unconfirmed_checkpoints_do_not_create_history(
     pending = replace(checkpoint, play_id=None, intent=PlaybackIntent.PAUSED)
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "session.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "session.db") as sessions:
             async with sessions.begin() as session:
                 await ListeningSessionRepository(session).add(owner)
                 await TrackRepository(session).add(track)
@@ -195,7 +195,7 @@ def test_removing_occurrence_keeps_history_checkpoint_and_shared_metadata(
     refreshed = replace(track, metadata=replace(track.metadata, title="Updated title"))
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "session.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "session.db") as sessions:
             async with sessions.begin() as session:
                 await store_playback(session, playback)
                 await QueueRepository(session).add(entry)
@@ -234,7 +234,7 @@ def test_explicit_replay_gets_new_record_and_history_is_scoped_ordered_and_limit
     other = replace(replay, id=uuid4(), session_id=another_owner.id)
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "session.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "session.db") as sessions:
             async with sessions.begin() as session:
                 await store_playback(session, playback)
                 await ListeningSessionRepository(session).add(another_owner)
@@ -260,7 +260,7 @@ def test_explicit_replay_gets_new_record_and_history_is_scoped_ordered_and_limit
 @pytest.mark.parametrize("limit", [0, -1, True])
 def test_history_rejects_invalid_limits(tmp_path: Path, limit: int) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "session.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "session.db") as sessions:
             async with sessions.begin() as session:
                 with pytest.raises(ValueError, match="limit"):
                     await PlaybackRecordRepository(session).recent(uuid4(), limit=limit)
@@ -284,7 +284,7 @@ def test_record_start_context_and_finished_outcome_cannot_be_rewritten(
     )
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "session.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "session.db") as sessions:
             async with sessions.begin() as session:
                 await store_playback(session, playback)
             for changed in mutations:
@@ -330,7 +330,7 @@ def test_checkpoint_cannot_reference_an_unrelated_or_missing_play(
     }[mismatch]
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "session.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "session.db") as sessions:
             async with sessions.begin() as session:
                 await store_playback(session, playback)
                 await ListeningSessionRepository(session).add(other_owner)
@@ -368,7 +368,7 @@ def test_all_occurrences_require_existing_session_and_track_references(
     track_id = uuid4() if missing == "track" else track.id
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "session.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "session.db") as sessions:
             async with sessions.begin() as session:
                 await ListeningSessionRepository(session).add(owner)
                 await TrackRepository(session).add(track)
@@ -408,7 +408,7 @@ def test_recovery_references_protect_parent_rows_from_deletion(
     owner, _, record, checkpoint = playback
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "session.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "session.db") as sessions:
             async with sessions.begin() as session:
                 await store_playback(session, playback)
             with pytest.raises(IntegrityError):
@@ -432,7 +432,7 @@ def test_duplicate_confirmed_play_id_rolls_back_without_an_extra_listen(
     owner, _, record, checkpoint = playback
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "session.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "session.db") as sessions:
             async with sessions.begin() as session:
                 await store_playback(session, playback)
             with pytest.raises(IntegrityError):
@@ -463,7 +463,7 @@ def test_application_failure_rolls_back_every_repository_together(
     )
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "session.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "session.db") as sessions:
             async with sessions.begin() as session:
                 await store_playback(session, playback)
                 await QueueRepository(session).add(entry)
@@ -508,7 +508,7 @@ def test_initial_creation_is_not_committed_by_individual_repositories(
     owner, track, _, _ = playback
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "session.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "session.db") as sessions:
             with pytest.raises(RuntimeError, match="Abort operation"):
                 async with sessions.begin() as session:
                     await store_playback(session, playback)

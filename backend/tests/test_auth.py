@@ -25,6 +25,7 @@ from nahormaar_backend.integrations.discord_oauth import DiscordOAuth
 from nahormaar_backend.persistence.database import database_engine
 from nahormaar_backend.persistence.models import LoginRow, SessionRow
 from nahormaar_backend.engine.schema import upgrade
+from engine.database import database_url
 
 
 class Provider:
@@ -44,8 +45,9 @@ class Provider:
 
 
 def auth_service(tmp_path: Path) -> tuple[Auth, Provider, list[float]]:
-    path = tmp_path / "auth.sqlite3"
-    engine = database_engine(path)
+    path = tmp_path / "auth.db"
+    database = database_url(path)
+    engine = database_engine(database)
     try:
         with engine.begin() as connection:
             upgrade(connection)
@@ -55,7 +57,11 @@ def auth_service(tmp_path: Path) -> tuple[Auth, Provider, list[float]]:
     access.write_text('discord_ids = ["1"]', encoding="utf-8")
     provider, clock = Provider(), [time.time()]
     settings = AuthSettings(
-        "https://music.example.test", "123", "test-secret", path, access
+        "https://music.example.test",
+        "123",
+        "test-secret",
+        database,
+        access,
     )
     return (
         Auth(settings, ("0002", "0118"), provider=provider, clock=lambda: clock[0]),
@@ -99,7 +105,7 @@ def test_single_use_browser_bound_login(tmp_path: Path, outcome: str) -> None:
                 assert user.expires_at == clock[0] + SESSION_SECONDS
                 assert user.csrf == csrf_token(tokens[0])
                 assert not user.account.profile_complete
-                engine = database_engine(auth.settings.database_path)
+                engine = database_engine(auth.settings.database_url)
                 try:
                     with Session(engine) as db:
                         stored = db.scalar(select(SessionRow))
@@ -217,7 +223,7 @@ def test_discord_oauth_uses_identify_pkce_fixed_redirect_and_discards_tokens(
         "https://music.example.test",
         "123",
         "test-secret",
-        tmp_path / "db",
+        database_url(tmp_path / "db"),
         tmp_path / "access",
     )
     verifier = secrets.token_urlsafe(48)
@@ -274,4 +280,10 @@ def test_public_origin_must_be_explicit_and_canonical(
     tmp_path: Path, origin: str
 ) -> None:
     with pytest.raises(ConfigurationError):
-        AuthSettings(origin, "123", "test-secret", tmp_path / "db", tmp_path / "access")
+        AuthSettings(
+            origin,
+            "123",
+            "test-secret",
+            database_url(tmp_path / "db"),
+            tmp_path / "access",
+        )

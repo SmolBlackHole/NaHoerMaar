@@ -201,7 +201,7 @@ def test_committed_lifecycle_pause_seek_and_playing_paused_restart(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "lifecycle.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "lifecycle.db") as sessions:
             tracks = await tracks_in(sessions)
             provider = SourceProvider(tracks)
             catalog = Catalog(
@@ -336,7 +336,7 @@ def test_restart_retries_unready_first_frame_without_new_play(tmp_path: Path) ->
             )
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "retry-start.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "retry-start.db") as sessions:
             tracks = await tracks_in(sessions)
             provider = SourceProvider(tracks)
             catalog = Catalog(
@@ -405,7 +405,7 @@ def test_restart_retries_unready_first_frame_without_new_play(tmp_path: Path) ->
 
 def test_lost_voice_then_old_callbacks_do_not_consume_queue(tmp_path: Path) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "loss.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "loss.db") as sessions:
             tracks = await tracks_in(sessions)
             provider = SourceProvider(tracks)
             catalog = Catalog(
@@ -466,7 +466,7 @@ def test_resolution_is_cancelled_on_skip_and_no_effect_runs_before_commit(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "cancel.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "cancel.db") as sessions:
             tracks = await tracks_in(sessions)
             provider = SourceProvider(tracks)
             provider.release.clear()
@@ -524,7 +524,7 @@ def test_crossfade_confirmation_and_fallback_preserve_occurrences(
     tmp_path: Path, activate: bool
 ) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "fade.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "fade.db") as sessions:
             tracks = await tracks_in(sessions)
             provider = SourceProvider(tracks)
             catalog = Catalog(
@@ -582,7 +582,7 @@ def test_undo_cannot_restore_current_entry_and_stop_does_not_restart_on_boot(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "undo.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "undo.db") as sessions:
             tracks = await tracks_in(sessions)
             provider = SourceProvider(tracks)
             catalog = Catalog(
@@ -641,7 +641,7 @@ def test_failed_final_checkpoint_still_closes_output_and_owned_tasks(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "failed-close.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "failed-close.db") as sessions:
             tracks = await tracks_in(sessions)
             provider = SourceProvider(tracks)
             catalog = Catalog(
@@ -692,7 +692,7 @@ def test_failed_final_checkpoint_still_closes_output_and_owned_tasks(
 
 def test_close_settles_rapid_replacements_of_pending_resolution(tmp_path: Path) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "rapid-close.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "rapid-close.db") as sessions:
             tracks = await tracks_in(sessions)
             provider = SourceProvider(tracks)
             provider.release.clear()

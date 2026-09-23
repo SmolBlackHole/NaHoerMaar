@@ -2,24 +2,53 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import asyncio
+from collections.abc import Coroutine, Generator
+from hashlib import sha256
 from ipaddress import ip_address
 from pathlib import Path
 import socket
-from typing import cast
+import sys
+from typing import Any, TypeVar, cast
 
 import discord
 import pytest
 
+from engine.database import database_url, drop_test_schemas
+
+
+T = TypeVar("T")
+
 
 @pytest.fixture(autouse=True)
-def isolate_runtime(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def isolate_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    request: pytest.FixtureRequest,
+) -> Generator[None, None, None]:
     """Tests must never inherit the running bot's credentials, files or endpoints."""
+    nodeid = str(cast(Any, request).node.nodeid)
+    if sys.platform == "win32" and "test_processes.py" not in nodeid:
+
+        def selector_run(
+            main: Coroutine[Any, Any, T], *, debug: bool | None = None
+        ) -> T:
+            with asyncio.Runner(
+                debug=debug, loop_factory=asyncio.SelectorEventLoop
+            ) as runner:
+                return runner.run(main)
+
+        monkeypatch.setattr(asyncio, "run", selector_run)
+
     monkeypatch.chdir(tmp_path)
+    schema_prefix = "t_" + sha256(str(tmp_path).encode()).hexdigest()[:12]
+    monkeypatch.setenv("NAHORMAAR_POSTGRES_SCHEMA_PREFIX", schema_prefix)
+    runtime_database_url = database_url(tmp_path / "runtime")
     for name, value in {
         "DISCORD_TOKEN": "test-token",
         "DISCORD_CLIENT_ID": "123",
         "DISCORD_CLIENT_SECRET": "test-secret",
-        "DATABASE_PATH": str(tmp_path / "isolated.sqlite3"),
+        "DATABASE_URL": runtime_database_url,
         "ACCESS_PATH": str(tmp_path / "access.toml"),
     }.items():
         monkeypatch.setenv(name, value)
@@ -39,9 +68,7 @@ def isolate_runtime(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
                 loopback = ip_address(str(host)).is_loopback
             except ValueError:
                 loopback = False
-            # Local integration servers bind ephemeral ports. The dev servers
-            # and external services are never test targets.
-            if loopback and port not in (8000, 3000, 3012):
+            if loopback and port not in (8000, 3000):
                 return
         raise RuntimeError("Network access outside a test server is disabled.")
 
@@ -55,3 +82,5 @@ def isolate_runtime(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 
     monkeypatch.setattr(socket.socket, "connect", test_connect)
     monkeypatch.setattr(socket.socket, "connect_ex", test_connect_ex)
+    yield
+    drop_test_schemas(schema_prefix)

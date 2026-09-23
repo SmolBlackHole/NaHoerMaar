@@ -7,6 +7,7 @@
 import asyncio
 import copy
 import logging
+import os
 import socket
 
 import uvicorn
@@ -55,7 +56,7 @@ def main() -> None:
     shutdown_event = asyncio.Event()
     config = uvicorn.Config(
         create_application(shutdown_event=shutdown_event),
-        host="127.0.0.1",
+        host=os.environ.get("NAHORMAAR_BIND_HOST", "127.0.0.1"),
         port=8000,
         workers=1,
         proxy_headers=False,

@@ -39,6 +39,7 @@ from nahormaar_backend.engine.persistence import (
     write_transaction,
 )
 from nahormaar_backend.engine.schema import initialize, metadata, REVISION
+from .database import database_url
 from .test_engine_api import Provider
 from .test_playback_session import ControlledOutput, ControlledVoice
 from .test_radio_session import until
@@ -47,8 +48,8 @@ from .test_radio_session import until
 def test_initialize_empty_database_reopens_one_identity(tmp_path: Path) -> None:
     async def scenario() -> None:
         path = tmp_path / "new" / "engine.db"
-        first = await initialize(path)
-        engine = database_engine(path)
+        first = await initialize(database_url(path))
+        engine = database_engine(database_url(path))
         try:
             async with engine.connect() as connection:
                 assert (
@@ -72,7 +73,7 @@ def test_initialize_empty_database_reopens_one_identity(tmp_path: Path) -> None:
                 settings = await repository.get(first)
                 assert settings
                 await repository.update(replace(settings, volume=0.5))
-            assert await initialize(path) == first
+            assert await initialize(database_url(path)) == first
             async with sessions.begin() as db:
                 restored = await ListeningSessionRepository(db).get(first)
                 assert restored and restored.volume == 0.5
@@ -82,18 +83,20 @@ def test_initialize_empty_database_reopens_one_identity(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("revision", ["engine_0001", "engine_0002"])
 def test_initialize_upgrades_previous_engine_revision_without_losing_session(
     tmp_path: Path,
+    revision: str,
 ) -> None:
     path = tmp_path / "previous.db"
     root = Path(__file__).resolve().parents[3]
     config = Config(str(root / "alembic.ini"))
-    config.set_main_option("sqlalchemy.url", f"sqlite:///{path.as_posix()}")
-    command.upgrade(config, "engine_0001")
+    config.set_main_option("sqlalchemy.url", database_url(path).replace("%", "%%"))
+    command.upgrade(config, revision)
     original = ListeningSession(channel_id=123, volume=0.4)
 
     async def scenario() -> None:
-        engine = database_engine(path)
+        engine = database_engine(database_url(path))
         try:
             sessions = async_sessionmaker(
                 engine, expire_on_commit=False, autobegin=False
@@ -103,8 +106,8 @@ def test_initialize_upgrades_previous_engine_revision_without_losing_session(
         finally:
             await engine.dispose()
 
-        assert await initialize(path) == original.id
-        engine = database_engine(path)
+        assert await initialize(database_url(path)) == original.id
+        engine = database_engine(database_url(path))
         try:
             async with engine.connect() as connection:
                 assert (
@@ -137,13 +140,13 @@ def test_alembic_cli_targets_engine_schema_and_rejects_old_revision(
     path = tmp_path / "cli.db"
     root = Path(__file__).resolve().parents[3]
     config = Config(str(root / "alembic.ini"))
-    config.set_main_option("sqlalchemy.url", f"sqlite:///{path.as_posix()}")
+    config.set_main_option("sqlalchemy.url", database_url(path).replace("%", "%%"))
     command.upgrade(config, "head")
     command.check(config)
 
     async def scenario() -> None:
-        await initialize(path)
-        engine = database_engine(path)
+        await initialize(database_url(path))
+        engine = database_engine(database_url(path))
         try:
             async with engine.begin() as connection:
                 await connection.execute(
@@ -153,10 +156,25 @@ def test_alembic_cli_targets_engine_schema_and_rejects_old_revision(
             await engine.dispose()
 
     asyncio.run(scenario())
-    original = path.read_bytes()
     with pytest.raises(CommandError, match="0011"):
         command.upgrade(config, "head")
-    assert path.read_bytes() == original
+
+    async def assert_revision_unchanged() -> None:
+        engine = database_engine(database_url(path))
+        try:
+            async with engine.connect() as connection:
+                assert (
+                    await connection.run_sync(
+                        lambda conn: MigrationContext.configure(
+                            conn
+                        ).get_current_revision()
+                    )
+                    == "0011"
+                )
+        finally:
+            await engine.dispose()
+
+    asyncio.run(assert_revision_unchanged())
 
 
 @pytest.mark.parametrize("kind", ["legacy", "foreign", "multiple"])
@@ -166,7 +184,7 @@ def test_initialize_rejects_existing_data_without_changes(
     async def scenario() -> None:
         path = tmp_path / "existing.db"
         if kind == "legacy":
-            engine = database_engine(path)
+            engine = database_engine(database_url(path))
             try:
                 async with engine.begin() as connection:
                     await connection.execute(
@@ -185,8 +203,8 @@ def test_initialize_rejects_existing_data_without_changes(
                 await engine.dispose()
         else:
             if kind == "multiple":
-                await initialize(path)
-            engine = database_engine(path)
+                await initialize(database_url(path))
+            engine = database_engine(database_url(path))
             try:
                 if kind == "foreign":
                     async with engine.begin() as connection:
@@ -201,12 +219,31 @@ def test_initialize_rejects_existing_data_without_changes(
                         await ListeningSessionRepository(db).add(ListeningSession())
             finally:
                 await engine.dispose()
-        original = path.read_bytes()
         with pytest.raises(
-            ValueError, match=r"fresh DATABASE_PATH|one listening session"
+            ValueError, match=r"fresh DATABASE_URL|one listening session"
         ):
-            await initialize(path)
-        assert path.read_bytes() == original
+            await initialize(database_url(path))
+        engine = database_engine(database_url(path))
+        try:
+            async with engine.connect() as connection:
+                if kind == "legacy":
+                    assert (
+                        await connection.scalar(text("SELECT title FROM queue_entries"))
+                        == "Keep this track"
+                    )
+                elif kind == "foreign":
+                    assert "unrelated" in await connection.run_sync(
+                        lambda conn: inspect(conn).get_view_names()
+                    )
+                else:
+                    assert (
+                        await connection.scalar(
+                            text("SELECT COUNT(*) FROM listening_sessions")
+                        )
+                        == 2
+                    )
+        finally:
+            await engine.dispose()
 
     asyncio.run(scenario())
 
@@ -222,8 +259,8 @@ def test_initialize_rolls_back_schema_and_retries(
         with monkeypatch.context() as patch:
             patch.setattr(ListeningSessionRepository, "add", reject)
             with pytest.raises(RuntimeError, match="fixture write failed"):
-                await initialize(path)
-        engine = database_engine(path)
+                await initialize(database_url(path))
+        engine = database_engine(database_url(path))
         try:
             async with engine.connect() as connection:
                 assert not await connection.run_sync(
@@ -231,7 +268,7 @@ def test_initialize_rolls_back_schema_and_retries(
                 )
         finally:
             await engine.dispose()
-        assert isinstance(await initialize(path), UUID)
+        assert isinstance(await initialize(database_url(path)), UUID)
 
     asyncio.run(scenario())
 
@@ -345,9 +382,18 @@ async def runtime_fixture(
             patch.setattr(bootstrap, "_READY_TIMEOUT_SECONDS", 0.03)
         path = tmp_path / "engine.db"
         settings = Settings(
-            "fixture-only", path, Path("unused-ffmpeg"), Path("unused-node")
+            "fixture-only",
+            database_url(path),
+            Path("unused-ffmpeg"),
+            Path("unused-node"),
         )
-        auth = AuthSettings("http://localhost", "", "", path, tmp_path / "access.toml")
+        auth = AuthSettings(
+            "http://localhost",
+            "",
+            "",
+            database_url(path),
+            tmp_path / "access.toml",
+        )
         yield settings, auth, gateways, outputs, providers, calls
         assert all(gateway.closed == 1 for gateway in gateways)
         assert all(provider.closed for provider in providers)
@@ -517,9 +563,8 @@ def test_profile_uses_committed_metadata_and_retries_without_audio_effects(
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("configured", [False, True])
 def test_normal_application_factory_is_lazy_and_uses_new_api(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, configured: bool
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def ffmpeg(override: str | None = None) -> Path:
         return Path("unused")
@@ -532,22 +577,28 @@ def test_normal_application_factory_is_lazy_and_uses_new_api(
             monkeypatch.chdir(tmp_path)
             monkeypatch.setattr(config_module, "ffmpeg_executable", ffmpeg)
             monkeypatch.setattr(config_module, "executable_version", version)
-            values = {"DISCORD_TOKEN": "fixture-only", "NODE_PATH": sys.executable}
-            if configured:
-                values["DATABASE_PATH"] = str(tmp_path / "custom.db")
-            path = (
-                tmp_path / "custom.db"
-                if configured
-                else tmp_path / "data" / "engine.sqlite3"
-            )
+            path = tmp_path / "custom.db"
+            values = {
+                "DISCORD_TOKEN": "fixture-only",
+                "DATABASE_URL": database_url(path),
+                "NODE_PATH": sys.executable,
+            }
             shutdown = asyncio.Event()
             app = bootstrap.create_application(environ=values, shutdown_event=shutdown)
-            assert not path.exists() and not gateways
+            assert not gateways
             routes = app.openapi()["paths"]
             assert "/api/session" in routes and "/api/catalog/search" in routes
             assert "/api/state" not in routes
             async with app.router.lifespan_context(app):
-                assert path.exists() and gateways[0].is_ready()
+                assert gateways[0].is_ready()
+                engine = database_engine(values["DATABASE_URL"])
+                try:
+                    async with engine.connect() as connection:
+                        assert "listening_sessions" in await connection.run_sync(
+                            lambda conn: inspect(conn).get_table_names()
+                        )
+                finally:
+                    await engine.dispose()
                 async with httpx.AsyncClient(
                     transport=httpx.ASGITransport(app=app), base_url="http://localhost"
                 ) as client:

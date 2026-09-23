@@ -79,7 +79,7 @@ def test_radio_rechecks_capacity_and_manual_priority_after_discovery(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "radio.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "radio.db") as sessions:
             tracks = await tracks_in(sessions)
             provider = ControlledMusic(tracks[:6])
             catalog = Catalog(
@@ -125,7 +125,7 @@ def test_stop_or_seed_switch_invalidates_old_results_and_closes_discovery(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "radio.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "radio.db") as sessions:
             tracks = await tracks_in(sessions)
             provider = ControlledMusic(tracks[:6])
             catalog = Catalog(
@@ -174,7 +174,7 @@ def test_exhausted_radio_waits_for_explicit_retry_instead_of_looping(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "radio.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "radio.db") as sessions:
             tracks = await tracks_in(sessions)
             provider = ControlledMusic(())
             provider.release.set()
@@ -215,7 +215,7 @@ def test_queue_can_be_full_before_radio_result_and_closed_session_cancels_fetch(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "radio.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "radio.db") as sessions:
             tracks = await tracks_in(sessions)
             provider = ControlledMusic(tracks[:5])
             catalog = Catalog(
@@ -262,7 +262,7 @@ def test_queue_can_be_full_before_radio_result_and_closed_session_cancels_fetch(
 
 def test_radio_reopens_with_seed_initiator_and_remaining_pool(tmp_path: Path) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "radio-restart.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "radio-restart.db") as sessions:
             tracks = await tracks_in(sessions)
             provider = ControlledMusic(tracks[:6])
             provider.release.set()
@@ -312,7 +312,7 @@ def test_radio_reopens_with_seed_initiator_and_remaining_pool(tmp_path: Path) ->
 
 def test_restart_retries_only_the_cancelled_radio_request(tmp_path: Path) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "radio-loading.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "radio-loading.db") as sessions:
             tracks = await tracks_in(sessions)
             provider = ControlledMusic(tracks[:5])
             catalog = Catalog(

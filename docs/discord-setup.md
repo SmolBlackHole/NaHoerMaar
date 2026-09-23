@@ -60,17 +60,17 @@ running instance after you have installed it; your friends need not own the app.
 For local development, keep this value in `.env`:
 
 ```dotenv
-PUBLIC_ORIGIN=http://localhost:3012
+PUBLIC_ORIGIN=http://localhost:3000
 ```
 
 On the application's **OAuth2** page, add this exact URL under **Redirects** and
 save it:
 
 ```text
-http://localhost:3012/api/auth/discord/callback
+http://localhost:3000/api/auth/discord/callback
 ```
 
-Open the dashboard at `http://localhost:3012` too. `localhost` and
+Open the dashboard at `http://localhost:3000` too. `localhost` and
 `127.0.0.1`, different ports, and `http` and `https` are different origins. If
 you change `PUBLIC_ORIGIN`, register the new origin plus
 `/api/auth/discord/callback` in the portal and give the Nuxt server the same

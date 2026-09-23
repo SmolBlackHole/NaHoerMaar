@@ -15,12 +15,26 @@ from urllib.parse import urlsplit
 
 import imageio_ffmpeg  # type: ignore[import-untyped]
 from dotenv import dotenv_values
+from sqlalchemy import make_url
 
 from .domain.identity import discord_id
 
 
 class ConfigurationError(ValueError):
     pass
+
+
+def database_url(values: Mapping[str, str]) -> str:
+    raw = values.get("DATABASE_URL", "").strip()
+    if not raw:
+        raise ConfigurationError("Set DATABASE_URL in the local environment.")
+    try:
+        url = make_url(raw)
+    except ValueError as exc:
+        raise ConfigurationError("DATABASE_URL is not a valid SQLAlchemy URL.") from exc
+    if url.drivername != "postgresql+psycopg":
+        raise ConfigurationError("DATABASE_URL must use PostgreSQL with psycopg.")
+    return raw
 
 
 def environment_values(environ: Mapping[str, str] | None = None) -> Mapping[str, str]:
@@ -39,7 +53,7 @@ class AuthSettings:
     public_origin: str
     client_id: str
     client_secret: str = field(repr=False)
-    database_path: Path
+    database_url: str = field(repr=False)
     access_path: Path
 
     def __post_init__(self) -> None:
@@ -78,13 +92,13 @@ class AuthSettings:
     def from_env(cls, environ: Mapping[str, str] | None = None) -> "AuthSettings":
         values = environment_values(environ)
         origin = (
-            values.get("PUBLIC_ORIGIN", "http://localhost:3012").strip().rstrip("/")
+            values.get("PUBLIC_ORIGIN", "http://localhost:3000").strip().rstrip("/")
         )
         return cls(
             origin,
             values.get("DISCORD_CLIENT_ID", "").strip(),
             values.get("DISCORD_CLIENT_SECRET", "").strip(),
-            Path(values.get("DATABASE_PATH") or "data/engine.sqlite3").resolve(),
+            database_url(values),
             Path(values.get("ACCESS_PATH") or "access.toml").resolve(),
         )
 
@@ -122,7 +136,7 @@ def executable_version(executable: Path, option: str = "--version") -> str:
 @dataclass(frozen=True, slots=True)
 class Settings:
     token: str = field(repr=False)
-    database_path: Path
+    database_url: str = field(repr=False)
     ffmpeg_path: Path
     node_path: Path
 
@@ -147,7 +161,7 @@ class Settings:
             raise ConfigurationError("Node.js 22+ is required.")
         ffmpeg = ffmpeg_executable(values.get("FFMPEG_PATH"))
         executable_version(ffmpeg, "-version")
-        database = Path(values.get("DATABASE_PATH") or "data/engine.sqlite3").resolve()
+        database = database_url(values)
         return cls(token, database, ffmpeg, node_path)
 
 

@@ -66,7 +66,7 @@ def test_concurrent_commands_replay_current_state_and_survive_reopening(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "session.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "session.db") as sessions:
             tracks = await tracks_in(sessions)
             identifier, operation = uuid4(), uuid4()
             owner = await Session.open(sessions, identifier, clock=lambda: TIME)
@@ -115,7 +115,7 @@ def test_manual_priority_duplicates_reorder_conflicts_and_attributed_removal(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "session.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "session.db") as sessions:
             tracks = await tracks_in(sessions)
             owner = await Session.open(sessions, uuid4(), clock=lambda: TIME)
             other = replace(ACTOR, id=uuid4(), name="Other")
@@ -171,7 +171,7 @@ def test_undo_restores_anchors_without_rewinding_other_edits_and_is_private_sing
 ) -> None:
     async def scenario() -> None:
         now = TIME
-        async with isolated_database(tmp_path / "session.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "session.db") as sessions:
             tracks = await tracks_in(sessions)
             owner = await Session.open(sessions, uuid4(), clock=lambda: now)
             added = await owner.request(
@@ -216,7 +216,7 @@ def test_failed_commit_has_no_fact_receipt_or_memory_change_and_can_be_retried(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "session.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "session.db") as sessions:
             tracks = await tracks_in(sessions)
             owner = await Session.open(sessions, uuid4(), clock=lambda: TIME)
             before = owner.snapshot
@@ -252,7 +252,7 @@ def test_cancelled_waiter_does_not_cancel_accepted_mutation_and_close_drains_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "session.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "session.db") as sessions:
             tracks = await tracks_in(sessions)
             owner = await Session.open(sessions, uuid4(), clock=lambda: TIME)
             entered, release = asyncio.Event(), asyncio.Event()
@@ -292,7 +292,7 @@ def test_concurrent_metadata_refresh_and_queue_writes_do_not_lose_work(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "concurrent.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "concurrent.db") as sessions:
             tracks = await tracks_in(sessions)
             owner = await Session.open(sessions, uuid4(), clock=lambda: TIME)
             metadata = MetadataStore(

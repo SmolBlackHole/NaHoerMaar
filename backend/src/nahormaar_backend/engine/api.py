@@ -280,12 +280,23 @@ def create_app(
         TrustedHostMiddleware,
         allowed_hosts=[
             urlsplit(public_origin).hostname or "localhost",
+            "backend",
             "localhost",
             "127.0.0.1",
             "[::1]",
         ],
     )
     app.include_router(auth_router(auth))
+
+    @app.get("/healthz", include_in_schema=False)
+    async def health() -> dict[str, str]:
+        return {"status": "ok"}
+
+    @app.get("/readyz", include_in_schema=False)
+    async def ready() -> JSONResponse:
+        if active is None:
+            return JSONResponse({"status": "starting"}, status_code=503)
+        return JSONResponse({"status": "ready"})
 
     @app.exception_handler(AuthError)
     async def auth_error(request: Request, error: AuthError) -> JSONResponse:

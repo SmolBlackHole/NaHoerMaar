@@ -27,7 +27,7 @@ flowchart LR
     API --> Session[Session inbox]
     Discord[Discord commands and callbacks] --> Session
     Session --> Domain[Queue, playback and Radio policies]
-    Session --> DB[(SQLite)]
+    Session --> DB[(PostgreSQL)]
     Session --> Effects[Playback effects]
     Effects --> Catalog[Catalog and providers]
     Effects --> Voice[FFmpeg, Opus and Discord voice]
@@ -40,7 +40,7 @@ flowchart LR
 The dashboard never owns shared playback. It presents the committed Session,
 sends typed commands and reconciles HTTP replies with live events. The engine
 owns queue order, playback intent, Radio and the voice connection. Providers own
-source-specific discovery and audio resolution. SQLite owns durable state, not
+source-specific discovery and audio resolution. PostgreSQL owns durable state, not
 running tasks or temporary media URLs.
 
 ## Command and event flow

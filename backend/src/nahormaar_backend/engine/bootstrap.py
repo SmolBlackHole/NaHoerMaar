@@ -35,10 +35,10 @@ _READY_TIMEOUT_SECONDS = 30.0
 async def open_runtime(
     settings: Settings, auth_settings: AuthSettings
 ) -> AsyncGenerator[Services]:
-    if settings.database_path.resolve() != auth_settings.database_path.resolve():
+    if settings.database_url != auth_settings.database_url:
         raise ValueError("Engine and authentication must use the same database.")
     DiscordOutput.validate_dependencies()
-    session_id = await initialize(settings.database_path)
+    session_id = await initialize(settings.database_url)
     avatars = tuple(
         cast(
             list[str],

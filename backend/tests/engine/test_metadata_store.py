@@ -58,7 +58,7 @@ def test_batch_shares_identity_and_artists_preserves_order_and_roundtrips_proven
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
-        path = tmp_path / "metadata.sqlite3"
+        path = tmp_path / "metadata.db"
         second = replace(
             FINDING,
             reference=replace(
@@ -122,7 +122,7 @@ def test_enrichment_and_unchanged_checks_have_separate_times_and_persist_across_
 ) -> None:
     async def scenario() -> None:
         now = TIME
-        path = tmp_path / "metadata.sqlite3"
+        path = tmp_path / "metadata.db"
         detailed = replace(
             FINDING, metadata=replace(FINDING.metadata, duration_seconds=180)
         )
@@ -165,7 +165,7 @@ def test_missing_credits_preserve_known_credits_and_explicit_empty_obeys_provena
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "metadata.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "metadata.db") as sessions:
             store = MetadataStore(sessions, clock=lambda: TIME)
             (known,) = await store.remember((FINDING,), source=DETAIL)
             future = TIME + timedelta(minutes=1)
@@ -204,7 +204,7 @@ def test_stale_observation_of_other_track_cannot_rename_a_shared_artist(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "metadata.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "metadata.db") as sessions:
             store = MetadataStore(sessions, clock=lambda: TIME)
             renamed = replace(ARTISTS[0], name="Current artist name")
             (first,) = await store.remember(
@@ -237,7 +237,7 @@ def test_artist_reorder_and_rename_update_shared_records_without_guessing_names(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "metadata.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "metadata.db") as sessions:
             now = TIME
             store = MetadataStore(sessions, clock=lambda: now)
             (before,) = await store.remember((FINDING,), source=DISCOVERY)
@@ -246,7 +246,10 @@ def test_artist_reorder_and_rename_update_shared_records_without_guessing_names(
                 (
                     replace(
                         FINDING,
-                        artists=(replace(ARTISTS[1], name="Новое имя"), ARTISTS[0]),
+                        artists=(
+                            replace(ARTISTS[1], name="Новое имя"),
+                            ARTISTS[0],
+                        ),
                     ),
                 ),
                 source=replace(DETAIL, observed_at=now),
@@ -265,7 +268,7 @@ def test_concurrent_discoveries_share_rows_and_do_not_lose_enrichment(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "metadata.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "metadata.db") as sessions:
             store = MetadataStore(sessions, clock=lambda: TIME)
             rich = replace(
                 FINDING, metadata=replace(FINDING.metadata, duration_seconds=180)
@@ -302,7 +305,7 @@ def test_failed_batch_rolls_back_prior_enrichment_artists_and_new_tracks(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cancel: bool
 ) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "metadata.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "metadata.db") as sessions:
             store = MetadataStore(sessions, clock=lambda: TIME)
             (before,) = await store.remember(
                 (replace(FINDING, artists=None),), source=DISCOVERY
@@ -360,7 +363,7 @@ def test_refresh_keeps_existing_queue_ids_positions_and_track_reference(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "metadata.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "metadata.db") as sessions:
             store = MetadataStore(sessions, clock=lambda: TIME)
             (track,) = await store.remember((FINDING,), source=DISCOVERY)
             owner = ListeningSession()
@@ -383,7 +386,7 @@ def test_imported_values_without_provenance_survive_search_and_empty_batch_does_
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "metadata.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "metadata.db") as sessions:
             track = Track(
                 FINDING.reference.identity,
                 FINDING.reference.source_url,

@@ -4,7 +4,6 @@
 
 """Persistent accounts, opaque sessions, and single-use login attempts."""
 
-from pathlib import Path
 from uuid import UUID, uuid4
 
 from sqlalchemy import delete, func, select
@@ -29,8 +28,8 @@ def account_from_row(row: AccountRow) -> Account:
 class Accounts:
     """Use short independent transactions on the schema initialized at startup."""
 
-    def __init__(self, path: Path) -> None:
-        self._engine = database_engine(path)
+    def __init__(self, database: str) -> None:
+        self._engine = database_engine(database)
 
     def close(self) -> None:
         self._engine.dispose()

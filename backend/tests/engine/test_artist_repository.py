@@ -66,7 +66,7 @@ def test_shared_ordered_credits_survive_reopen_as_detached_domain_values(
     artists, tracks = catalog
 
     async def scenario() -> None:
-        path = tmp_path / "artists.sqlite3"
+        path = tmp_path / "artists.db"
         async with isolated_database(path) as sessions:
             async with sessions.begin() as session:
                 await store_catalog(session, catalog)
@@ -118,7 +118,7 @@ def test_equal_names_and_case_variants_remain_distinct_provider_identities(
     )
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "artists.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "artists.db") as sessions:
             async with sessions.begin() as session:
                 for artist in artists:
                     await ArtistRepository(session).add(artist)
@@ -138,7 +138,7 @@ def test_artist_rename_preserves_references_and_original_track_text(
     renamed = replace(artists[0], name="Новое имя")
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "artists.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "artists.db") as sessions:
             async with sessions.begin() as session:
                 await store_catalog(session, catalog)
             async with sessions.begin() as session:
@@ -171,7 +171,7 @@ def test_credit_reorder_and_removal_do_not_delete_shared_artists(
     )
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "artists.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "artists.db") as sessions:
             async with sessions.begin() as session:
                 await store_catalog(session, catalog)
             for order in orders:
@@ -213,7 +213,7 @@ def test_duplicate_artist_rolls_back_track_and_artist_changes(
     )
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "artists.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "artists.db") as sessions:
             async with sessions.begin() as session:
                 await store_catalog(session, catalog)
             with pytest.raises(IntegrityError):
@@ -245,7 +245,7 @@ def test_missing_artist_rolls_back_replacement_credits_and_timestamps(
     )
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "artists.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "artists.db") as sessions:
             async with sessions.begin() as session:
                 await store_catalog(session, catalog)
             with pytest.raises(IntegrityError):
@@ -263,7 +263,7 @@ def test_application_rollback_discards_artist_track_and_credit_inserts(
     tmp_path: Path, catalog: ArtistCatalog
 ) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "artists.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "artists.db") as sessions:
             with pytest.raises(RuntimeError, match="Abort operation"):
                 async with sessions.begin() as session:
                     await store_catalog(session, catalog)
@@ -299,7 +299,7 @@ def test_credit_table_enforces_ownership_uniqueness_and_position(
     }[invalid]
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "artists.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "artists.db") as sessions:
             async with sessions.begin() as session:
                 await store_catalog(session, catalog)
                 await ArtistRepository(session).add(uncredited)
@@ -322,7 +322,7 @@ def test_deleting_a_track_removes_only_its_credits_and_protects_shared_artists(
     artists, (track, other) = catalog
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "artists.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "artists.db") as sessions:
             async with sessions.begin() as session:
                 await store_catalog(session, catalog)
             artist_table = Base.metadata.tables["artists"]
@@ -360,7 +360,7 @@ def test_legacy_artist_text_does_not_invent_entities(
     legacy = replace(track, artist_ids=())
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "artists.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "artists.db") as sessions:
             async with sessions.begin() as session:
                 await TrackRepository(session).add(legacy)
             async with sessions.begin() as session:

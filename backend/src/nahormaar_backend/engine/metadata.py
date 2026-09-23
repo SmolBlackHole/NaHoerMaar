@@ -24,7 +24,7 @@ class MetadataStore:
 
     Supply observations after provider I/O finishes. Each batch commits atomically
     and borrows its own database session. The composition root shares one instance
-    for metadata writes; the lock prevents concurrent read/insert races on SQLite.
+    for metadata writes; the lock prevents concurrent read/insert races.
     It owns neither the database pool nor provider tasks and has no worker loop.
     """
 

@@ -42,7 +42,7 @@ def test_search_defaults_to_music_and_ingests_discovery_without_losing_details(
 ) -> None:
     async def scenario() -> None:
         now = TIME
-        async with isolated_database(tmp_path / "catalog.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "catalog.db") as sessions:
             metadata = MetadataStore(sessions, clock=lambda: now)
             (known,) = await metadata.remember(
                 (
@@ -140,7 +140,7 @@ def test_playlist_routing_preserves_duplicate_slots_and_does_not_ingest_lookahea
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "catalog.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "catalog.db") as sessions:
             runner = FixtureRunner(
                 response(
                     [song(), None, song(), song(OTHER)],
@@ -225,7 +225,7 @@ def test_discovery_rejects_missing_capabilities_and_wrong_playlist_identity(
             )
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "catalog.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "catalog.db") as sessions:
             metadata = MetadataStore(sessions, clock=lambda: TIME)
             unsupported = Catalog(
                 (DetailsOnly("youtube_music", TrackFinding(REFERENCE)),),
@@ -264,7 +264,7 @@ def test_discovery_io_stays_outside_metadata_transactions(
     tmp_path: Path, playlist: bool
 ) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "catalog.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "catalog.db") as sessions:
             started = asyncio.Event()
             transactions: list[SessionTransaction] = []
 

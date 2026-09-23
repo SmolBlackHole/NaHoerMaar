@@ -246,7 +246,7 @@ def test_recorded_crossfade_overlap_timing_and_controls(
             for frequency in (400, 1000)
         )
         provider = LocalProvider(sources)
-        async with isolated_database(tmp_path / "audio.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "audio.db") as sessions:
             metadata = MetadataStore(sessions, clock=lambda: TIME)
             tracks = await metadata.remember(
                 tuple(source.track for source in sources),
@@ -344,7 +344,7 @@ def test_recorded_seek_reconnect_and_restart_keep_logical_play(
         ffmpeg = Path(imageio_ffmpeg.get_ffmpeg_exe())
         source = tone(tmp_path, 400, 12, False, ffmpeg)
         provider = LocalProvider((source,))
-        async with isolated_database(tmp_path / "recovery.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "recovery.db") as sessions:
             metadata = MetadataStore(sessions, clock=lambda: TIME)
             (track,) = await metadata.remember(
                 (source.track,),

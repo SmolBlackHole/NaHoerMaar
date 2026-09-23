@@ -4,29 +4,35 @@
 
 """SQLAlchemy storage for the new core in caller-owned transactions."""
 
-import sqlite3
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import fields, replace
 from datetime import UTC, datetime
-from pathlib import Path
+
 from uuid import UUID
 
 from pydantic import TypeAdapter
 
-from sqlalchemy import JSON, URL, CheckConstraint, Connection, DateTime, ForeignKey
+from sqlalchemy import (
+    JSON,
+    URL,
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    make_url,
+)
 from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     UniqueConstraint,
     delete,
-    event,
     or_,
     select,
     update,
 )
 from sqlalchemy.engine import Dialect
-from sqlalchemy.engine.interfaces import DBAPIConnection
+
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -40,7 +46,7 @@ from sqlalchemy.orm import (
     mapped_column,
     relationship,
 )
-from sqlalchemy.pool import ConnectionPoolEntry
+
 from sqlalchemy.types import TypeDecorator
 
 from .domain.metadata import (
@@ -63,52 +69,20 @@ from .domain.sessions import (
 from .domain.tracks import Artist, ArtistIdentity, MediaIdentity, Track
 
 
-def database_engine(path: Path) -> AsyncEngine:
-    """Create a lazy connection pool with foreign keys and explicit transactions.
-
-    The owner supplies the path, manages schema migrations and disposes the pool.
-    The write unit of work reserves SQLite's writer before any read/write upgrade.
-    Ordinary read transactions can still inspect the last committed data while
-    a writer is active. PRAGMA foreign_keys runs before either transaction type.
-    """
-    engine = create_async_engine(
-        URL.create("sqlite+aiosqlite", database=str(path)),
-        connect_args={
-            "autocommit": sqlite3.LEGACY_TRANSACTION_CONTROL,
-            "isolation_level": None,
-        },
-    )
-
-    @event.listens_for(engine.sync_engine, "connect")
-    def foreign_keys(connection: DBAPIConnection, record: ConnectionPoolEntry) -> None:
-        cursor = connection.cursor()
-        try:
-            cursor.execute("PRAGMA foreign_keys = ON")
-        finally:
-            cursor.close()
-
-    @event.listens_for(engine.sync_engine, "begin")
-    def begin(connection: Connection) -> None:
-        connection.exec_driver_sql(
-            "BEGIN IMMEDIATE"
-            if connection.get_execution_options().get("sqlite_write")
-            else "BEGIN"
-        )
-
-    return engine
+def database_engine(database: str | URL) -> AsyncEngine:
+    """Create the asynchronous PostgreSQL engine used by the player."""
+    url = make_url(database)
+    if url.drivername != "postgresql+psycopg":
+        raise ValueError("Database URL must use PostgreSQL with psycopg.")
+    return create_async_engine(url, pool_pre_ping=True)
 
 
 @asynccontextmanager
 async def write_transaction(
     sessions: async_sessionmaker[AsyncSession],
 ) -> AsyncGenerator[AsyncSession]:
-    """Reserve before reading so independent short mutations cannot deadlock.
-
-    Provider/audio waits belong outside. Repositories only flush; this application
-    boundary commits or rolls back all state and operation evidence together.
-    """
+    """Commit or roll back all state and operation evidence together."""
     async with sessions.begin() as session:
-        await session.connection(execution_options={"sqlite_write": True})
         yield session
 
 
@@ -159,7 +133,7 @@ class _ContributorJSON(TypeDecorator[Contributor]):
 
 
 class _UTCDateTime(TypeDecorator[datetime]):
-    """SQLite stores UTC without an offset; domain reads remain timezone-aware."""
+    """Store normalized UTC values and return timezone-aware domain values."""
 
     impl = DateTime
     cache_ok = True
@@ -251,7 +225,7 @@ class _ListeningSessionRow(Base):
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
-    channel_id: Mapped[int | None]
+    channel_id: Mapped[int | None] = mapped_column(BigInteger)
     volume: Mapped[float]
     revision: Mapped[int] = mapped_column(default=0)
     queue_revision: Mapped[int] = mapped_column(default=0)

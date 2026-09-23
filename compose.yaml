@@ -1,0 +1,132 @@
+# SPDX-FileCopyrightText: 2026 SmolBlackHole
+#
+# SPDX-License-Identifier: MPL-2.0
+
+name: nahormaar
+
+services:
+    database:
+        image: postgres:17-alpine
+        environment:
+            POSTGRES_DB: ${POSTGRES_DB:-nahormaar}
+            POSTGRES_USER: ${POSTGRES_USER:-nahormaar}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+        ports:
+            - 127.0.0.1:${POSTGRES_PORT:-5432}:5432
+        volumes:
+            - nahormaar-postgres:/var/lib/postgresql/data
+        restart: unless-stopped
+        healthcheck:
+            test:
+                - CMD-SHELL
+                - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+            interval: 5s
+            timeout: 3s
+            retries: 12
+
+    database-test:
+        image: postgres:17-alpine
+        profiles:
+            - test
+        environment:
+            POSTGRES_DB: nahormaar_test
+            POSTGRES_USER: nahormaar
+            POSTGRES_PASSWORD: nahormaar-test-only
+        ports:
+            - 127.0.0.1:55432:5432
+        tmpfs:
+            - /var/lib/postgresql/data
+        healthcheck:
+            test:
+                - CMD-SHELL
+                - pg_isready -U nahormaar -d nahormaar_test
+            interval: 2s
+            timeout: 2s
+            retries: 20
+
+    backend:
+        image: nahormaar-backend:local
+        build:
+            context: .
+            target: backend
+        env_file:
+            - .env
+        environment:
+            ACCESS_PATH: /app/config/access.toml
+            DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-nahormaar}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@database:5432/${POSTGRES_DB:-nahormaar}
+            NAHORMAAR_BIND_HOST: 0.0.0.0
+            NODE_PATH: /usr/local/bin/node
+        volumes:
+            - ./access.toml:/app/config/access.toml:ro
+        expose:
+            - "8000"
+        depends_on:
+            database:
+                condition: service_healthy
+        init: true
+        restart: unless-stopped
+        stop_grace_period: 15s
+        healthcheck:
+            test:
+                - CMD
+                - python
+                - -c
+                - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz', timeout=2).read()
+            interval: 10s
+            timeout: 3s
+            retries: 6
+            start_period: 45s
+
+    frontend:
+        image: nahormaar-frontend:local
+        build:
+            context: .
+            target: frontend
+        environment:
+            NUXT_BACKEND_URL: http://backend:8000
+            NUXT_PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Set PUBLIC_ORIGIN in .env}
+        ports:
+            - 127.0.0.1:${NAHORMAAR_PORT:-3000}:3000
+        depends_on:
+            backend:
+                condition: service_healthy
+        init: true
+        restart: unless-stopped
+        healthcheck:
+            test:
+                - CMD
+                - node
+                - -e
+                - "fetch('http://127.0.0.1:3000/').then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+            interval: 10s
+            timeout: 3s
+            retries: 6
+            start_period: 20s
+
+    backup:
+        image: postgres:17-alpine
+        entrypoint:
+            - sh
+            - /scripts/postgres-backup.sh
+        command:
+            - backup
+        environment:
+            PGHOST: database
+            PGDATABASE: ${POSTGRES_DB:-nahormaar}
+            PGUSER: ${POSTGRES_USER:-nahormaar}
+            PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+            EXPECTED_SCHEMA_REVISION: engine_0003
+            BACKUP_KEEP: ${BACKUP_KEEP:-14}
+        volumes:
+            - ./data/backups:/backups
+            - ./scripts/postgres-backup.sh:/scripts/postgres-backup.sh:ro
+        depends_on:
+            database:
+                condition: service_healthy
+        profiles:
+            - maintenance
+        init: true
+        restart: "no"
+
+volumes:
+    nahormaar-postgres:

@@ -48,7 +48,7 @@ def test_repeated_tracks_roundtrip_with_order_attribution_and_session_scope(
     other = QueueEntry(other_owner, track.id, 0)
 
     async def scenario() -> None:
-        path = tmp_path / "queue.sqlite3"
+        path = tmp_path / "queue.db"
         async with isolated_database(path) as sessions:
             async with sessions.begin() as session:
                 for session_id in (owner, other_owner):
@@ -83,7 +83,7 @@ def test_metadata_update_preserves_both_queue_occurrences(
     )
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "queue.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "queue.db") as sessions:
             async with sessions.begin() as session:
                 await ListeningSessionRepository(session).add(
                     ListeningSession(id=owner)
@@ -110,7 +110,7 @@ def test_missing_track_reference_rolls_back_track_and_queue_writes(
     invalid = QueueEntry(owner, uuid4(), 1)
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "queue.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "queue.db") as sessions:
             with pytest.raises(IntegrityError):
                 async with sessions.begin() as session:
                     await ListeningSessionRepository(session).add(
@@ -140,7 +140,7 @@ def test_duplicate_position_or_entry_id_rolls_back_the_batch(
     )
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "queue.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "queue.db") as sessions:
             async with sessions.begin() as session:
                 for session_id in {owner, second.session_id}:
                     await ListeningSessionRepository(session).add(
@@ -168,7 +168,7 @@ def test_removing_one_occurrence_preserves_track_and_other_positions(
     first, second = QueueEntry(owner, track.id, 0), QueueEntry(owner, track.id, 1)
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "queue.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "queue.db") as sessions:
             async with sessions.begin() as session:
                 await ListeningSessionRepository(session).add(
                     ListeningSession(id=owner)
@@ -194,7 +194,7 @@ def test_referenced_track_cannot_be_deleted(tmp_path: Path, track: Track) -> Non
     entry = QueueEntry(uuid4(), track.id, 0)
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "queue.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "queue.db") as sessions:
             async with sessions.begin() as session:
                 await ListeningSessionRepository(session).add(
                     ListeningSession(id=entry.session_id)
@@ -225,7 +225,7 @@ def test_rollback_restores_removed_entry_and_discards_replacement(
     replacement = QueueEntry(original.session_id, new_track.id, 0)
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "queue.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "queue.db") as sessions:
             async with sessions.begin() as session:
                 await ListeningSessionRepository(session).add(
                     ListeningSession(id=original.session_id)
@@ -249,12 +249,17 @@ def test_rollback_restores_removed_entry_and_discards_replacement(
     asyncio.run(scenario())
 
 
-def test_foreign_keys_are_enabled_on_multiple_connections(tmp_path: Path) -> None:
+def test_foreign_keys_exist_on_multiple_connections(tmp_path: Path) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "queue.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "queue.db") as sessions:
             async with sessions.begin() as first:
-                assert await first.scalar(text("PRAGMA foreign_keys")) == 1
+                statement = text(
+                    "SELECT COUNT(*) FROM information_schema.table_constraints "
+                    "WHERE constraint_type = 'FOREIGN KEY' "
+                    "AND table_schema = current_schema()"
+                )
+                assert (await first.scalar(statement) or 0) > 0
                 async with sessions.begin() as second:
-                    assert await second.scalar(text("PRAGMA foreign_keys")) == 1
+                    assert (await second.scalar(statement) or 0) > 0
 
     asyncio.run(scenario())

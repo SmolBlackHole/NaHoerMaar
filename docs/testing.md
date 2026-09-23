@@ -20,7 +20,7 @@ This runs repository text and Markdown-link checks, Ruff linting and formatting,
 strict mypy and Pyright, backend tests, frontend tests, Nuxt type checking and a
 production build. `npm run check` checks only the frontend. Shell wrappers are
 available as `scripts/check.sh` and `scripts/check.ps1`. GitHub Actions runs the
-standard checks on Windows and Linux.
+same gate on Linux with a PostgreSQL 17 service.
 
 For a clean Linux precheck before pushing, start Docker and run:
 
@@ -28,13 +28,21 @@ For a clean Linux precheck before pushing, start Docker and run:
 python scripts/dev.py check-container
 ```
 
-This builds the repository snapshot with Python 3.12, Node.js 24 and `libopus0`,
-then invokes the same complete gate. It catches clean-environment and Linux-only
-problems locally, while GitHub Actions remains responsible for the Windows job
-and the final hosted-runner result.
+This starts the disposable PostgreSQL test service, builds the repository
+snapshot with Python 3.12, Node.js 24 and `libopus0`, then invokes the same
+complete gate. It catches clean-environment, database and Linux-only problems
+locally. GitHub Actions remains the final hosted-runner result.
 
-Backend tests use a separate working directory and database per test, synthetic
-Discord credentials and simulated voice connections. Real Discord login,
+Backend tests use a separate working directory and PostgreSQL schema per test,
+synthetic Discord credentials and simulated voice connections. Start the test
+database before the native gate:
+
+```powershell
+docker compose --profile test up -d --wait database-test
+```
+
+The service listens only on `127.0.0.1:55432` and stores its data in `tmpfs`.
+Real Discord login,
 external socket connections and the local dev-server ports are blocked. HTTP
 integration tests use an in-process app or temporary loopback server. Audio
 fixtures are generated locally and never played in Discord. This isolates
@@ -44,18 +52,12 @@ window without active shared listening.
 To run the backend suite alone:
 
 ```powershell
-.venv\Scripts\python.exe -m pytest backend/tests
+.venv\Scripts\python.exe -m pytest backend/tests --basetemp=tmp/pytest
 ```
 
-The database recovery checks create, verify and restore only temporary SQLite
-files. Run them separately with:
-
-```powershell
-.venv\Scripts\python.exe -m pytest backend/tests/test_recovery.py
-```
-
-They cover account data, queue order, Radio, history and the playback checkpoint.
-The operational restore command and scheduler examples are documented in
+Repository tests cover PostgreSQL transactions, migration from supported schema
+revisions, account data, queue order, Radio, history and playback checkpoints.
+The operational dump and restore drill is documented in
 [Back up and restore NaHörMaar](recovery.md).
 
 Six full engine recordings are opt-in. In an agreed resource window:

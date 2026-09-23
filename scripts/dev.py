@@ -74,7 +74,41 @@ def check() -> None:
     )
     _run((str(python), "-m", "mypy"))
     _run((str(python), "-m", "pyright"))
-    _run((str(python), "-m", "pytest"))
+    (ROOT / "tmp").mkdir(exist_ok=True)
+    docker = None
+    if "NAHORMAAR_POSTGRES_TEST_URL" not in os.environ:
+        docker = shutil.which("docker")
+        if docker is None:
+            raise SystemExit("Docker is required for the PostgreSQL test database.")
+    try:
+        if docker is not None:
+            _run(
+                (
+                    docker,
+                    "compose",
+                    "--profile",
+                    "test",
+                    "up",
+                    "-d",
+                    "--wait",
+                    "database-test",
+                )
+            )
+        _run((str(python), "-m", "pytest", "--basetemp=tmp/pytest"))
+    finally:
+        if docker is not None:
+            _run(
+                (
+                    docker,
+                    "compose",
+                    "--profile",
+                    "test",
+                    "rm",
+                    "--force",
+                    "--stop",
+                    "database-test",
+                )
+            )
     _run((_npm(), "run", "check"))
 
 
@@ -85,8 +119,46 @@ def check_container() -> None:
     if docker is None:
         raise SystemExit("Docker is required for check-container.")
     _run((docker, "info", "--format", "Docker {{.ServerVersion}}"))
-    _run((docker, "build", "--file", "Dockerfile.ci", "--tag", CI_IMAGE, "."))
-    _run((docker, "run", "--init", "--rm", CI_IMAGE))
+    try:
+        _run(
+            (
+                docker,
+                "compose",
+                "--profile",
+                "test",
+                "up",
+                "-d",
+                "--wait",
+                "database-test",
+            )
+        )
+        _run((docker, "build", "--file", "Dockerfile.ci", "--tag", CI_IMAGE, "."))
+        _run(
+            (
+                docker,
+                "run",
+                "--init",
+                "--rm",
+                "--network",
+                "nahormaar_default",
+                "--env",
+                "NAHORMAAR_POSTGRES_TEST_URL=postgresql+psycopg://nahormaar:nahormaar-test-only@database-test:5432/nahormaar_test",
+                CI_IMAGE,
+            )
+        )
+    finally:
+        _run(
+            (
+                docker,
+                "compose",
+                "--profile",
+                "test",
+                "rm",
+                "--force",
+                "--stop",
+                "database-test",
+            )
+        )
 
 
 def main() -> None:

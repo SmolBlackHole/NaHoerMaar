@@ -3,81 +3,82 @@
 Parent: [Documentation index](README.md)
 
 NaHörMaar keeps the player, queue, Radio, history, accounts and browser sessions
-in one SQLite database. [Database](engine/database.md) owns its schema,
-repositories and transaction boundaries. `DATABASE_PATH` selects that file and
-defaults to `data/engine.sqlite3`.
+in one PostgreSQL database. [Database](engine/database.md) owns its schema and
+transaction boundaries. This page covers operational recovery for the Docker
+Compose deployment.
 
-The recovery command creates a consistent backup while the backend is running.
-Restoring is different: stop the backend before replacing its database. The
-dashboard can stay built or served, but it cannot control the player while the
-backend is offline.
+A backup may run while the bot is playing. A restore replaces the active
+database, so the backend must be stopped first. The PostgreSQL container stays
+running throughout the restore.
 
 ## Table of contents
 
 - [Back up and restore NaHörMaar](#back-up-and-restore-nahörmaar)
   - [Table of contents](#table-of-contents)
-  - [Create and check a backup](#create-and-check-a-backup)
-  - [Schedule a daily backup](#schedule-a-daily-backup)
-  - [Restore into a fresh database](#restore-into-a-fresh-database)
-  - [Replace the active database](#replace-the-active-database)
+  - [Create a backup](#create-a-backup)
+  - [Verify a backup](#verify-a-backup)
+  - [Schedule daily backups](#schedule-daily-backups)
+  - [Restore the active database](#restore-the-active-database)
+  - [What the maintenance command guarantees](#what-the-maintenance-command-guarantees)
 
-## Create and check a backup
+## Create a backup
 
-Run this from the repository root:
-
-```powershell
-.venv\Scripts\python.exe -m nahormaar_backend.recovery backup
-```
-
-Linux and macOS use `.venv/bin/python` instead. The command reads
-`DATABASE_PATH` from the environment or `.env`, writes a timestamped file to a
-`backups` directory beside the database, verifies it and keeps the newest 14
-managed backups. A failed backup does not remove an older one. Files that do not
-match NaHörMaar's backup naming scheme are left alone.
-
-Use `--directory` or `--keep` when the defaults do not fit the host:
+Run the one-shot maintenance service from the repository root:
 
 ```powershell
-.venv\Scripts\python.exe -m nahormaar_backend.recovery backup --directory E:\Backups\NaHörMaar --keep 30
+docker compose --profile maintenance run --rm backup
 ```
 
-Check any backup independently:
+The service creates a PostgreSQL custom-format dump under `data/backups/`,
+restores it into a temporary database and checks the Alembic revision and shared
+listening session. Only then does it publish the timestamped
+`engine-YYYYmmddTHHMMSSZ.dump` file.
+
+The default retention is 14 successful dumps. Set `BACKUP_KEEP` in `.env` to
+choose another positive number. Cleanup touches only files matching
+`engine-*.dump`; unrelated files remain alone. A failed backup keeps every
+previous successful dump.
+
+`data/backups/` is ignored by Git. Copy at least one verified dump to storage
+outside the Docker host. The dump contains account data and browser-session
+hashes, so protect it like `.env` and `access.toml`.
+
+## Verify a backup
+
+Pass the filename, without a directory, to the same maintenance service:
 
 ```powershell
-.venv\Scripts\python.exe -m nahormaar_backend.recovery verify data\backups\engine-20260923T103000000000Z.sqlite3
+docker compose --profile maintenance run --rm backup verify engine-20260923T103000Z.dump
 ```
 
-Verification checks SQLite integrity, foreign keys, the current engine schema
-and the single listening session. A zero exit code means the file passed those
-checks. It does not prove that the storage device will still be available after
-a host failure. Keep at least one copy outside the machine that runs the bot.
+Verification checks that `pg_restore` can read the archive, restores it into a
+temporary database, and requires the current Alembic revision and exactly one
+listening session. The temporary database is removed whether the check succeeds
+or fails. A zero exit code means the dump passed those checks.
 
-The backup contains account data and active browser-session hashes. Store it
-with the same care as `.env` and `access.toml`.
+Run this command after moving a dump to another host. A file existing in the
+backup directory is not evidence that it can be restored.
 
-## Schedule a daily backup
+## Schedule daily backups
 
-The bot does not run its own scheduler. The host starts the same `backup`
-command once a day.
+NaHörMaar does not contain a scheduler. Let the host run the same Compose
+command once a day and monitor its exit code.
 
-On Windows, create a task from an elevated PowerShell session while the current
-directory is the repository root:
+On Windows, register a task from an elevated PowerShell window opened in the
+repository root:
 
 ```powershell
 $root = (Get-Location).Path
-$python = (Resolve-Path .venv\Scripts\python.exe).Path
-$action = New-ScheduledTaskAction -Execute $python -Argument "-m nahormaar_backend.recovery backup" -WorkingDirectory $root
+$docker = (Get-Command docker).Source
+$action = New-ScheduledTaskAction -Execute $docker -Argument "compose --profile maintenance run --rm backup" -WorkingDirectory $root
 $trigger = New-ScheduledTaskTrigger -Daily -At 3am
-Register-ScheduledTask -TaskName "NaHörMaar database backup" -Action $action -Trigger $trigger -Description "Create and verify the daily NaHörMaar SQLite backup"
+Register-ScheduledTask -TaskName "NaHörMaar database backup" -Action $action -Trigger $trigger -Description "Create and verify the daily NaHörMaar PostgreSQL backup"
 ```
 
-The task runs as the account that registers it. Make sure that account can read
-the database and write to the backup directory.
-
-A cron entry for a checkout at `/srv/nahormaar` looks like this:
+A cron entry for a checkout at `/srv/nahormaar` can run the same command:
 
 ```cron
-0 3 * * * cd /srv/nahormaar && mkdir -p data/backups && .venv/bin/python -m nahormaar_backend.recovery backup >> data/backups/backup.log 2>&1
+0 3 * * * cd /srv/nahormaar && /usr/bin/docker compose --profile maintenance run --rm backup >> data/backups/backup.log 2>&1
 ```
 
 For systemd, use a one-shot service and timer:
@@ -90,7 +91,7 @@ Description=Back up the NaHörMaar database
 [Service]
 Type=oneshot
 WorkingDirectory=/srv/nahormaar
-ExecStart=/srv/nahormaar/.venv/bin/python -m nahormaar_backend.recovery backup
+ExecStart=/usr/bin/docker compose --profile maintenance run --rm backup
 ```
 
 ```ini
@@ -107,46 +108,54 @@ Unit=nahormaar-backup.service
 WantedBy=timers.target
 ```
 
-Enable it with:
+Enable the timer with:
 
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now nahormaar-backup.timer
 ```
 
-Check the task or timer after its first run. The command prints the full path of
-the completed backup and returns a nonzero exit code on failure.
+Check the task or timer after its first run. Scheduling a command does not prove
+that Docker could reach the database or write the dump.
 
-## Restore into a fresh database
+## Restore the active database
 
-Restoring to another path is safe to rehearse without touching the active file:
+Choose a verified dump and note the configured `POSTGRES_DB` value. The default
+database name is `nahormaar`.
+
+Stop only the backend, then restore with an explicit confirmation matching the
+database name:
 
 ```powershell
-.venv\Scripts\python.exe -m nahormaar_backend.recovery restore data\backups\engine-20260923T103000000000Z.sqlite3 --database data\restored.sqlite3
+docker compose --profile maintenance run --rm backup verify engine-20260923T103000Z.dump
+docker compose stop backend
+docker compose --profile maintenance run --rm -e CONFIRM_RESTORE_DATABASE=nahormaar backup restore engine-20260923T103000Z.dump
+docker compose start backend
+docker compose logs --tail 100 backend
 ```
 
-Point `DATABASE_PATH` at `data/restored.sqlite3` only after the command succeeds.
-Start the backend and check `engine.runtime.ready`, sign-in, the queue, the
-current position, history and Radio state. This is also the preferred way to
-test a backup on another machine.
+The restore command first loads and validates the dump in a separate database.
+It then refuses replacement while another client still uses the active
+database. After validation, it renames the old database aside, promotes the
+restored database, and removes the old copy only after the promotion succeeds.
 
-## Replace the active database
+If `POSTGRES_DB` is not `nahormaar`, use its exact value for
+`CONFIRM_RESTORE_DATABASE`. The confirmation prevents an accidental restore from
+a copied command. Keep the backend stopped until the restore command finishes.
 
-1. Verify the chosen backup.
-2. If the current database is readable, create one final backup.
-3. Stop the backend and wait for the process to exit.
-4. Restore with explicit replacement:
+After startup, check the backend health, Discord channel, queue order, current
+track and position, history, Radio state and sign-in. Keep the selected dump
+until that acceptance is complete.
 
-   ```powershell
-   .venv\Scripts\python.exe -m nahormaar_backend.recovery restore data\backups\engine-20260923T103000000000Z.sqlite3 --replace
-   ```
+## What the maintenance command guarantees
 
-5. Start the backend and inspect its startup logs.
-6. Open the dashboard and check the account, queue, current position, history
-   and Radio state before resuming playback.
+The maintenance service uses PostgreSQL 17 tools against the database service on
+the private Compose network. It does not start Discord or playback. Backup and
+verification are read-only for the active database. Restore is deliberately a
+separate command and requires both a stopped backend and an explicit database
+name confirmation.
 
-`--replace` is deliberately required. The command validates a temporary copy
-before swapping it into place, so a damaged or unrelated backup leaves the
-destination untouched. It cannot reliably determine on every operating system
-whether another process still owns the database. Replacing a database while the
-backend is running is unsupported.
+The database itself lives in the `nahormaar-postgres` named volume. Managed dump
+files live in the host directory `data/backups/`. `docker compose down` keeps
+the database volume. `docker compose down --volumes` deletes it, so use that
+option only when the database is intentionally disposable.

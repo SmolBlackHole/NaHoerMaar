@@ -75,7 +75,9 @@ def collect() -> list[dict[str, str]]:
             "text": ffmpeg.stdout,
         }
     )
-    opus_notice = Path(str(distribution("discord.py").locate_file("discord/bin/COPYING")))
+    opus_notice = Path(
+        str(distribution("discord.py").locate_file("discord/bin/COPYING"))
+    )
     if opus_notice.is_file():
         packages.append(
             {

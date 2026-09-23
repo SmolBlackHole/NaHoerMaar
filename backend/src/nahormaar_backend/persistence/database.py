@@ -2,32 +2,19 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""Shared SQLAlchemy metadata and SQLite connections."""
+"""Shared SQLAlchemy metadata and PostgreSQL connections."""
 
-import sqlite3
-from pathlib import Path
-
-from sqlalchemy import URL, Engine, create_engine, event
+from sqlalchemy import URL, Engine, create_engine, make_url
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy.pool import ConnectionPoolEntry
 
 
 class Base(DeclarativeBase):
     pass
 
 
-def _foreign_keys(connection: sqlite3.Connection, record: ConnectionPoolEntry) -> None:
-    connection.autocommit = True
-    try:
-        connection.execute("PRAGMA foreign_keys = ON").close()
-    finally:
-        connection.autocommit = False
-
-
-def database_engine(path: Path, timeout: float = 5.0) -> Engine:
-    engine = create_engine(
-        URL.create("sqlite+pysqlite", database=str(path)),
-        connect_args={"autocommit": False, "timeout": timeout},
-    )
-    event.listen(engine, "connect", _foreign_keys)
-    return engine
+def database_engine(database: str | URL) -> Engine:
+    """Create the synchronous PostgreSQL engine used by account storage."""
+    url = make_url(database)
+    if url.drivername != "postgresql+psycopg":
+        raise ValueError("Database URL must use PostgreSQL with psycopg.")
+    return create_engine(url, pool_pre_ping=True)

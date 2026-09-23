@@ -4,7 +4,7 @@ export default defineNuxtConfig({
 	ui: { colorMode: false },
 	runtimeConfig: {
 		backendUrl: "http://127.0.0.1:8000",
-		publicOrigin: process.env.PUBLIC_ORIGIN || "http://localhost:3012",
+		publicOrigin: "http://localhost:3000",
 	},
 	vite: {
 		build: {

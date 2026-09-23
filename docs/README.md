@@ -62,8 +62,8 @@ whole sequence to change one provider or develop one migration.
 | [Listening together](listening.md) | Listener-visible controls and behavior |
 | [Set up Discord](discord-setup.md) | Developer Portal, installation, OAuth redirect and whitelist |
 | [Development](development.md) | Local setup, commands and service startup |
-| [Hosting](hosting.md) | Host constraints and capacity questions |
-| [Backup and restore](recovery.md) | SQLite copies, verification, retention and restore procedure |
+| [Hosting](hosting.md) | Production Compose deployment, HTTPS and host capacity |
+| [Backup and restore](recovery.md) | PostgreSQL dumps, verification, retention and restore procedure |
 | [Testing and acceptance](testing.md) | Automated checks, diagnostics and live listening evidence |
 
 ### System and contracts

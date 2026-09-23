@@ -14,13 +14,26 @@ permissions:
 
 jobs:
     quality:
-        name: Workspace on ${{ matrix.os }}
-        runs-on: ${{ matrix.os }}
-        timeout-minutes: 15
-        strategy:
-            fail-fast: false
-            matrix:
-                os: [ubuntu-latest, windows-latest]
+        name: Workspace
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+        services:
+            postgres:
+                image: postgres:17-alpine
+                env:
+                    POSTGRES_DB: nahormaar_test
+                    POSTGRES_USER: nahormaar
+                    POSTGRES_PASSWORD: integration-test-only
+                ports:
+                    - 5432:5432
+                options: >-
+                    --health-cmd "pg_isready -U nahormaar -d nahormaar_test"
+                    --health-interval 5s
+                    --health-timeout 3s
+                    --health-retries 12
+
+        env:
+            NAHORMAAR_POSTGRES_TEST_URL: postgresql+psycopg://nahormaar:integration-test-only@127.0.0.1:5432/nahormaar_test
 
         steps:
             - name: Check out repository
@@ -40,8 +53,7 @@ jobs:
                   cache: npm
                   cache-dependency-path: package-lock.json
 
-            - name: Install Linux audio dependencies
-              if: runner.os == 'Linux'
+            - name: Install audio dependencies
               run: |
                   sudo apt-get update
                   sudo apt-get install --no-install-recommends -y libopus0

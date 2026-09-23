@@ -8,20 +8,27 @@ from pathlib import Path
 
 import discord
 import pytest
+from sqlalchemy import make_url
 
 from nahormaar_backend.config import AuthSettings
 
 
-def test_default_settings_cannot_open_live_database(tmp_path: Path) -> None:
+def test_default_settings_use_isolated_postgresql_schema(tmp_path: Path) -> None:
     settings = AuthSettings.from_env()
+    url = make_url(settings.database_url)
+
     assert Path.cwd() == tmp_path
-    assert settings.database_path == tmp_path / "isolated.sqlite3"
+    assert url.drivername == "postgresql+psycopg"
+    assert url.database == "nahormaar_test"
+    options = url.query["options"]
+    assert isinstance(options, str)
+    assert options.startswith("-csearch_path=t_")
     assert settings.access_path == tmp_path / "access.toml"
     assert settings.client_secret == "test-secret"  # noqa: S105
 
 
 @pytest.mark.parametrize(
-    "address", [("127.0.0.1", 8000), ("::1", 3012), ("192.0.2.1", 443)]
+    "address", [("127.0.0.1", 8000), ("::1", 3000), ("192.0.2.1", 443)]
 )
 def test_live_and_external_connections_are_rejected(address: tuple[str, int]) -> None:
     with socket.socket() as connection:

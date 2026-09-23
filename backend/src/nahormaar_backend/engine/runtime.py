@@ -49,7 +49,7 @@ async def open_engine(
     """
     async with AsyncExitStack() as resources:
         resources.push_async_callback(auth.close)
-        engine = database_engine(auth.settings.database_path)
+        engine = database_engine(auth.settings.database_url)
         resources.push_async_callback(engine.dispose)
         for provider in providers:
             resources.push_async_callback(provider.close)

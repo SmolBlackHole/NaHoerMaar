@@ -36,7 +36,7 @@ def test_radio_uses_native_seed_and_translates_candidates_without_queueing(
     tmp_path: Path, playlist: bool
 ) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "radio.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "radio.db") as sessions:
             candidate = music_song()
             candidate.pop("duration_seconds", None)
             candidate.pop("duration", None)
@@ -94,7 +94,7 @@ def test_radio_uses_native_seed_and_translates_candidates_without_queueing(
 
 def test_radio_rejects_invalid_seed_capability_and_payload(tmp_path: Path) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "radio.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "radio.db") as sessions:
             runner = FixtureRunner(response([]))
             provider = YouTubeMusicProvider(Path("node"), runner=runner)
             catalog = Catalog(
@@ -124,7 +124,7 @@ def test_catalog_cache_keys_use_canonical_links_and_keep_newer_persistent_metada
 ) -> None:
     async def scenario() -> None:
         now = TIME
-        async with isolated_database(tmp_path / "cache.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "cache.db") as sessions:
             runner = FixtureRunner(details(title="Original"))
             provider = YouTubeProvider(Path("node"), runner=runner)
             catalog = Catalog(
@@ -161,7 +161,7 @@ def test_search_and_playlist_snapshots_refresh_without_replacing_visible_occurre
 ) -> None:
     async def scenario() -> None:
         now = 0.0
-        async with isolated_database(tmp_path / "cache.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "cache.db") as sessions:
             runner = FixtureRunner(response([music_song()]))
             provider = YouTubeMusicProvider(Path("node"), runner=runner)
             catalog = Catalog(

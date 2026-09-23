@@ -59,7 +59,7 @@ class Auth:
         clock: Callable[[], float] = time.time,
     ) -> None:
         self.settings = settings
-        self.accounts = Accounts(settings.database_path)
+        self.accounts = Accounts(settings.database_url)
         self.avatars = avatars
         self.provider = provider
         self.clock = clock

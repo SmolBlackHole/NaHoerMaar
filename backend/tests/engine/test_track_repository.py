@@ -42,7 +42,7 @@ def test_committed_track_survives_reopening_the_database(
     tmp_path: Path, track: Track
 ) -> None:
     async def scenario() -> None:
-        path = tmp_path / "tracks.sqlite3"
+        path = tmp_path / "tracks.db"
         async with isolated_database(path) as sessions:
             async with sessions.begin() as session:
                 await TrackRepository(session).add(track)
@@ -74,7 +74,7 @@ def test_partial_metadata_roundtrip(
     track = replace(track, metadata=metadata)
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "tracks.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "tracks.db") as sessions:
             async with sessions.begin() as session:
                 await TrackRepository(session).add(track)
             async with sessions.begin() as session:
@@ -87,7 +87,7 @@ def test_update_persists_domain_merge_and_returns_detached_values(
     tmp_path: Path, track: Track
 ) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "tracks.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "tracks.db") as sessions:
             async with sessions.begin() as session:
                 await TrackRepository(session).add(track)
             async with sessions.begin() as session:
@@ -129,7 +129,7 @@ def test_external_ids_are_case_sensitive_and_namespaced(
     )
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "tracks.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "tracks.db") as sessions:
             async with sessions.begin() as session:
                 repository = TrackRepository(session)
                 for variant in variants:
@@ -155,7 +155,7 @@ def test_duplicate_identity_rolls_back_other_writes(
     )
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "tracks.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "tracks.db") as sessions:
             async with sessions.begin() as session:
                 await TrackRepository(session).add(track)
             with pytest.raises(IntegrityError):
@@ -179,7 +179,7 @@ def test_duplicate_internal_id_does_not_replace_a_track(
     duplicate = replace(track, identity=MediaIdentity("youtube", "different"))
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "tracks.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "tracks.db") as sessions:
             async with sessions.begin() as session:
                 await TrackRepository(session).add(track)
             with pytest.raises(IntegrityError):
@@ -202,7 +202,7 @@ def test_application_failure_rolls_back_insert_and_update(
     updated = replace(track, metadata=TrackMetadata(title="Uncommitted title"))
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "tracks.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "tracks.db") as sessions:
             async with sessions.begin() as session:
                 await TrackRepository(session).add(track)
             with pytest.raises(RuntimeError, match="Abort operation"):
@@ -223,7 +223,7 @@ def test_repository_does_not_commit_or_close_the_callers_session(
     tmp_path: Path, track: Track
 ) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "tracks.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "tracks.db") as sessions:
             async with sessions() as writer:
                 async with writer.begin():
                     repository = TrackRepository(writer)
@@ -245,7 +245,7 @@ def test_update_rejects_identity_reassignment_and_unknown_tracks(
     tmp_path: Path, track: Track
 ) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "tracks.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "tracks.db") as sessions:
             async with sessions.begin() as session:
                 repository = TrackRepository(session)
                 await repository.add(track)
@@ -289,7 +289,7 @@ def test_track_timestamps_roundtrip_as_utc_and_checks_do_not_imply_changes(
     )
 
     async def scenario() -> None:
-        path = tmp_path / "timestamps.sqlite3"
+        path = tmp_path / "timestamps.db"
         async with isolated_database(path) as sessions:
             async with sessions.begin() as session:
                 await TrackRepository(session).add(track)

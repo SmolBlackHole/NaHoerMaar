@@ -48,7 +48,7 @@ def test_environment_overrides_dotenv_and_resolves_paths(
         "\n".join(
             (
                 "DISCORD_TOKEN=file-token",
-                "DATABASE_PATH=file.sqlite3",
+                "DATABASE_URL=postgresql+psycopg://file:secret@db/file",
                 "NODE_PATH=file-node",
                 "FFMPEG_PATH=file-ffmpeg",
             )
@@ -56,14 +56,14 @@ def test_environment_overrides_dotenv_and_resolves_paths(
         encoding="utf-8",
     )
     monkeypatch.setenv("DISCORD_TOKEN", "env-token")
-    monkeypatch.setenv("DATABASE_PATH", "env.sqlite3")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://env:secret@db/env")
     monkeypatch.setenv("NODE_PATH", "env-node")
     monkeypatch.setenv("FFMPEG_PATH", "env-ffmpeg")
 
     settings = Settings.from_env()
 
     assert settings.token == "env-token"  # noqa: S105 - synthetic test credential
-    assert settings.database_path == (tmp_path / "env.sqlite3").resolve()
+    assert settings.database_url == "postgresql+psycopg://env:secret@db/env"
     assert settings.node_path == (tmp_path / "node.exe").resolve()
     assert settings.ffmpeg_path == tmp_path / "ffmpeg.exe"
 
@@ -76,7 +76,7 @@ def test_explicit_environment_is_isolated_and_token_is_redacted(
     settings = Settings.from_env(
         {
             "DISCORD_TOKEN": "explicit-secret",
-            "DATABASE_PATH": str(tmp_path / "explicit.sqlite3"),
+            "DATABASE_URL": "postgresql+psycopg://explicit:secret@db/explicit",
             "NODE_PATH": "node",
         }
     )
@@ -105,7 +105,10 @@ def test_missing_or_invalid_identity_settings_are_rejected(
 def test_missing_and_old_node_overrides_are_rejected(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    base = {"DISCORD_TOKEN": "token"}
+    base = {
+        "DISCORD_TOKEN": "token",
+        "DATABASE_URL": "postgresql+psycopg://test:secret@db/test",
+    }
 
     def missing_executable(executable: str) -> str | None:
         del executable

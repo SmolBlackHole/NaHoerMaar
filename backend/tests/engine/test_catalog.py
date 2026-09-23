@@ -62,7 +62,7 @@ def test_catalog_ingests_details_from_aliases_without_persisting_audio_secrets(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
-        path = tmp_path / "catalog.sqlite3"
+        path = tmp_path / "catalog.db"
         now = TIME
         async with isolated_database(path) as sessions:
             metadata = MetadataStore(sessions, clock=lambda: now)
@@ -126,7 +126,7 @@ def test_catalog_ingests_details_from_aliases_without_persisting_audio_secrets(
 
 def test_catalog_routes_by_registration_order_or_explicit_key(tmp_path: Path) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "catalog.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "catalog.db") as sessions:
             first = DetailsOnly(
                 "youtube_music",
                 TrackFinding(REFERENCE, TrackMetadata(title="Music result")),
@@ -173,7 +173,7 @@ def test_link_and_capability_errors_do_not_fall_back_or_touch_storage(
             pass
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "catalog.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "catalog.db") as sessions:
             runner = FixtureRunner(details())
             provider = YouTubeProvider(Path("node"), runner=runner)
             catalog = Catalog(
@@ -208,7 +208,7 @@ def test_provider_identity_mismatch_is_not_persisted(
             return PlayableSource(self.finding, "https://stream.example/audio")
 
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "catalog.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "catalog.db") as sessions:
             wrong = replace(REFERENCE, identity=MediaIdentity("youtube", "other-video"))
             provider = WrongAudio(
                 "youtube_music", TrackFinding(wrong, TrackMetadata(title="Wrong track"))
@@ -235,7 +235,7 @@ def test_failed_or_cancelled_provider_work_opens_no_metadata_transaction(
     tmp_path: Path, resolve_audio: bool
 ) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "catalog.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "catalog.db") as sessions:
             started = asyncio.Event()
             transactions: list[SessionTransaction] = []
 
@@ -314,7 +314,7 @@ def test_slow_older_request_cannot_overwrite_a_newer_observation(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
-        async with isolated_database(tmp_path / "catalog.sqlite3") as sessions:
+        async with isolated_database(tmp_path / "catalog.db") as sessions:
             now = TIME
             started, release = asyncio.Event(), asyncio.Event()
             calls = 0
