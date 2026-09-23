@@ -19,7 +19,7 @@ const profile = useProfileStore();
 				alt=""
 				width="32"
 				height="32"
-				class="size-8 shrink-0 rounded-lg bg-elevated [image-rendering:pixelated]"
+				class="size-8 shrink-0 rounded-lg [image-rendering:pixelated]"
 			/>
 			<span v-if="!collapsed" class="min-w-0 flex-1 truncate text-left">{{
 				profile.profile.name

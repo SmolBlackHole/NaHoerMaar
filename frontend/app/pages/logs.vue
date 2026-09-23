@@ -19,7 +19,7 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 let request: AbortController | undefined;
 let disposed = false;
 let generation = 0;
-const levels = ["all", "INFO", "WARNING", "ERROR", "CRITICAL"];
+const levels = ["all", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"];
 const visibleEntries = computed(() =>
 	level.value === "all"
 		? entries.value
@@ -29,6 +29,13 @@ const time = (value: string) =>
 	new Intl.DateTimeFormat(undefined, { dateStyle: "short", timeStyle: "medium" }).format(
 		new Date(value),
 	);
+const actorLabel = (entry: LogEntry) => entry.actor_name || entry.actor_id || "System";
+const actorHelp = (entry: LogEntry) =>
+	entry.actor_id
+		? entry.actor_name
+			? `${entry.actor_name} (${entry.actor_id})`
+			: entry.actor_id
+		: "Background task or system event";
 
 function stop() {
 	generation++;
@@ -154,7 +161,7 @@ onBeforeUnmount(() => {
 					<div
 						v-for="entry in visibleEntries"
 						:key="entry.id"
-						class="log-row grid gap-x-3 px-4 py-2 text-xs hover:bg-elevated/60 sm:grid-cols-[10rem_5rem_12rem_minmax(0,1fr)] sm:py-1.5"
+						class="log-row grid gap-x-3 px-4 py-2 text-xs hover:bg-elevated/60 sm:grid-cols-[10rem_5rem_10rem_12rem_minmax(0,1fr)] sm:py-1.5"
 					>
 						<time class="text-muted tabular-nums" :datetime="entry.timestamp">{{
 							time(entry.timestamp)
@@ -170,10 +177,17 @@ onBeforeUnmount(() => {
 							class="font-semibold"
 							>{{ entry.level }}</span
 						>
-						<UTooltip :text="entry.source">
-							<span class="text-muted truncate">{{ entry.source }}</span>
+						<UTooltip :text="actorHelp(entry)">
+							<span class="log-actor text-muted truncate">{{
+								actorLabel(entry)
+							}}</span>
 						</UTooltip>
-						<span class="min-w-0 break-all text-highlighted">{{ entry.message }}</span>
+						<UTooltip :text="entry.source">
+							<span class="log-source text-muted truncate">{{ entry.source }}</span>
+						</UTooltip>
+						<span class="log-message min-w-0 break-all text-highlighted">{{
+							entry.message
+						}}</span>
 					</div>
 				</div>
 			</div>
@@ -198,8 +212,9 @@ onBeforeUnmount(() => {
 	.log-row {
 		grid-template-columns: auto 1fr;
 	}
-	.log-row span:nth-of-type(2),
-	.log-row span:nth-of-type(3) {
+	.log-actor,
+	.log-source,
+	.log-message {
 		grid-column: 1 / -1;
 	}
 }

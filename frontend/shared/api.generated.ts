@@ -822,6 +822,10 @@ export interface components {
         };
         /** LogEntryView */
         LogEntryView: {
+            /** Actor Id */
+            actor_id: string | null;
+            /** Actor Name */
+            actor_name: string | null;
             /** Id */
             id: number;
             /** Level */

@@ -99,7 +99,7 @@ const links = computed(() => [
 </script>
 
 <template>
-	<UDashboardGroup unit="rem" storage-key="nahormaar-layout" :persistent="false">
+	<UDashboardGroup unit="rem" storage="local" storage-key="nahormaar-layout" persistent>
 		<div class="music-shell flex min-h-0 flex-1 overflow-hidden">
 			<UDashboardSidebar
 				id="navigation"
