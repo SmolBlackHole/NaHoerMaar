@@ -2,13 +2,17 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""Typed player commands, outcomes and committed domain events."""
+"""Typed player commands, committed events and bounded live subscriptions."""
 
+import asyncio
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
+import logging
 from uuid import UUID
 
 from nahoermaar.catalog.domain import TrackId, TrackSourceId
-from nahoermaar.messaging import Command, Event
+from nahoermaar.messaging import Command, Event, MessageContext
 from nahoermaar.users.domain import UserId
 
 from .domain import (
@@ -143,7 +147,77 @@ class RadioRefillRequested(Event):
 class PlayerChanged(Event):
     session_id: ListeningSessionId
     revision: int
-    action: str
+    operation_id: OperationId
+    outcome: MutationOutcome
 
 
+@dataclass(frozen=True, slots=True)
+class PlayerStateChange:
+    event: PlayerChanged
+    context: MessageContext
+    state: PlayerState
+
+
+@dataclass(frozen=True, slots=True)
+class Reauthenticate:
+    pass
+
+
+type LivePlayerEvent = PlayerStateChange | Reauthenticate
 type PlayerEvent = QueueChanged | RadioRefillRequested | PlayerChanged
+
+_LOGGER = logging.getLogger(__name__)
+
+
+class PlayerEventStream:
+    """Fan committed player state out to bounded transient subscribers."""
+
+    __slots__ = ("_closed", "_subscribers")
+
+    def __init__(self) -> None:
+        self._subscribers: set[asyncio.Queue[LivePlayerEvent | None]] = set()
+        self._closed = False
+
+    @asynccontextmanager
+    async def subscribe(
+        self, *, capacity: int = 16
+    ) -> AsyncGenerator[asyncio.Queue[LivePlayerEvent | None]]:
+        if self._closed:
+            raise RuntimeError("Player event stream is closed.")
+        if capacity < 1:
+            raise ValueError("Subscriber capacity must be positive.")
+        queue: asyncio.Queue[LivePlayerEvent | None] = asyncio.Queue(capacity)
+        self._subscribers.add(queue)
+        try:
+            yield queue
+        finally:
+            self._subscribers.discard(queue)
+
+    def publish(
+        self, event: PlayerChanged, context: MessageContext, state: PlayerState
+    ) -> None:
+        self._send(PlayerStateChange(event, context, state))
+
+    def reauthenticate(self) -> None:
+        self._send(Reauthenticate())
+
+    def close(self) -> None:
+        self._closed = True
+        for queue in tuple(self._subscribers):
+            self._disconnect(queue)
+        self._subscribers.clear()
+
+    def _send(self, event: LivePlayerEvent) -> None:
+        for queue in tuple(self._subscribers):
+            if queue.full():
+                _LOGGER.warning("player.events.slow_subscriber_disconnected")
+                self._subscribers.discard(queue)
+                self._disconnect(queue)
+            else:
+                queue.put_nowait(event)
+
+    @staticmethod
+    def _disconnect(queue: asyncio.Queue[LivePlayerEvent | None]) -> None:
+        while not queue.empty():
+            queue.get_nowait()
+        queue.put_nowait(None)

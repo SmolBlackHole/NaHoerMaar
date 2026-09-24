@@ -25,6 +25,7 @@ from .player.events import (
     ClearQueue,
     MoveQueueEntry,
     MutationReply,
+    PlayerChanged,
     RadioRefillRequested,
     RemoveQueueEntry,
     RetryRadio,
@@ -220,6 +221,11 @@ def _register_handlers(
     ) -> MutationReply:
         return await player.execute(command, context)
 
+    async def reauthenticate_stream(
+        _event: UserAccessChanged, _context: MessageContext
+    ) -> None:
+        player.events.reauthenticate()
+
     bus.register_command(AddTracks, add_tracks)
     bus.register_command(RemoveQueueEntry, remove_entry)
     bus.register_command(MoveQueueEntry, move_entry)
@@ -228,5 +234,8 @@ def _register_handlers(
     bus.register_command(StartRadio, start_radio)
     bus.register_command(StopRadio, stop_radio)
     bus.register_command(RetryRadio, retry_radio)
+
     bus.register_command(ApplyRadioCandidates, apply_radio)
+    bus.subscribe(PlayerChanged, player.broadcast)
     bus.subscribe(RadioRefillRequested, player.refill)
+    bus.subscribe(UserAccessChanged, reauthenticate_stream)

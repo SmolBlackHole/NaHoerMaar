@@ -111,7 +111,12 @@ def transition(
     if queue_changed:
         events.append(QueueChanged(session.id, session.queue_revision))
     events.append(
-        PlayerChanged(session.id, session.revision, result.outcome.action.value)
+        PlayerChanged(
+            session.id,
+            session.revision,
+            command.operation_id,
+            result.outcome,
+        )
     )
     return replace(result, state=updated, events=tuple(events))
 

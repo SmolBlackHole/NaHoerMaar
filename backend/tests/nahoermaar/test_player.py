@@ -33,6 +33,7 @@ from nahoermaar.player.events import (
     AddTracks,
     ApplyRadioCandidates,
     MutationReply,
+    PlayerChanged,
     RadioRefillRequested,
     RemoveQueueEntry,
     StartRadio,
@@ -338,6 +339,7 @@ def test_mailbox_serializes_commands_and_replays_operation_receipts() -> None:
             bus,
             NoRadio(),
         )
+        bus.subscribe(PlayerChanged, manager.broadcast)
         await manager.start()
         session_id = manager.state.session.id
         commands = tuple(
@@ -349,10 +351,12 @@ def test_mailbox_serializes_commands_and_replays_operation_receipts() -> None:
             for track_id, source_id in tracks
         )
         context = MessageContext(actor_id=user_id)
-        first, second = await asyncio.gather(
-            manager.execute(commands[0], context),
-            manager.execute(commands[1], context),
-        )
+        async with manager.events.subscribe(capacity=1) as changes:
+            first, second = await asyncio.gather(
+                manager.execute(commands[0], context),
+                manager.execute(commands[1], context),
+            )
+            assert await changes.get() is None
         assert first.state.session.revision == 1
         assert second.state.session.revision == 2
         assert [entry.position for entry in manager.state.queue.entries] == [0, 1]

@@ -33,8 +33,10 @@ from .domain import (
 from .events import (
     ApplyRadioCandidates,
     MutationReply,
+    PlayerChanged,
     PlayerCommand,
     PlayerEvent,
+    PlayerEventStream,
     RadioRefillRequested,
     TrackSelection,
     UndoQueue,
@@ -248,6 +250,7 @@ class PlayerSessionManager:
 
     __slots__ = (
         "_bus",
+        "_events",
         "_radio",
         "_radio_tasks",
         "_session",
@@ -263,8 +266,13 @@ class PlayerSessionManager:
         self._units = units
         self._bus = bus
         self._radio = radio
+        self._events = PlayerEventStream()
         self._session: PlayerSession | None = None
         self._radio_tasks: set[asyncio.Task[None]] = set()
+
+    @property
+    def events(self) -> PlayerEventStream:
+        return self._events
 
     @property
     def state(self) -> PlayerState:
@@ -314,6 +322,9 @@ class PlayerSessionManager:
             raise PlayerError(PlayerErrorCode.INVALID_COMMAND, 404)
         return await session.execute(command, context)
 
+    async def broadcast(self, event: PlayerChanged, context: MessageContext) -> None:
+        self._events.publish(event, context, self.state)
+
     async def refill(
         self,
         event: RadioRefillRequested,
@@ -337,6 +348,7 @@ class PlayerSessionManager:
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
         self._radio_tasks.clear()
+        self._events.close()
         _LOGGER.info("player.session_closed")
 
     async def _resolve_radio(

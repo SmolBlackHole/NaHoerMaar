@@ -21,6 +21,7 @@ from nahoermaar.messaging import MessageContext
 from nahoermaar.player.domain import (
     ListeningSessionId,
     OperationId,
+    PlayerState,
     QueueEntryId,
     RadioSeed,
     UndoId,
@@ -161,7 +162,7 @@ def router(application: Application) -> APIRouter:
 
     @routes.get("")
     async def player() -> PlayerView:
-        return await _player(application, application.player.state)
+        return await player_view(application, application.player.state)
 
     @routes.post("/queue")
     async def add(request: Request, body: AddQueueInput) -> MutationView:
@@ -325,7 +326,7 @@ async def _mutation(
 ) -> MutationView:
     outcome = reply.outcome
     return MutationView(
-        player=await _player(application, reply.state),
+        player=await player_view(application, reply.state),
         outcome=OutcomeView(
             action=outcome.action.value,
             added_count=outcome.added_count,
@@ -340,14 +341,10 @@ async def _mutation(
     )
 
 
-async def _player(
+async def player_view(
     application: Application,
-    state: object,
+    state: PlayerState,
 ) -> PlayerView:
-    from nahoermaar.player.domain import PlayerState
-
-    if not isinstance(state, PlayerState):
-        raise TypeError("Player view requires a PlayerState.")
     tracks = await application.catalog.tracks(
         {entry.track_id for entry in state.queue.entries}
     )

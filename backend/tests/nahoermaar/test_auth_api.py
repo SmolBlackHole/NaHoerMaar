@@ -14,6 +14,8 @@ import httpx
 from sqlalchemy import insert
 
 from nahoermaar.api.app import create_app
+from nahoermaar.api.events import AuthEventView, ChangeView, event_stream
+from nahoermaar.api.player import PlayerView
 from nahoermaar.catalog.service import CatalogService
 from nahoermaar.bootstrap import (  # pyright: ignore[reportPrivateUsage]
     Application,
@@ -88,6 +90,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
         player,
     )
     app = create_app(application)
+    assert "/api/events" in app.openapi()["paths"]
 
     async def scenario() -> None:
         await access.reconcile()
@@ -115,6 +118,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             assert callback.status_code == 302
             assert callback.headers["location"] == ORIGIN + "/profile"
             session_token = client.cookies.get(SESSION_COOKIE)
+            assert session_token is not None
             current = await auth.authenticate(session_token)
 
             session = await client.get("/api/auth/session")
@@ -125,6 +129,12 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             assert player_state.status_code == 200
             assert player_state.json()["queue"] == []
             assert player_state.json()["crossfade_seconds"] == 7
+            events = event_stream(application, session_token)
+            initial = await anext(events)
+            assert initial.event == "state"
+            assert initial.id == "0"
+            assert isinstance(initial.data, PlayerView)
+            assert initial.data.queue == ()
 
             rejected = await client.put(
                 "/api/users/me/profile",
@@ -153,12 +163,12 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
                     )
                 )
                 await work.commit()
-            operation_id = str(uuid4())
+            operation_id = uuid4()
             queued = await client.post(
                 "/api/player/queue",
                 headers=headers,
                 json={
-                    "operation_id": operation_id,
+                    "operation_id": str(operation_id),
                     "tracks": [{"track_id": str(track_id)}],
                 },
             )
@@ -166,11 +176,17 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             assert queued.json()["player"]["queue"][0]["request"][
                 "requested_by"
             ] == str(current.user.id)
+            change = await anext(events)
+            assert change.event == "change"
+            assert change.id == "1"
+            assert isinstance(change.data, ChangeView)
+            assert change.data.operation_id == operation_id
+            assert change.data.state.queue[0].request.requested_by == current.user.id
             replayed = await client.post(
                 "/api/player/queue",
                 headers=headers,
                 json={
-                    "operation_id": operation_id,
+                    "operation_id": str(operation_id),
                     "tracks": [{"track_id": str(track_id)}],
                 },
             )
@@ -203,6 +219,16 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             )
             assert wrong_origin.status_code == 403
             assert wrong_origin.json() == {"error": "origin_forbidden"}
+
+            waiting = asyncio.create_task(anext(events))
+            await asyncio.sleep(0)
+            await auth.logout(session_token)
+            player.events.reauthenticate()
+            auth_event = await asyncio.wait_for(waiting, timeout=1)
+            assert auth_event.event == "auth"
+            assert isinstance(auth_event.data, AuthEventView)
+            assert auth_event.data.error == "signed_out"
+            await events.aclose()
         await player.close()
         await catalog.close()
 
