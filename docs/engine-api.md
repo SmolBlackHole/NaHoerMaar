@@ -76,6 +76,12 @@ original outcome and current state without applying another mutation.
 Once the Session accepts a command, cancellation of its HTTP caller does not
 cancel the committed work. A client retry keeps the same idempotency key.
 
+Nuxt gives every API request an `X-Request-ID`. The backend accepts a valid UUID
+or replaces an invalid value, returns the final ID in the response header and
+uses it throughout the request, Session command and resulting playback work.
+This trace ID follows one technical path through the system. It is separate
+from the `Idempotency-Key`, which identifies a mutation for replay protection.
+
 | Endpoint | Body / meaning |
 | --- | --- |
 | `POST /api/queue` | `track_ids` in desired order (1..100), optional `skip_duplicates` |
@@ -161,8 +167,20 @@ emits `event: auth` and closes the stream. Shutdown closes subscriptions.
 `GET /api/diagnostics/logs` returns up to 200 recent bot log entries. Only
 owner and admin accounts may call it; other authenticated users receive
 403. `?after={id}` returns newer entries for the Logs page. The server keeps at
-most 500 entries in memory and discards them on restart. It does not expose the
-process stderr file or a durable audit history.
+most 500 entries in memory and discards that view on restart. Each entry also
+contains `actor_id` and `actor_name` when an authenticated user caused the
+operation. Background work leaves both fields empty. `trace_id` connects the
+Nuxt proxy request, HTTP handler, Session command and playback effects where a
+single action caused them. The Logs page can filter by trace, actor, source or
+message and copies the full trace ID from its shortened display.
+
+The endpoint does not expose the log files or provide a durable audit history.
+The backend writes its own operational log to `data/logs/backend.log` as well.
+That file rotates at midnight UTC and keeps 14 rotated files. Search text,
+media URLs, tokens and OAuth callback query strings stay out of these logs.
+The Nuxt proxy records method, path, status, duration, origin rewriting and
+client aborts. It logs only the URL path, never its query string, request body,
+cookies or headers.
 
 ## Verification
 

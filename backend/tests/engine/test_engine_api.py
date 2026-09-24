@@ -252,6 +252,13 @@ def test_admin_log_tail_requires_role_and_returns_recent_events(tmp_path: Path) 
             previous_level = logger.level
             logger.setLevel(logging.INFO)
             try:
+                replaced = await client.get(
+                    "/api/auth/session", headers={"x-request-id": "not-a-uuid"}
+                )
+                assert (
+                    str(UUID(replaced.headers["x-request-id"]))
+                    == replaced.headers["x-request-id"]
+                )
                 assert (await client.get("/api/diagnostics/logs")).status_code == 403
                 services.access.operators = Operators(DISCORD_ID, ())
                 assert (await client.get("/api/auth/session")).json()[
@@ -268,9 +275,48 @@ def test_admin_log_tail_requires_role_and_returns_recent_events(tmp_path: Path) 
                 )
                 assert marker["level"] == "WARNING"
                 assert marker["source"] == "engine.test_logs"
-                assert (
+                assert marker["actor_id"] is None
+                assert marker["actor_name"] is None
+                trace_id = "44d23529-2d7a-43f7-a4e7-ae25961dd224"
+                searched = await client.get(
+                    "/api/catalog/search",
+                    params={"q": "private query"},
+                    headers={"x-request-id": trace_id},
+                )
+                assert searched.headers["x-request-id"] == trace_id
+                queued = await client.post(
+                    "/api/queue",
+                    json={"track_ids": [searched.json()["entries"][0]["track_id"]]},
+                    headers={
+                        "Idempotency-Key": str(uuid4()),
+                        "x-request-id": trace_id,
+                    },
+                )
+                assert queued.status_code == 200
+                new_entries = (
                     await client.get(f"/api/diagnostics/logs?after={marker['id']}")
-                ).json() == {"entries": []}
+                ).json()["entries"]
+                actor_entry = next(
+                    entry
+                    for entry in new_entries
+                    if entry["message"].startswith("engine.catalog.search_requested")
+                )
+                assert actor_entry["actor_id"] == DISCORD_ID
+                assert actor_entry["actor_name"] == "Listener"
+                assert actor_entry["trace_id"] == trace_id
+                session_entry = next(
+                    entry
+                    for entry in new_entries
+                    if entry["message"].startswith("engine.session.action")
+                )
+                assert session_entry["trace_id"] == trace_id
+                assert session_entry["actor_name"] == "Listener"
+                assert all(
+                    "private query" not in entry["message"] for entry in new_entries
+                )
+                assert (
+                    await client.get(f"/api/diagnostics/logs?after={actor_entry['id']}")
+                ).status_code == 200
             finally:
                 logger.setLevel(previous_level)
 

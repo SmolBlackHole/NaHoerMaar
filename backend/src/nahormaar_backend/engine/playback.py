@@ -34,6 +34,7 @@ from .domain.playback import (
     TransitionFailed,
 )
 from .domain.sessions import PlaybackIntent, PlaybackPhase, SessionSnapshot
+from .logs import current_actor, current_trace_id, log_context, request_trace_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -66,23 +67,56 @@ class PlaybackController:
             self._checkpoints(), name="engine-checkpoints"
         )
 
-    def notify(self, event: PlaybackMessage) -> None:
+    def notify(
+        self,
+        event: PlaybackMessage,
+        *,
+        trace_id: str | None = None,
+        actor_id: str | None = None,
+        actor_name: str | None = None,
+    ) -> None:
         # Called by Discord's audio thread as well as by asyncio tasks.
         if self._accepting and not self._loop.is_closed():
-            self._loop.call_soon_threadsafe(self._deliver, event)
+            identifier = trace_id or current_trace_id() or request_trace_id()
+            context_actor_id, context_actor_name = current_actor()
+            resolved_actor_id = actor_id or context_actor_id
+            resolved_actor_name = actor_name or context_actor_name
+            with log_context(
+                resolved_actor_id, resolved_actor_name, trace_id=identifier
+            ):
+                _LOGGER.debug(
+                    "engine.playback.fact_received fact=%s attempt=%s preparation=%s",
+                    type(event).__name__,
+                    getattr(event, "attempt_id", None),
+                    getattr(event, "preparation_id", None),
+                )
+            self._loop.call_soon_threadsafe(
+                self._deliver,
+                event,
+                identifier,
+                resolved_actor_id,
+                resolved_actor_name,
+            )
 
-    def _deliver(self, event: PlaybackMessage) -> None:
+    def _deliver(
+        self,
+        event: PlaybackMessage,
+        trace_id: str,
+        actor_id: str | None,
+        actor_name: str | None,
+    ) -> None:
         if not self._accepting:
             return
 
         async def run() -> None:
-            try:
-                await self._report(event)
-            except Exception:
-                _LOGGER.exception(
-                    "engine.playback.fact_commit_failed",
-                    extra={"fact": type(event).__name__},
-                )
+            with log_context(actor_id, actor_name, trace_id=trace_id):
+                try:
+                    await self._report(event)
+                except Exception:
+                    _LOGGER.exception(
+                        "engine.playback.fact_commit_failed",
+                        extra={"fact": type(event).__name__},
+                    )
 
         task = asyncio.create_task(run(), name="engine-playback-fact")
         self._deliveries.add(task)
@@ -119,10 +153,17 @@ class PlaybackController:
 
         task = asyncio.create_task(run(), name=f"engine-playback-{lane}")
         self._jobs[lane] = task
+        _LOGGER.debug(
+            "engine.playback.effect_started lane=%s cleanup=%s", lane, cleanup
+        )
 
         def completed(done: asyncio.Task[None]) -> None:
-            if not done.cancelled() and (error := done.exception()) is not None:
+            if done.cancelled():
+                _LOGGER.debug("engine.playback.effect_cancelled lane=%s", lane)
+            elif (error := done.exception()) is not None:
                 _LOGGER.error("engine.playback.effect_failed", exc_info=error)
+            else:
+                _LOGGER.debug("engine.playback.effect_completed lane=%s", lane)
 
         task.add_done_callback(completed)
 
@@ -163,19 +204,39 @@ class PlaybackController:
                         (self.audio.pause if effect.paused else self.audio.resume)(
                             effect.attempt_id
                         )
-                    except Exception:
+                    except Exception as error:
+                        _LOGGER.error(
+                            "engine.playback.pause_change_failed attempt=%s paused=%s",
+                            effect.attempt_id,
+                            effect.paused,
+                            exc_info=error,
+                        )
                         self.notify(AttemptFailed(effect.attempt_id))
                 case SetVolume():
                     self.audio.set_volume(effect.volume)
                 case Activate():
                     try:
+                        trace_id = current_trace_id() or request_trace_id()
+                        actor_id, actor_name = current_actor()
                         activated = self.audio.start_transition(
                             outgoing_attempt_id=effect.outgoing_attempt_id,
                             preparation_id=effect.preparation_id,
                             attempt_id=effect.attempt_id,
-                            notify=self.notify,
+                            notify=partial(
+                                self.notify,
+                                trace_id=trace_id,
+                                actor_id=actor_id,
+                                actor_name=actor_name,
+                            ),
                         )
-                    except Exception:
+                    except Exception as error:
+                        _LOGGER.error(
+                            "engine.playback.transition_start_failed attempt=%s "
+                            "preparation=%s",
+                            effect.attempt_id,
+                            effect.preparation_id,
+                            exc_info=error,
+                        )
                         activated = False
                     if not activated:
                         self.notify(
@@ -215,10 +276,16 @@ class PlaybackController:
                 accepted.checkpoint.position_seconds,
                 accepted.checkpoint.intent is PlaybackIntent.PAUSED,
             )
+            actor_id, actor_name = current_actor()
             await self.audio.play(
                 source,
                 effect.attempt_id,
-                self.notify,
+                partial(
+                    self.notify,
+                    trace_id=current_trace_id() or request_trace_id(),
+                    actor_id=actor_id,
+                    actor_name=actor_name,
+                ),
                 position_seconds=accepted.checkpoint.position_seconds,
                 paused=accepted.checkpoint.intent is PlaybackIntent.PAUSED,
             )
@@ -231,6 +298,11 @@ class PlaybackController:
                     else self.audio.resume
                 )(effect.attempt_id)
         except asyncio.CancelledError:
+            _LOGGER.info(
+                "engine.playback.start_cancelled attempt=%s track_id=%s",
+                effect.attempt_id,
+                effect.track_id,
+            )
             await self.audio.stop(effect.attempt_id)
             raise
         except AudioSourceNotReady:
@@ -248,13 +320,21 @@ class PlaybackController:
             self.notify(AttemptFailed(effect.attempt_id))
 
     async def _stop(self, attempt_id: UUID) -> None:
+        _LOGGER.info("engine.playback.stopping attempt=%s", attempt_id)
         task = asyncio.create_task(self.audio.stop(attempt_id))
         try:
             await asyncio.shield(task)
         finally:
             await task
+        _LOGGER.info("engine.playback.stopped attempt=%s", attempt_id)
 
     async def _connect(self, effect: Connect) -> None:
+        started_at = time.monotonic()
+        _LOGGER.info(
+            "engine.playback.joining connection=%s channel_id=%s",
+            effect.connection_id,
+            effect.channel_id,
+        )
         try:
             if connection := self.voice.connection:
                 await self.voice.disconnect(connection.connection_id)
@@ -262,7 +342,18 @@ class PlaybackController:
             await self._report(
                 Joined(VoiceConnection(effect.connection_id, effect.channel_id))
             )
+            _LOGGER.info(
+                "engine.playback.joined connection=%s channel_id=%s elapsed=%.3f",
+                effect.connection_id,
+                effect.channel_id,
+                time.monotonic() - started_at,
+            )
         except asyncio.CancelledError:
+            _LOGGER.info(
+                "engine.playback.join_cancelled connection=%s channel_id=%s",
+                effect.connection_id,
+                effect.channel_id,
+            )
             await self.voice.disconnect(effect.connection_id)
             raise
         except Exception:
@@ -270,11 +361,13 @@ class PlaybackController:
             self.notify(JoinFailed(effect.connection_id))
 
     async def _disconnect(self, connection_id: UUID) -> None:
+        _LOGGER.info("engine.playback.disconnecting connection=%s", connection_id)
         task = asyncio.create_task(self.voice.disconnect(connection_id))
         try:
             await asyncio.shield(task)
         finally:
             await task
+        _LOGGER.info("engine.playback.disconnected connection=%s", connection_id)
 
     async def _prepare(self, effect: PrepareNext) -> None:
         try:
@@ -287,6 +380,7 @@ class PlaybackController:
             )
             source = await self._catalog.resolve_audio(effect.track_id)
             duration = source.track.metadata.duration_seconds
+            actor_id, actor_name = current_actor()
             accepted = (
                 duration is not None
                 and duration > 0
@@ -295,7 +389,12 @@ class PlaybackController:
                     outgoing_attempt_id=effect.outgoing_attempt_id,
                     preparation_id=effect.preparation_id,
                     seconds=min(effect.seconds, duration / 2),
-                    notify=self.notify,
+                    notify=partial(
+                        self.notify,
+                        trace_id=current_trace_id() or request_trace_id(),
+                        actor_id=actor_id,
+                        actor_name=actor_name,
+                    ),
                 )
             )
             _LOGGER.info(
@@ -306,6 +405,11 @@ class PlaybackController:
             )
             await self._report(Prepared(effect.preparation_id, accepted))
         except asyncio.CancelledError:
+            _LOGGER.info(
+                "engine.playback.prepare_cancelled preparation=%s track_id=%s",
+                effect.preparation_id,
+                effect.track_id,
+            )
             await self.audio.discard_next(effect.preparation_id)
             raise
         except Exception:
@@ -313,11 +417,17 @@ class PlaybackController:
             self.notify(Prepared(effect.preparation_id, False))
 
     async def _discard(self, preparation_id: UUID) -> None:
+        _LOGGER.debug(
+            "engine.playback.discarding_preparation preparation=%s", preparation_id
+        )
         task = asyncio.create_task(self.audio.discard_next(preparation_id))
         try:
             await asyncio.shield(task)
         finally:
             await task
+        _LOGGER.debug(
+            "engine.playback.preparation_discarded preparation=%s", preparation_id
+        )
 
     async def _checkpoints(self) -> None:
         while True:
@@ -329,12 +439,14 @@ class PlaybackController:
                     _LOGGER.exception("engine.playback.checkpoint_failed")
 
     def freeze(self) -> None:
+        _LOGGER.info("engine.playback.freezing jobs=%s", len(self._jobs))
         self._accepting = False
         self._ticker.cancel()
         if progress := self.audio.progress:
             self.audio.pause(progress.attempt_id)
 
     async def close(self) -> None:
+        started_at = time.monotonic()
         self.freeze()
         for task in self._jobs.values():
             task.cancel()
@@ -348,3 +460,6 @@ class PlaybackController:
             await self.audio.stop(progress.attempt_id)
         if connection := self.voice.connection:
             await self.voice.disconnect(connection.connection_id)
+        _LOGGER.info(
+            "engine.playback.closed elapsed=%.3f", time.monotonic() - started_at
+        )

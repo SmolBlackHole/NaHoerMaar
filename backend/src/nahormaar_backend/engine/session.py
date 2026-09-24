@@ -9,8 +9,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from collections.abc import Callable
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime
 from uuid import UUID
 
@@ -65,6 +66,13 @@ from .domain.sessions import (
     SessionSnapshot,
 )
 from .events import EventBus
+from .logs import (
+    actor_fields,
+    current_actor,
+    current_trace_id,
+    log_context,
+    request_trace_id,
+)
 from .playback import PlaybackController
 from .persistence import (
     ListeningSessionRepository,
@@ -131,6 +139,9 @@ class _Envelope:
     request_id: UUID | None = None
     actor: Contributor | None = None
     expected_attempt_id: UUID | None = None
+    trace_id: str = field(default_factory=request_trace_id)
+    log_actor_id: str | None = None
+    log_actor_name: str | None = None
 
 
 class Session:
@@ -170,6 +181,7 @@ class Session:
         audio: AudioPlayer | None = None,
         voice: VoiceTransport | None = None,
     ) -> Session:
+        started_at = time.monotonic()
         if (audio is None) != (voice is None) or (
             audio is not None and catalog is None
         ):
@@ -210,6 +222,21 @@ class Session:
                 raise ValueError(
                     "Recovery checkpoint references a finished playback record."
                 )
+        _LOGGER.info(
+            "engine.session.restored session=%s revision=%s queue_revision=%s "
+            "queue_size=%s history_size=%s intent=%s track=%s position=%.3f "
+            "strategy=%s radio_state=%s",
+            session_id,
+            settings.revision,
+            settings.queue_revision,
+            len(queue.entries),
+            len(history),
+            checkpoint.intent,
+            checkpoint.track_id,
+            checkpoint.position_seconds,
+            "radio" if strategy else "manual",
+            strategy.state if strategy else None,
+        )
         owner = cls(
             sessions,
             SessionSnapshot(
@@ -247,6 +274,11 @@ class Session:
         except BaseException:
             await owner.close()
             raise
+        _LOGGER.info(
+            "engine.session.opened session=%s elapsed=%.3f",
+            session_id,
+            time.monotonic() - started_at,
+        )
         return owner
 
     @property
@@ -288,35 +320,65 @@ class Session:
             lambda done: None if done.cancelled() else done.exception()
         )
         try:
+            context_actor_id, context_actor_name = current_actor()
             envelope = _Envelope(
-                message, result, request_id, actor, expected_attempt_id
+                message=message,
+                result=result,
+                request_id=request_id,
+                actor=actor,
+                expected_attempt_id=expected_attempt_id,
+                trace_id=current_trace_id()
+                or request_trace_id(str(request_id) if request_id else None),
+                log_actor_id=str(actor.id) if actor else context_actor_id,
+                log_actor_name=actor.name if actor else context_actor_name,
             )
             if wait_for_space:
                 await self._inbox.put(envelope)
             else:
                 self._inbox.put_nowait(envelope)
         except asyncio.QueueFull:
+            _LOGGER.warning(
+                "engine.session.inbox_full command=%s request=%s size=%s",
+                type(message).__name__,
+                request_id,
+                self._inbox.qsize(),
+                extra=actor_fields(
+                    actor.id if actor else None, actor.name if actor else None
+                ),
+            )
             raise RuntimeError("Session is busy. Try again shortly.") from None
         return await asyncio.shield(result)
 
     async def _run(self) -> None:
         while (envelope := await self._inbox.get()) is not None:
-            try:
-                reply = await self._execute(envelope)
-            except Exception as exc:
-                _LOGGER.error(
-                    "engine.session.command_failed command=%s request=%s error=%s",
+            with log_context(
+                envelope.log_actor_id,
+                envelope.log_actor_name,
+                trace_id=envelope.trace_id,
+            ):
+                _LOGGER.debug(
+                    "engine.session.command_received command=%s request=%s backlog=%s",
                     type(envelope.message).__name__,
                     envelope.request_id,
-                    type(exc).__name__,
+                    self._inbox.qsize(),
                 )
-                envelope.result.set_exception(exc)
-            else:
-                envelope.result.set_result(reply)
-            finally:
-                self._inbox.task_done()
+                try:
+                    reply = await self._execute(envelope)
+                except Exception as exc:
+                    _LOGGER.error(
+                        "engine.session.command_failed command=%s request=%s",
+                        type(envelope.message).__name__,
+                        envelope.request_id,
+                        exc_info=exc,
+                    )
+                    envelope.result.set_exception(exc)
+                else:
+                    envelope.result.set_result(reply)
+                finally:
+                    self._inbox.task_done()
 
     async def _execute(self, envelope: _Envelope) -> Reply:
+        started_at = time.monotonic()
         before = self._state
         after = before
         queue, strategy = before.queue, before.strategy
@@ -355,7 +417,26 @@ class Session:
                         previous.actor_id,
                         previous.fingerprint,
                     ) != (session_id, actor_id, fingerprint):
+                        _LOGGER.warning(
+                            "engine.session.idempotency_conflict request=%s command=%s",
+                            envelope.request_id,
+                            type(message).__name__,
+                            extra=actor_fields(
+                                actor.id if actor else None,
+                                actor.name if actor else None,
+                            ),
+                        )
                         return Reply(before, Outcome("idempotency_conflict"), False)
+                    _LOGGER.info(
+                        "engine.session.command_replayed request=%s command=%s outcome=%s",
+                        envelope.request_id,
+                        type(message).__name__,
+                        previous.outcome.code,
+                        extra=actor_fields(
+                            actor.id if actor else None,
+                            actor.name if actor else None,
+                        ),
+                    )
                     return Reply(before, previous.outcome, True)
             try:
                 if (
@@ -525,6 +606,9 @@ class Session:
                 )
         self._state = after
         action = action_for(message)
+        log_actor = actor_fields(
+            actor.id if actor else None, actor.name if actor else None
+        )
         if (
             before.playback.phase != after.playback.phase
             or before.playback.connection_id != after.playback.connection_id
@@ -542,24 +626,44 @@ class Session:
                 after.checkpoint.track_id,
                 before.playback.connection_id is not None,
                 after.playback.connection_id is not None,
+                extra=log_actor,
             )
         if action != "session.updated":
             _LOGGER.info(
                 "engine.session.action action=%s outcome=%s request=%s "
-                "revision=%s queue_revision=%s queue_size=%s",
+                "revision=%s queue_revision=%s queue_size=%s track=%s "
+                "added=%s removed=%s restored=%s skipped=%s elapsed=%.3f",
                 action,
                 outcome.code,
                 envelope.request_id,
                 after.settings.revision,
                 after.settings.queue_revision,
                 len(after.queue.entries),
+                after.checkpoint.track_id,
+                outcome.added_count,
+                outcome.removed_count,
+                outcome.restored_count,
+                outcome.skipped_count,
+                time.monotonic() - started_at,
+                extra=log_actor,
             )
+            if outcome.entries:
+                _LOGGER.debug(
+                    "engine.session.affected_entries action=%s entries=%s truncated=%s",
+                    action,
+                    ",".join(
+                        f"{entry.id}:{entry.track_id}" for entry in outcome.entries[:10]
+                    ),
+                    len(outcome.entries) > 10,
+                    extra=log_actor,
+                )
         elif queue_changed:
             _LOGGER.info(
                 "engine.session.queue_updated source=%s queue_revision=%s size=%s",
                 type(message).__name__,
                 after.settings.queue_revision,
                 len(after.queue.entries),
+                extra=log_actor,
             )
         if changed:
             self.events.publish(
@@ -635,10 +739,10 @@ class Session:
                 candidates.error,
             )
         except Exception as error:
-            _LOGGER.warning(
-                "engine.radio.fetch_failed request=%s error=%s",
+            _LOGGER.error(
+                "engine.radio.fetch_failed request=%s",
                 request.id,
-                type(error).__name__,
+                exc_info=error,
             )
             result = RadioLoaded(
                 request.generation,
@@ -659,6 +763,17 @@ class Session:
         await asyncio.shield(self._close_task)
 
     async def _close(self) -> None:
+        started_at = time.monotonic()
+        _LOGGER.info(
+            "engine.session.closing session=%s revision=%s queue_size=%s "
+            "intent=%s track=%s position=%.3f",
+            self._state.settings.id,
+            self._state.settings.revision,
+            len(self._state.queue.entries),
+            self._state.checkpoint.intent,
+            self._state.checkpoint.track_id,
+            self._state.checkpoint.position_seconds,
+        )
         if self._radio_task is not None:
             self._radio_task.cancel()
             await asyncio.gather(self._radio_task, return_exceptions=True)
@@ -682,3 +797,8 @@ class Session:
             finally:
                 await self._inbox.put(None)
                 await self._runner
+        _LOGGER.info(
+            "engine.session.closed session=%s elapsed=%.3f",
+            self._state.settings.id,
+            time.monotonic() - started_at,
+        )

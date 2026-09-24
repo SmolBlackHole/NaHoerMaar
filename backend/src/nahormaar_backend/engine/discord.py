@@ -20,11 +20,17 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from math import isfinite
 from pathlib import Path
+from typing import cast
 from uuid import UUID
 
 import discord
 
-from ..integrations.audio_mixer import FRAME_SECONDS, BufferedAudio, CrossfadeSource
+from ..integrations.audio_mixer import (
+    FRAME_SECONDS,
+    AudioDiagnostics,
+    BufferedAudio,
+    CrossfadeSource,
+)
 from ..integrations.audio_sources import FFmpegSource, MediaStreamError, VolumeSource
 from .audio import (
     AudioCompleted,
@@ -42,6 +48,7 @@ from .audio import (
     VoiceDisconnected,
     VoiceError,
 )
+from .logs import current_actor, current_trace_id, log_context, request_trace_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -51,7 +58,25 @@ class _Attempt:
     id: UUID
     source: PlayableSource
     notify: Callable[[AudioEvent], None]
+    trace_id: str
+    actor_id: str | None
+    actor_name: str | None
+    created_at: float
+    start_mode: str
+    audio_pid: int | None = None
+    first_frame_seconds: float | None = None
+    preparation_id: UUID | None = None
     started: bool = False
+    started_at: float | None = None
+    summarized: bool = False
+    summary_lock: threading.Lock = field(default_factory=threading.Lock)
+
+
+@dataclass(frozen=True, slots=True)
+class _RetiringAttempt:
+    attempt: _Attempt
+    position: float
+    diagnostics: AudioDiagnostics
 
 
 @dataclass(slots=True)
@@ -65,6 +90,7 @@ class _Output:
     finished: threading.Event = field(default_factory=threading.Event)
     forced: AudioEndReason | None = None
     cleanup_error: AudioError | None = None
+    retiring: _RetiringAttempt | None = None
 
     def __post_init__(self) -> None:
         self.activation_done.set()
@@ -78,6 +104,7 @@ class _Prepared:
     buffer: BufferedAudio
     staged: bool = False
     created_at: float = field(default_factory=time.monotonic)
+    crossfade_seconds: float = 0
 
 
 class DiscordOutput:
@@ -303,6 +330,65 @@ class DiscordOutput:
                 await asyncio.to_thread(audio.cleanup)
             raise
 
+    @staticmethod
+    def _diagnostics(mixer: CrossfadeSource, attempt: _Attempt) -> AudioDiagnostics:
+        diagnostics = getattr(mixer, "diagnostics", None)
+        return (
+            diagnostics
+            if isinstance(diagnostics, AudioDiagnostics)
+            else AudioDiagnostics(first_frame_seconds=attempt.first_frame_seconds)
+        )
+
+    @staticmethod
+    def _log_attempt_summary(
+        attempt: _Attempt,
+        *,
+        position: float,
+        reason: AudioEndReason | str,
+        diagnostics: AudioDiagnostics,
+        error: BaseException | None = None,
+    ) -> None:
+        with attempt.summary_lock:
+            if attempt.summarized:
+                return
+            attempt.summarized = True
+        now = time.monotonic()
+        with log_context(
+            attempt.actor_id,
+            attempt.actor_name,
+            trace_id=attempt.trace_id,
+        ):
+            _LOGGER.info(
+                "engine.audio.attempt_summary attempt=%s preparation=%s "
+                "provider=%s media_id=%s start_mode=%s audio_pid=%s "
+                "first_frame_seconds=%s start_seconds=%s attempt_seconds=%.3f "
+                "position=%.3f underruns=%s stalled_seconds=%.3f "
+                "max_stall_seconds=%.3f reason=%s error=%s",
+                attempt.id,
+                attempt.preparation_id,
+                attempt.source.track.reference.identity.namespace,
+                attempt.source.track.reference.identity.external_id,
+                attempt.start_mode,
+                attempt.audio_pid,
+                (
+                    f"{diagnostics.first_frame_seconds:.3f}"
+                    if diagnostics.first_frame_seconds is not None
+                    else None
+                ),
+                (
+                    f"{attempt.started_at - attempt.created_at:.3f}"
+                    if attempt.started_at is not None
+                    else None
+                ),
+                now - attempt.created_at,
+                position,
+                diagnostics.underrun_count,
+                diagnostics.stalled_seconds,
+                diagnostics.max_stall_seconds,
+                reason,
+                type(error).__name__ if error is not None else None,
+            )
+
     async def play(
         self,
         source: PlayableSource,
@@ -313,13 +399,36 @@ class DiscordOutput:
         paused: bool = False,
     ) -> None:
         async with self._audio_lock:
+            started_at = time.monotonic()
+            _LOGGER.info(
+                "engine.audio.play_requested attempt=%s provider=%s media_id=%s "
+                "position=%.3f paused=%s opus=%s",
+                attempt_id,
+                source.track.reference.identity.namespace,
+                source.track.reference.identity.external_id,
+                position_seconds,
+                paused,
+                source.is_opus,
+            )
             voice = self._voice
             if self._closing or voice is None or self.connection is None:
                 raise VoiceError("Voice is not connected.")
             if self._output:
                 raise AudioError("Previous output must be stopped first.")
             buffer = await self._create_buffer(source, position_seconds)
-            attempt = _Attempt(attempt_id, source, notify)
+            actor_id, actor_name = current_actor()
+            attempt = _Attempt(
+                id=attempt_id,
+                source=source,
+                notify=notify,
+                trace_id=current_trace_id() or request_trace_id(),
+                actor_id=actor_id,
+                actor_name=actor_name,
+                created_at=started_at,
+                start_mode="normal",
+                audio_pid=getattr(buffer, "process_id", None),
+                first_frame_seconds=getattr(buffer, "first_frame_seconds", None),
+            )
             try:
                 ready_started = time.monotonic()
                 if not await asyncio.to_thread(buffer.wait_ready, 1):
@@ -352,11 +461,30 @@ class DiscordOutput:
                 )
                 if paused:
                     voice.pause()
-            except BaseException:
+                _LOGGER.debug(
+                    "engine.audio.output_submitted attempt=%s elapsed=%.3f",
+                    attempt_id,
+                    time.monotonic() - started_at,
+                )
+            except BaseException as error:
+                _LOGGER.warning(
+                    "engine.audio.play_failed attempt=%s elapsed=%.3f",
+                    attempt_id,
+                    time.monotonic() - started_at,
+                )
                 if self._output is not None:
                     voice.stop()
                     self._output = None
                 await asyncio.to_thread(buffer.cleanup)
+                self._log_attempt_summary(
+                    attempt,
+                    position=position_seconds,
+                    reason="start_failed",
+                    diagnostics=AudioDiagnostics(
+                        first_frame_seconds=getattr(buffer, "first_frame_seconds", None)
+                    ),
+                    error=error,
+                )
                 raise
 
     def _started(self, output: _Output, attempt: _Attempt) -> None:
@@ -370,10 +498,16 @@ class DiscordOutput:
             ):
                 return
             attempt.started = True
-        _LOGGER.info(
-            "engine.audio.started attempt=%s position=%.3f", attempt.id, position
-        )
-        attempt.notify(AudioStarted(attempt.id, position))
+            attempt.started_at = time.monotonic()
+        with log_context(
+            attempt.actor_id,
+            attempt.actor_name,
+            trace_id=attempt.trace_id,
+        ):
+            _LOGGER.info(
+                "engine.audio.started attempt=%s position=%.3f", attempt.id, position
+            )
+            attempt.notify(AudioStarted(attempt.id, position))
 
     def _completed(self, output: _Output, error: Exception | None) -> None:
         # Audio-thread completion and event-loop stop may race with activation.
@@ -390,9 +524,10 @@ class DiscordOutput:
             if activating:
                 output.activation_done.wait()
                 continue
-            position, terminal_error = (
+            position, terminal_error, diagnostics = (
                 output.mixer.position_seconds,
                 output.mixer.current_error,
+                self._diagnostics(output.mixer, attempt),
             )
             with output.lock:
                 if (
@@ -406,8 +541,18 @@ class DiscordOutput:
         try:
             try:
                 output.mixer.cleanup()
-            except Exception:
+            except Exception as cleanup_failure:
                 output.cleanup_error = AudioError("Audio cleanup failed.")
+                with log_context(
+                    attempt.actor_id,
+                    attempt.actor_name,
+                    trace_id=attempt.trace_id,
+                ):
+                    _LOGGER.error(
+                        "engine.audio.cleanup_failed attempt=%s",
+                        attempt.id,
+                        exc_info=cleanup_failure,
+                    )
             duration = attempt.source.track.metadata.duration_seconds
             if output.forced:
                 reason = output.forced
@@ -423,22 +568,60 @@ class DiscordOutput:
                 reason = AudioEndReason.NATURAL
             if self._output is output:
                 self._output = None
-            _LOGGER.info(
-                "engine.audio.completed attempt=%s position=%.3f reason=%s",
-                attempt.id,
-                position,
-                reason,
+            with output.lock:
+                retiring, output.retiring = output.retiring, None
+            if retiring is not None:
+                self._log_attempt_summary(
+                    retiring.attempt,
+                    position=retiring.position,
+                    reason=reason,
+                    diagnostics=retiring.diagnostics,
+                    error=error or terminal_error or output.cleanup_error,
+                )
+            failure = error or terminal_error or output.cleanup_error
+            unexpected = error or (
+                terminal_error
+                if terminal_error is not None
+                and not isinstance(terminal_error, MediaStreamError)
+                else None
             )
-            attempt.notify(
-                AudioCompleted(
+            if unexpected is not None:
+                with log_context(
+                    attempt.actor_id,
+                    attempt.actor_name,
+                    trace_id=attempt.trace_id,
+                ):
+                    _LOGGER.error(
+                        "engine.audio.output_failed attempt=%s",
+                        attempt.id,
+                        exc_info=unexpected,
+                    )
+            self._log_attempt_summary(
+                attempt,
+                position=position,
+                reason=reason,
+                diagnostics=diagnostics,
+                error=failure,
+            )
+            with log_context(
+                attempt.actor_id,
+                attempt.actor_name,
+                trace_id=attempt.trace_id,
+            ):
+                _LOGGER.info(
+                    "engine.audio.completed attempt=%s position=%.3f reason=%s",
                     attempt.id,
                     position,
                     reason,
-                    AudioError("Audio output failed.")
-                    if error or terminal_error or output.cleanup_error
-                    else None,
                 )
-            )
+                attempt.notify(
+                    AudioCompleted(
+                        attempt.id,
+                        position,
+                        reason,
+                        AudioError("Audio output failed.") if failure else None,
+                    )
+                )
         finally:
             output.finished.set()
 
@@ -446,7 +629,17 @@ class DiscordOutput:
         async with self._audio_lock:
             output = self._output
             if output is None or output.attempt.id != attempt_id:
+                _LOGGER.debug(
+                    "engine.audio.stop_ignored attempt=%s current_attempt=%s",
+                    attempt_id,
+                    output.attempt.id if output else None,
+                )
                 return
+            _LOGGER.info(
+                "engine.audio.stop_requested attempt=%s position=%.3f",
+                attempt_id,
+                output.mixer.position_seconds,
+            )
             with output.lock:
                 output.forced = AudioEndReason.STOPPED
             if self._voice:
@@ -462,6 +655,7 @@ class DiscordOutput:
                     await self.discard_next(self._prepared.id)
             if output.cleanup_error:
                 raise output.cleanup_error
+            _LOGGER.info("engine.audio.stop_completed attempt=%s", attempt_id)
 
     def pause(self, attempt_id: UUID) -> None:
         if (
@@ -499,6 +693,7 @@ class DiscordOutput:
         self._volume = volume
         if self._output:
             self._output.mixer.volume = volume
+        _LOGGER.debug("engine.audio.volume_set volume=%.3f", volume)
 
     async def prepare_next(
         self,
@@ -510,19 +705,47 @@ class DiscordOutput:
         notify: Callable[[AudioEvent], None],
     ) -> bool:
         output = self._output
-        if (
-            output is None
-            or output.attempt.id != outgoing_attempt_id
-            or self._prepared
-            or self.connection is None
-            or output.mixer.transitioning
-        ):
+        reason = (
+            "no_output"
+            if output is None
+            else "attempt_mismatch"
+            if output.attempt.id != outgoing_attempt_id
+            else "already_prepared"
+            if self._prepared
+            else "disconnected"
+            if self.connection is None
+            else "already_transitioning"
+            if output.mixer.transitioning
+            else None
+        )
+        if reason is not None:
+            _LOGGER.info(
+                "engine.audio.prepare_rejected preparation=%s outgoing=%s reason=%s",
+                preparation_id,
+                outgoing_attempt_id,
+                reason,
+            )
             return False
+        output = cast(_Output, output)
         duration = output.attempt.source.track.metadata.duration_seconds
         if duration is None or not isfinite(seconds) or seconds < 0:
+            _LOGGER.info(
+                "engine.audio.prepare_rejected preparation=%s outgoing=%s "
+                "reason=invalid_timing duration=%s seconds=%s",
+                preparation_id,
+                outgoing_attempt_id,
+                duration,
+                seconds,
+            )
             return False
         audio = await self._create_buffer(source)
-        prepared = _Prepared(preparation_id, output, source, audio)
+        prepared = _Prepared(
+            preparation_id,
+            output,
+            source,
+            audio,
+            crossfade_seconds=seconds,
+        )
         self._prepared = prepared
         try:
             ready = await asyncio.to_thread(
@@ -558,6 +781,16 @@ class DiscordOutput:
                         duration,
                         max(0.0, duration - output.mixer.position_seconds - seconds),
                     )
+            if not prepared.staged:
+                _LOGGER.warning(
+                    "engine.audio.prepare_not_staged preparation=%s outgoing=%s "
+                    "ready=%s output_current=%s finishing=%s",
+                    preparation_id,
+                    outgoing_attempt_id,
+                    ready,
+                    self._output is output,
+                    output.finishing,
+                )
             return prepared.staged
         finally:
             if not prepared.staged:
@@ -568,17 +801,26 @@ class DiscordOutput:
     async def discard_next(self, preparation_id: UUID) -> None:
         prepared = self._prepared
         if prepared is None or prepared.id != preparation_id:
+            _LOGGER.debug(
+                "engine.audio.discard_ignored preparation=%s current_preparation=%s",
+                preparation_id,
+                prepared.id if prepared else None,
+            )
             return
         self._prepared = None
         if prepared.staged:
             discarded = prepared.output.mixer.discard()
             if discarded is None:
+                _LOGGER.debug(
+                    "engine.audio.discard_transferred preparation=%s", preparation_id
+                )
                 return  # Activation/retirement now owns this buffer.
         cleanup = asyncio.create_task(asyncio.to_thread(prepared.buffer.cleanup))
         try:
             await asyncio.shield(cleanup)
         finally:
             await cleanup
+        _LOGGER.info("engine.audio.discarded preparation=%s", preparation_id)
 
     def start_transition(
         self,
@@ -589,32 +831,105 @@ class DiscordOutput:
         notify: Callable[[AudioEvent], None],
     ) -> bool:
         output, prepared = self._output, self._prepared
-        if (
-            output is None
-            or prepared is None
-            or prepared.id != preparation_id
-            or prepared.output is not output
-            or not prepared.staged
-        ):
+        reason = (
+            "no_output"
+            if output is None
+            else "no_preparation"
+            if prepared is None
+            else "preparation_mismatch"
+            if prepared.id != preparation_id
+            else "output_changed"
+            if prepared.output is not output
+            else "not_staged"
+            if not prepared.staged
+            else None
+        )
+        if reason is not None:
+            _LOGGER.warning(
+                "engine.audio.transition_rejected attempt=%s outgoing=%s "
+                "preparation=%s reason=%s",
+                attempt_id,
+                outgoing_attempt_id,
+                preparation_id,
+                reason,
+            )
             return False
+        output = cast(_Output, output)
+        prepared = cast(_Prepared, prepared)
         with output.lock:
-            if (
-                output.attempt.id != outgoing_attempt_id
-                or output.finishing
-                or output.activating
-            ):
+            reason = (
+                "attempt_mismatch"
+                if output.attempt.id != outgoing_attempt_id
+                else "finishing"
+                if output.finishing
+                else "activating"
+                if output.activating
+                else None
+            )
+            if reason is not None:
+                _LOGGER.warning(
+                    "engine.audio.transition_rejected attempt=%s outgoing=%s "
+                    "preparation=%s reason=%s",
+                    attempt_id,
+                    outgoing_attempt_id,
+                    preparation_id,
+                    reason,
+                )
                 return False
             output.activating = True
             output.activation_done.clear()
-        attempt = _Attempt(attempt_id, prepared.source, notify)
+            outgoing_attempt = output.attempt
+        retiring = _RetiringAttempt(
+            outgoing_attempt,
+            output.mixer.position_seconds,
+            self._diagnostics(output.mixer, outgoing_attempt),
+        )
+        actor_id, actor_name = current_actor()
+        attempt = _Attempt(
+            id=attempt_id,
+            source=prepared.source,
+            notify=notify,
+            trace_id=current_trace_id() or request_trace_id(),
+            actor_id=actor_id,
+            actor_name=actor_name,
+            created_at=time.monotonic(),
+            start_mode=("crossfade" if prepared.crossfade_seconds > 0 else "preloaded"),
+            audio_pid=getattr(prepared.buffer, "process_id", None),
+            first_frame_seconds=getattr(prepared.buffer, "first_frame_seconds", None),
+            preparation_id=preparation_id,
+        )
+        with output.lock:
+            output.retiring = retiring
 
         def activated() -> None:
             with output.lock:
                 output.attempt = attempt
 
+        def faded() -> None:
+            with output.lock:
+                completed = output.retiring
+                if completed is retiring:
+                    output.retiring = None
+            if completed is retiring:
+                self._log_attempt_summary(
+                    retiring.attempt,
+                    position=(
+                        retiring.attempt.source.track.metadata.duration_seconds
+                        or retiring.position
+                    ),
+                    reason="crossfade",
+                    diagnostics=retiring.diagnostics,
+                )
+            with log_context(
+                attempt.actor_id,
+                attempt.actor_name,
+                trace_id=attempt.trace_id,
+            ):
+                notify(CrossfadeCompleted(attempt_id, preparation_id))
+
         try:
             accepted = output.mixer.activate(
-                lambda: notify(CrossfadeCompleted(attempt_id, preparation_id)),
+                faded,
                 activated,
                 lambda: self._started(output, attempt),
             )
@@ -625,13 +940,53 @@ class DiscordOutput:
                     time.monotonic() - prepared.created_at,
                 )
                 self._prepared = None
+            else:
+                with output.lock:
+                    if output.retiring is retiring:
+                        output.retiring = None
+                self._log_attempt_summary(
+                    attempt,
+                    position=0,
+                    reason="transition_rejected",
+                    diagnostics=AudioDiagnostics(
+                        first_frame_seconds=attempt.first_frame_seconds
+                    ),
+                )
+                _LOGGER.warning(
+                    "engine.audio.transition_rejected attempt=%s outgoing=%s "
+                    "preparation=%s reason=mixer_rejected",
+                    attempt_id,
+                    outgoing_attempt_id,
+                    preparation_id,
+                )
             return accepted
+        except BaseException as error:
+            with output.lock:
+                if output.retiring is retiring:
+                    output.retiring = None
+            self._log_attempt_summary(
+                attempt,
+                position=0,
+                reason="transition_failed",
+                diagnostics=AudioDiagnostics(
+                    first_frame_seconds=attempt.first_frame_seconds
+                ),
+                error=error,
+            )
+            raise
         finally:
             with output.lock:
                 output.activating = False
                 output.activation_done.set()
 
     async def close(self) -> None:
+        started_at = time.monotonic()
+        _LOGGER.info(
+            "engine.audio.closing connection=%s attempt=%s preparation=%s",
+            self._connection.connection_id if self._connection else None,
+            self._output.attempt.id if self._output else None,
+            self._prepared.id if self._prepared else None,
+        )
         self._closing = True
         async with self._voice_lock:
             await self._disconnect(lost=False)
@@ -639,3 +994,4 @@ class DiscordOutput:
             await self.stop(progress.attempt_id)
         if self._prepared:
             await self.discard_next(self._prepared.id)
+        _LOGGER.info("engine.audio.closed elapsed=%.3f", time.monotonic() - started_at)

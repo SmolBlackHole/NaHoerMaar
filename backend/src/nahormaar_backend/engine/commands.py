@@ -14,6 +14,7 @@ from discord import app_commands
 from ..application.access import Access
 from ..domain.identity import AuthError
 from .domain.playback import Join
+from .logs import actor_fields, log_context, request_trace_id
 from .session import Session
 
 _LOGGER = logging.getLogger(__name__)
@@ -41,13 +42,22 @@ class DiscordCommands(app_commands.CommandTree[discord.Client]):
     @app_commands.guild_only()
     @app_commands.guild_install()
     async def summon(self, interaction: discord.Interaction[discord.Client]) -> None:
+        with log_context(
+            interaction.user.id,
+            interaction.user.display_name,
+            trace_id=request_trace_id(),
+        ):
+            await self._summon(interaction)
+
+    async def _summon(self, interaction: discord.Interaction[discord.Client]) -> None:
         await interaction.response.defer(ephemeral=True, thinking=True)
         message = ":3"
         outcome = "joined"
+        actor = actor_fields(interaction.user.id, interaction.user.display_name)
         _LOGGER.info(
-            "engine.discord.summon_requested guild=%s user=%s",
+            "engine.discord.summon_requested guild=%s",
             interaction.guild_id,
-            interaction.user.id,
+            extra=actor,
         )
         try:
             await self.access.require(str(interaction.user.id))
@@ -108,14 +118,14 @@ class DiscordCommands(app_commands.CommandTree[discord.Client]):
                 else "Access control is currently unavailable."
             )
         except Exception as error:
-            _LOGGER.warning("engine.discord.summon_failed: %s", type(error).__name__)
+            _LOGGER.error("engine.discord.summon_failed", exc_info=error, extra=actor)
             outcome = "join_failed"
             message = "I couldn't join your voice channel. Please try again."
         _LOGGER.info(
-            "engine.discord.summon_completed guild=%s user=%s outcome=%s",
+            "engine.discord.summon_completed guild=%s outcome=%s",
             interaction.guild_id,
-            interaction.user.id,
             outcome,
+            extra=actor,
         )
         await interaction.edit_original_response(
             content=message, allowed_mentions=discord.AllowedMentions.none()

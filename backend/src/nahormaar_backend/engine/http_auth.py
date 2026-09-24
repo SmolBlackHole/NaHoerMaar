@@ -30,6 +30,7 @@ from ..config import CALLBACK_PATH
 from ..domain.identity import AuthError
 from ..domain.preferences import Appearance
 from .api_models import AccountView, ApiError
+from .logs import actor_fields, log_context, request_trace_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,66 +51,84 @@ class AuthBoundary:
             await self.app(scope, receive, send)
             return
 
+        request = Request(scope)
+        trace_id = request_trace_id(request.headers.get("x-request-id"))
+
         async def private_send(message: Message) -> None:
             if message["type"] == "http.response.start":
                 message["headers"] = [
                     (key, value)
                     for key, value in message["headers"]
-                    if key.lower() != b"cache-control"
+                    if key.lower() not in {b"cache-control", b"x-request-id"}
                 ] + [
                     (b"cache-control", b"no-store"),
                     (b"vary", b"Cookie"),
                     (b"referrer-policy", b"no-referrer"),
+                    (b"x-request-id", trace_id.encode("ascii")),
                 ]
             await send(message)
 
-        request = Request(scope)
-        expected_origin: str | None = None
-        try:
-            auth = self.service()
-            expected_origin = auth.settings.public_origin
-            origin = request.headers.get("origin")
-            if origin is not None and origin != expected_origin:
-                raise AuthError("origin_forbidden", 403)
-            if scope["path"] not in {"/api/auth/discord", CALLBACK_PATH}:
-                user = await auth.authenticate(
-                    request.cookies.get(SESSION_COOKIE),
-                    check_access=scope["path"] != "/api/auth/logout",
-                )
-                if request.method not in ("GET", "HEAD", "OPTIONS") and (
-                    origin != expected_origin
-                    or not secrets.compare_digest(
-                        request.headers.get("x-csrf-token", ""), user.csrf
+        with log_context(trace_id=trace_id):
+            expected_origin: str | None = None
+            user: Authenticated | None = None
+            try:
+                auth = self.service()
+                expected_origin = auth.settings.public_origin
+                origin = request.headers.get("origin")
+                if origin is not None and origin != expected_origin:
+                    raise AuthError("origin_forbidden", 403)
+                if scope["path"] not in {"/api/auth/discord", CALLBACK_PATH}:
+                    user = await auth.authenticate(
+                        request.cookies.get(SESSION_COOKIE),
+                        check_access=scope["path"] != "/api/auth/logout",
                     )
+                    if request.method not in ("GET", "HEAD", "OPTIONS") and (
+                        origin != expected_origin
+                        or not secrets.compare_digest(
+                            request.headers.get("x-csrf-token", ""), user.csrf
+                        )
+                    ):
+                        raise AuthError("csrf_failed", 403)
+                    request.state.user = user
+            except AuthError as error:
+                if error.code in {"access_denied", "origin_forbidden", "csrf_failed"}:
+                    _LOGGER.warning(
+                        "auth.request_rejected method=%s path=%s reason=%s "
+                        "origin=%r expected_origin=%r host=%r forwarded_host=%r "
+                        "forwarded_proto=%r",
+                        request.method,
+                        scope["path"],
+                        error.code,
+                        request.headers.get("origin"),
+                        expected_origin,
+                        request.headers.get("host"),
+                        request.headers.get("x-forwarded-host"),
+                        request.headers.get("x-forwarded-proto"),
+                        extra=actor_fields(
+                            user.account.discord_id if user else None,
+                            user.account.profile.name if user else None,
+                        ),
+                    )
+                await JSONResponse(
+                    ApiError(code=error.code).model_dump(), status_code=error.status
+                )(scope, receive, private_send)
+                return
+            except SQLAlchemyError as error:
+                _LOGGER.error("auth.database_failed", exc_info=error)
+                await JSONResponse(
+                    ApiError(code="auth_unavailable", retryable=True).model_dump(),
+                    status_code=503,
+                )(scope, receive, private_send)
+                return
+            if user is None:
+                await self.app(scope, receive, private_send)
+            else:
+                with log_context(
+                    user.account.discord_id,
+                    user.account.profile.name,
+                    trace_id=trace_id,
                 ):
-                    raise AuthError("csrf_failed", 403)
-                request.state.user = user
-        except AuthError as error:
-            if error.code in {"access_denied", "origin_forbidden", "csrf_failed"}:
-                _LOGGER.warning(
-                    "auth.request_rejected method=%s path=%s reason=%s "
-                    "origin=%r expected_origin=%r host=%r forwarded_host=%r "
-                    "forwarded_proto=%r",
-                    request.method,
-                    scope["path"],
-                    error.code,
-                    request.headers.get("origin"),
-                    expected_origin,
-                    request.headers.get("host"),
-                    request.headers.get("x-forwarded-host"),
-                    request.headers.get("x-forwarded-proto"),
-                )
-            await JSONResponse(
-                ApiError(code=error.code).model_dump(), status_code=error.status
-            )(scope, receive, private_send)
-            return
-        except SQLAlchemyError:
-            await JSONResponse(
-                ApiError(code="auth_unavailable", retryable=True).model_dump(),
-                status_code=503,
-            )(scope, receive, private_send)
-            return
-        await self.app(scope, receive, private_send)
+                    await self.app(scope, receive, private_send)
 
 
 class ProfileInput(BaseModel):

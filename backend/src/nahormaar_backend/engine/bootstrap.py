@@ -7,6 +7,7 @@
 import asyncio
 import json
 import logging
+import time
 from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -36,10 +37,17 @@ _READY_TIMEOUT_SECONDS = 30.0
 async def open_runtime(
     settings: Settings, auth_settings: AuthSettings
 ) -> AsyncGenerator[Services]:
+    started_at = time.monotonic()
+    _LOGGER.info("engine.runtime.starting")
     if settings.database_url != auth_settings.database_url:
         raise ValueError("Engine and authentication must use the same database.")
     DiscordOutput.validate_dependencies()
     session_id = await initialize(settings.database_url)
+    _LOGGER.info(
+        "engine.runtime.database_ready session_id=%s elapsed=%.3f",
+        session_id,
+        time.monotonic() - started_at,
+    )
     avatars = tuple(
         cast(
             list[str],
@@ -60,10 +68,15 @@ async def open_runtime(
             raise RuntimeError("Discord gateway stopped unexpectedly.")
 
     async with asyncio.TaskGroup() as tasks, gateway:
+        _LOGGER.info("engine.discord.gateway_connecting")
         client = tasks.create_task(run_client(), name="engine-discord-client")
         try:
             async with asyncio.timeout(_READY_TIMEOUT_SECONDS):
                 await gateway.wait_until_ready()
+            _LOGGER.info(
+                "engine.discord.gateway_available elapsed=%.3f",
+                time.monotonic() - started_at,
+            )
             async with open_engine(
                 session_id,
                 auth=Auth(
@@ -95,12 +108,15 @@ async def open_runtime(
                     try:
                         await commands.register()
                     except Exception as error:
-                        _LOGGER.warning(
-                            "engine.discord.commands_failed: %s", type(error).__name__
-                        )
-                    _LOGGER.info("engine.runtime.ready session_id=%s", session_id)
+                        _LOGGER.error("engine.discord.commands_failed", exc_info=error)
+                    _LOGGER.info(
+                        "engine.runtime.ready session_id=%s elapsed=%.3f",
+                        session_id,
+                        time.monotonic() - started_at,
+                    )
                     yield services
                 finally:
+                    _LOGGER.info("engine.runtime.background_tasks_stopping")
                     services.session.events.close()
                     profile.cancel()
                     bio.cancel()
@@ -109,7 +125,10 @@ async def open_runtime(
             closing = True
             client.cancel()
             await asyncio.gather(client, return_exceptions=True)
-            _LOGGER.info("engine.runtime.client_stopped")
+            _LOGGER.info(
+                "engine.runtime.client_stopped elapsed=%.3f",
+                time.monotonic() - started_at,
+            )
 
 
 def create_application(

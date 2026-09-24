@@ -5,26 +5,13 @@
 """Run one bot and its local HTTP API."""
 
 import asyncio
-import copy
-import logging
 import os
 import socket
 
 import uvicorn
-from uvicorn.config import LOGGING_CONFIG
 
 from .engine.bootstrap import create_application
-
-
-class AccessLogFilter(logging.Filter):
-    """OAuth callback query strings contain one-use credentials."""
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        if isinstance(record.args, tuple) and len(record.args) == 5:
-            client, method, path, protocol, status = record.args
-            if isinstance(path, str) and path.startswith("/api/auth/"):
-                record.args = (client, method, path.split("?", 1)[0], protocol, status)
-        return True
+from .engine.logs import logging_configuration
 
 
 class LocalServer(uvicorn.Server):
@@ -43,16 +30,6 @@ class LocalServer(uvicorn.Server):
 
 
 def main() -> None:
-    logging.getLogger("uvicorn.access").addFilter(AccessLogFilter())
-    log_config = copy.deepcopy(LOGGING_CONFIG)
-    for formatter in log_config["formatters"].values():
-        formatter["fmt"] = "%(asctime)s pid=%(process)d " + formatter["fmt"]
-        formatter["datefmt"] = "%Y-%m-%dT%H:%M:%S%z"
-    log_config["loggers"]["nahormaar_backend"] = {
-        "handlers": ["default"],
-        "level": "INFO",
-        "propagate": False,
-    }
     shutdown_event = asyncio.Event()
     config = uvicorn.Config(
         create_application(shutdown_event=shutdown_event),
@@ -61,7 +38,7 @@ def main() -> None:
         workers=1,
         proxy_headers=False,
         timeout_graceful_shutdown=5,
-        log_config=log_config,
+        log_config=logging_configuration(),
     )
     # Reserve the API port before the lifespan can log a second bot into Discord.
     with config.bind_socket() as listener:

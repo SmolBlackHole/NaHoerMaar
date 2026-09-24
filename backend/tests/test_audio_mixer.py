@@ -191,9 +191,16 @@ def test_underrun_silence_does_not_confirm_start(
     try:
         assert audioop.max(mixer.read(), 2) == 0
         assert not started.is_set()
+        assert mixer.diagnostics.underrun_count == 1
+        time.sleep(0.01)
         monkeypatch.setattr(current, "take", take)
         assert mixer.read()
         assert started.is_set()
+        diagnostics = mixer.diagnostics
+        assert diagnostics.underrun_count == 1
+        assert diagnostics.stalled_seconds >= 0.01
+        assert diagnostics.max_stall_seconds >= 0.01
+        assert diagnostics.first_frame_seconds is not None
     finally:
         mixer.cleanup()
 

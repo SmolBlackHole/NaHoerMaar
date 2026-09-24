@@ -5,6 +5,7 @@
 """No Discord network, FFmpeg, codecs or real-time output in these adapter tests."""
 
 import asyncio
+import logging
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -28,6 +29,7 @@ from nahormaar_backend.engine.audio import (
 )
 from nahormaar_backend.engine.domain.catalog import TrackFinding
 from nahormaar_backend.engine.domain.metadata import TrackMetadata
+from nahormaar_backend.engine.logs import LogContextFilter, log_context
 from nahormaar_backend.integrations.audio_mixer import BufferedAudio
 
 from .test_catalog import REFERENCE
@@ -137,8 +139,12 @@ def transport() -> tuple[MagicMock, MagicMock, MagicMock]:
 
 
 def test_targeted_resources_and_crossfade_callbacks(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
+    caplog.set_level(logging.INFO, logger=adapter.__name__)
+    caplog.handler.addFilter(LogContextFilter())
+    first, second = uuid4(), uuid4()
+
     async def scenario() -> None:
         monkeypatch.setattr(adapter, "CrossfadeSource", Mixer)
         buffers: list[Buffer] = []
@@ -152,7 +158,7 @@ def test_targeted_resources_and_crossfade_callbacks(
         output = adapter.DiscordOutput(
             client, tmp_path / "unused", buffer_factory=factory
         )
-        connection, first, second, preparation = uuid4(), uuid4(), uuid4(), uuid4()
+        connection, preparation = uuid4(), uuid4()
         facts: list[AudioEvent] = []
         await output.connect(123, connection)
         await output.disconnect(uuid4())
@@ -205,7 +211,26 @@ def test_targeted_resources_and_crossfade_callbacks(
         assert output.connection is None
         await output.close()
 
-    asyncio.run(scenario())
+    with log_context("1377708476259897478", "Andrey", trace_id=str(uuid4())):
+        asyncio.run(scenario())
+    summary_records = [
+        record
+        for record in caplog.records
+        if record.getMessage().startswith("engine.audio.attempt_summary")
+    ]
+    summaries = [record.getMessage() for record in summary_records]
+    assert len(summaries) == 2
+    assert all(
+        getattr(record, "actor_id", None) == "1377708476259897478"
+        for record in summary_records
+    )
+    assert all(
+        getattr(record, "actor_name", None) == "Andrey" for record in summary_records
+    )
+    assert sum(f"attempt={first}" in summary for summary in summaries) == 1
+    assert sum(f"attempt={second}" in summary for summary in summaries) == 1
+    assert any("reason=crossfade" in summary for summary in summaries)
+    assert any("reason=stopped" in summary for summary in summaries)
 
 
 def test_prepares_next_track_without_crossfade(

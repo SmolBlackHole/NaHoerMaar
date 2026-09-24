@@ -10,6 +10,7 @@ const profile = useProfileStore();
 const { diagnostics } = useRepositories();
 const entries = ref<LogEntry[]>([]);
 const level = ref("all");
+const filter = ref("");
 const live = ref(true);
 const loading = ref(false);
 const error = ref("");
@@ -20,11 +21,21 @@ let request: AbortController | undefined;
 let disposed = false;
 let generation = 0;
 const levels = ["all", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"];
-const visibleEntries = computed(() =>
-	level.value === "all"
-		? entries.value
-		: entries.value.filter((entry) => entry.level === level.value),
-);
+const visibleEntries = computed(() => {
+	const needle = filter.value.trim().toLocaleLowerCase();
+	return entries.value.filter(
+		(entry) =>
+			(level.value === "all" || entry.level === level.value) &&
+			(!needle ||
+				[
+					entry.trace_id,
+					entry.actor_id,
+					entry.actor_name,
+					entry.source,
+					entry.message,
+				].some((value) => value?.toLocaleLowerCase().includes(needle))),
+	);
+});
 const time = (value: string) =>
 	new Intl.DateTimeFormat(undefined, { dateStyle: "short", timeStyle: "medium" }).format(
 		new Date(value),
@@ -36,6 +47,8 @@ const actorHelp = (entry: LogEntry) =>
 			? `${entry.actor_name} (${entry.actor_id})`
 			: entry.actor_id
 		: "Background task or system event";
+const traceLabel = (traceId: string) => traceId.slice(0, 8);
+const copyTrace = (traceId: string) => navigator.clipboard.writeText(traceId);
 
 function stop() {
 	generation++;
@@ -126,6 +139,13 @@ onBeforeUnmount(() => {
 						</p>
 					</div>
 					<div class="flex items-center gap-2">
+						<UInput
+							v-model="filter"
+							icon="i-lucide-search"
+							placeholder="Filter trace, actor, source, or message"
+							aria-label="Filter logs"
+							class="w-72 max-w-full"
+						/>
 						<USelect
 							v-model="level"
 							:items="levels"
@@ -161,7 +181,7 @@ onBeforeUnmount(() => {
 					<div
 						v-for="entry in visibleEntries"
 						:key="entry.id"
-						class="log-row grid gap-x-3 px-4 py-2 text-xs hover:bg-elevated/60 sm:grid-cols-[10rem_5rem_10rem_12rem_minmax(0,1fr)] sm:py-1.5"
+						class="log-row grid gap-x-3 px-4 py-2 text-xs hover:bg-elevated/60 sm:grid-cols-[10rem_5rem_6rem_10rem_12rem_minmax(0,1fr)] sm:py-1.5"
 					>
 						<time class="text-muted tabular-nums" :datetime="entry.timestamp">{{
 							time(entry.timestamp)
@@ -177,6 +197,16 @@ onBeforeUnmount(() => {
 							class="font-semibold"
 							>{{ entry.level }}</span
 						>
+						<UTooltip v-if="entry.trace_id" :text="`Copy trace ${entry.trace_id}`">
+							<button
+								type="button"
+								class="log-trace text-muted cursor-copy truncate text-left hover:text-highlighted"
+								@click="copyTrace(entry.trace_id)"
+							>
+								{{ traceLabel(entry.trace_id) }}
+							</button>
+						</UTooltip>
+						<span v-else class="log-trace text-dimmed">system</span>
 						<UTooltip :text="actorHelp(entry)">
 							<span class="log-actor text-muted truncate">{{
 								actorLabel(entry)
@@ -213,6 +243,7 @@ onBeforeUnmount(() => {
 		grid-template-columns: auto 1fr;
 	}
 	.log-actor,
+	.log-trace,
 	.log-source,
 	.log-message {
 		grid-column: 1 / -1;

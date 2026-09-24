@@ -49,5 +49,6 @@ compile_commands.json
 build/
 out/
 tmp/
+.tmp/
 *.log
 data/

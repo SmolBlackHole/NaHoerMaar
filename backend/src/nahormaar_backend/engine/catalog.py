@@ -264,10 +264,12 @@ class Catalog:
         )
 
     async def close(self) -> None:
+        _LOGGER.info("engine.catalog.closing providers=%s", ",".join(self._providers))
         self._closed = True
         await asyncio.gather(
             self._searches.close(), self._playlists.close(), self._tracks.close()
         )
+        _LOGGER.info("engine.catalog.closed")
 
     @logged_operation("engine.catalog.resolve_audio")
     async def resolve_audio(

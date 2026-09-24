@@ -132,6 +132,31 @@ half-ready dashboard.
 Use `docker compose logs -f backend frontend` while diagnosing a live instance.
 Stop following with Ctrl+C; that does not stop the containers.
 
+The backend also writes `backend.log` to the `nahormaar-logs` Docker volume. It
+starts a new file at midnight UTC and keeps the previous 14 files. These files
+survive a container replacement, while the Logs page deliberately shows only
+the latest 500 entries from the current backend process. User-triggered
+operations include the Discord ID and profile name of the actor. Background
+work is marked as a system event. API responses expose the same `X-Request-ID`
+that appears as `trace_id` in Nuxt and backend logs. Copy it from the Logs page
+to follow one action across the proxy, HTTP handler, Session and playback work.
+
+The console stays at INFO while the rotating file also keeps DEBUG entries. To
+inspect one trace inside the backend container:
+
+```powershell
+docker compose exec backend grep "trace_id=PASTE-ID-HERE" /app/data/logs/backend.log
+```
+
+Track attempts end with one `engine.audio.attempt_summary` line. It records the
+provider media ID, preparation and attempt IDs, startup timing, played position,
+underrun count, accumulated and longest stall, start mode and completion reason.
+During a crossfade, outgoing and incoming attempts receive separate summaries.
+
+Logs describe the operation and result without storing search text, media URLs,
+tokens or OAuth callback query strings. Treat the files as operational data
+anyway: Discord IDs and profile names identify the people using the instance.
+
 ## Put the dashboard behind HTTPS
 
 Point a DNS name at the host and let a reverse proxy terminate TLS. With Caddy

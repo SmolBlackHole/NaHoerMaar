@@ -4,6 +4,8 @@
 
 """Composition with explicit dependencies and one owner for each resource."""
 
+import logging
+import time
 from collections.abc import AsyncGenerator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
@@ -24,6 +26,8 @@ from .persistence import database_engine
 from .providers import Provider
 from .schema import REVISION
 from .session import Session
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,37 +66,63 @@ async def open_engine(
     The caller establishes Discord readiness before entering. This composition
     works equally with isolated transports and does not construct a hidden bot.
     """
-    async with AsyncExitStack() as resources:
-        resources.push_async_callback(auth.close)
-        engine = database_engine(auth.settings.database_url)
-        resources.push_async_callback(engine.dispose)
-        for provider in providers:
-            resources.push_async_callback(provider.close)
-        resources.push_async_callback(voice.close)
-        if id(audio) != id(voice):
-            resources.push_async_callback(audio.close)
-        async with engine.connect() as connection:
-            revision = await connection.run_sync(
-                lambda conn: MigrationContext.configure(conn).get_current_revision()
-            )
-            if revision != REVISION:
-                raise ValueError(
-                    "Initialize an engine database before opening its services."
+    started_at = time.monotonic()
+    _LOGGER.info(
+        "engine.services.opening session=%s providers=%s",
+        session_id,
+        ",".join(provider.key for provider in providers),
+    )
+    try:
+        async with AsyncExitStack() as resources:
+            resources.push_async_callback(auth.close)
+            engine = database_engine(auth.settings.database_url)
+            resources.push_async_callback(engine.dispose)
+            for provider in providers:
+                resources.push_async_callback(provider.close)
+            resources.push_async_callback(voice.close)
+            if id(audio) != id(voice):
+                resources.push_async_callback(audio.close)
+            async with engine.connect() as connection:
+                revision = await connection.run_sync(
+                    lambda conn: MigrationContext.configure(conn).get_current_revision()
                 )
-        sessions = async_sessionmaker(engine, expire_on_commit=False, autobegin=False)
-        metadata = MetadataStore(sessions, clock=clock)
-        catalog = Catalog(providers, metadata, clock=clock)
-        resources.push_async_callback(catalog.close)
-        session = await Session.open(
-            sessions, session_id, clock=clock, catalog=catalog, audio=audio, voice=voice
-        )
-        resources.push_async_callback(session.close)
-        yield Services(
-            session,
-            catalog,
-            metadata,
-            voice,
-            auth,
-            auth.access,
-            directory or EmptyMemberDirectory(),
+                if revision != REVISION:
+                    raise ValueError(
+                        "Initialize an engine database before opening its services."
+                    )
+            _LOGGER.debug("engine.services.schema_ready revision=%s", revision)
+            sessions = async_sessionmaker(
+                engine, expire_on_commit=False, autobegin=False
+            )
+            metadata = MetadataStore(sessions, clock=clock)
+            catalog = Catalog(providers, metadata, clock=clock)
+            resources.push_async_callback(catalog.close)
+            session = await Session.open(
+                sessions,
+                session_id,
+                clock=clock,
+                catalog=catalog,
+                audio=audio,
+                voice=voice,
+            )
+            resources.push_async_callback(session.close)
+            _LOGGER.info(
+                "engine.services.opened session=%s elapsed=%.3f",
+                session_id,
+                time.monotonic() - started_at,
+            )
+            yield Services(
+                session,
+                catalog,
+                metadata,
+                voice,
+                auth,
+                auth.access,
+                directory or EmptyMemberDirectory(),
+            )
+    finally:
+        _LOGGER.info(
+            "engine.services.finished session=%s elapsed=%.3f",
+            session_id,
+            time.monotonic() - started_at,
         )

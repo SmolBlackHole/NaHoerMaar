@@ -56,9 +56,11 @@ services:
             DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-nahormaar}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@database:5432/${POSTGRES_DB:-nahormaar}
             FFMPEG_PATH: /usr/bin/ffmpeg
             NAHORMAAR_BIND_HOST: 0.0.0.0
+            NAHORMAAR_LOG_DIR: /app/data/logs
             NODE_PATH: /usr/local/bin/node
         volumes:
             - ./access.toml:/app/config/access.toml:ro
+            - nahormaar-logs:/app/data/logs
         expose:
             - "8000"
         ports:
@@ -133,3 +135,4 @@ services:
 
 volumes:
     nahormaar-postgres:
+    nahormaar-logs:

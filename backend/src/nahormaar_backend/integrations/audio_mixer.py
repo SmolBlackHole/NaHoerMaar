@@ -27,6 +27,14 @@ _SILENCE = AudioFrame(bytes(3840))
 _LOGGER = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True, slots=True)
+class AudioDiagnostics:
+    first_frame_seconds: float | None = None
+    underrun_count: int = 0
+    stalled_seconds: float = 0
+    max_stall_seconds: float = 0
+
+
 class BufferedAudio:
     """One reader owns decoding; at most eight seconds are retained in memory."""
 
@@ -40,6 +48,7 @@ class BufferedAudio:
         self._started_at = time.monotonic()
         self._read_started_at: float | None = None
         self._first_frame_seen = False
+        self._first_frame_seconds: float | None = None
         self._cleanup_lock = threading.Lock()
         self._thread = threading.Thread(target=self._produce, daemon=True)
         self._thread.start()
@@ -57,19 +66,23 @@ class BufferedAudio:
                     self._read_started_at = read_started_at
                 frame = self.source.read_frame()
                 read_seconds = time.monotonic() - read_started_at
+                first_frame_seconds: float | None = None
                 with self._condition:
                     self._read_started_at = None
                     if frame is None:
                         self._error = self.source.original.current_error
                     else:
                         self._frames.append(frame)
+                        if not self._first_frame_seen:
+                            self._first_frame_seen = True
+                            first_frame_seconds = time.monotonic() - self._started_at
+                            self._first_frame_seconds = first_frame_seconds
                         self._condition.notify_all()
-                if frame is not None and not self._first_frame_seen:
-                    self._first_frame_seen = True
+                if first_frame_seconds is not None:
                     _LOGGER.info(
                         "audio.buffer.first_frame audio_pid=%s elapsed=%.3f",
                         self.process_id,
-                        time.monotonic() - self._started_at,
+                        first_frame_seconds,
                     )
                 if read_seconds >= _SLOW_READ_SECONDS:
                     _LOGGER.warning(
@@ -144,6 +157,11 @@ class BufferedAudio:
                 if self._read_started_at is not None
                 else None
             )
+
+    @property
+    def first_frame_seconds(self) -> float | None:
+        with self._condition:
+            return self._first_frame_seconds
 
     @property
     def ended(self) -> bool:
@@ -222,6 +240,9 @@ class CrossfadeSource(discord.AudioSource):
         self._fade_index = 0
         self._on_faded: Callable[[], None] = lambda: None
         self._starved_at: float | None = None
+        self._underrun_count = 0
+        self._stalled_seconds = 0.0
+        self._max_stall_seconds = 0.0
         self._current_error: Exception | None = None
         self._on_started: Callable[[], None] | None = on_started
 
@@ -244,6 +265,21 @@ class CrossfadeSource(discord.AudioSource):
     def current_error(self) -> Exception | None:
         with self._lock:
             return self._current_error
+
+    @property
+    def diagnostics(self) -> AudioDiagnostics:
+        with self._lock:
+            active_stall = (
+                time.monotonic() - self._starved_at
+                if self._starved_at is not None
+                else 0.0
+            )
+            return AudioDiagnostics(
+                first_frame_seconds=self.current.first_frame_seconds,
+                underrun_count=self._underrun_count,
+                stalled_seconds=self._stalled_seconds + active_stall,
+                max_stall_seconds=max(self._max_stall_seconds, active_stall),
+            )
 
     def pause(self) -> None:
         with self._lock:
@@ -307,6 +343,9 @@ class CrossfadeSource(discord.AudioSource):
             self._fade_frames = prepared.frames
             self._fade_index = 0
             self._starved_at = None
+            self._underrun_count = 0
+            self._stalled_seconds = 0.0
+            self._max_stall_seconds = 0.0
             self._on_faded = on_faded
             self._on_started = on_started
             # Bind completion to the incoming attempt before its first read can
@@ -337,6 +376,7 @@ class CrossfadeSource(discord.AudioSource):
                     now = time.monotonic()
                     if self._starved_at is None:
                         self._starved_at = now
+                        self._underrun_count += 1
                         _LOGGER.warning(
                             "audio.underrun audio_pid=%s position=%.3f fading=%s "
                             "reader_wait_seconds=%s",
@@ -349,11 +389,16 @@ class CrossfadeSource(discord.AudioSource):
                         raise MediaStreamError("The audio stream timed out.")
                     return self._encoder.encode(_SILENCE, self.volume)
                 if self._starved_at is not None:
+                    stalled_seconds = time.monotonic() - self._starved_at
+                    self._stalled_seconds += stalled_seconds
+                    self._max_stall_seconds = max(
+                        self._max_stall_seconds, stalled_seconds
+                    )
                     _LOGGER.info(
                         "audio.recovered audio_pid=%s position=%.3f stalled_seconds=%.3f",
                         getattr(self.current, "process_id", None),
                         self._position,
-                        time.monotonic() - self._starved_at,
+                        stalled_seconds,
                     )
                 self._starved_at = None
                 self._position += FRAME_SECONDS

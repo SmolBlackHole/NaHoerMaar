@@ -839,6 +839,8 @@ export interface components {
              * Format: date-time
              */
             timestamp: string;
+            /** Trace Id */
+            trace_id: string | null;
         };
         /** LogsView */
         LogsView: {

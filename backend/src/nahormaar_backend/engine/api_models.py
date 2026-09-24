@@ -50,6 +50,9 @@ class LogEntryView(View):
     level: str
     source: str
     message: str
+    actor_id: str | None
+    actor_name: str | None
+    trace_id: str | None
 
 
 class LogsView(View):

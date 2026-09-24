@@ -112,7 +112,5 @@ class DiscordGateway(discord.Client):
                         await self.change_presence(activity=activity)
                     self._sent_activity = value
             except Exception as error:
-                _LOGGER.warning(
-                    "engine.discord.presence_failed: %s", type(error).__name__
-                )
+                _LOGGER.error("engine.discord.presence_failed", exc_info=error)
             await asyncio.sleep(_PRESENCE_INTERVAL_SECONDS)

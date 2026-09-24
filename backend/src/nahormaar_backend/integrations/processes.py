@@ -7,10 +7,12 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import math
 import os
 import signal
 import subprocess
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import cast
@@ -18,6 +20,7 @@ from typing import cast
 import psutil
 
 _CLEANUP_TIMEOUT_SECONDS = 0.5
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -315,6 +318,15 @@ async def run_process(
         raise ValueError("max_output_bytes must be positive")
 
     command = tuple(os.fspath(arg) for arg in args)
+    executable = os.path.basename(command[0])
+    started_at = time.monotonic()
+    _LOGGER.debug(
+        "process.starting executable=%s argc=%s timeout=%.3f output_limit=%s",
+        executable,
+        len(command),
+        timeout,
+        max_output_bytes,
+    )
     spawn = asyncio.create_task(
         asyncio.create_subprocess_exec(
             *command,
@@ -335,9 +347,16 @@ async def run_process(
             raise cancelled from None
         tree = _ProcessTree(process.pid)
         await _finish_cleanup(process, tree)
+        _LOGGER.info(
+            "process.cancelled_during_spawn executable=%s pid=%s elapsed=%.3f",
+            executable,
+            process.pid,
+            time.monotonic() - started_at,
+        )
         raise
 
     tree = _ProcessTree(process.pid)
+    _LOGGER.debug("process.started executable=%s pid=%s", executable, process.pid)
     watcher = asyncio.create_task(_watch_descendants(tree))
     try:
         async with asyncio.timeout(timeout):
@@ -347,15 +366,44 @@ async def run_process(
         tree.refresh()
         if tree.descendants_running() or tree.access_denied:
             await _terminate_process_tree(process, tree)
+        _LOGGER.info(
+            "process.completed executable=%s pid=%s returncode=%s "
+            "stdout_bytes=%s stderr_bytes=%s elapsed=%.3f",
+            executable,
+            process.pid,
+            result.returncode,
+            len(result.stdout),
+            len(result.stderr),
+            time.monotonic() - started_at,
+        )
         return result
     except TimeoutError as error:
         await _finish_cleanup(process, tree)
+        _LOGGER.warning(
+            "process.timed_out executable=%s pid=%s elapsed=%.3f",
+            executable,
+            process.pid,
+            time.monotonic() - started_at,
+        )
         raise ProcessTimeoutError("Child process timed out") from error
     except asyncio.CancelledError:
         await _finish_cleanup(process, tree)
+        _LOGGER.info(
+            "process.cancelled executable=%s pid=%s elapsed=%.3f",
+            executable,
+            process.pid,
+            time.monotonic() - started_at,
+        )
         raise
-    except BaseException:
+    except BaseException as error:
         await _finish_cleanup(process, tree)
+        _LOGGER.warning(
+            "process.failed executable=%s pid=%s error=%s elapsed=%.3f",
+            executable,
+            process.pid,
+            type(error).__name__,
+            time.monotonic() - started_at,
+        )
         raise
     finally:
         watcher.cancel()

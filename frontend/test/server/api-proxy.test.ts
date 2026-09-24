@@ -8,6 +8,7 @@ import canonicalOrigin from "../../server/middleware/canonical-origin";
 const servers: Server[] = [];
 let backendUrl = "";
 let publicOrigin = "http://localhost:3000";
+const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 
 async function listen(server: Server) {
 	servers.push(server);
@@ -49,6 +50,7 @@ beforeEach(() => {
 
 afterEach(async () => {
 	vi.unstubAllGlobals();
+	vi.restoreAllMocks();
 	await Promise.all(
 		servers.splice(0).map(
 			(server) =>
@@ -62,6 +64,7 @@ afterEach(async () => {
 
 describe("Nitro API proxy", () => {
 	it("passes the complete trusted request and backend response through", async () => {
+		const traceId = "44d23529-2d7a-43f7-a4e7-ae25961dd224";
 		let received: Record<string, unknown> = {};
 		backendUrl = await listen(
 			createServer(async (incoming, response) => {
@@ -72,6 +75,7 @@ describe("Nitro API proxy", () => {
 					url: incoming.url,
 					origin: incoming.headers.origin,
 					cookie: incoming.headers.cookie,
+					traceId: incoming.headers["x-request-id"],
 					body,
 				};
 				response.writeHead(409, {
@@ -91,11 +95,13 @@ describe("Nitro API proxy", () => {
 				origin: "http://localhost:3000",
 				cookie: "nahormaar_session=session; consent=accepted",
 				"content-type": "application/json",
+				"x-request-id": traceId.toUpperCase(),
 			},
 			body: '{"track_ids":["one"]}',
 		});
 
 		expect(result.status).toBe(409);
+		expect(result.headers["x-request-id"]).toBe(traceId);
 		expect(result.headers["set-cookie"]).toHaveLength(2);
 		expect(JSON.parse(result.body)).toEqual({ code: "queue_conflict" });
 		expect(received).toEqual({
@@ -103,8 +109,33 @@ describe("Nitro API proxy", () => {
 			url: "/api/queue?keep=all",
 			origin: "http://localhost:3000",
 			cookie: "nahormaar_session=session; consent=accepted",
+			traceId,
 			body: '{"track_ids":["one"]}',
 		});
+	});
+
+	it("replaces invalid request IDs and never logs query values", async () => {
+		let receivedTrace: string | undefined;
+		const logged = vi.spyOn(console, "info").mockImplementation(() => undefined);
+		backendUrl = await listen(
+			createServer((incoming, response) => {
+				receivedTrace = incoming.headers["x-request-id"] as string | undefined;
+				response.end("ok");
+			}),
+		);
+		const frontend = await listen(createServer(toNodeListener(createApp().use(apiProxy))));
+
+		const result = await request(`${frontend}/api/catalog/search?q=private-request`, {
+			headers: { "x-request-id": "invalid" },
+		});
+
+		expect(receivedTrace).toMatch(UUID);
+		expect(receivedTrace).not.toBe("invalid");
+		expect(result.headers["x-request-id"]).toBe(receivedTrace);
+		const message = logged.mock.calls.map(([value]) => String(value)).join("\n");
+		expect(message).toContain("path=/api/catalog/search");
+		expect(message).toContain(`trace_id=${receivedTrace}`);
+		expect(message).not.toContain("private-request");
 	});
 
 	it("passes redirects and unknown API routes through unchanged", async () => {
@@ -147,7 +178,7 @@ describe("Nitro API proxy", () => {
 				"x-forwarded-host": "music.example.com",
 				"x-forwarded-proto": "https",
 			},
-			body: '{}',
+			body: "{}",
 		});
 
 		expect(result.status).toBe(200);
@@ -168,7 +199,7 @@ describe("Nitro API proxy", () => {
 		const result = await request(`${frontend}/api/profile`, {
 			method: "PUT",
 			headers: { origin: new URL(frontend).origin },
-			body: '{}',
+			body: "{}",
 		});
 
 		expect(result.status).toBe(200);
@@ -193,7 +224,7 @@ describe("Nitro API proxy", () => {
 				"x-forwarded-host": "unexpected.example",
 				"x-forwarded-proto": "https",
 			},
-			body: '{}',
+			body: "{}",
 		});
 
 		expect(receivedOrigin).toBe("https://elsewhere.example");

@@ -237,6 +237,8 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         nonlocal active
         bot_logger = logging.getLogger("nahormaar_backend")
+        previous_level = bot_logger.level
+        bot_logger.setLevel(logging.DEBUG)
         bot_logger.addHandler(recent_logs)
         try:
             async with runtime() as opened:
@@ -263,6 +265,7 @@ def create_app(
                     await asyncio.gather(watcher, return_exceptions=True)
         finally:
             bot_logger.removeHandler(recent_logs)
+            bot_logger.setLevel(previous_level)
 
     error_responses: dict[int | str, dict[str, object]] = {
         status: {"model": ApiError, "description": description}
@@ -347,7 +350,7 @@ def create_app(
                 ).model_dump(mode="json"),
                 status_code=502,
             )
-        _LOGGER.error("engine.api.failed: %s", type(error).__name__)
+        _LOGGER.error("engine.api.failed", exc_info=error)
         return JSONResponse(
             ApiError(code="backend_unavailable", retryable=True).model_dump(
                 mode="json"
@@ -369,6 +372,14 @@ def create_app(
             actor=user.account.profile,
             expected_attempt_id=attempt,
         )
+        action = action_for(command)
+        _LOGGER.info(
+            "engine.api.mutation action=%s outcome=%s request=%s replayed=%s",
+            action,
+            reply.outcome.code,
+            operation,
+            reply.replayed,
+        )
         code = reply.outcome.code
         status = (
             200
@@ -382,7 +393,7 @@ def create_app(
         return JSONResponse(
             MutationView(
                 request_id=operation,
-                action=action_for(command),
+                action=action,
                 state=await state_document(value, reply.snapshot, reply.outcome),
                 outcome=OutcomeView.model_validate(reply.outcome),
                 replayed=reply.replayed,
@@ -630,6 +641,11 @@ def create_app(
         provider: str = "youtube_music",
         refresh: bool = False,
     ) -> DiscoveryView:
+        _LOGGER.info(
+            "engine.catalog.search_requested provider=%s refresh=%s",
+            provider,
+            refresh,
+        )
         value = await services().catalog.search(
             q, provider_key=provider, refresh=refresh
         )
@@ -637,6 +653,13 @@ def create_app(
 
     @app.post("/api/catalog/playlist")
     async def playlist(body: PlaylistInput) -> DiscoveryView:
+        source = urlsplit(body.source_url)
+        _LOGGER.info(
+            "engine.catalog.playlist_requested provider=%s refresh=%s source=%s",
+            body.provider or "auto",
+            body.refresh,
+            source.hostname or source.scheme or "unknown",
+        )
         value = await services().catalog.playlist(
             body.source_url, provider_key=body.provider, refresh=body.refresh
         )
@@ -644,6 +667,12 @@ def create_app(
 
     @app.post("/api/catalog/track")
     async def track(body: LinkInput) -> TrackView:
+        source = urlsplit(body.source_url)
+        _LOGGER.info(
+            "engine.catalog.track_requested provider=%s source=%s",
+            body.provider or "auto",
+            source.hostname or source.scheme or "unknown",
+        )
         value = await services().catalog.track(
             body.source_url, provider_key=body.provider
         )

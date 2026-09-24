@@ -99,8 +99,19 @@ class SnapshotCache[K: Hashable, T]:
         ):
             if len(self._pending) >= self._max_pending:
                 if cached is None:
+                    _LOGGER.warning(
+                        "engine.cache.busy name=%s pending=%s limit=%s",
+                        self._name,
+                        len(self._pending),
+                        self._max_pending,
+                    )
                     raise RuntimeError("Catalog discovery is busy. Try again shortly.")
                 cached.error = "Refresh is waiting for other discovery requests."
+                _LOGGER.debug(
+                    "engine.cache.refresh_deferred name=%s pending=%s",
+                    self._name,
+                    len(self._pending),
+                )
             else:
                 _LOGGER.info(
                     "engine.cache.refresh_started name=%s cached=%s",
@@ -113,8 +124,15 @@ class SnapshotCache[K: Hashable, T]:
                     lambda done: None if done.cancelled() else done.exception()
                 )
         if cached is not None:
+            _LOGGER.debug(
+                "engine.cache.served name=%s version=%s refreshing=%s",
+                self._name,
+                cached.snapshot.version,
+                pending is not None,
+            )
             return cached.snapshot
         if pending is not None:
+            _LOGGER.debug("engine.cache.waiting name=%s", self._name)
             return await asyncio.shield(pending)
         raise RuntimeError("No catalog result or pending request is available.")
 
@@ -166,12 +184,12 @@ class SnapshotCache[K: Hashable, T]:
             if (previous := self._latest.get(key)) is not None:
                 previous.error = "Could not refresh these results. The previous version is still available."
                 previous.refresh_after = self._clock() + min(self._ttl, 30)
-            _LOGGER.warning(
-                "engine.cache.refresh_failed name=%s cached=%s elapsed=%.3f error=%s",
+            _LOGGER.error(
+                "engine.cache.refresh_failed name=%s cached=%s elapsed=%.3f",
                 self._name,
                 previous is not None,
                 time.monotonic() - started,
-                type(error).__name__,
+                exc_info=error,
             )
             raise
         finally:
@@ -181,7 +199,15 @@ class SnapshotCache[K: Hashable, T]:
         self._prune()
         found = self._snapshots.get(version)
         if found is None:
+            _LOGGER.info(
+                "engine.cache.snapshot_expired name=%s version=%s",
+                self._name,
+                version,
+            )
             raise ValueError("These results have expired. Open them again.")
+        _LOGGER.debug(
+            "engine.cache.snapshot_read name=%s version=%s", self._name, version
+        )
         return found[2]
 
     def status(self, version: UUID) -> RefreshStatus:
@@ -195,6 +221,13 @@ class SnapshotCache[K: Hashable, T]:
         )
 
     async def close(self) -> None:
+        _LOGGER.debug(
+            "engine.cache.closing name=%s pending=%s cached=%s snapshots=%s",
+            self._name,
+            len(self._pending),
+            len(self._latest),
+            len(self._snapshots),
+        )
         self._closed = True
         tasks = tuple(self._pending.values())
         for task in tasks:
@@ -202,3 +235,4 @@ class SnapshotCache[K: Hashable, T]:
         await asyncio.gather(*tasks, return_exceptions=True)
         self._latest.clear()
         self._snapshots.clear()
+        _LOGGER.debug("engine.cache.closed name=%s", self._name)

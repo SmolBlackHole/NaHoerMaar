@@ -78,8 +78,13 @@ previous output, so choose a fresh directory to retain earlier measurements.
 
 The backend console includes timestamps and the owning process ID.
 `engine.runtime.ready` identifies the listening session.
-`engine.audio.completed` records attempt ID, measured position and completion
-reason. `engine.playback.resolving` and `engine.playback.resolved` show source
+`engine.audio.attempt_summary` closes each technical attempt with its provider
+media ID, preparation and attempt IDs, first-frame and confirmed-start timing,
+wall-clock duration, measured position, start mode, underrun count, accumulated
+and longest stall, completion reason and error type. Crossfade outgoing and
+incoming attempts are reported separately. `engine.audio.completed` still marks
+the state-machine event. `engine.playback.resolving` and
+`engine.playback.resolved` show source
 lookup time; `engine.playback.effect_dispatched` and `.effect_replaced` show
 scheduled and superseded work. `engine.playback.*` also reports failed effects
 or checkpoints.
@@ -92,6 +97,13 @@ identify search, playlist or track work and say whether a new result replaced
 the cached version. These entries omit queries, media URLs, headers, tokens and
 exception messages. Session action entries include the request ID, outcome and
 queue revision; voice and audio entries include connection or attempt IDs.
+
+Every browser API response includes an `X-Request-ID`. Search that value as
+`trace_id` in the Logs page or `backend.log` to follow the proxy, authentication,
+Session worker and playback effects. A Discord command creates its own trace.
+The trace ID explains causality; a mutation's `Idempotency-Key` explains replay
+and remains a separate value. Nitro proxy entries contain method, path, status,
+duration and abort outcome without logging query strings or request content.
 
 For a playback cut, compare `ffmpeg.eof` output and expected seconds with
 `audio.buffer.failed` buffered seconds. `engine.audio.prepared` records how early
@@ -162,6 +174,8 @@ logs. A test passes only when both the listener and the state/history evidence
 agree. Stop on an unexpected cut, extra advance or wrong queue entry, and capture
 the timestamp, track/attempt and queue occurrence IDs before retrying. Do not
 repeat skips or restarts blindly. Logs are local investigation artifacts; keep
-secrets and media URLs out of shared notes. Afterwards, remove only agreed test
-entries and restore reversible settings. Playback and history already consumed
-during the test cannot be undone. Mark untested cases pending rather than passed.
+secrets and media URLs out of shared notes. The application omits those values
+from its own logs, but actor fields still contain Discord IDs and profile names.
+Afterwards, remove only agreed test entries and restore reversible settings.
+Playback and history already consumed during the test cannot be undone. Mark
+untested cases pending rather than passed.

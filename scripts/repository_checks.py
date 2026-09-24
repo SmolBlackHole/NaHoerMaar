@@ -20,6 +20,7 @@ EXCLUDED_DIRECTORIES = frozenset(
         ".mypy_cache",
         ".pytest_cache",
         ".ruff_cache",
+        ".tmp",
         ".venv",
         ".nuxt",
         ".output",
