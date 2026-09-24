@@ -26,6 +26,7 @@ from nahoermaar.database.core import Database
 from nahoermaar.database.schema import Base
 from nahoermaar.database.uow import UnitOfWork
 from nahoermaar.messaging import MessageBus
+from nahoermaar.listening.service import ListeningService
 from nahoermaar.player.session import CatalogRadioResolver, PlayerSessionManager
 from nahoermaar.users.service import (
     AccessService,
@@ -75,7 +76,8 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
     bus = MessageBus()
     catalog = CatalogService(units, ())
     player = PlayerSessionManager(units, bus, CatalogRadioResolver(catalog))
-    _register_handlers(bus, auth, access, player)
+    listening = ListeningService(units, bus)
+    _register_handlers(bus, auth, access, player, listening)
     settings = Settings(
         os.environ["DATABASE_URL"],
         AuthSettings(ORIGIN, "123", "secret", Path("access.toml")),
@@ -88,6 +90,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
         access,
         catalog,
         player,
+        listening,
     )
     app = create_app(application)
     assert "/api/events" in app.openapi()["paths"]

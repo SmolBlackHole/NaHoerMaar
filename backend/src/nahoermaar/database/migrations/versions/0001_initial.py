@@ -1068,6 +1068,156 @@ def upgrade() -> None:
         op.f("ix_track_requests_track_id"), "track_requests", ["track_id"], unique=False
     )
     op.create_table(
+        "playback_records",
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("session_id", sa.Uuid(), nullable=False),
+        sa.Column("request_id", sa.Uuid(), nullable=False),
+        sa.Column("started_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("audio_seconds", sa.Float(), nullable=False),
+        sa.Column("ended_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column(
+            "end_reason",
+            sa.Enum(
+                "completed",
+                "skipped",
+                "stopped",
+                "failed",
+                name="playback_end_reason",
+                native_enum=False,
+                create_constraint=True,
+            ),
+            nullable=True,
+        ),
+        sa.CheckConstraint(
+            "audio_seconds >= 0",
+            name=op.f("ck_playback_records_audio_seconds_non_negative"),
+        ),
+        sa.CheckConstraint(
+            "(ended_at IS NULL AND end_reason IS NULL) OR "
+            "(ended_at IS NOT NULL AND end_reason IS NOT NULL "
+            "AND ended_at >= started_at)",
+            name=op.f("ck_playback_records_end_valid"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["request_id"],
+            ["track_requests.id"],
+            name=op.f("fk_playback_records_request_id_track_requests"),
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["session_id"],
+            ["listening_sessions.id"],
+            name=op.f("fk_playback_records_session_id_listening_sessions"),
+            ondelete="RESTRICT",
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_playback_records")),
+    )
+    op.create_index(
+        op.f("ix_playback_records_request_id"),
+        "playback_records",
+        ["request_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_playback_records_session_id"),
+        "playback_records",
+        ["session_id"],
+        unique=False,
+    )
+    op.create_index(
+        "ix_playback_records_session_started",
+        "playback_records",
+        ["session_id", "started_at"],
+        unique=False,
+    )
+    op.create_table(
+        "listener_presence",
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("session_id", sa.Uuid(), nullable=False),
+        sa.Column("user_id", sa.Uuid(), nullable=False),
+        sa.Column("joined_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("confirmed_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("deafened", sa.Boolean(), nullable=False),
+        sa.Column("left_at", sa.DateTime(timezone=True), nullable=True),
+        sa.CheckConstraint(
+            "confirmed_at >= joined_at",
+            name=op.f("ck_listener_presence_confirmation_not_before_join"),
+        ),
+        sa.CheckConstraint(
+            "left_at IS NULL OR left_at >= confirmed_at",
+            name=op.f("ck_listener_presence_leave_not_before_confirmation"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["session_id"],
+            ["listening_sessions.id"],
+            name=op.f("fk_listener_presence_session_id_listening_sessions"),
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["user_id"],
+            ["users.id"],
+            name=op.f("fk_listener_presence_user_id_users"),
+            ondelete="RESTRICT",
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_listener_presence")),
+    )
+    op.create_index(
+        op.f("ix_listener_presence_session_id"),
+        "listener_presence",
+        ["session_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_listener_presence_user_id"),
+        "listener_presence",
+        ["user_id"],
+        unique=False,
+    )
+    op.create_index(
+        "uq_listener_presence_active",
+        "listener_presence",
+        ["session_id", "user_id"],
+        unique=True,
+        postgresql_where=sa.text("left_at IS NULL"),
+    )
+    op.create_table(
+        "playback_listeners",
+        sa.Column("playback_id", sa.Uuid(), nullable=False),
+        sa.Column("user_id", sa.Uuid(), nullable=False),
+        sa.Column("audio_seconds", sa.Float(), nullable=False),
+        sa.Column("first_heard_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("last_heard_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint(
+            "audio_seconds > 0",
+            name=op.f("ck_playback_listeners_audio_seconds_positive"),
+        ),
+        sa.CheckConstraint(
+            "last_heard_at >= first_heard_at",
+            name=op.f("ck_playback_listeners_heard_interval_valid"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["playback_id"],
+            ["playback_records.id"],
+            name=op.f("fk_playback_listeners_playback_id_playback_records"),
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["user_id"],
+            ["users.id"],
+            name=op.f("fk_playback_listeners_user_id_users"),
+            ondelete="RESTRICT",
+        ),
+        sa.PrimaryKeyConstraint(
+            "playback_id", "user_id", name=op.f("pk_playback_listeners")
+        ),
+    )
+    op.create_index(
+        "ix_playback_listeners_user_id",
+        "playback_listeners",
+        ["user_id"],
+        unique=False,
+    )
+    op.create_table(
         "player_checkpoints",
         sa.Column("session_id", sa.Uuid(), nullable=False),
         sa.Column(
@@ -1176,6 +1326,22 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_queue_entries_session_id"), table_name="queue_entries")
     op.drop_table("queue_entries")
     op.drop_table("player_checkpoints")
+    op.drop_index("ix_playback_listeners_user_id", table_name="playback_listeners")
+    op.drop_table("playback_listeners")
+    op.drop_index(
+        "uq_listener_presence_active",
+        table_name="listener_presence",
+        postgresql_where=sa.text("left_at IS NULL"),
+    )
+    op.drop_index(op.f("ix_listener_presence_user_id"), table_name="listener_presence")
+    op.drop_index(
+        op.f("ix_listener_presence_session_id"), table_name="listener_presence"
+    )
+    op.drop_table("listener_presence")
+    op.drop_index("ix_playback_records_session_started", table_name="playback_records")
+    op.drop_index(op.f("ix_playback_records_session_id"), table_name="playback_records")
+    op.drop_index(op.f("ix_playback_records_request_id"), table_name="playback_records")
+    op.drop_table("playback_records")
     op.drop_index(op.f("ix_track_requests_track_id"), table_name="track_requests")
     op.drop_index(op.f("ix_track_requests_source_id"), table_name="track_requests")
     op.drop_index("ix_track_requests_session_requested", table_name="track_requests")

@@ -17,6 +17,14 @@ from .database.schema import migrate
 from .database.uow import UnitOfWork
 from .integrations.discord_oauth import DiscordOAuth
 from .integrations.youtube import YouTubeProvider
+from .listening.service import (
+    AdvancePlayback,
+    BeginPlayback,
+    DisconnectAudience,
+    FinishPlayback,
+    ListeningService,
+    ObserveAudience,
+)
 from .messaging import MessageBus, MessageContext
 from .observability import configure_logging
 from .player.events import (
@@ -68,12 +76,14 @@ class Application:
     access: AccessService
     catalog: CatalogService
     player: PlayerSessionManager
+    listening: ListeningService
 
     async def start(self) -> None:
         """Migrate storage and reconcile startup-owned state before requests."""
         await migrate(self.database.engine)
         await self.bus.execute(ReconcileOperators())
         await self.player.start()
+        await self.listening.start(self.player.state.session.id)
         _LOGGER.info("application.started")
 
     async def close(self) -> None:
@@ -102,9 +112,19 @@ def bootstrap(
     catalog = CatalogService(units, (YouTubeProvider(settings.node_path),))
     bus = MessageBus()
     player = PlayerSessionManager(units, bus, CatalogRadioResolver(catalog))
-    _register_handlers(bus, auth, access, player)
+    listening = ListeningService(units, bus)
+    _register_handlers(bus, auth, access, player, listening)
     _LOGGER.info("application.configured")
-    return Application(settings, database, bus, auth, access, catalog, player)
+    return Application(
+        settings,
+        database,
+        bus,
+        auth,
+        access,
+        catalog,
+        player,
+        listening,
+    )
 
 
 def _event_context(context: MessageContext) -> MessageContext:
@@ -119,6 +139,7 @@ def _register_handlers(
     auth: AuthService,
     access: AccessService,
     player: PlayerSessionManager,
+    listening: ListeningService,
 ) -> None:
     async def begin_login(command: BeginLogin, _context: MessageContext) -> LoginStart:
         return await auth.begin(command.browser_token)
@@ -236,6 +257,11 @@ def _register_handlers(
     bus.register_command(RetryRadio, retry_radio)
 
     bus.register_command(ApplyRadioCandidates, apply_radio)
+    bus.register_command(BeginPlayback, listening.begin)
+    bus.register_command(AdvancePlayback, listening.advance)
+    bus.register_command(FinishPlayback, listening.finish)
+    bus.register_command(ObserveAudience, listening.observe)
+    bus.register_command(DisconnectAudience, listening.disconnect)
     bus.subscribe(PlayerChanged, player.broadcast)
     bus.subscribe(RadioRefillRequested, player.refill)
     bus.subscribe(UserAccessChanged, reauthenticate_stream)

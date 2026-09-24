@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
@@ -352,6 +353,24 @@ class UserRepository:
         result = await self._session.execute(statement)
         row = result.scalar_one_or_none()
         return _to_domain(row) if row is not None else None
+
+    async def active_ids_by_discord_ids(
+        self,
+        discord_ids: Iterable[str],
+    ) -> dict[str, UserId]:
+        """Resolve only Discord identities with current NaHörMaar access."""
+        identifiers = tuple(dict.fromkeys(discord_ids))
+        if not identifiers:
+            return {}
+        rows = await self._session.execute(
+            select(_DiscordIdentityRow.discord_id, _DiscordIdentityRow.user_id)
+            .join(_UserRow, _UserRow.id == _DiscordIdentityRow.user_id)
+            .where(
+                _DiscordIdentityRow.discord_id.in_(identifiers),
+                _UserRow.role.is_not(None),
+            )
+        )
+        return {discord_id: UserId(user_id) for discord_id, user_id in rows.tuples()}
 
     async def privileged(self) -> tuple[User, ...]:
         """Load every persisted operator for startup reconciliation."""
