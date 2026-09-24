@@ -51,7 +51,7 @@ where = ["backend/src"]
     "avatars.json",
     "engine/migrations/script.py.mako",
 ]
-"nahoermaar" = ["py.typed"]
+"nahoermaar" = ["py.typed", "database/migrations/script.py.mako"]
 
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]
