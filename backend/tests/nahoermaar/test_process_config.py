@@ -14,11 +14,20 @@ def test_settings_load_explicit_environment() -> None:
         {
             "DATABASE_URL": "postgresql+psycopg://app:secret@database/nahoermaar",
             "LOG_LEVEL": "debug",
+            "DISCORD_CLIENT_ID": "1550894913980465212",
+            "DISCORD_CLIENT_SECRET": "local-secret",
+            "PUBLIC_ORIGIN": "https://music.example.test",
+            "ACCESS_PATH": "config/access.toml",
         }
     )
 
     assert settings.database_url.endswith("@database/nahoermaar")
     assert settings.log_level is LogLevel.DEBUG
+    assert settings.auth.client_id == "1550894913980465212"
+    assert settings.auth.redirect_uri == (
+        "https://music.example.test/api/auth/discord/callback"
+    )
+    assert settings.auth.secure
 
 
 def test_process_environment_overrides_dotenv(
@@ -43,6 +52,20 @@ def test_process_environment_overrides_dotenv(
     [
         ({}, "DATABASE_URL"),
         ({"DATABASE_URL": "postgres", "LOG_LEVEL": "verbose"}, "LOG_LEVEL"),
+        (
+            {
+                "DATABASE_URL": "postgres",
+                "PUBLIC_ORIGIN": "http://music.example.test",
+            },
+            "PUBLIC_ORIGIN",
+        ),
+        (
+            {
+                "DATABASE_URL": "postgres",
+                "DISCORD_CLIENT_ID": "not-a-snowflake",
+            },
+            "DISCORD_CLIENT_ID",
+        ),
     ],
 )
 def test_settings_reject_invalid_values(

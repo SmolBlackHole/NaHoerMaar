@@ -15,9 +15,6 @@ import discord
 import pytest
 import httpx
 from alembic.autogenerate import compare_metadata
-from alembic import command
-from alembic.config import Config
-from alembic.util.exc import CommandError
 from alembic.migration import MigrationContext
 from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -81,100 +78,6 @@ def test_initialize_empty_database_reopens_one_identity(tmp_path: Path) -> None:
             await engine.dispose()
 
     asyncio.run(scenario())
-
-
-@pytest.mark.parametrize("revision", ["engine_0001", "engine_0002"])
-def test_initialize_upgrades_previous_engine_revision_without_losing_session(
-    tmp_path: Path,
-    revision: str,
-) -> None:
-    path = tmp_path / "previous.db"
-    root = Path(__file__).resolve().parents[3]
-    config = Config(str(root / "alembic.ini"))
-    config.set_main_option("sqlalchemy.url", database_url(path).replace("%", "%%"))
-    command.upgrade(config, revision)
-    original = ListeningSession(channel_id=123, volume=0.4)
-
-    async def scenario() -> None:
-        engine = database_engine(database_url(path))
-        try:
-            sessions = async_sessionmaker(
-                engine, expire_on_commit=False, autobegin=False
-            )
-            async with write_transaction(sessions) as db:
-                await ListeningSessionRepository(db).add(original)
-        finally:
-            await engine.dispose()
-
-        assert await initialize(database_url(path)) == original.id
-        engine = database_engine(database_url(path))
-        try:
-            async with engine.connect() as connection:
-                assert (
-                    await connection.run_sync(
-                        lambda conn: MigrationContext.configure(
-                            conn
-                        ).get_current_revision()
-                    )
-                    == REVISION
-                )
-                assert not await connection.run_sync(
-                    lambda conn: compare_metadata(
-                        MigrationContext.configure(conn), metadata()
-                    )
-                )
-            sessions = async_sessionmaker(
-                engine, expire_on_commit=False, autobegin=False
-            )
-            async with sessions.begin() as db:
-                assert await ListeningSessionRepository(db).get(original.id) == original
-        finally:
-            await engine.dispose()
-
-    asyncio.run(scenario())
-
-
-def test_alembic_cli_targets_engine_schema_and_rejects_old_revision(
-    tmp_path: Path,
-) -> None:
-    path = tmp_path / "cli.db"
-    root = Path(__file__).resolve().parents[3]
-    config = Config(str(root / "alembic.ini"))
-    config.set_main_option("sqlalchemy.url", database_url(path).replace("%", "%%"))
-    command.upgrade(config, "head")
-    command.check(config)
-
-    async def scenario() -> None:
-        await initialize(database_url(path))
-        engine = database_engine(database_url(path))
-        try:
-            async with engine.begin() as connection:
-                await connection.execute(
-                    text("UPDATE alembic_version SET version_num='0011'")
-                )
-        finally:
-            await engine.dispose()
-
-    asyncio.run(scenario())
-    with pytest.raises(CommandError, match="0011"):
-        command.upgrade(config, "head")
-
-    async def assert_revision_unchanged() -> None:
-        engine = database_engine(database_url(path))
-        try:
-            async with engine.connect() as connection:
-                assert (
-                    await connection.run_sync(
-                        lambda conn: MigrationContext.configure(
-                            conn
-                        ).get_current_revision()
-                    )
-                    == "0011"
-                )
-        finally:
-            await engine.dispose()
-
-    asyncio.run(assert_revision_unchanged())
 
 
 @pytest.mark.parametrize("kind", ["legacy", "foreign", "multiple"])
@@ -579,10 +482,13 @@ def test_normal_application_factory_is_lazy_and_uses_new_api(
             monkeypatch.setattr(config_module, "ffmpeg_executable", ffmpeg)
             monkeypatch.setattr(config_module, "executable_version", version)
             path = tmp_path / "custom.db"
+            access_path = tmp_path / "access.toml"
+            access_path.write_text('owner_id = "9"\n', encoding="utf-8")
             values = {
                 "DISCORD_TOKEN": "fixture-only",
                 "DATABASE_URL": database_url(path),
                 "NODE_PATH": sys.executable,
+                "ACCESS_PATH": str(access_path),
             }
             shutdown = asyncio.Event()
             app = bootstrap.create_application(environ=values, shutdown_event=shutdown)

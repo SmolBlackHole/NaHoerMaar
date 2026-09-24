@@ -13,6 +13,9 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from nahoermaar.config import Settings
 from nahoermaar.database.schema import Base
+from nahoermaar.users import repository as users_repository
+
+_MAPPING_MODULES = (users_repository,)
 
 
 def configure(connection: Connection) -> None:

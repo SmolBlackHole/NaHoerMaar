@@ -38,6 +38,34 @@ class AccessAction(StrEnum):
     OPERATOR_ROLE_CHANGED = "operator_role_changed"
 
 
+class AuthErrorCode(StrEnum):
+    """Stable failures exposed by the authentication and access boundary."""
+
+    SIGNED_OUT = "signed_out"
+    LOGIN_UNAVAILABLE = "login_unavailable"
+    LOGIN_BUSY = "login_busy"
+    LOGIN_EXPIRED = "login_expired"
+    LOGIN_CANCELLED = "login_cancelled"
+    LOGIN_FAILED = "login_failed"
+    ACCESS_DENIED = "access_denied"
+    ACCESS_UNAVAILABLE = "access_unavailable"
+    INVALID_DISCORD_ID = "invalid_discord_id"
+    OPERATOR_ACCESS_MANAGED_IN_CONFIG = "operator_access_managed_in_config"
+    GRANT_NOT_OWNED = "grant_not_owned"
+    PROFILE_NOT_FOUND = "profile_not_found"
+    ORIGIN_FORBIDDEN = "origin_forbidden"
+    CSRF_FAILED = "csrf_failed"
+
+
+class AuthError(RuntimeError):
+    """Expected authentication or authorization failure."""
+
+    def __init__(self, code: AuthErrorCode, status: int = 400) -> None:
+        super().__init__(code.value)
+        self.code = code
+        self.status = status
+
+
 class AppearanceMode(StrEnum):
     LIGHT = "light"
     DARK = "dark"
@@ -215,6 +243,77 @@ class User:
     def profile_complete(self) -> bool:
         """Return the derived local profile state."""
         return self.profile.complete
+
+
+@dataclass(frozen=True, slots=True)
+class BrowserSession:
+    """A revocable browser login referencing one internal user."""
+
+    token_hash: bytes = field(repr=False)
+    user_id: UserId
+    created_at: datetime
+    expires_at: datetime
+
+    def __post_init__(self) -> None:
+        if len(self.token_hash) != 32:
+            raise ValueError("Session token hash must contain 32 bytes.")
+        _require_aware(self.created_at, "Session creation time")
+        _require_aware(self.expires_at, "Session expiry time")
+        if self.expires_at <= self.created_at:
+            raise ValueError("Session expiry must follow its creation.")
+
+
+@dataclass(frozen=True, slots=True)
+class LoginAttempt:
+    """Single-use PKCE state bound to one temporary browser cookie."""
+
+    state_hash: bytes = field(repr=False)
+    browser_hash: bytes = field(repr=False)
+    verifier: str = field(repr=False)
+    created_at: datetime
+    expires_at: datetime
+
+    def __post_init__(self) -> None:
+        if len(self.state_hash) != 32 or len(self.browser_hash) != 32:
+            raise ValueError("Login state and browser hashes must contain 32 bytes.")
+        if not 43 <= len(self.verifier) <= 128:
+            raise ValueError("PKCE verifier must contain 43 to 128 characters.")
+        _require_aware(self.created_at, "Login creation time")
+        _require_aware(self.expires_at, "Login expiry time")
+        if self.expires_at <= self.created_at:
+            raise ValueError("Login expiry must follow its creation.")
+
+
+@dataclass(frozen=True, slots=True)
+class AccessEvent:
+    """Immutable audit fact for one access-role transition."""
+
+    id: UUID
+    subject_user_id: UserId
+    actor_user_id: UserId | None
+    action: AccessAction
+    role_before: AccessRole | None
+    role_after: AccessRole | None
+    occurred_at: datetime
+
+    def __post_init__(self) -> None:
+        _require_aware(self.occurred_at, "Access event time")
+        if self.role_before is self.role_after:
+            raise ValueError("An access event must describe a role transition.")
+
+
+@dataclass(frozen=True, slots=True)
+class Authenticated:
+    """A valid browser session and its current user state."""
+
+    user: User
+    expires_at: datetime
+    csrf: str = field(repr=False)
+
+    @property
+    def admin(self) -> bool:
+        """Return whether the user may administer ordinary access grants."""
+        return self.user.role is not None and self.user.role.privileged
 
 
 def _require_aware(value: datetime | None, label: str) -> None:

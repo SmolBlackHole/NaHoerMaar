@@ -4,12 +4,17 @@
 
 """Start the NaHörMaar backend."""
 
-from .bootstrap import bootstrap
+import uvicorn
 
 
 def main() -> None:
-    """Build the application from its configured dependencies."""
-    bootstrap()
+    """Run the FastAPI factory on the container-internal backend port."""
+    uvicorn.run(
+        "nahoermaar.api.app:create_app",
+        factory=True,
+        host="0.0.0.0",  # noqa: S104 - container service boundary
+        port=8000,
+    )
 
 
 if __name__ == "__main__":

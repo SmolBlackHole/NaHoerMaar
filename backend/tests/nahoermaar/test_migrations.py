@@ -8,7 +8,7 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 
 
-def test_alembic_uses_new_schema_without_placeholder_revision() -> None:
+def test_alembic_uses_new_schema_with_single_initial_revision() -> None:
     root = Path(__file__).parents[3]
     configuration = Config(root / "alembic.ini")
     scripts = ScriptDirectory.from_config(configuration)
@@ -17,4 +17,4 @@ def test_alembic_uses_new_schema_without_placeholder_revision() -> None:
         Path(scripts.dir).resolve()
         == (root / "backend/src/nahoermaar/database/migrations").resolve()
     )
-    assert scripts.get_heads() == []
+    assert scripts.get_heads() == ["0001_users"]
