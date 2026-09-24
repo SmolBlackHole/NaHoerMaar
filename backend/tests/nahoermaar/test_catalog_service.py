@@ -51,6 +51,7 @@ class Provider:
     def __init__(self) -> None:
         self.search_calls = 0
         self.playlist_calls = 0
+        self.radio_calls = 0
         self.title = "First title"
         self.fail = False
         self.started: asyncio.Event | None = None
@@ -99,6 +100,19 @@ class Provider:
 
     async def track(self, reference: MediaReference) -> ProviderTrack:
         return TRACK
+
+    async def radio(
+        self,
+        reference: MediaReference,
+        *,
+        limit: int,
+        continuation: str | None = None,
+    ) -> ProviderPage:
+        assert reference.kind in {MediaKind.TRACK, MediaKind.PLAYLIST}
+        assert limit == 20
+        assert continuation is None
+        self.radio_calls += 1
+        return ProviderPage((TRACK,))
 
     async def close(self) -> None:
         return None
@@ -185,6 +199,29 @@ def test_cache_first_refresh_is_shared_and_provider_failure_keeps_last_snapshot(
                 select(func.count()).select_from(Base.metadata.tables["track_sources"])
             )
         assert source_count == 1
+        await service.close()
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        asyncio.run(database.close())
+
+
+def test_radio_resolves_persisted_seed_and_returns_canonical_sources() -> None:
+    database = _database()
+    provider = Provider()
+
+    def units() -> UnitOfWork:
+        return UnitOfWork(database.sessions)
+
+    service = CatalogService(units, (provider,), clock=lambda: NOW)
+
+    async def scenario() -> None:
+        track = await service.track(TRACK.source_url)
+        page = await service.radio(source_id=track.sources[0].id)
+        assert provider.radio_calls == 1
+        assert page.entries[0].track_id == track.id
+        assert page.entries[0].id == track.sources[0].id
         await service.close()
 
     try:

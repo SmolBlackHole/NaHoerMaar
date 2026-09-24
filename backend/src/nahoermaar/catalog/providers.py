@@ -114,4 +114,12 @@ class CatalogProvider(Protocol):
 
     async def track(self, reference: MediaReference) -> ProviderTrack: ...
 
+    async def radio(
+        self,
+        reference: MediaReference,
+        *,
+        limit: int,
+        continuation: str | None = None,
+    ) -> ProviderPage: ...
+
     async def close(self) -> None: ...

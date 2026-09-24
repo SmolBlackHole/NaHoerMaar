@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "nahormaar-backend"
 version = "0.1.0"
-description = "Python backend for the private NaHörMaar Discord music bot."
+description = "Python backend for the private NaHÃ¶rMaar Discord music bot."
 readme = "README.md"
 license = "MPL-2.0"
 requires-python = ">=3.12"
@@ -75,12 +75,12 @@ quote-style = "double"
 [tool.mypy]
 python_version = "3.12"
 strict = true
-mypy_path = ["backend/src"]
+mypy_path = ["backend/src", "backend/tests"]
 files = ["backend/src/nahormaar_backend", "backend/src/nahoermaar", "backend/tests"]
 
 [tool.pyright]
 include = ["backend/src", "backend/tests"]
-extraPaths = ["backend/src"]
+extraPaths = ["backend/src", "backend/tests"]
 venvPath = "."
 venv = ".venv"
 pythonVersion = "3.12"

@@ -7,6 +7,7 @@
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 
@@ -16,9 +17,12 @@ from .domain import (
     DiscoveryKind,
     DiscoveryResult,
     DiscoverySnapshot,
+    DiscoverySnapshotId,
     MediaKind,
     MediaReference,
     Track,
+    TrackId,
+    TrackSource,
     TrackSourceId,
 )
 from .providers import (
@@ -43,6 +47,7 @@ class CatalogErrorCode(StrEnum):
     UNSUPPORTED_LINK = "unsupported_link"
     PROVIDER_FAILED = "provider_failed"
     CATALOG_CLOSED = "catalog_closed"
+    INVALID_RADIO_SEED = "invalid_radio_seed"
 
 
 class CatalogError(RuntimeError):
@@ -57,6 +62,12 @@ class CatalogError(RuntimeError):
         self.code = code
         self.status = status
         self.retryable = retryable
+
+
+@dataclass(frozen=True, slots=True)
+class RadioPage:
+    entries: tuple[TrackSource, ...]
+    continuation: str | None = None
 
 
 class CatalogService:
@@ -176,6 +187,73 @@ class CatalogService:
             )
             await work.commit()
         return track
+
+    async def tracks(self, track_ids: set[TrackId]) -> dict[TrackId, Track]:
+        self._ensure_open()
+        async with self._units() as work:
+            return await CatalogRepository(work.session).tracks(track_ids)
+
+    async def radio(
+        self,
+        *,
+        source_id: TrackSourceId | None = None,
+        snapshot_id: DiscoverySnapshotId | None = None,
+        limit: int = 20,
+        continuation: str | None = None,
+    ) -> RadioPage:
+        self._ensure_open()
+        self._validate_limit(limit)
+        if (source_id is None) == (snapshot_id is None):
+            raise CatalogError(CatalogErrorCode.INVALID_RADIO_SEED, 422)
+
+        async with self._units() as work:
+            catalog = CatalogRepository(work.session)
+            if source_id is not None:
+                source = await catalog.source(source_id)
+                if source is None:
+                    raise CatalogError(CatalogErrorCode.INVALID_RADIO_SEED, 404)
+                source_url = source.source_url
+                kind = MediaKind.TRACK
+            else:
+                if snapshot_id is None:
+                    raise AssertionError("Validated radio snapshot is missing.")
+                snapshot = await DiscoveryRepository(work.session).get(snapshot_id)
+                if (
+                    snapshot is None
+                    or snapshot.kind is not DiscoveryKind.PLAYLIST
+                    or snapshot.source_url is None
+                ):
+                    raise CatalogError(CatalogErrorCode.INVALID_RADIO_SEED, 404)
+                source_url = snapshot.source_url
+                kind = MediaKind.PLAYLIST
+
+        provider, reference = self._route(source_url, None, kind)
+        try:
+            page = await provider.radio(
+                reference,
+                limit=limit,
+                continuation=continuation,
+            )
+        except ProviderError as error:
+            raise CatalogError(
+                CatalogErrorCode.PROVIDER_FAILED,
+                502,
+                retryable=error.retryable,
+            ) from error
+
+        observed_at = self._clock()
+        async with self._units() as work:
+            catalog = CatalogRepository(work.session)
+            sources: list[TrackSource] = []
+            for observation in page.entries:
+                track = await catalog.upsert(observation, observed_at)
+                source_identity = _source_id(track, observation)
+                source = next(
+                    item for item in track.sources if item.id == source_identity
+                )
+                sources.append(source)
+            await work.commit()
+        return RadioPage(tuple(sources), page.continuation)
 
     async def prune_orphans(self, checked_before: datetime) -> tuple[int, int, int]:
         self._ensure_open()

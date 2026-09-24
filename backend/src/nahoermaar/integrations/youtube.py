@@ -368,6 +368,39 @@ class YouTubeProvider:
         )
         return ProviderPlaylist(reference, _text(payload.get("title")), page)
 
+    async def radio(
+        self,
+        reference: MediaReference,
+        *,
+        limit: int,
+        continuation: str | None = None,
+    ) -> ProviderPage:
+        if reference.provider is not ProviderName.YOUTUBE:
+            raise ProviderError("YouTube cannot load this radio identity.")
+        if continuation is not None:
+            raise ProviderError("YouTube Music radio has no continuation.")
+        result = await self._execute(
+            (
+                sys.executable,
+                "-m",
+                "nahoermaar.integrations.youtube",
+                "radio",
+                reference.kind.value,
+                reference.external_id,
+                str(limit),
+            )
+        )
+        entries = _payload(result).get("entries")
+        if not isinstance(entries, list):
+            raise ProviderError("YouTube Music returned invalid radio results.")
+        return ProviderPage(
+            tuple(
+                track
+                for entry in cast(list[object], entries)
+                if (track := _music_track(entry)) is not None
+            )[:limit]
+        )
+
     async def track(self, reference: MediaReference) -> ProviderTrack:
         if (
             reference.provider is not ProviderName.YOUTUBE
@@ -419,17 +452,40 @@ class YouTubeProvider:
 
 
 def _worker_main() -> None:
-    if len(sys.argv) != 4 or sys.argv[1] != "search":
-        raise SystemExit("Invalid YouTube worker request.")
     from ytmusicapi import YTMusic
 
+    entries: object
     try:
-        entries = YTMusic().search(sys.argv[2], filter="songs", limit=int(sys.argv[3]))
+        if len(sys.argv) == 4 and sys.argv[1] == "search":
+            entries = YTMusic().search(
+                sys.argv[2],
+                filter="songs",
+                limit=int(sys.argv[3]),
+            )
+        elif len(sys.argv) == 5 and sys.argv[1] == "radio":
+            kind, identity, limit = sys.argv[2:5]
+            result = (
+                YTMusic().get_watch_playlist(
+                    videoId=identity,
+                    radio=True,
+                    limit=int(limit),
+                )
+                if kind == MediaKind.TRACK.value
+                else YTMusic().get_watch_playlist(
+                    playlistId=f"RDAMPL{identity}",
+                    limit=int(limit),
+                )
+            )
+            entries = result.get("tracks")
+            if not isinstance(entries, list):
+                raise ValueError("Radio response has no tracks.")
+        else:
+            raise ValueError("Invalid worker request.")
         sys.stdout.buffer.write(
             json.dumps({"entries": entries}, ensure_ascii=False).encode("utf-8")
         )
     except Exception:
-        raise SystemExit("YouTube Music search failed.") from None
+        raise SystemExit("YouTube Music request failed.") from None
 
 
 if __name__ == "__main__":

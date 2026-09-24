@@ -31,6 +31,18 @@ APPLICATION_TABLES = {
     "discovery_keys",
     "discovery_snapshots",
     "discovery_results",
+    "listening_sessions",
+    "operation_receipts",
+    "operation_receipt_entries",
+    "queue_undos",
+    "queue_undo_groups",
+    "queue_undo_entries",
+    "radio_runs",
+    "radio_candidates",
+    "radio_exclusions",
+    "track_requests",
+    "player_checkpoints",
+    "queue_entries",
 }
 
 

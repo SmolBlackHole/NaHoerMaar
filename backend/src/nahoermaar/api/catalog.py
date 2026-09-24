@@ -100,12 +100,12 @@ def router(catalog: CatalogService) -> APIRouter:
         url: str = Query(min_length=1, max_length=2048),
         provider: str | None = Query(default=None, min_length=1, max_length=64),
     ) -> TrackView:
-        return _track(await catalog.track(url, provider_key=provider))
+        return track_view(await catalog.track(url, provider_key=provider))
 
     return api
 
 
-def _source(source: TrackSource) -> TrackSourceView:
+def source_view(source: TrackSource) -> TrackSourceView:
     return TrackSourceView(
         id=source.id,
         provider=source.provider.value,
@@ -116,7 +116,7 @@ def _source(source: TrackSource) -> TrackSourceView:
     )
 
 
-def _track(track: Track) -> TrackView:
+def track_view(track: Track) -> TrackView:
     return TrackView(
         id=track.id,
         title=track.title,
@@ -129,7 +129,7 @@ def _track(track: Track) -> TrackView:
         album_title=track.album_title,
         release_date=track.release_date,
         isrc=track.isrc,
-        sources=tuple(_source(source) for source in track.sources),
+        sources=tuple(source_view(source) for source in track.sources),
     )
 
 
@@ -150,8 +150,8 @@ def _discovery(result: DiscoveryResult) -> DiscoveryView:
         entries=tuple(
             DiscoveryEntryView(
                 position=entry.position,
-                track=_track(entry.track),
-                source=_source(entry.source),
+                track=track_view(entry.track),
+                source=source_view(entry.source),
             )
             for entry in snapshot.entries
         ),

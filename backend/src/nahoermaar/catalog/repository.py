@@ -346,6 +346,10 @@ class CatalogRepository:
         )
         return {TrackId(row.id): _to_track(row) for row in rows.unique()}
 
+    async def source(self, source_id: TrackSourceId) -> TrackSource | None:
+        row = await self._session.get(_TrackSourceRow, source_id)
+        return _to_source(row) if row is not None else None
+
     async def by_source(self, provider: ProviderName, external_id: str) -> Track | None:
         row = await self._session.scalar(
             _track_select()
@@ -665,6 +669,15 @@ class DiscoveryRepository:
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
+
+    async def get(self, snapshot_id: DiscoverySnapshotId) -> DiscoverySnapshot | None:
+        snapshot = await self._session.get(_DiscoverySnapshotRow, snapshot_id)
+        if snapshot is None:
+            return None
+        key = await self._session.get(_DiscoveryKeyRow, snapshot.key_id)
+        if key is None:
+            raise RuntimeError("Discovery snapshot has no key.")
+        return await self._snapshot(key, snapshot)
 
     async def latest(
         self,

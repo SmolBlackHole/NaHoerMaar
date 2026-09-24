@@ -18,8 +18,19 @@ class Runner:
     async def __call__(self, args: tuple[str, ...], *, timeout: float) -> ProcessResult:
         assert timeout == 5
         self.calls.append(args)
-        if "search" in args:
-            payload: dict[str, object] = {
+        payload: dict[str, object]
+        if "radio" in args:
+            payload = {
+                "entries": [
+                    {
+                        "videoId": "radiotrack1",
+                        "title": "Radio title",
+                        "artists": [{"id": "UCradio", "name": "Radio artist"}],
+                    }
+                ]
+            }
+        elif "search" in args:
+            payload = {
                 "entries": [
                     {
                         "videoId": "abcdefghijk",
@@ -75,6 +86,9 @@ def test_youtube_provider_translates_search_playlist_and_details() -> None:
         playlist = await provider.playlist(playlist_reference, limit=10)
         assert playlist.title == "Playlist"
         assert playlist.page.entries[0].title == "Playlist title"
+
+        radio = await provider.radio(track_reference, limit=10)
+        assert radio.entries[0].title == "Radio title"
 
         detail = await provider.track(track_reference)
         assert detail.title == "Detail title"

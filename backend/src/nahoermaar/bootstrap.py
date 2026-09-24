@@ -19,6 +19,20 @@ from .integrations.discord_oauth import DiscordOAuth
 from .integrations.youtube import YouTubeProvider
 from .messaging import MessageBus, MessageContext
 from .observability import configure_logging
+from .player.events import (
+    AddTracks,
+    ApplyRadioCandidates,
+    ClearQueue,
+    MoveQueueEntry,
+    MutationReply,
+    RadioRefillRequested,
+    RemoveQueueEntry,
+    RetryRadio,
+    StartRadio,
+    StopRadio,
+    UndoQueue,
+)
+from .player.session import CatalogRadioResolver, PlayerSessionManager
 from .users.domain import AccessEvent, User
 from .users.service import (
     AccessService,
@@ -52,15 +66,18 @@ class Application:
     auth: AuthService
     access: AccessService
     catalog: CatalogService
+    player: PlayerSessionManager
 
     async def start(self) -> None:
         """Migrate storage and reconcile startup-owned state before requests."""
         await migrate(self.database.engine)
         await self.bus.execute(ReconcileOperators())
+        await self.player.start()
         _LOGGER.info("application.started")
 
     async def close(self) -> None:
         """Release process-owned resources."""
+        await self.player.close()
         await self.catalog.close()
         await self.database.close()
         _LOGGER.info("application.closed")
@@ -83,9 +100,10 @@ def bootstrap(
     auth = AuthService(units, DiscordOAuth(settings.auth))
     catalog = CatalogService(units, (YouTubeProvider(settings.node_path),))
     bus = MessageBus()
-    _register_handlers(bus, auth, access)
+    player = PlayerSessionManager(units, bus, CatalogRadioResolver(catalog))
+    _register_handlers(bus, auth, access, player)
     _LOGGER.info("application.configured")
-    return Application(settings, database, bus, auth, access, catalog)
+    return Application(settings, database, bus, auth, access, catalog, player)
 
 
 def _event_context(context: MessageContext) -> MessageContext:
@@ -99,6 +117,7 @@ def _register_handlers(
     bus: MessageBus,
     auth: AuthService,
     access: AccessService,
+    player: PlayerSessionManager,
 ) -> None:
     async def begin_login(command: BeginLogin, _context: MessageContext) -> LoginStart:
         return await auth.begin(command.browser_token)
@@ -161,3 +180,53 @@ def _register_handlers(
     bus.register_command(RevokeAccess, revoke)
     bus.register_command(SaveProfile, save_profile)
     bus.register_command(SaveAppearance, save_appearance)
+
+    async def add_tracks(command: AddTracks, context: MessageContext) -> MutationReply:
+        return await player.execute(command, context)
+
+    async def remove_entry(
+        command: RemoveQueueEntry, context: MessageContext
+    ) -> MutationReply:
+        return await player.execute(command, context)
+
+    async def move_entry(
+        command: MoveQueueEntry, context: MessageContext
+    ) -> MutationReply:
+        return await player.execute(command, context)
+
+    async def clear_queue(
+        command: ClearQueue, context: MessageContext
+    ) -> MutationReply:
+        return await player.execute(command, context)
+
+    async def undo_queue(command: UndoQueue, context: MessageContext) -> MutationReply:
+        return await player.execute(command, context)
+
+    async def start_radio(
+        command: StartRadio, context: MessageContext
+    ) -> MutationReply:
+        return await player.execute(command, context)
+
+    async def stop_radio(command: StopRadio, context: MessageContext) -> MutationReply:
+        return await player.execute(command, context)
+
+    async def retry_radio(
+        command: RetryRadio, context: MessageContext
+    ) -> MutationReply:
+        return await player.execute(command, context)
+
+    async def apply_radio(
+        command: ApplyRadioCandidates, context: MessageContext
+    ) -> MutationReply:
+        return await player.execute(command, context)
+
+    bus.register_command(AddTracks, add_tracks)
+    bus.register_command(RemoveQueueEntry, remove_entry)
+    bus.register_command(MoveQueueEntry, move_entry)
+    bus.register_command(ClearQueue, clear_queue)
+    bus.register_command(UndoQueue, undo_queue)
+    bus.register_command(StartRadio, start_radio)
+    bus.register_command(StopRadio, stop_radio)
+    bus.register_command(RetryRadio, retry_radio)
+    bus.register_command(ApplyRadioCandidates, apply_radio)
+    bus.subscribe(RadioRefillRequested, player.refill)

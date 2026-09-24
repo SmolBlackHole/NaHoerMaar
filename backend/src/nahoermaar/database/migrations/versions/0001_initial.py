@@ -691,9 +691,522 @@ def upgrade() -> None:
         ["artist_id"],
         unique=False,
     )
+    op.create_table(
+        "listening_sessions",
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("session_key", sa.String(length=64), nullable=False),
+        sa.Column("revision", sa.Integer(), nullable=False),
+        sa.Column("queue_revision", sa.Integer(), nullable=False),
+        sa.Column("channel_id", sa.BigInteger(), nullable=True),
+        sa.Column("volume", sa.Float(), nullable=False),
+        sa.Column("crossfade_seconds", sa.Integer(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint(
+            "crossfade_seconds IN (0, 3, 4, 5, 6, 7)",
+            name=op.f("ck_listening_sessions_crossfade_supported"),
+        ),
+        sa.CheckConstraint(
+            "queue_revision >= 0 AND queue_revision <= revision",
+            name=op.f("ck_listening_sessions_queue_revision_valid"),
+        ),
+        sa.CheckConstraint(
+            "revision >= 0", name=op.f("ck_listening_sessions_revision_non_negative")
+        ),
+        sa.CheckConstraint(
+            "volume >= 0 AND volume <= 1",
+            name=op.f("ck_listening_sessions_volume_valid"),
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_listening_sessions")),
+        sa.UniqueConstraint(
+            "session_key", name=op.f("uq_listening_sessions_session_key")
+        ),
+    )
+    op.create_table(
+        "operation_receipts",
+        sa.Column("operation_id", sa.Uuid(), nullable=False),
+        sa.Column("session_id", sa.Uuid(), nullable=False),
+        sa.Column("command_type", sa.String(length=100), nullable=False),
+        sa.Column("fingerprint", sa.LargeBinary(length=32), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "action",
+            sa.Enum(
+                "queue.added",
+                "queue.removed",
+                "queue.moved",
+                "queue.cleared",
+                "queue.restored",
+                "radio.started",
+                "radio.stopped",
+                "radio.retried",
+                "radio.filled",
+                "radio.failed",
+                "playback.updated",
+                name="player_action",
+                native_enum=False,
+                create_constraint=True,
+            ),
+            nullable=False,
+        ),
+        sa.Column("added_count", sa.Integer(), nullable=False),
+        sa.Column("removed_count", sa.Integer(), nullable=False),
+        sa.Column("restored_count", sa.Integer(), nullable=False),
+        sa.Column("skipped_count", sa.Integer(), nullable=False),
+        sa.Column("undo_id", sa.Uuid(), nullable=True),
+        sa.Column("undo_expires_at", sa.DateTime(timezone=True), nullable=True),
+        sa.CheckConstraint(
+            "expires_at > created_at",
+            name=op.f("ck_operation_receipts_positive_lifetime"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["session_id"],
+            ["listening_sessions.id"],
+            name=op.f("fk_operation_receipts_session_id_listening_sessions"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("operation_id", name=op.f("pk_operation_receipts")),
+    )
+    op.create_index(
+        op.f("ix_operation_receipts_expires_at"),
+        "operation_receipts",
+        ["expires_at"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_operation_receipts_session_id"),
+        "operation_receipts",
+        ["session_id"],
+        unique=False,
+    )
+    op.create_table(
+        "queue_undos",
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("session_id", sa.Uuid(), nullable=False),
+        sa.Column("actor_id", sa.Uuid(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint(
+            "expires_at > created_at", name=op.f("ck_queue_undos_positive_lifetime")
+        ),
+        sa.ForeignKeyConstraint(
+            ["actor_id"],
+            ["users.id"],
+            name=op.f("fk_queue_undos_actor_id_users"),
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["session_id"],
+            ["listening_sessions.id"],
+            name=op.f("fk_queue_undos_session_id_listening_sessions"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_queue_undos")),
+    )
+    op.create_index(
+        op.f("ix_queue_undos_actor_id"), "queue_undos", ["actor_id"], unique=False
+    )
+    op.create_index(
+        op.f("ix_queue_undos_expires_at"), "queue_undos", ["expires_at"], unique=False
+    )
+    op.create_index(
+        op.f("ix_queue_undos_session_id"), "queue_undos", ["session_id"], unique=False
+    )
+    op.create_table(
+        "operation_receipt_entries",
+        sa.Column("operation_id", sa.Uuid(), nullable=False),
+        sa.Column("position", sa.Integer(), nullable=False),
+        sa.Column("entry_id", sa.Uuid(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["operation_id"],
+            ["operation_receipts.operation_id"],
+            name=op.f("fk_operation_receipt_entries_operation_id_operation_receipts"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint(
+            "operation_id", "position", name=op.f("pk_operation_receipt_entries")
+        ),
+    )
+    op.create_table(
+        "queue_undo_groups",
+        sa.Column("undo_id", sa.Uuid(), nullable=False),
+        sa.Column("position", sa.Integer(), nullable=False),
+        sa.Column("previous_entry_id", sa.Uuid(), nullable=True),
+        sa.Column("next_entry_id", sa.Uuid(), nullable=True),
+        sa.ForeignKeyConstraint(
+            ["undo_id"],
+            ["queue_undos.id"],
+            name=op.f("fk_queue_undo_groups_undo_id_queue_undos"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint(
+            "undo_id", "position", name=op.f("pk_queue_undo_groups")
+        ),
+    )
+    op.create_table(
+        "radio_runs",
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("session_id", sa.Uuid(), nullable=False),
+        sa.Column(
+            "seed_kind",
+            sa.Enum(
+                "track",
+                "playlist",
+                name="player_media_kind",
+                native_enum=False,
+                create_constraint=True,
+            ),
+            nullable=False,
+        ),
+        sa.Column("seed_track_source_id", sa.Uuid(), nullable=True),
+        sa.Column("seed_discovery_snapshot_id", sa.Uuid(), nullable=True),
+        sa.Column("initiated_by", sa.Uuid(), nullable=False),
+        sa.Column("started_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("ended_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("generation", sa.Uuid(), nullable=False),
+        sa.Column(
+            "state",
+            sa.Enum(
+                "active",
+                "loading",
+                "waiting",
+                name="radio_state",
+                native_enum=False,
+                create_constraint=True,
+            ),
+            nullable=False,
+        ),
+        sa.Column("continuation", sa.Text(), nullable=True),
+        sa.Column("request_id", sa.Uuid(), nullable=True),
+        sa.Column("error", sa.String(length=500), nullable=True),
+        sa.CheckConstraint(
+            "(seed_kind = 'track' AND seed_track_source_id IS NOT NULL AND seed_discovery_snapshot_id IS NULL) OR (seed_kind = 'playlist' AND seed_track_source_id IS NULL AND seed_discovery_snapshot_id IS NOT NULL)",
+            name=op.f("ck_radio_runs_seed_identity_valid"),
+        ),
+        sa.CheckConstraint(
+            "(state = 'loading' AND request_id IS NOT NULL) OR (state <> 'loading' AND request_id IS NULL)",
+            name=op.f("ck_radio_runs_request_state_valid"),
+        ),
+        sa.CheckConstraint(
+            "ended_at IS NULL OR ended_at >= started_at",
+            name=op.f("ck_radio_runs_end_not_before_start"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["initiated_by"],
+            ["users.id"],
+            name=op.f("fk_radio_runs_initiated_by_users"),
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["seed_discovery_snapshot_id"],
+            ["discovery_snapshots.id"],
+            name=op.f("fk_radio_runs_seed_discovery_snapshot_id_discovery_snapshots"),
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["seed_track_source_id"],
+            ["track_sources.id"],
+            name=op.f("fk_radio_runs_seed_track_source_id_track_sources"),
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["session_id"],
+            ["listening_sessions.id"],
+            name=op.f("fk_radio_runs_session_id_listening_sessions"),
+            ondelete="RESTRICT",
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_radio_runs")),
+    )
+    op.create_index(
+        op.f("ix_radio_runs_initiated_by"), "radio_runs", ["initiated_by"], unique=False
+    )
+    op.create_index(
+        op.f("ix_radio_runs_session_id"), "radio_runs", ["session_id"], unique=False
+    )
+    op.create_index(
+        "uq_radio_runs_active_session",
+        "radio_runs",
+        ["session_id"],
+        unique=True,
+        postgresql_where=sa.text("ended_at IS NULL"),
+    )
+    op.create_table(
+        "radio_candidates",
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("run_id", sa.Uuid(), nullable=False),
+        sa.Column("track_id", sa.Uuid(), nullable=False),
+        sa.Column("source_id", sa.Uuid(), nullable=False),
+        sa.Column("position", sa.Integer(), nullable=False),
+        sa.CheckConstraint(
+            "position >= 0", name=op.f("ck_radio_candidates_position_non_negative")
+        ),
+        sa.ForeignKeyConstraint(
+            ["run_id"],
+            ["radio_runs.id"],
+            name=op.f("fk_radio_candidates_run_id_radio_runs"),
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["source_id"],
+            ["track_sources.id"],
+            name=op.f("fk_radio_candidates_source_id_track_sources"),
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["track_id"],
+            ["tracks.id"],
+            name=op.f("fk_radio_candidates_track_id_tracks"),
+            ondelete="RESTRICT",
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_radio_candidates")),
+        sa.UniqueConstraint("run_id", "position", name="uq_radio_candidates_position"),
+        sa.UniqueConstraint("run_id", "track_id", name="uq_radio_candidates_track"),
+    )
+    op.create_index(
+        op.f("ix_radio_candidates_run_id"), "radio_candidates", ["run_id"], unique=False
+    )
+    op.create_table(
+        "radio_exclusions",
+        sa.Column("run_id", sa.Uuid(), nullable=False),
+        sa.Column("track_id", sa.Uuid(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["run_id"],
+            ["radio_runs.id"],
+            name=op.f("fk_radio_exclusions_run_id_radio_runs"),
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["track_id"],
+            ["tracks.id"],
+            name=op.f("fk_radio_exclusions_track_id_tracks"),
+            ondelete="RESTRICT",
+        ),
+        sa.PrimaryKeyConstraint("run_id", "track_id", name=op.f("pk_radio_exclusions")),
+    )
+    op.create_table(
+        "track_requests",
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("session_id", sa.Uuid(), nullable=False),
+        sa.Column("track_id", sa.Uuid(), nullable=False),
+        sa.Column("source_id", sa.Uuid(), nullable=True),
+        sa.Column("requested_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "origin",
+            sa.Enum(
+                "manual",
+                "radio",
+                name="request_origin",
+                native_enum=False,
+                create_constraint=True,
+            ),
+            nullable=False,
+        ),
+        sa.Column("requested_by", sa.Uuid(), nullable=True),
+        sa.Column("radio_run_id", sa.Uuid(), nullable=True),
+        sa.CheckConstraint(
+            "(origin = 'manual' AND requested_by IS NOT NULL AND radio_run_id IS NULL) OR (origin = 'radio' AND requested_by IS NULL AND radio_run_id IS NOT NULL)",
+            name=op.f("ck_track_requests_origin_owner"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["radio_run_id"],
+            ["radio_runs.id"],
+            name=op.f("fk_track_requests_radio_run_id_radio_runs"),
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["requested_by"],
+            ["users.id"],
+            name=op.f("fk_track_requests_requested_by_users"),
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["session_id"],
+            ["listening_sessions.id"],
+            name=op.f("fk_track_requests_session_id_listening_sessions"),
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["source_id"],
+            ["track_sources.id"],
+            name=op.f("fk_track_requests_source_id_track_sources"),
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["track_id"],
+            ["tracks.id"],
+            name=op.f("fk_track_requests_track_id_tracks"),
+            ondelete="RESTRICT",
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_track_requests")),
+    )
+    op.create_index(
+        op.f("ix_track_requests_radio_run_id"),
+        "track_requests",
+        ["radio_run_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_track_requests_requested_by"),
+        "track_requests",
+        ["requested_by"],
+        unique=False,
+    )
+    op.create_index(
+        "ix_track_requests_session_requested",
+        "track_requests",
+        ["session_id", "requested_at"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_track_requests_source_id"),
+        "track_requests",
+        ["source_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_track_requests_track_id"), "track_requests", ["track_id"], unique=False
+    )
+    op.create_table(
+        "player_checkpoints",
+        sa.Column("session_id", sa.Uuid(), nullable=False),
+        sa.Column(
+            "intent",
+            sa.Enum(
+                "stopped",
+                "playing",
+                "paused",
+                name="playback_intent",
+                native_enum=False,
+                create_constraint=True,
+            ),
+            nullable=False,
+        ),
+        sa.Column("request_id", sa.Uuid(), nullable=True),
+        sa.Column("position_seconds", sa.Float(), nullable=False),
+        sa.CheckConstraint(
+            "(intent = 'stopped' AND request_id IS NULL AND position_seconds = 0) OR (intent <> 'stopped' AND request_id IS NOT NULL)",
+            name=op.f("ck_player_checkpoints_intent_request_valid"),
+        ),
+        sa.CheckConstraint(
+            "position_seconds >= 0",
+            name=op.f("ck_player_checkpoints_position_non_negative"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["request_id"],
+            ["track_requests.id"],
+            name=op.f("fk_player_checkpoints_request_id_track_requests"),
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["session_id"],
+            ["listening_sessions.id"],
+            name=op.f("fk_player_checkpoints_session_id_listening_sessions"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("session_id", name=op.f("pk_player_checkpoints")),
+    )
+    op.create_table(
+        "queue_entries",
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("session_id", sa.Uuid(), nullable=False),
+        sa.Column("request_id", sa.Uuid(), nullable=False),
+        sa.Column("position", sa.Integer(), nullable=False),
+        sa.CheckConstraint(
+            "position >= 0", name=op.f("ck_queue_entries_position_non_negative")
+        ),
+        sa.ForeignKeyConstraint(
+            ["request_id"],
+            ["track_requests.id"],
+            name=op.f("fk_queue_entries_request_id_track_requests"),
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["session_id"],
+            ["listening_sessions.id"],
+            name=op.f("fk_queue_entries_session_id_listening_sessions"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_queue_entries")),
+        sa.UniqueConstraint("request_id", name=op.f("uq_queue_entries_request_id")),
+        sa.UniqueConstraint("session_id", "position", name="uq_queue_entries_position"),
+    )
+    op.create_index(
+        op.f("ix_queue_entries_session_id"),
+        "queue_entries",
+        ["session_id"],
+        unique=False,
+    )
+    op.create_table(
+        "queue_undo_entries",
+        sa.Column("undo_id", sa.Uuid(), nullable=False),
+        sa.Column("group_position", sa.Integer(), nullable=False),
+        sa.Column("position", sa.Integer(), nullable=False),
+        sa.Column("entry_id", sa.Uuid(), nullable=False),
+        sa.Column("request_id", sa.Uuid(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["request_id"],
+            ["track_requests.id"],
+            name=op.f("fk_queue_undo_entries_request_id_track_requests"),
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["undo_id", "group_position"],
+            ["queue_undo_groups.undo_id", "queue_undo_groups.position"],
+            name="fk_queue_undo_entries_group_queue_undo_groups",
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint(
+            "undo_id", "group_position", "position", name=op.f("pk_queue_undo_entries")
+        ),
+    )
+    op.create_index(
+        op.f("ix_queue_undo_entries_request_id"),
+        "queue_undo_entries",
+        ["request_id"],
+        unique=False,
+    )
 
 
 def downgrade() -> None:
+    op.drop_index(
+        op.f("ix_queue_undo_entries_request_id"), table_name="queue_undo_entries"
+    )
+    op.drop_table("queue_undo_entries")
+    op.drop_index(op.f("ix_queue_entries_session_id"), table_name="queue_entries")
+    op.drop_table("queue_entries")
+    op.drop_table("player_checkpoints")
+    op.drop_index(op.f("ix_track_requests_track_id"), table_name="track_requests")
+    op.drop_index(op.f("ix_track_requests_source_id"), table_name="track_requests")
+    op.drop_index("ix_track_requests_session_requested", table_name="track_requests")
+    op.drop_index(op.f("ix_track_requests_requested_by"), table_name="track_requests")
+    op.drop_index(op.f("ix_track_requests_radio_run_id"), table_name="track_requests")
+    op.drop_table("track_requests")
+    op.drop_table("radio_exclusions")
+    op.drop_index(op.f("ix_radio_candidates_run_id"), table_name="radio_candidates")
+    op.drop_table("radio_candidates")
+    op.drop_index(
+        "uq_radio_runs_active_session",
+        table_name="radio_runs",
+        postgresql_where=sa.text("ended_at IS NULL"),
+    )
+    op.drop_index(op.f("ix_radio_runs_session_id"), table_name="radio_runs")
+    op.drop_index(op.f("ix_radio_runs_initiated_by"), table_name="radio_runs")
+    op.drop_table("radio_runs")
+    op.drop_table("queue_undo_groups")
+    op.drop_table("operation_receipt_entries")
+    op.drop_index(op.f("ix_queue_undos_session_id"), table_name="queue_undos")
+    op.drop_index(op.f("ix_queue_undos_expires_at"), table_name="queue_undos")
+    op.drop_index(op.f("ix_queue_undos_actor_id"), table_name="queue_undos")
+    op.drop_table("queue_undos")
+    op.drop_index(
+        op.f("ix_operation_receipts_session_id"), table_name="operation_receipts"
+    )
+    op.drop_index(
+        op.f("ix_operation_receipts_expires_at"), table_name="operation_receipts"
+    )
+    op.drop_table("operation_receipts")
+    op.drop_table("listening_sessions")
     op.drop_index(
         op.f("ix_track_source_artists_artist_id"), table_name="track_source_artists"
     )
