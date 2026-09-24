@@ -9,7 +9,9 @@ from pathlib import Path
 import pytest
 from sqlalchemy import Connection, inspect
 
+from nahoermaar.api.app import create_app
 from nahoermaar.bootstrap import bootstrap
+from nahoermaar.catalog.service import CatalogService
 from nahoermaar.config import LogLevel
 from nahoermaar.messaging import MessageBus
 from nahoermaar.users.domain import AccessRole
@@ -39,6 +41,13 @@ def test_bootstrap_loads_settings_and_composes_auth(
     assert application.settings.log_level is LogLevel.WARNING
     assert application.access.operators.owner_id == "9"
     assert isinstance(application.bus, MessageBus)
+    assert isinstance(application.catalog, CatalogService)
+    paths = create_app(application).openapi()["paths"]
+    assert {
+        "/api/catalog/search",
+        "/api/catalog/playlist",
+        "/api/catalog/link",
+    } <= paths.keys()
     assert configured == [LogLevel.WARNING]
     asyncio.run(application.close())
 

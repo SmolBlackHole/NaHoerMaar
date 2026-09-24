@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlsplit
 
-import httpx
+import httpx2
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -206,7 +206,7 @@ def test_operator_roles_are_loaded_from_configuration(tmp_path: Path) -> None:
 def test_discord_oauth_uses_identify_pkce_fixed_redirect_and_discards_tokens(
     tmp_path: Path,
 ) -> None:
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
     settings = AuthSettings(
         "https://music.example.test",
         "123",
@@ -216,14 +216,14 @@ def test_discord_oauth_uses_identify_pkce_fixed_redirect_and_discards_tokens(
     )
     verifier = secrets.token_urlsafe(48)
 
-    def respond(request: httpx.Request) -> httpx.Response:
+    def respond(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
         if request.url.path.endswith("/token"):
             body = parse_qs(request.content.decode())
             assert body["code_verifier"] == [verifier]
             assert body["redirect_uri"] == [settings.redirect_uri]
             assert body["grant_type"] == ["authorization_code"]
-            return httpx.Response(
+            return httpx2.Response(
                 200,
                 json={
                     "access_token": "temporary",
@@ -233,12 +233,12 @@ def test_discord_oauth_uses_identify_pkce_fixed_redirect_and_discards_tokens(
             )
         assert request.url.path == "/api/v10/users/@me"
         assert request.headers["authorization"] == "Bearer temporary"
-        return httpx.Response(
+        return httpx2.Response(
             200, json={"id": "1", "username": "Account", "global_name": "Custom"}
         )
 
     async def scenario() -> None:
-        provider = DiscordOAuth(settings, transport=httpx.MockTransport(respond))
+        provider = DiscordOAuth(settings, transport=httpx2.MockTransport(respond))
         query = parse_qs(
             urlsplit(await provider.authorization_url("test-state", verifier)).query
         )

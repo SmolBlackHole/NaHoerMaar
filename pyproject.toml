@@ -17,6 +17,7 @@ authors = [{ name = "SmolBlackHole" }]
 dependencies = [
     "Authlib>=1.6,<2",
     "httpx>=0.28,<1",
+    "httpx2>=2.13,<3",
     "audioop-lts>=0.2; python_version >= '3.13'",
     "SQLAlchemy[asyncio]>=2.0,<2.1",
     "psycopg[binary]>=3.2,<4",

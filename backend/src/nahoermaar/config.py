@@ -103,6 +103,7 @@ class Settings:
     database_url: str
     auth: AuthSettings
     log_level: LogLevel = LogLevel.INFO
+    node_path: Path = Path("node")
 
     @classmethod
     def load(
@@ -133,4 +134,9 @@ class Settings:
                 values.get("ACCESS_PATH") or "config/access.toml"
             ).resolve(),
         )
-        return cls(database_url, auth, log_level)
+        return cls(
+            database_url,
+            auth,
+            log_level,
+            Path(values.get("NODE_PATH") or "node"),
+        )

@@ -14,7 +14,7 @@ from sqlalchemy import inspect
 from nahoermaar.database.core import Database
 
 ROOT = Path(__file__).parents[3]
-USER_TABLES = {
+APPLICATION_TABLES = {
     "users",
     "discord_identities",
     "user_profiles",
@@ -22,10 +22,19 @@ USER_TABLES = {
     "login_attempts",
     "browser_sessions",
     "access_events",
+    "artists",
+    "artist_sources",
+    "tracks",
+    "track_sources",
+    "track_artists",
+    "track_source_artists",
+    "discovery_keys",
+    "discovery_snapshots",
+    "discovery_results",
 }
 
 
-def test_initial_user_migration_upgrades_and_downgrades_fresh_postgresql() -> None:
+def test_initial_migration_upgrades_and_downgrades_fresh_postgresql() -> None:
     database_url = os.environ["DATABASE_URL"]
     configuration = Config(ROOT / "alembic.ini")
     configuration.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
@@ -42,8 +51,8 @@ def test_initial_user_migration_upgrades_and_downgrades_fresh_postgresql() -> No
             revision = await connection.run_sync(
                 lambda value: MigrationContext.configure(value).get_current_revision()
             )
-            assert USER_TABLES <= tables
-            assert revision == "0001_users"
+            assert APPLICATION_TABLES <= tables
+            assert revision == "0001_initial"
 
     try:
         asyncio.run(inspect_upgrade())
@@ -58,7 +67,7 @@ def test_initial_user_migration_upgrades_and_downgrades_fresh_postgresql() -> No
             tables = await connection.run_sync(
                 lambda value: set(inspect(value).get_table_names())
             )
-            assert USER_TABLES.isdisjoint(tables)
+            assert APPLICATION_TABLES.isdisjoint(tables)
 
     try:
         asyncio.run(inspect_downgrade())

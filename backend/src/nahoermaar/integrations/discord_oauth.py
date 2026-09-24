@@ -7,7 +7,7 @@
 from types import TracebackType
 from typing import Protocol, Self, cast
 
-import httpx
+import httpx2
 from authlib.integrations.httpx_client import (  # type: ignore[import-untyped]
     AsyncOAuth2Client,
 )
@@ -38,7 +38,7 @@ class OAuthClient(Protocol):
         self, url: str, *, code: str, code_verifier: str
     ) -> object: ...
 
-    async def get(self, url: str) -> httpx.Response: ...
+    async def get(self, url: str) -> httpx2.Response: ...
 
 
 class DiscordOAuth:
@@ -50,7 +50,7 @@ class DiscordOAuth:
         self,
         settings: AuthSettings,
         *,
-        transport: httpx.AsyncBaseTransport | None = None,
+        transport: httpx2.AsyncBaseTransport | None = None,
     ) -> None:
         self._settings = settings
         self._transport = transport
@@ -82,7 +82,7 @@ class DiscordOAuth:
                     code_verifier=verifier,
                 )
                 return url
-        except (httpx.HTTPError, OAuth2Error, ValueError, AttributeError) as error:
+        except (httpx2.HTTPError, OAuth2Error, ValueError, AttributeError) as error:
             raise AuthError(AuthErrorCode.LOGIN_FAILED, 502) from error
 
     async def identity(self, code: str, verifier: str) -> ProvidedDiscordIdentity:
@@ -113,6 +113,6 @@ class DiscordOAuth:
                 )
         except AuthError:
             raise
-        except (httpx.HTTPError, OAuth2Error, ValueError, AttributeError) as error:
+        except (httpx2.HTTPError, OAuth2Error, ValueError, AttributeError) as error:
             # Never include token responses or OAuth codes in errors or logs.
             raise AuthError(AuthErrorCode.LOGIN_FAILED, 502) from error

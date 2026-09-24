@@ -9,11 +9,14 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from .catalog.service import CatalogService
+
 from .config import Settings
 from .database.core import Database
 from .database.schema import migrate
 from .database.uow import UnitOfWork
 from .integrations.discord_oauth import DiscordOAuth
+from .integrations.youtube import YouTubeProvider
 from .messaging import MessageBus, MessageContext
 from .observability import configure_logging
 from .users.domain import AccessEvent, User
@@ -48,6 +51,7 @@ class Application:
     bus: MessageBus
     auth: AuthService
     access: AccessService
+    catalog: CatalogService
 
     async def start(self) -> None:
         """Migrate storage and reconcile startup-owned state before requests."""
@@ -57,6 +61,7 @@ class Application:
 
     async def close(self) -> None:
         """Release process-owned resources."""
+        await self.catalog.close()
         await self.database.close()
         _LOGGER.info("application.closed")
 
@@ -76,10 +81,11 @@ def bootstrap(
 
     access = AccessService(units, Operators.load(settings.auth.access_path))
     auth = AuthService(units, DiscordOAuth(settings.auth))
+    catalog = CatalogService(units, (YouTubeProvider(settings.node_path),))
     bus = MessageBus()
     _register_handlers(bus, auth, access)
     _LOGGER.info("application.configured")
-    return Application(settings, database, bus, auth, access)
+    return Application(settings, database, bus, auth, access, catalog)
 
 
 def _event_context(context: MessageContext) -> MessageContext:

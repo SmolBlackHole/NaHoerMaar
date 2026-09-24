@@ -7,7 +7,7 @@
 from types import TracebackType
 from typing import Protocol, Self, cast
 
-import httpx
+import httpx2
 from authlib.integrations.httpx_client import (  # type: ignore[import-untyped]
     AsyncOAuth2Client,
 )
@@ -33,7 +33,7 @@ class OAuthClient(Protocol):
     async def fetch_token(
         self, url: str, *, code: str, code_verifier: str
     ) -> object: ...
-    async def get(self, url: str) -> httpx.Response: ...
+    async def get(self, url: str) -> httpx2.Response: ...
 
 
 class DiscordOAuth:
@@ -41,7 +41,7 @@ class DiscordOAuth:
         self,
         settings: AuthSettings,
         *,
-        transport: httpx.AsyncBaseTransport | None = None,
+        transport: httpx2.AsyncBaseTransport | None = None,
     ) -> None:
         self.settings, self.transport = settings, transport
 
@@ -92,6 +92,6 @@ class DiscordOAuth:
                 ):
                     raise AuthError("login_failed")
                 return DiscordIdentity(cast(str, identifier), name.strip()[:32])
-        except (httpx.HTTPError, OAuth2Error, ValueError, AttributeError) as exc:
+        except (httpx2.HTTPError, OAuth2Error, ValueError, AttributeError) as exc:
             # Never include token responses or OAuth codes in errors or logs.
             raise AuthError("login_failed", 502) from exc

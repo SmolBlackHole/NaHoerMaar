@@ -12,6 +12,7 @@ from alembic.config import Config
 import httpx
 
 from nahoermaar.api.app import create_app
+from nahoermaar.catalog.service import CatalogService
 from nahoermaar.bootstrap import (  # pyright: ignore[reportPrivateUsage]
     Application,
     _register_handlers,  # pyright: ignore[reportPrivateUsage]
@@ -71,7 +72,9 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
         os.environ["DATABASE_URL"],
         AuthSettings(ORIGIN, "123", "secret", Path("access.toml")),
     )
-    application = Application(settings, database, bus, auth, access)
+    application = Application(
+        settings, database, bus, auth, access, CatalogService(units, ())
+    )
     app = create_app(application)
 
     async def scenario() -> None:
@@ -82,6 +85,11 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             base_url=ORIGIN,
             follow_redirects=False,
         ) as client:
+            signed_out_catalog = await client.get(
+                "/api/catalog/search", params={"q": "test"}
+            )
+            assert signed_out_catalog.status_code == 401
+
             begin = await client.get("/api/auth/discord")
             assert begin.status_code == 302
             assert begin.headers["location"] == "https://discord.example/authorize"

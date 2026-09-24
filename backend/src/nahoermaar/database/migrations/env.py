@@ -5,17 +5,19 @@
 """Alembic environment for the new application schema."""
 
 import asyncio
+import sys
 from collections.abc import Mapping
 
 from alembic import context
 from sqlalchemy import Connection, pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+from nahoermaar.catalog import repository as catalog_repository
 from nahoermaar.config import Settings
 from nahoermaar.database.schema import Base
 from nahoermaar.users import repository as users_repository
 
-_MAPPING_MODULES = (users_repository,)
+_MAPPING_MODULES = (catalog_repository, users_repository)
 
 
 def configure(connection: Connection) -> None:
@@ -70,4 +72,8 @@ elif isinstance(provided_connection, Connection):
     configure(provided_connection)
 else:
     section = context.config.get_section(context.config.config_ini_section) or {}
-    asyncio.run(online(section))
+    if sys.platform == "win32":
+        with asyncio.Runner(loop_factory=asyncio.SelectorEventLoop) as runner:
+            runner.run(online(section))
+    else:
+        asyncio.run(online(section))

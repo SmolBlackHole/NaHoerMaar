@@ -42,7 +42,9 @@ TEXT_FILENAMES = frozenset(
         "LICENSE",
     }
 )
-EXCLUDED_FILENAMES = frozenset({"TODO.md", "refactor.md", "refactoring.md"})
+EXCLUDED_FILENAMES = frozenset(
+    {"TODO.md", "TODO_PAUSED.md", "refactor.md", "refactoring.md"}
+)
 TEXT_SUFFIXES = frozenset(
     {
         ".cff",
