@@ -41,7 +41,7 @@ previous successful dump.
 
 `data/backups/` is ignored by Git. Copy at least one verified dump to storage
 outside the Docker host. The dump contains account data and browser-session
-hashes, so protect it like `.env` and `access.toml`.
+hashes, so protect it like `.env` and `config/access.toml`.
 
 ## Verify a backup
 

@@ -56,7 +56,7 @@ Create the two local configuration files before starting Compose:
 
 ```powershell
 Copy-Item .env.example .env
-Copy-Item access.example.toml access.toml
+Copy-Item config/access.example.toml config/access.toml
 ```
 
 On Linux or macOS, use `cp` instead. Both files contain local credentials or
@@ -65,7 +65,7 @@ access policy and remain outside Git.
 ## Configure the instance
 
 Follow [Set up Discord](discord-setup.md) to create an application, install its
-bot and collect the user IDs for `access.toml`.
+bot and collect the user IDs for `config/access.toml`.
 
 Set these values in `.env`:
 
@@ -111,8 +111,8 @@ that Docker client error. You can also build the same named images directly and
 let Compose start them without rebuilding:
 
 ```powershell
-docker build --target backend --tag nahormaar-backend:local .
-docker build --target frontend --tag nahormaar-frontend:local .
+docker build --file docker/Dockerfile --target backend --tag nahormaar-backend:local .
+docker build --file docker/Dockerfile --target frontend --tag nahormaar-frontend:local .
 docker compose up -d --no-build
 ```
 

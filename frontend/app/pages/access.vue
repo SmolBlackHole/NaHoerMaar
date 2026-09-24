@@ -242,7 +242,7 @@ watch(
 										Operators
 									</h2>
 									<p class="text-muted mt-1 text-xs">
-										Owner and admin roles are managed in access.toml
+										Owner and admin roles are managed in config/access.toml
 									</p>
 								</div>
 								<UButton

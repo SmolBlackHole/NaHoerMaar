@@ -45,9 +45,9 @@ Open the repository root in VS Code. Use **Python: Select Interpreter** to selec
 
 Follow [Set up Discord](discord-setup.md) to create your own application,
 install the bot, register the OAuth redirect and add Discord user IDs to
-`access.toml` for the owner and admins. Copy `.env.example` to `.env` for the
-credentials. Environment
-variables override `.env`; both local files stay out of Git.
+`config/access.toml` for the owner and admins. Copy `.env.example` to `.env`
+for the credentials. Environment variables override `.env`; both local files
+stay out of Git.
 
 Server, channel and member discovery, the absence of a configured guild ID and
 access management belong to [Set up Discord](discord-setup.md). Runtime access checks,
@@ -118,8 +118,8 @@ After a public API change, regenerate the frontend contract as described in
 ## Daily bio
 
 The bot sets its application description to a daily quote from
-[quotes.toml](../quotes.toml). Add entries to the `de`, `en` and `nl` arrays under
-`[quotes]`, with up to 400 characters per quote.
+[config/quotes.toml](../config/quotes.toml). Add entries to the `de`, `en` and
+`nl` arrays under `[quotes]`, with up to 400 characters per quote.
 
 The selection stays the same throughout the host's local calendar day, including
 after a restart, while the list remains unchanged. The bot checks for a new day
@@ -162,7 +162,7 @@ python scripts/dev.py check-container
 ```
 
 The command starts the disposable PostgreSQL test service, checks the working
-tree, builds `Dockerfile.ci`, then runs the same `python scripts/dev.py check`
+tree, builds `docker/Dockerfile.ci`, then runs the same `python scripts/dev.py check`
 command used by GitHub Actions. Docker removes the gate container after the run
 and retains the image as a build cache. The precheck mirrors the hosted Linux
 job's database, toolchain and system Opus dependency.

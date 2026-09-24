@@ -113,7 +113,7 @@ drain, checkpoint and audio sequence.
 ## Access boundary
 
 Discord OAuth identifies dashboard users. Accounts carry their access role.
-The Access service resolves owner and admin roles from `access.toml`; normal
+The Access service resolves owner and admin roles from `config/access.toml`; normal
 listener roles and their grant attribution live on the account in PostgreSQL.
 Queue attribution comes from the authenticated account, never from a
 client-supplied user field. Revocation clears the listener role and removes

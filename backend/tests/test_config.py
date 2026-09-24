@@ -9,6 +9,7 @@ import pytest
 
 import nahormaar_backend.config as config_module
 from nahormaar_backend.config import (
+    AuthSettings,
     ConfigurationError,
     Settings,
     executable_version,
@@ -37,6 +38,23 @@ def _stub_executables(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(shutil, "which", fake_which)
     monkeypatch.setattr(config_module, "executable_version", fake_version)
     monkeypatch.setattr(config_module, "ffmpeg_executable", fake_ffmpeg)
+
+
+def test_auth_settings_default_to_the_config_directory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    settings = AuthSettings.from_env(
+        {
+            "PUBLIC_ORIGIN": "http://localhost:3000",
+            "DISCORD_CLIENT_ID": "123",
+            "DISCORD_CLIENT_SECRET": "test-secret",
+            "DATABASE_URL": "postgresql+psycopg://test:secret@db/test",
+        }
+    )
+
+    assert settings.access_path == tmp_path / "config" / "access.toml"
 
 
 def test_environment_overrides_dotenv_and_resolves_paths(

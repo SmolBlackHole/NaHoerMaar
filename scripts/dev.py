@@ -132,7 +132,17 @@ def check_container() -> None:
                 "database-test",
             )
         )
-        _run((docker, "build", "--file", "Dockerfile.ci", "--tag", CI_IMAGE, "."))
+        _run(
+            (
+                docker,
+                "build",
+                "--file",
+                "docker/Dockerfile.ci",
+                "--tag",
+                CI_IMAGE,
+                ".",
+            )
+        )
         _run(
             (
                 docker,

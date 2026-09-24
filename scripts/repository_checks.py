@@ -42,6 +42,7 @@ TEXT_FILENAMES = frozenset(
         "LICENSE",
     }
 )
+EXCLUDED_FILENAMES = frozenset({"TODO.md", "refactor.md", "refactoring.md"})
 TEXT_SUFFIXES = frozenset(
     {
         ".cff",
@@ -66,6 +67,8 @@ TEMPLATE_TOKEN = re.compile(r"{{[a-z0-9_]+}}")
 
 def _excluded(path: Path, root: Path) -> bool:
     relative = path.relative_to(root)
+    if relative.parent == Path() and relative.name in EXCLUDED_FILENAMES:
+        return True
     if relative.parts[0] in {"data", "tmp"}:
         return True
     return any(

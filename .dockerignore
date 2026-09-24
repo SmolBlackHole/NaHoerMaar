@@ -14,9 +14,11 @@
 *.egg-info
 *.log
 __pycache__
+config/access.toml
 access.toml
 coverage
 data
+docs/assets
 dist
 node_modules
 out

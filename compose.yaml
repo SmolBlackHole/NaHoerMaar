@@ -48,6 +48,7 @@ services:
         image: nahormaar-backend:local
         build:
             context: .
+            dockerfile: docker/Dockerfile
             target: backend
         env_file:
             - .env
@@ -59,7 +60,7 @@ services:
             NAHORMAAR_LOG_DIR: /app/data/logs
             NODE_PATH: /usr/local/bin/node
         volumes:
-            - ./access.toml:/app/config/access.toml:ro
+            - ./config/access.toml:/app/config/access.toml:ro
             - nahormaar-logs:/app/data/logs
         expose:
             - "8000"
@@ -86,6 +87,7 @@ services:
         image: nahormaar-frontend:local
         build:
             context: .
+            dockerfile: docker/Dockerfile
             target: frontend
         environment:
             NUXT_BACKEND_URL: http://backend:8000

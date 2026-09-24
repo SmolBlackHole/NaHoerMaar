@@ -28,7 +28,8 @@ ENV PATH=/opt/venv/bin:$PATH \
     NODE_PATH=/usr/local/bin/node
 
 WORKDIR /app
-COPY pyproject.toml README.md LICENSE quotes.toml ./
+COPY pyproject.toml README.md LICENSE ./
+COPY config/quotes.toml ./config/quotes.toml
 COPY backend ./backend
 RUN --mount=type=cache,target=/root/.cache/pip \
     python -m venv /opt/venv \

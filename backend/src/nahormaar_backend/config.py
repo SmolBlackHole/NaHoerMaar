@@ -99,7 +99,7 @@ class AuthSettings:
             values.get("DISCORD_CLIENT_ID", "").strip(),
             values.get("DISCORD_CLIENT_SECRET", "").strip(),
             database_url(values),
-            Path(values.get("ACCESS_PATH") or "access.toml").resolve(),
+            Path(values.get("ACCESS_PATH") or "config/access.toml").resolve(),
         )
 
 

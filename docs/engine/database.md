@@ -56,7 +56,7 @@ Account tables store OAuth accounts, browser sessions and pending login
 attempts. Only hashes of browser-session tokens are stored. Each account also
 stores its effective role and, for normal listeners, who granted access and
 when. The immutable grant/revoke history lives beside those accounts in
-PostgreSQL. Owner and admin IDs remain in `access.toml` as the operator
+PostgreSQL. Owner and admin IDs remain in `config/access.toml` as the operator
 bootstrap boundary.
 
 ## Repositories and transactions

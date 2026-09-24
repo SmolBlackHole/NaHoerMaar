@@ -49,7 +49,7 @@ def quote_for_day(quotes: tuple[str, ...], day: date) -> str:
 
 
 async def update_daily_bio(
-    client: discord.Client, path: Path = Path("quotes.toml")
+    client: discord.Client, path: Path = Path("config/quotes.toml")
 ) -> None:
     updated_day: date | None = None
     while True:

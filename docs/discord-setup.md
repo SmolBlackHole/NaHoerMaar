@@ -92,7 +92,8 @@ for the distinction.
 
 ## Allow people to use it
 
-Copy [`access.example.toml`](../access.example.toml) to `access.toml`. Set the
+Copy [`config/access.example.toml`](../config/access.example.toml) to
+`config/access.toml`. Set the
 Discord account that owns this installation and, if needed, additional admins:
 
 ```toml
@@ -109,10 +110,10 @@ data.
 
 The owner may grant or revoke access for anyone. An admin may grant access and
 revoke only grants made by that same admin. Owner and admin roles remain in
-`access.toml` so a database mistake cannot lock every operator out. Changing
-those roles requires a backend restart. Grant and revoke actions are recorded in
-the durable access history, while a revoked person's active dashboard sessions
-end immediately.
+`config/access.toml` so a database mistake cannot lock every operator out.
+Changing those roles requires a backend restart. Grant and revoke actions are
+recorded in the durable access history, while a revoked person's active
+dashboard sessions end immediately.
 
 Discord user IDs are still useful for direct entry and the operator file. In the
 desktop Discord app, open **User Settings** (the gear at the bottom left), then
@@ -122,7 +123,8 @@ under **Settings > Advanced**, open a user's profile, then use the three-dot
 menu to copy their ID. Discord documents both paths in its
 [User ID guide](https://support.discord.com/hc/en-us/articles/206346498-Where-can-I-find-my-User-Server-Message-ID).
 
-Keep `access.toml` out of Git. If it is missing or invalid, access is blocked.
+Keep `config/access.toml` out of Git. If it is missing or invalid, access is
+blocked.
 
 ## Try the connection
 

@@ -1,3 +1,23 @@
 {
-	"python.defaultInterpreterPath": "${workspaceFolder}/.venv"
+	"python.defaultInterpreterPath": "${workspaceFolder}/.venv",
+	"explorer.fileNesting.enabled": true,
+	"explorer.fileNesting.expand": false,
+	"explorer.fileNesting.patterns": {
+		".env.example": ".env",
+		"compose.yaml": ".dockerignore",
+		"package.json": "package-lock.json, .node-version, .prettierignore",
+		"pyproject.toml": "alembic.ini",
+		"README.md": "CITATION.cff, CONTRIBUTING.md, LICENSE, SECURITY.md"
+	},
+	"files.exclude": {
+		"**/.mypy_cache": true,
+		"**/.pytest_cache": true,
+		"**/.ruff_cache": true,
+		"**/.nuxt": true,
+		"**/.output": true,
+		"**/__pycache__": true,
+		"**/.venv": true,
+		"**/node_modules": true,
+		"tmp": true
+	}
 }

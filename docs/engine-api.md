@@ -38,7 +38,7 @@ the configured `Origin` and `X-CSRF-Token`. Replies are private and `no-store`.
 Queue attribution comes from the authenticated account, never a request body.
 
 `GET /api/auth/session` includes the Discord ID and the effective `owner`,
-`admin` or `user` role. Operator roles come from `access.toml`; ordinary
+`admin` or `user` role. Operator roles come from `config/access.toml`; ordinary
 listener roles and their grant attribution live on the account in PostgreSQL.
 Revoking a listener clears that role and also removes their active sessions.
 

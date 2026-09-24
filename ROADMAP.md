@@ -81,6 +81,19 @@ its covered period, when collection began and where older data is incomplete.
 Decide retention and who may inspect another person's statistics before storing
 more personal history.
 
+## Later: faithful loading states
+
+Replace generic loading bars and spinners with skeletons that match the content
+they introduce. API-backed pages and components should reserve the final layout,
+including its spacing, hierarchy and common item count, so loaded data does not
+make the interface jump.
+
+Skeletons belong to the first load while the content is still unknown. Cached or
+stale data should remain visible during a refresh, and empty, failed and denied
+requests need their own honest states. Reuse the same layout primitives as the
+finished components, expose the loading state to assistive technology and keep
+motion subtle or disabled when reduced motion is requested.
+
 ## Later: runtime health and capacity
 
 Add lightweight self-monitoring for CPU and memory use, event-loop lag, database
