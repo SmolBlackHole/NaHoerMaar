@@ -51,6 +51,7 @@ where = ["backend/src"]
     "avatars.json",
     "engine/migrations/script.py.mako",
 ]
+"nahoermaar" = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]
@@ -74,7 +75,7 @@ quote-style = "double"
 python_version = "3.12"
 strict = true
 mypy_path = ["backend/src"]
-files = ["backend/src/nahormaar_backend", "backend/tests"]
+files = ["backend/src/nahormaar_backend", "backend/src/nahoermaar", "backend/tests"]
 
 [tool.pyright]
 include = ["backend/src", "backend/tests"]
