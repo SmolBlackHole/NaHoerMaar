@@ -11,6 +11,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -74,7 +75,6 @@ def check() -> None:
     )
     _run((str(python), "-m", "mypy"))
     _run((str(python), "-m", "pyright"))
-    (ROOT / "tmp").mkdir(exist_ok=True)
     docker = None
     if "NAHORMAAR_POSTGRES_TEST_URL" not in os.environ:
         docker = shutil.which("docker")
@@ -94,7 +94,17 @@ def check() -> None:
                     "database-test",
                 )
             )
-        _run((str(python), "-m", "pytest", "--basetemp=tmp/pytest"))
+        with tempfile.TemporaryDirectory(prefix="nahoermaar-pytest-") as pytest_temp:
+            _run(
+                (
+                    str(python),
+                    "-m",
+                    "pytest",
+                    f"--basetemp={pytest_temp}",
+                    "-p",
+                    "no:cacheprovider",
+                )
+            )
     finally:
         if docker is not None:
             _run(

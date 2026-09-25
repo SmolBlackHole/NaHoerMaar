@@ -52,7 +52,7 @@ window without active shared listening.
 To run the backend suite alone:
 
 ```powershell
-.venv\Scripts\python.exe -m pytest backend/tests --basetemp=tmp/pytest
+.venv\Scripts\python.exe -m pytest backend/tests -p no:cacheprovider
 ```
 
 Repository tests cover PostgreSQL transactions, migration from supported schema
@@ -64,15 +64,16 @@ Six full engine recordings are opt-in. In an agreed resource window:
 
 ```powershell
 $env:NAHORMAAR_ENGINE_AUDIO_TESTS = "1"
-.venv\Scripts\python.exe -m pytest backend/tests/engine/test_playback_pipeline.py --basetemp=tmp/engine-audio-check -p no:cacheprovider
+.venv\Scripts\python.exe -m pytest backend/tests/engine/test_playback_pipeline.py -p no:cacheprovider
 Remove-Item Env:NAHORMAAR_ENGINE_AUDIO_TESTS
 ```
 
 These use the real Session, SQLAlchemy, FFmpeg/Opus and Discord audio thread.
 Only lookup and network transport are replaced; generated tones reach a local
 recording. They check overlap, pause/seek, source failure and restart behavior.
-They neither log the bot in nor call its live API. Reusing `--basetemp` replaces
-previous output, so choose a fresh directory to retain earlier measurements.
+They neither log the bot in nor call its live API. Pytest keeps its temporary
+audio fixtures in the operating system's temporary directory and cleans up its
+managed runs there.
 
 ## Playback diagnostics
 
