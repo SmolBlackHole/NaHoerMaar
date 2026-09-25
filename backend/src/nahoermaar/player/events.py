@@ -24,6 +24,7 @@ from .domain import (
     RadioRunId,
     RadioSeed,
     UndoId,
+    VoiceConnectionState,
 )
 
 
@@ -241,6 +242,14 @@ class PlayerChanged(Event):
     revision: int
     operation_id: OperationId
     outcome: MutationOutcome
+
+
+@dataclass(frozen=True, slots=True)
+class VoiceConnectionChanged(Event):
+    """Transient result of reconciling the persisted voice target."""
+
+    session_id: ListeningSessionId
+    connection: VoiceConnectionState
 
 
 @dataclass(frozen=True, slots=True)

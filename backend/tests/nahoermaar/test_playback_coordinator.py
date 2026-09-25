@@ -17,14 +17,13 @@ from nahoermaar.catalog.domain import (
     TrackSource,
     TrackSourceId,
 )
-from nahoermaar.catalog.service import CatalogService, ResolvedAudio
+from nahoermaar.catalog.service import ResolvedAudio
 from nahoermaar.listening.service import (
     AdvancePlayback,
     BeginPlayback,
     FinishPlayback,
-    ListeningService,
 )
-from nahoermaar.messaging import Command, MessageBus, MessageContext
+from nahoermaar.messaging import Command, Event, MessageBus, MessageContext
 from nahoermaar.player.domain import (
     ListeningSession,
     ListeningSessionId,
@@ -37,8 +36,13 @@ from nahoermaar.player.domain import (
     RequestOrigin,
     TrackRequest,
     TrackRequestId,
+    VoiceConnectionPhase,
 )
-from nahoermaar.player.events import CompletePlayback, FailPlayback
+from nahoermaar.player.events import (
+    CompletePlayback,
+    FailPlayback,
+    VoiceConnectionChanged,
+)
 from nahoermaar.player.playback import (
     AudioCompleted,
     AudioEndReason,
@@ -53,19 +57,20 @@ from nahoermaar.player.playback import (
     VoiceChannel,
     VoiceConnection,
     VoiceDisconnected,
+    VoiceError,
 )
-from nahoermaar.player.session import PlayerSessionManager
 from nahoermaar.users.domain import UserId
 
 NOW = datetime(2026, 9, 25, 12, tzinfo=UTC)
 
 
 class RecordingBus(MessageBus):
-    __slots__ = ("commands",)
+    __slots__ = ("commands", "events")
 
     def __init__(self) -> None:
         super().__init__()
         self.commands: list[object] = []
+        self.events: list[Event] = []
 
     async def execute[ResultT](
         self,
@@ -74,6 +79,14 @@ class RecordingBus(MessageBus):
     ) -> ResultT:
         self.commands.append(command)
         return cast(ResultT, None)
+
+    async def publish(
+        self,
+        event: Event,
+        context: MessageContext | None = None,
+    ) -> None:
+        self.events.append(event)
+        await super().publish(event, context)
 
 
 class StaticPlayer:
@@ -124,7 +137,12 @@ class StaticListening:
 
 
 class FakeTransport(PlaybackTransport):
-    def __init__(self, *, fail_starts: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        fail_starts: bool = False,
+        fail_connects: int = 0,
+    ) -> None:
         self._connection: VoiceConnection | None = None
         self._progress: AudioProgress | None = None
         self._disconnect: Callable[[VoiceDisconnected], None] | None = None
@@ -132,7 +150,9 @@ class FakeTransport(PlaybackTransport):
         self.notify: Callable[[AudioEvent], None] | None = None
         self.attempt_id: UUID | None = None
         self.play_attempts = 0
+        self.connect_attempts = 0
         self.fail_starts = fail_starts
+        self.fail_connects = fail_connects
         self.volume = 0.0
         self.prepared: list[tuple[PlayableSource, float]] = []
         self.presences: list[NowPlaying] = []
@@ -164,6 +184,9 @@ class FakeTransport(PlaybackTransport):
         self._audience = handler
 
     async def connect(self, channel_id: int, connection_id: UUID) -> None:
+        self.connect_attempts += 1
+        if self.connect_attempts <= self.fail_connects:
+            raise VoiceError("voice unavailable")
         self._connection = VoiceConnection(connection_id, channel_id)
 
     async def disconnect(self, connection_id: UUID) -> None:
@@ -256,6 +279,15 @@ class FakeTransport(PlaybackTransport):
 
     async def close(self) -> None:
         self.closed = True
+
+    def lose_connection(self) -> tuple[VoiceConnection, AudioProgress]:
+        assert self._connection is not None
+        assert self._progress is not None
+        connection, progress = self._connection, self._progress
+        self._connection = None
+        self._progress = None
+        self.play_ready = asyncio.Event()
+        return connection, progress
 
 
 def _track(index: int) -> Track:
@@ -359,16 +391,36 @@ def _coordinator(
     state: PlayerState,
     tracks: tuple[Track, ...],
     transport: FakeTransport,
+    *,
+    voice_retry_delays: tuple[float, ...] = (),
 ) -> tuple[PlaybackCoordinator, RecordingBus]:
     bus = RecordingBus()
     coordinator = PlaybackCoordinator(
-        cast(PlayerSessionManager, StaticPlayer(state)),
-        cast(CatalogService, StaticCatalog(tracks)),
-        cast(ListeningService, StaticListening()),
+        StaticPlayer(state),
+        StaticCatalog(tracks),
+        StaticListening(),
         bus,
         transport,
+        voice_retry_delays=voice_retry_delays,
     )
     return coordinator, bus
+
+
+async def _wait_for_voice_phase(
+    bus: RecordingBus,
+    phase: VoiceConnectionPhase,
+) -> VoiceConnectionChanged:
+    async def wait() -> VoiceConnectionChanged:
+        while True:
+            for event in bus.events:
+                if (
+                    isinstance(event, VoiceConnectionChanged)
+                    and event.connection.phase is phase
+                ):
+                    return event
+            await asyncio.sleep(0)
+
+    return await asyncio.wait_for(wait(), timeout=1)
 
 
 def test_audio_facts_start_on_first_frame_and_next_track_is_preloaded() -> None:
@@ -435,5 +487,91 @@ def test_source_without_first_frame_retries_once_then_returns_request() -> None:
             )
         finally:
             await coordinator.close()
+
+    asyncio.run(scenario())
+
+
+def test_voice_connection_retries_are_bounded_and_observable() -> None:
+    async def scenario() -> None:
+        tracks = (_track(1),)
+        state, _request = _playing_state(tracks)
+        transport = FakeTransport(fail_connects=10)
+        coordinator, bus = _coordinator(
+            state,
+            tracks,
+            transport,
+            voice_retry_delays=(0, 0),
+        )
+        try:
+            await coordinator.start()
+            failed = await _wait_for_voice_phase(
+                bus,
+                VoiceConnectionPhase.FAILED,
+            )
+            assert failed.connection.channel_id == 42
+            assert failed.connection.attempt == 3
+            assert failed.connection.error == "VoiceError"
+            assert coordinator.voice_state == failed.connection
+            assert transport.connect_attempts == 3
+            await asyncio.sleep(0.01)
+            assert transport.connect_attempts == 3
+        finally:
+            await coordinator.close()
+
+    asyncio.run(scenario())
+
+
+def test_voice_reconnect_resumes_the_current_track() -> None:
+    async def scenario() -> None:
+        tracks = (_track(1),)
+        state, _request = _playing_state(tracks)
+        transport = FakeTransport()
+        coordinator, bus = _coordinator(state, tracks, transport)
+        try:
+            await coordinator.start()
+            await asyncio.wait_for(transport.play_ready.wait(), timeout=1)
+            assert transport.connection is not None
+            assert transport.attempt_id is not None
+            attempt_id = transport.attempt_id
+            notify = transport.notify
+            assert notify is not None
+            notify(AudioStarted(attempt_id, 0))
+            await _wait_for_command(bus, BeginPlayback)
+
+            connection, _progress = transport.lose_connection()
+            coordinator.notify_disconnect(
+                VoiceDisconnected(
+                    connection,
+                    AudioProgress(attempt_id, 21, False, False),
+                )
+            )
+
+            await asyncio.wait_for(transport.play_ready.wait(), timeout=1)
+            assert transport.connect_attempts == 2
+            assert transport.play_attempts == 2
+            assert coordinator.voice_state.phase is VoiceConnectionPhase.CONNECTED
+        finally:
+            await coordinator.close()
+
+    asyncio.run(scenario())
+
+
+def test_shutdown_cancels_a_pending_voice_retry() -> None:
+    async def scenario() -> None:
+        tracks = (_track(1),)
+        state, _request = _playing_state(tracks)
+        transport = FakeTransport(fail_connects=10)
+        coordinator, bus = _coordinator(
+            state,
+            tracks,
+            transport,
+            voice_retry_delays=(60,),
+        )
+        await coordinator.start()
+        await _wait_for_voice_phase(bus, VoiceConnectionPhase.RETRYING)
+        await coordinator.close()
+        await asyncio.sleep(0)
+        assert transport.connect_attempts == 1
+        assert transport.closed
 
     asyncio.run(scenario())

@@ -194,6 +194,12 @@ class ListeningService:
             len(self.audience.members),
         )
 
+    async def close(self) -> None:
+        """Clear the restored in-memory audience during application shutdown."""
+        async with self._lock:
+            self._audience = None
+        _LOGGER.info("listening.closed")
+
     async def active_playback(
         self,
         session_id: ListeningSessionId,

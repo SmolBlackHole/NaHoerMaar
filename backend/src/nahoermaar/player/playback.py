@@ -16,11 +16,12 @@ from math import isfinite
 from typing import Protocol
 from uuid import UUID, uuid4
 
-from nahoermaar.catalog.domain import Track
-from nahoermaar.catalog.service import CatalogService, ResolvedAudio
+from nahoermaar.catalog.domain import Track, TrackId, TrackSourceId
+from nahoermaar.catalog.service import ResolvedAudio
 from nahoermaar.listening.domain import (
     PlaybackEndReason,
     PlaybackProgress,
+    PlaybackRecord,
     PlaybackRecordId,
 )
 from nahoermaar.listening.service import (
@@ -28,7 +29,6 @@ from nahoermaar.listening.service import (
     BeginPlayback,
     DisconnectAudience,
     FinishPlayback,
-    ListeningService,
     ObserveAudience,
     VoiceMemberState,
 )
@@ -39,21 +39,26 @@ from .domain import (
     OperationId,
     PlaybackCheckpoint,
     PlaybackIntent,
+    ListeningSessionId,
     PlayerAction,
     PlayerState,
     TrackRequest,
+    TrackRequestId,
+    VoiceConnectionPhase,
+    VoiceConnectionState,
 )
 from .events import (
     CheckpointPlayback,
     CompletePlayback,
     FailPlayback,
     PlayerChanged,
+    VoiceConnectionChanged,
 )
-from .session import PlayerSessionManager
 
 _LOGGER = logging.getLogger(__name__)
 _CHECKPOINT_INTERVAL_SECONDS = 5.0
 _MAILBOX_CAPACITY = 64
+_VOICE_RETRY_DELAYS = (1.0, 2.0, 5.0, 10.0)
 
 
 class AudioError(RuntimeError):
@@ -233,6 +238,29 @@ class PlaybackTransport(Protocol):
     async def close(self) -> None: ...
 
 
+class PlayerStateSource(Protocol):
+    @property
+    def state(self) -> PlayerState: ...
+
+
+class PlaybackCatalog(Protocol):
+    async def resolve_audio(
+        self,
+        track_id: TrackId,
+        source_id: TrackSourceId | None,
+    ) -> ResolvedAudio: ...
+
+    async def tracks(self, track_ids: set[TrackId]) -> dict[TrackId, Track]: ...
+
+
+class ListeningRecorder(Protocol):
+    async def active_playback(
+        self,
+        session_id: ListeningSessionId,
+        request_id: TrackRequestId,
+    ) -> PlaybackRecord | None: ...
+
+
 @dataclass(slots=True)
 class _LogicalPlayback:
     request: TrackRequest
@@ -279,16 +307,23 @@ class PlaybackCoordinator:
         "_ticker",
         "_transitioning",
         "_transport",
+        "_voice_attempts",
+        "_voice_retry_delays",
+        "_voice_retry_task",
+        "_voice_state",
+        "_voice_target",
         "_worker",
     )
 
     def __init__(
         self,
-        player: PlayerSessionManager,
-        catalog: CatalogService,
-        listening: ListeningService,
+        player: PlayerStateSource,
+        catalog: PlaybackCatalog,
+        listening: ListeningRecorder,
         bus: MessageBus,
         transport: PlaybackTransport,
+        *,
+        voice_retry_delays: tuple[float, ...] = _VOICE_RETRY_DELAYS,
     ) -> None:
         self._player = player
         self._catalog = catalog
@@ -309,6 +344,11 @@ class PlaybackCoordinator:
         self._prepared: _PreparedPlayback | None = None
         self._transitioning: _PreparedPlayback | None = None
         self._expected_stops: set[UUID] = set()
+        self._voice_retry_delays = voice_retry_delays
+        self._voice_retry_task: asyncio.Task[None] | None = None
+        self._voice_target: int | None = None
+        self._voice_attempts = 0
+        self._voice_state = VoiceConnectionState()
         self._accepting = False
 
     @property
@@ -321,6 +361,11 @@ class PlaybackCoordinator:
             and self._ticker is not None
             and not self._ticker.done()
         )
+
+    @property
+    def voice_state(self) -> VoiceConnectionState:
+        """Return the latest result of reconciling the persisted voice target."""
+        return self._voice_state
 
     async def start(self) -> None:
         if self._accepting:
@@ -384,6 +429,7 @@ class PlaybackCoordinator:
             task
             for task in (
                 self._ticker,
+                self._voice_retry_task,
                 self._output_task,
                 self._prepare_task,
                 *self._background_tasks,
@@ -420,6 +466,8 @@ class PlaybackCoordinator:
     async def _apply(self, change: _CommittedChange) -> None:
         state = change.state
         action = change.event.outcome.action if change.event is not None else None
+        if action is PlayerAction.VOICE_JOINED:
+            await self._reset_voice_retries(state.session.channel_id)
         self._transport.set_volume(state.session.volume)
         await self._sync_connection(state)
 
@@ -456,6 +504,8 @@ class PlaybackCoordinator:
 
     async def _sync_connection(self, state: PlayerState) -> None:
         desired = state.session.channel_id
+        if desired != self._voice_target:
+            await self._reset_voice_retries(desired)
         current = self._transport.connection
         if desired is None:
             if current is not None:
@@ -464,13 +514,37 @@ class PlaybackCoordinator:
                     DisconnectAudience(state.session.id, datetime.now(UTC))
                 )
                 await self._transport.disconnect(current.connection_id)
+            await self._set_voice_state(VoiceConnectionPhase.DISCONNECTED, None)
             return
         if current is not None and current.channel_id == desired:
+            await self._set_voice_state(VoiceConnectionPhase.CONNECTED, desired)
             return
-        if current is not None:
-            await self._transport.disconnect(current.connection_id)
-        connection_id = uuid4()
-        await self._transport.connect(desired, connection_id)
+        if self._voice_state.phase is VoiceConnectionPhase.FAILED:
+            return
+        retry = self._voice_retry_task
+        if retry is not None and not retry.done():
+            return
+
+        attempt = self._voice_attempts + 1
+        phase = (
+            VoiceConnectionPhase.CONNECTING
+            if attempt == 1
+            else VoiceConnectionPhase.RETRYING
+        )
+        await self._set_voice_state(phase, desired, attempt=attempt)
+        try:
+            if current is not None:
+                await self._transport.disconnect(current.connection_id)
+            await self._transport.connect(desired, uuid4())
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            self._voice_attempts = attempt
+            await self._handle_connection_failure(desired, error)
+            return
+
+        self._voice_attempts = 0
+        await self._set_voice_state(VoiceConnectionPhase.CONNECTED, desired)
         await self._observe_audience()
 
     async def _sync_output(self, checkpoint: PlaybackCheckpoint) -> None:
@@ -482,6 +556,10 @@ class PlaybackCoordinator:
         if self._transport.connection is None:
             return
         if self._current is not None and self._current.request.id == request.id:
+            progress = self._transport.progress
+            if progress is None or progress.attempt_id != self._current.attempt_id:
+                await self._restart_current(checkpoint)
+                return
             if checkpoint.intent is PlaybackIntent.PAUSED:
                 self._transport.pause(self._current.attempt_id)
             else:
@@ -889,8 +967,102 @@ class PlaybackCoordinator:
                 datetime.now(UTC),
             )
         )
+        await self._reset_voice_retries(self._player.state.session.channel_id)
+        await self._set_voice_state(
+            VoiceConnectionPhase.DISCONNECTED,
+            self._player.state.session.channel_id,
+        )
         await self._mailbox.put(
             _CommittedChange(None, self._player.state, MessageContext())
+        )
+
+    async def _handle_connection_failure(
+        self,
+        channel_id: int,
+        error: Exception,
+    ) -> None:
+        failure = type(error).__name__
+        retry_index = self._voice_attempts - 1
+        if retry_index >= len(self._voice_retry_delays):
+            await self._set_voice_state(
+                VoiceConnectionPhase.FAILED,
+                channel_id,
+                attempt=self._voice_attempts,
+                error=failure,
+            )
+            _LOGGER.error(
+                "playback.voice_reconnect_exhausted channel_id=%s attempts=%d error=%s",
+                channel_id,
+                self._voice_attempts,
+                failure,
+            )
+            return
+
+        delay = self._voice_retry_delays[retry_index]
+        await self._set_voice_state(
+            VoiceConnectionPhase.RETRYING,
+            channel_id,
+            attempt=self._voice_attempts,
+            error=failure,
+        )
+        _LOGGER.warning(
+            "playback.voice_reconnect_scheduled channel_id=%s attempt=%d "
+            "delay_seconds=%.1f error=%s",
+            channel_id,
+            self._voice_attempts + 1,
+            delay,
+            failure,
+        )
+        task = asyncio.create_task(
+            self._retry_voice(channel_id, delay),
+            name=f"playback-voice-retry-{self._voice_attempts + 1}",
+        )
+        self._voice_retry_task = task
+        task.add_done_callback(self._clear_voice_retry)
+
+    async def _retry_voice(self, channel_id: int, delay: float) -> None:
+        await asyncio.sleep(delay)
+        if not self._accepting or self._player.state.session.channel_id != channel_id:
+            return
+        await self._mailbox.put(
+            _CommittedChange(None, self._player.state, MessageContext())
+        )
+
+    def _clear_voice_retry(self, task: asyncio.Task[None]) -> None:
+        if self._voice_retry_task is task:
+            self._voice_retry_task = None
+
+    async def _reset_voice_retries(self, channel_id: int | None) -> None:
+        task, self._voice_retry_task = self._voice_retry_task, None
+        if task is not None and task is not asyncio.current_task():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        self._voice_target = channel_id
+        self._voice_attempts = 0
+
+    async def _set_voice_state(
+        self,
+        phase: VoiceConnectionPhase,
+        channel_id: int | None,
+        *,
+        attempt: int = 0,
+        error: str | None = None,
+    ) -> None:
+        connection = VoiceConnectionState(phase, channel_id, attempt, error)
+        if connection == self._voice_state:
+            return
+        self._voice_state = connection
+        _LOGGER.info(
+            "playback.voice_state_changed session=%s channel_id=%s phase=%s "
+            "attempt=%d error=%s",
+            self._player.state.session.id,
+            channel_id,
+            phase.value,
+            attempt,
+            error,
+        )
+        await self._bus.publish(
+            VoiceConnectionChanged(self._player.state.session.id, connection)
         )
 
     def _schedule_audience(self) -> None:

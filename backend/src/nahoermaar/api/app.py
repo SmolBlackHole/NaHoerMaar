@@ -36,8 +36,8 @@ def create_app(application: Application | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
-        await container.start()
         try:
+            await container.start()
             yield
         finally:
             await container.close()

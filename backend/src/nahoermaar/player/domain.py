@@ -52,6 +52,28 @@ class PlaybackIntent(StrEnum):
     PAUSED = "paused"
 
 
+class VoiceConnectionPhase(StrEnum):
+    DISCONNECTED = "disconnected"
+    CONNECTING = "connecting"
+    CONNECTED = "connected"
+    RETRYING = "retrying"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True, slots=True)
+class VoiceConnectionState:
+    phase: VoiceConnectionPhase = VoiceConnectionPhase.DISCONNECTED
+    channel_id: int | None = None
+    attempt: int = 0
+    error: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.channel_id is not None and self.channel_id <= 0:
+            raise ValueError("Voice channel IDs must be positive.")
+        if self.attempt < 0:
+            raise ValueError("Voice connection attempts must be non-negative.")
+
+
 class PlayerAction(StrEnum):
     QUEUE_ADDED = "queue.added"
     QUEUE_REMOVED = "queue.removed"

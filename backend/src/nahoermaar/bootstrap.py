@@ -4,9 +4,11 @@
 
 """The application's single composition root."""
 
+import asyncio
 import logging
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass, field
+from enum import StrEnum
 from pathlib import Path
 from uuid import UUID, uuid5
 from time import perf_counter
@@ -84,9 +86,22 @@ from .users.service import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+type AsyncCloser = Callable[[], Awaitable[None]]
 
 
-@dataclass(frozen=True, slots=True)
+class ApplicationLifecycle(StrEnum):
+    NEW = "new"
+    STARTING = "starting"
+    RUNNING = "running"
+    CLOSING = "closing"
+    CLOSED = "closed"
+
+
+def _closers() -> list[tuple[str, AsyncCloser]]:
+    return []
+
+
+@dataclass(slots=True)
 class Application:
     """Dependencies owned by one application process."""
 
@@ -102,40 +117,101 @@ class Application:
     logs: RecentLogBuffer
     gateway: DiscordGateway | None = None
     playback: PlaybackCoordinator | None = None
+    _lifecycle: ApplicationLifecycle = field(
+        default=ApplicationLifecycle.NEW,
+        init=False,
+        repr=False,
+    )
+    _lifecycle_lock: asyncio.Lock = field(
+        default_factory=asyncio.Lock,
+        init=False,
+        repr=False,
+    )
+    _runtime_closers: list[tuple[str, AsyncCloser]] = field(
+        default_factory=_closers,
+        init=False,
+        repr=False,
+    )
+
+    @property
+    def lifecycle(self) -> ApplicationLifecycle:
+        return self._lifecycle
 
     async def start(self) -> None:
         """Migrate storage and reconcile startup-owned state before requests."""
-        started_at = perf_counter()
-        _LOGGER.info("application.starting")
-        await migrate(self.database.engine)
-        await self.bus.execute(ReconcileOperators())
-        await self.player.start()
-        await self.listening.start(self.player.state.session.id)
-        if self.gateway is not None:
-            await self.gateway.open()
-        if self.playback is not None:
-            await self.playback.start()
-        _LOGGER.info(
-            "application.started session=%s duration_ms=%.1f",
-            self.player.state.session.id,
-            (perf_counter() - started_at) * 1000,
-        )
+        async with self._lifecycle_lock:
+            if self._lifecycle is ApplicationLifecycle.RUNNING:
+                return
+            if self._lifecycle is not ApplicationLifecycle.NEW:
+                raise RuntimeError(
+                    f"Application cannot start while {self._lifecycle.value}."
+                )
+            self._lifecycle = ApplicationLifecycle.STARTING
+            started_at = perf_counter()
+            _LOGGER.info("application.starting")
+            try:
+                await migrate(self.database.engine)
+                await self.bus.execute(ReconcileOperators())
+                self._runtime_closers.append(("player", self.player.close))
+                await self.player.start()
+                self._runtime_closers.append(("listening", self.listening.close))
+                await self.listening.start(self.player.state.session.id)
+                if self.gateway is not None:
+                    self._runtime_closers.append(("discord", self.gateway.close))
+                    await self.gateway.open()
+                if self.playback is not None:
+                    self._runtime_closers.append(("playback", self.playback.close))
+                    await self.playback.start()
+            except BaseException:
+                _LOGGER.exception("application.start_failed")
+                await self._close_owned(suppress=True)
+                self._lifecycle = ApplicationLifecycle.CLOSED
+                raise
+            self._lifecycle = ApplicationLifecycle.RUNNING
+            _LOGGER.info(
+                "application.started session=%s duration_ms=%.1f",
+                self.player.state.session.id,
+                (perf_counter() - started_at) * 1000,
+            )
 
     async def close(self) -> None:
         """Release process-owned resources."""
-        started_at = perf_counter()
-        _LOGGER.info("application.closing")
-        if self.playback is not None:
-            await self.playback.close()
-        if self.gateway is not None:
-            await self.gateway.close()
-        await self.player.close()
-        await self.catalog.close()
-        await self.database.close()
-        _LOGGER.info(
-            "application.closed duration_ms=%.1f",
-            (perf_counter() - started_at) * 1000,
-        )
+        async with self._lifecycle_lock:
+            if self._lifecycle is ApplicationLifecycle.CLOSED:
+                return
+            self._lifecycle = ApplicationLifecycle.CLOSING
+            started_at = perf_counter()
+            _LOGGER.info("application.closing")
+            failures = await self._close_owned(suppress=False)
+            self._lifecycle = ApplicationLifecycle.CLOSED
+            _LOGGER.info(
+                "application.closed duration_ms=%.1f",
+                (perf_counter() - started_at) * 1000,
+            )
+            if failures:
+                raise ExceptionGroup("Application shutdown failed.", failures)
+
+    async def _close_owned(self, *, suppress: bool) -> list[Exception]:
+        closers = [
+            *reversed(self._runtime_closers),
+            ("catalog", self.catalog.close),
+            ("database", self.database.close),
+        ]
+        self._runtime_closers.clear()
+        failures: list[Exception] = []
+        for resource, closer in closers:
+            try:
+                await closer()
+            except Exception as error:
+                failures.append(error)
+                _LOGGER.exception(
+                    "application.resource_close_failed resource=%s", resource
+                )
+        if failures and suppress:
+            _LOGGER.error(
+                "application.start_cleanup_failed resources=%d", len(failures)
+            )
+        return failures
 
 
 def bootstrap(

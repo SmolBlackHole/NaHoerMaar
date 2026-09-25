@@ -20,12 +20,12 @@ Session. This page owns attempts, audio transitions and restart behavior.
 
 ## FSM and effects
 
-`engine/domain/playback.py` is a pure state machine. Given the committed Session
+`player/fsm.py` is a pure state machine. Given the committed Session
 snapshot and an input, it selects the next playback state and declares effects
 such as resolve, start, pause, seek, prepare or stop. It does not access the
 database, create tasks or call Discord.
 
-`engine/playback.py` executes those effects after the Session transaction
+`player/playback.py` executes those effects after the Session transaction
 commits. Provider, preload and voice work happen outside the inbox. Results come
 back as Session inputs, where the FSM decides whether they still belong to the
 current state. The Session remains the only owner that replaces committed queue
@@ -46,10 +46,10 @@ caller displayed so a delayed pause or seek cannot affect its successor.
 
 ## Audio path and crossfade
 
-`engine/discord.py` adapts the domain audio and voice protocols to Discord. The
-reused modules under `integrations/` own FFmpeg processes, bounded source buffers,
-mixing and Opus output. Provider audio URLs and headers exist only in active or
-prepared source buffers; they are never durable track metadata.
+`integrations/discord.py` adapts the player audio and voice protocols to
+Discord. It owns FFmpeg processes, bounded source buffers, mixing and Opus
+output. Provider audio URLs and headers exist only in active or prepared source
+buffers; they are never durable track metadata.
 
 At unity volume and outside an overlap, compatible Opus packets pass through
 without decoding and encoding again. Volume changes and crossfade use the mixer.
@@ -84,19 +84,30 @@ procedures in [Back up and restore NaHörMaar](../recovery.md).
 
 ## Voice connection
 
-An unexpected disconnect suspends output while retaining checkpoint and reconnect
-intent. Joining again, including through `/pspsps`, resumes through the same FSM.
-An idle connected bot may rejoin without starting the queue. Explicit Leave
-clears the saved channel so startup stays disconnected.
+An unexpected disconnect keeps the checkpoint and the saved channel. The
+coordinator reconnects immediately, then retries after 1, 2, 5 and 10 seconds.
+Each transition publishes a `VoiceConnectionChanged` event with the channel,
+phase, attempt number and sanitized error type. The phases distinguish a pending
+connection from a scheduled retry and an exhausted retry sequence.
+
+After reconnecting, the coordinator checks whether the retained attempt still
+has an audio output. If it does not, it resolves a fresh source and resumes from
+the committed checkpoint. An idle connected bot may rejoin without starting the
+queue. Explicit Leave clears the saved channel so startup stays disconnected.
 
 If the saved channel no longer exists or cannot be entered, the track and
-position remain available for a later manual join. Channel discovery and
+position remain available. After the bounded retries are exhausted, another
+Join command, including `/pspsps`, starts a new attempt. Channel discovery and
 Discord installation are covered by [Set up Discord](../discord-setup.md).
 
 ## Shutdown order
 
-Shutdown closes SSE delivery before draining HTTP work, then settles Session
-commands, freezes output and writes the final checkpoint. It closes playback
-effects, catalog/provider work, database resources, authentication and the
-Discord gateway in ownership order. Partial startup follows the same rule for
-the resources it already acquired.
+The application registers each runtime resource for cleanup before its startup
+begins. Shutdown then closes playback, the Discord gateway, listening state and
+the player in reverse order before releasing the catalog and database. A second
+close is a no-op.
+
+If startup fails, the same cleanup runs before the error leaves the composition
+root. The FastAPI lifespan also calls close when startup raises, so a failed
+migration, gateway login or playback start cannot leave an acquired resource
+behind.
