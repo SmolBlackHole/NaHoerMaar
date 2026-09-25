@@ -78,6 +78,16 @@ class AudioEndReason(StrEnum):
     OUTPUT_FAILED = "output_failed"
 
 
+class PlaybackPhase(StrEnum):
+    DISABLED = "disabled"
+    IDLE = "idle"
+    STARTING = "starting"
+    PLAYING = "playing"
+    PAUSED = "paused"
+    TRANSITIONING = "transitioning"
+    FAILED = "failed"
+
+
 @dataclass(frozen=True, slots=True)
 class PlayableSource:
     track_id: UUID
@@ -169,6 +179,21 @@ class NowPlaying:
     title: str | None = None
     artist: str | None = None
     paused: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class PlaybackRuntimeState:
+    """Current output facts exposed to API projections."""
+
+    phase: PlaybackPhase
+    request: TrackRequest | None
+    playback_id: PlaybackRecordId | None
+    attempt_id: UUID | None
+    position_seconds: float
+    position_updated_at: datetime | None
+    duration_seconds: float | None
+    voice: VoiceConnectionState
+    last_error: str | None
 
 
 class PlaybackTransport(Protocol):
@@ -268,6 +293,7 @@ class _LogicalPlayback:
     audio_seconds: float = 0.0
     last_position: float = 0.0
     retries: int = 0
+    duration_seconds: float | None = None
 
 
 @dataclass(slots=True)
@@ -295,6 +321,7 @@ class PlaybackCoordinator:
         "_catalog",
         "_current",
         "_expected_stops",
+        "_last_error",
         "_listening",
         "_loop",
         "_mailbox",
@@ -339,6 +366,7 @@ class PlaybackCoordinator:
         self._output_task: asyncio.Task[None] | None = None
         self._prepare_task: asyncio.Task[None] | None = None
         self._current: _LogicalPlayback | None = None
+        self._last_error: str | None = None
         self._outgoing: _LogicalPlayback | None = None
         self._prepared: _PreparedPlayback | None = None
         self._transitioning: _PreparedPlayback | None = None
@@ -365,6 +393,46 @@ class PlaybackCoordinator:
     def voice_state(self) -> VoiceConnectionState:
         """Return the latest result of reconciling the persisted voice target."""
         return self._voice_state
+
+    @property
+    def status(self) -> PlaybackRuntimeState:
+        """Return one side-effect-free snapshot of the active output."""
+        current = self._current
+        if current is None:
+            return PlaybackRuntimeState(
+                PlaybackPhase.FAILED if self._last_error else PlaybackPhase.IDLE,
+                None,
+                None,
+                None,
+                0.0,
+                None,
+                None,
+                self._voice_state,
+                self._last_error or self._voice_state.error,
+            )
+        progress = self._transport.progress
+        if progress is None or progress.attempt_id != current.attempt_id:
+            phase = PlaybackPhase.STARTING
+            position = current.last_position
+        else:
+            position = progress.position_seconds
+            if progress.transitioning:
+                phase = PlaybackPhase.TRANSITIONING
+            elif progress.paused:
+                phase = PlaybackPhase.PAUSED
+            else:
+                phase = PlaybackPhase.PLAYING
+        return PlaybackRuntimeState(
+            phase,
+            current.request,
+            current.playback_id,
+            current.attempt_id,
+            position,
+            datetime.now(UTC),
+            current.duration_seconds,
+            self._voice_state,
+            self._last_error or self._voice_state.error,
+        )
 
     async def start(self) -> None:
         if self._accepting:
@@ -644,6 +712,7 @@ class PlaybackCoordinator:
             existing.audio_seconds if existing is not None else 0.0,
             position_seconds,
         )
+        self._last_error = None
         self._current = logical
         self._output_task = asyncio.create_task(
             self._start_source(logical, position_seconds, intent),
@@ -660,6 +729,7 @@ class PlaybackCoordinator:
             source = await self._resolve(logical.request)
             if self._current is not logical:
                 return
+            logical.duration_seconds = source.duration_seconds
             await self._transport.play(
                 source,
                 logical.attempt_id,
@@ -670,24 +740,34 @@ class PlaybackCoordinator:
         except asyncio.CancelledError:
             await self._stop_attempt(logical.attempt_id)
             raise
-        except AudioSourceNotReady:
-            await self._retry_or_fail(logical, retryable=True)
-        except Exception:
+        except AudioSourceNotReady as error:
+            await self._retry_or_fail(
+                logical,
+                retryable=True,
+                error=type(error).__name__,
+            )
+        except Exception as error:
             _LOGGER.exception(
                 "playback.output_start_failed request_id=%s attempt_id=%s",
                 logical.request.id,
                 logical.attempt_id,
             )
-            await self._retry_or_fail(logical, retryable=False)
+            await self._retry_or_fail(
+                logical,
+                retryable=False,
+                error=type(error).__name__,
+            )
 
     async def _retry_or_fail(
         self,
         logical: _LogicalPlayback,
         *,
         retryable: bool,
+        error: str,
     ) -> None:
         if self._current is not logical:
             return
+        self._last_error = error
         if retryable and logical.retries < 1:
             logical.retries += 1
             logical.attempt_id = uuid4()
@@ -893,6 +973,7 @@ class PlaybackCoordinator:
             if current is None or current.attempt_id != event.attempt_id:
                 return
             current.last_position = event.position_seconds
+            self._last_error = None
             if current.playback_id is None:
                 current.playback_id = PlaybackRecordId(uuid4())
                 await self._bus.execute(
@@ -932,9 +1013,19 @@ class PlaybackCoordinator:
                 context,
             )
         elif event.reason is AudioEndReason.INTERRUPTED:
-            await self._retry_or_fail(current, retryable=True)
+            await self._retry_or_fail(
+                current,
+                retryable=True,
+                error="audio_interrupted",
+            )
         elif event.reason is not AudioEndReason.STOPPED:
-            await self._retry_or_fail(current, retryable=False)
+            await self._retry_or_fail(
+                current,
+                retryable=False,
+                error=(
+                    type(event.error).__name__ if event.error else event.reason.value
+                ),
+            )
 
     async def _start_crossfade(self, event: CrossfadeDue) -> None:
         current, prepared = self._current, self._prepared
@@ -975,6 +1066,7 @@ class PlaybackCoordinator:
             None,
             0.0,
             0.0,
+            duration_seconds=prepared.source.duration_seconds,
         )
         self._outgoing = current
         self._current = incoming

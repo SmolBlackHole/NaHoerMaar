@@ -58,6 +58,7 @@ from nahoermaar.player.playback import (
     NowPlaying,
     PlayableSource,
     PlaybackCoordinator,
+    PlaybackPhase,
     PlaybackTransport,
     VoiceChannel,
     VoiceConnection,
@@ -454,6 +455,15 @@ def test_audio_facts_start_on_first_frame_and_next_track_is_preloaded() -> None:
             assert not any(
                 isinstance(command, BeginPlayback) for command in bus.commands
             )
+            status = coordinator.status
+            assert status.phase is PlaybackPhase.PLAYING
+            assert status.request == current_request
+            assert status.playback_id is None
+            assert status.attempt_id == transport.attempt_id
+            assert status.position_seconds == 0
+            assert status.position_updated_at is not None
+            assert status.duration_seconds == 180
+            assert status.last_error is None
 
             assert transport.notify is not None
             assert transport.attempt_id is not None
@@ -461,6 +471,7 @@ def test_audio_facts_start_on_first_frame_and_next_track_is_preloaded() -> None:
             begin = await _wait_for_command(bus, BeginPlayback)
             assert isinstance(begin, BeginPlayback)
             assert begin.request_id == current_request.id
+            assert coordinator.status.playback_id == begin.playback_id
 
             await asyncio.wait_for(transport.prepare_ready.wait(), timeout=1)
             assert transport.prepared[0][0].track_id == tracks[1].id
@@ -571,6 +582,9 @@ def test_source_without_first_frame_retries_once_then_returns_request() -> None:
             assert not any(
                 isinstance(command, BeginPlayback) for command in bus.commands
             )
+            assert coordinator.status.phase is PlaybackPhase.FAILED
+            assert coordinator.status.request is None
+            assert coordinator.status.last_error == "AudioSourceNotReady"
         finally:
             await coordinator.close()
 

@@ -1,2 +1,3 @@
 # Preserve the deterministic output from openapi-typescript.
 frontend/shared/api.generated.ts
+frontend/app/core/api/schema.generated.ts

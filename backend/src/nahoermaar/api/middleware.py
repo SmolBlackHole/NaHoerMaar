@@ -18,6 +18,8 @@ from nahoermaar.observability import LogContext, log_context
 from nahoermaar.users.domain import Authenticated, AuthError, AuthErrorCode
 from nahoermaar.users.service import AuthService, SESSION_COOKIE
 
+from .errors import ErrorView
+
 type RequestHandler = Callable[[Request], Awaitable[Response]]
 
 _LOGGER = logging.getLogger(__name__)
@@ -120,7 +122,10 @@ def authenticated(request: Request) -> Authenticated:
 
 
 def _error(code: AuthErrorCode, status: int, request_id: str) -> JSONResponse:
-    response = JSONResponse({"error": code.value}, status_code=status)
+    response = JSONResponse(
+        ErrorView(error=code.value).model_dump(exclude_none=True),
+        status_code=status,
+    )
     _secure(response, request_id)
     return response
 

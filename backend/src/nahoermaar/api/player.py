@@ -14,6 +14,7 @@ from nahoermaar.bootstrap import Application
 from nahoermaar.catalog.domain import (
     DiscoverySnapshotId,
     MediaKind,
+    Track,
     TrackId,
     TrackSourceId,
 )
@@ -24,7 +25,9 @@ from nahoermaar.player.domain import (
     PlayerState,
     QueueEntryId,
     RadioSeed,
+    TrackRequest,
     UndoId,
+    VoiceConnectionState,
 )
 from nahoermaar.player.events import (
     AddTracks,
@@ -48,6 +51,7 @@ from nahoermaar.player.events import (
     TrackSelection,
     UndoQueue,
 )
+from nahoermaar.player.playback import PlaybackPhase, PlaybackRuntimeState
 
 from .catalog import TrackView, track_view
 from .middleware import authenticated
@@ -120,13 +124,13 @@ class CrossfadeInput(OperationInput):
 
 
 class JoinVoiceInput(OperationInput):
-    channel_id: int = Field(gt=0)
+    channel_id: str = Field(pattern=r"^[1-9][0-9]{0,19}$")
 
 
 class VoiceChannelView(View):
-    id: int
+    id: str
     name: str
-    guild_id: int
+    guild_id: str
     guild_name: str
     can_connect: bool
     can_speak: bool
@@ -167,16 +171,36 @@ class RadioView(View):
     error: str | None
 
 
+class VoiceRuntimeView(View):
+    phase: str
+    channel_id: str | None
+    attempt: int
+    error: str | None
+
+
+class PlaybackRuntimeView(View):
+    phase: str
+    current: RequestView | None
+    playback_id: UUID | None
+    attempt_id: UUID | None
+    position_seconds: float
+    position_updated_at: datetime | None
+    duration_seconds: float | None
+    voice: VoiceRuntimeView
+    last_error: str | None
+
+
 class PlayerView(View):
     session_id: UUID
     revision: int
     queue_revision: int
-    channel_id: int | None
+    channel_id: str | None
     volume: float
     crossfade_seconds: int
     queue: tuple[QueueEntryView, ...]
     checkpoint: CheckpointView
     radio: RadioView | None
+    runtime: PlaybackRuntimeView
 
 
 class OutcomeView(View):
@@ -360,9 +384,9 @@ def router(application: Application) -> APIRouter:
             return ()
         return tuple(
             VoiceChannelView(
-                id=channel.id,
+                id=str(channel.id),
                 name=channel.name,
-                guild_id=channel.guild_id,
+                guild_id=str(channel.guild_id),
                 guild_name=channel.guild_name,
                 can_connect=channel.can_connect,
                 can_speak=channel.can_speak,
@@ -377,7 +401,7 @@ def router(application: Application) -> APIRouter:
             JoinVoice(
                 _session_id(application),
                 OperationId(body.operation_id),
-                body.channel_id,
+                int(body.channel_id),
             ),
         )
 
@@ -487,22 +511,30 @@ async def player_view(
     application: Application,
     state: PlayerState,
 ) -> PlayerView:
-    tracks = await application.catalog.tracks(
-        {entry.track_id for entry in state.queue.entries}
+    runtime = (
+        application.playback.status
+        if application.playback is not None
+        else PlaybackRuntimeState(
+            PlaybackPhase.DISABLED,
+            None,
+            None,
+            None,
+            0.0,
+            None,
+            None,
+            VoiceConnectionState(),
+            None,
+        )
     )
+    track_ids = {entry.track_id for entry in state.queue.entries}
+    if runtime.request is not None:
+        track_ids.add(runtime.request.track_id)
+    tracks = await application.catalog.tracks(track_ids)
     queue = tuple(
         QueueEntryView(
             id=entry.id,
             position=entry.position,
-            request=RequestView(
-                id=entry.request.id,
-                origin=entry.request.origin.value,
-                requested_at=entry.request.requested_at,
-                requested_by=entry.request.requested_by,
-                radio_run_id=entry.request.radio_run_id,
-                source_id=entry.request.source_id,
-                track=track_view(tracks[entry.track_id]),
-            ),
+            request=_request_view(entry.request, tracks),
         )
         for entry in state.queue.entries
     )
@@ -511,7 +543,11 @@ async def player_view(
         session_id=state.session.id,
         revision=state.session.revision,
         queue_revision=state.session.queue_revision,
-        channel_id=state.session.channel_id,
+        channel_id=(
+            str(state.session.channel_id)
+            if state.session.channel_id is not None
+            else None
+        ),
         volume=state.session.volume,
         crossfade_seconds=state.session.crossfade_seconds,
         queue=queue,
@@ -540,4 +576,48 @@ async def player_view(
             if run is not None
             else None
         ),
+        runtime=PlaybackRuntimeView(
+            phase=runtime.phase.value,
+            current=(
+                _request_view(runtime.request, tracks)
+                if runtime.request is not None
+                else None
+            ),
+            playback_id=runtime.playback_id,
+            attempt_id=runtime.attempt_id,
+            position_seconds=runtime.position_seconds,
+            position_updated_at=runtime.position_updated_at,
+            duration_seconds=runtime.duration_seconds,
+            voice=VoiceRuntimeView(
+                phase=runtime.voice.phase.value,
+                channel_id=(
+                    str(runtime.voice.channel_id)
+                    if runtime.voice.channel_id is not None
+                    else None
+                ),
+                attempt=runtime.voice.attempt,
+                error=runtime.voice.error,
+            ),
+            last_error=runtime.last_error,
+        ),
+    )
+
+
+def _request_view(
+    request: TrackRequest,
+    tracks: dict[TrackId, Track],
+) -> RequestView:
+    track = tracks.get(request.track_id)
+    if track is None:
+        raise RuntimeError(
+            f"Track is missing from player projection: {request.track_id}"
+        )
+    return RequestView(
+        id=request.id,
+        origin=request.origin.value,
+        requested_at=request.requested_at,
+        requested_by=request.requested_by,
+        radio_run_id=request.radio_run_id,
+        source_id=request.source_id,
+        track=track_view(track),
     )

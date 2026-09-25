@@ -202,3 +202,13 @@ def configure_logging(
     logging.getLogger("httpcore").setLevel(logging.WARNING)
 
     return recent
+
+
+def close_logging() -> None:
+    """Release process-owned logging handlers for short-lived tooling."""
+    root = logging.getLogger()
+    for handler in tuple(_OWNED_HANDLERS):
+        if handler in root.handlers:
+            root.removeHandler(handler)
+        handler.close()
+    _OWNED_HANDLERS.clear()

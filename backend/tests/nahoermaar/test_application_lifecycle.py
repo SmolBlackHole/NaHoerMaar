@@ -22,6 +22,7 @@ from nahoermaar.player.playback import PlaybackCoordinator
 from nahoermaar.player.session import PlayerSessionManager
 from nahoermaar.statistics.service import StatisticsService
 from nahoermaar.views.profile import ProfileView
+from nahoermaar.views.recent import RecentListeningView
 from nahoermaar.users.service import AccessService, AuthService
 from nahoermaar.integrations.discord import DiscordGateway
 
@@ -128,6 +129,7 @@ def _application(calls: list[str], *, fail_gateway: bool = False) -> Application
         cast(ListeningService, listening),
         cast(StatisticsService, object()),
         cast(ProfileView, object()),
+        cast(RecentListeningView, object()),
         RecentLogBuffer(),
         cast(DiscordGateway, gateway),
         cast(PlaybackCoordinator, playback),

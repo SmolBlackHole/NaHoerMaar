@@ -10,6 +10,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -20,7 +21,9 @@ from nahoermaar.users.domain import AuthError
 
 from .auth import router as auth_router
 from .catalog import router as catalog_router
+from .errors import ERROR_RESPONSES, ErrorView
 from .events import router as events_router
+from .listening import router as listening_router
 from .logs import router as logs_router
 from .middleware import install_auth_middleware
 from .player import router as player_router
@@ -42,13 +45,18 @@ def create_app(application: Application | None = None) -> FastAPI:
         finally:
             await container.close()
 
-    app = FastAPI(title="NaHÃ¶rMaar", lifespan=lifespan)
+    app = FastAPI(
+        title="NaHörMaar",
+        lifespan=lifespan,
+        responses=ERROR_RESPONSES,
+    )
     app.state.application = container
     install_auth_middleware(app, container.auth, container.settings.auth)
     app.include_router(auth_router(container))
     app.include_router(users_router(container))
     app.include_router(catalog_router(container.catalog))
     app.include_router(player_router(container))
+    app.include_router(listening_router(container.recent))
     app.include_router(statistics_router(container.statistics))
     app.include_router(events_router(container))
     app.include_router(logs_router(container))
@@ -57,7 +65,7 @@ def create_app(application: Application | None = None) -> FastAPI:
     async def auth_error(request: Request, error: AuthError) -> JSONResponse:
         request.state.error_code = error.code.value
         return JSONResponse(
-            {"error": error.code.value},
+            ErrorView(error=error.code.value).model_dump(exclude_none=True),
             status_code=error.status,
             headers={"cache-control": "no-store"},
         )
@@ -66,7 +74,7 @@ def create_app(application: Application | None = None) -> FastAPI:
     async def player_error(request: Request, error: PlayerError) -> JSONResponse:
         request.state.error_code = error.code.value
         return JSONResponse(
-            {"error": error.code.value},
+            ErrorView(error=error.code.value).model_dump(exclude_none=True),
             status_code=error.status,
             headers={"cache-control": "no-store"},
         )
@@ -76,8 +84,23 @@ def create_app(application: Application | None = None) -> FastAPI:
         request.state.error_code = error.code.value
         request.state.error_retryable = error.retryable
         return JSONResponse(
-            {"error": error.code.value, "retryable": error.retryable},
+            ErrorView(
+                error=error.code.value,
+                retryable=error.retryable,
+            ).model_dump(exclude_none=True),
             status_code=error.status,
+            headers={"cache-control": "no-store"},
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(
+        request: Request,
+        _error: RequestValidationError,
+    ) -> JSONResponse:
+        request.state.error_code = "validation_failed"
+        return JSONResponse(
+            ErrorView(error="validation_failed").model_dump(exclude_none=True),
+            status_code=422,
             headers={"cache-control": "no-store"},
         )
 

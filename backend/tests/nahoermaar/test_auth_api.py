@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import logging
 import os
 from pathlib import Path
@@ -41,6 +41,7 @@ from nahoermaar.users.service import (
     SESSION_COOKIE,
 )
 from nahoermaar.views.profile import ProfileView
+from nahoermaar.views.recent import RecentListeningView
 
 NOW = datetime(2026, 9, 24, 12, tzinfo=UTC)
 ROOT = Path(__file__).parents[3]
@@ -94,6 +95,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
         clock=lambda: NOW,
     )
     profiles = ProfileView(units, statistics)
+    recent = RecentListeningView(units)
     logs = RecentLogBuffer()
     logs.addFilter(ContextFilter())
     root_logger = logging.getLogger()
@@ -116,13 +118,25 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
         listening,
         statistics,
         profiles,
+        recent,
         logs,
     )
     app = create_app(application)
-    assert "/api/events" in app.openapi()["paths"]
-    assert "/api/logs" in app.openapi()["paths"]
-    assert "/api/statistics/overview" in app.openapi()["paths"]
-    assert "/api/statistics/users/{user_id}" in app.openapi()["paths"]
+    contract = app.openapi()
+    assert "/api/events" in contract["paths"]
+    assert "/api/listening/recent" in contract["paths"]
+    assert "/api/logs" in contract["paths"]
+    assert "/api/statistics/overview" in contract["paths"]
+    assert "/api/statistics/users/{user_id}" in contract["paths"]
+    assert "ErrorView" in contract["components"]["schemas"]
+    assert contract["paths"]["/api/player"]["get"]["responses"]["401"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/ErrorView"}
+    assert contract["paths"]["/api/events"]["get"]["x-sse-payloads"] == {
+        "state": {"$ref": "#/components/schemas/PlayerView"},
+        "change": {"$ref": "#/components/schemas/ChangeView"},
+        "auth": {"$ref": "#/components/schemas/AuthEventView"},
+    }
 
     async def scenario() -> None:
         await access.reconcile()
@@ -178,6 +192,28 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             assert player_state.status_code == 200
             assert player_state.json()["queue"] == []
             assert player_state.json()["crossfade_seconds"] == 7
+            assert player_state.json()["runtime"] == {
+                "phase": "disabled",
+                "current": None,
+                "playback_id": None,
+                "attempt_id": None,
+                "position_seconds": 0.0,
+                "position_updated_at": None,
+                "duration_seconds": None,
+                "voice": {
+                    "phase": "disconnected",
+                    "channel_id": None,
+                    "attempt": 0,
+                    "error": None,
+                },
+                "last_error": None,
+            }
+            assert (await client.get("/api/listening/recent")).json() == []
+            invalid_recent = await client.get(
+                "/api/listening/recent", params={"limit": 0}
+            )
+            assert invalid_recent.status_code == 422
+            assert invalid_recent.json() == {"error": "validation_failed"}
             events = event_stream(application, session_token)
             initial = await anext(events)
             assert initial.event == "state"
@@ -225,6 +261,44 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             assert queued.json()["player"]["queue"][0]["request"][
                 "requested_by"
             ] == str(current.user.id)
+            request_id = queued.json()["player"]["queue"][0]["request"]["id"]
+            playback_id = uuid4()
+            async with units() as work:
+                await work.session.execute(
+                    insert(Base.metadata.tables["playback_records"]).values(
+                        id=playback_id,
+                        session_id=application.player.state.session.id,
+                        request_id=request_id,
+                        started_at=NOW,
+                        audio_seconds=42.0,
+                        group_audio_seconds=40.0,
+                        ended_at=NOW + timedelta(seconds=42),
+                        end_reason="completed",
+                    )
+                )
+                await work.commit()
+            recent = await client.get("/api/listening/recent", params={"limit": 1})
+            assert recent.status_code == 200
+            assert recent.json() == [
+                {
+                    "playback_id": str(playback_id),
+                    "request_id": request_id,
+                    "track_id": str(track_id),
+                    "title": "API track",
+                    "artist_names": [],
+                    "artwork_url": None,
+                    "duration_seconds": 180.0,
+                    "origin": "manual",
+                    "requested_by": str(current.user.id),
+                    "started_at": NOW.isoformat().replace("+00:00", "Z"),
+                    "ended_at": (NOW + timedelta(seconds=42))
+                    .isoformat()
+                    .replace("+00:00", "Z"),
+                    "end_reason": "completed",
+                    "audio_seconds": 42.0,
+                    "group_audio_seconds": 40.0,
+                }
+            ]
             change = await anext(events)
             assert change.event == "change"
             assert change.id == "1"
