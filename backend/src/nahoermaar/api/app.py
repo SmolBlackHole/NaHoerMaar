@@ -18,6 +18,7 @@ from nahoermaar.users.domain import AuthError
 from .auth import router as auth_router
 from .catalog import router as catalog_router
 from .events import router as events_router
+from .logs import router as logs_router
 from .middleware import install_auth_middleware
 from .player import router as player_router
 from .users import router as users_router
@@ -43,9 +44,11 @@ def create_app(application: Application | None = None) -> FastAPI:
     app.include_router(catalog_router(container.catalog))
     app.include_router(player_router(container))
     app.include_router(events_router(container))
+    app.include_router(logs_router(container))
 
     @app.exception_handler(AuthError)
-    async def auth_error(_request: Request, error: AuthError) -> JSONResponse:
+    async def auth_error(request: Request, error: AuthError) -> JSONResponse:
+        request.state.error_code = error.code.value
         return JSONResponse(
             {"error": error.code.value},
             status_code=error.status,
@@ -53,7 +56,8 @@ def create_app(application: Application | None = None) -> FastAPI:
         )
 
     @app.exception_handler(PlayerError)
-    async def player_error(_request: Request, error: PlayerError) -> JSONResponse:
+    async def player_error(request: Request, error: PlayerError) -> JSONResponse:
+        request.state.error_code = error.code.value
         return JSONResponse(
             {"error": error.code.value},
             status_code=error.status,
@@ -61,7 +65,9 @@ def create_app(application: Application | None = None) -> FastAPI:
         )
 
     @app.exception_handler(CatalogError)
-    async def catalog_error(_request: Request, error: CatalogError) -> JSONResponse:
+    async def catalog_error(request: Request, error: CatalogError) -> JSONResponse:
+        request.state.error_code = error.code.value
+        request.state.error_retryable = error.retryable
         return JSONResponse(
             {"error": error.code.value, "retryable": error.retryable},
             status_code=error.status,

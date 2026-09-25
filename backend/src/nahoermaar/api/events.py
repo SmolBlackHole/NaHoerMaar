@@ -6,6 +6,7 @@
 
 import asyncio
 from collections.abc import AsyncGenerator
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Request
@@ -20,6 +21,7 @@ from .middleware import authenticated
 from .player import OutcomeView, PlayerView, View, player_view
 
 _AUTH_CHECK_SECONDS = 30
+_LOGGER = logging.getLogger(__name__)
 
 
 class ChangeView(View):
@@ -51,12 +53,16 @@ def router(application: Application) -> APIRouter:
         },
     )
     async def events(request: Request) -> AsyncGenerator[ServerSentEvent]:
-        authenticated(request)
-        async for event in event_stream(
-            application,
-            request.cookies.get(SESSION_COOKIE),
-        ):
-            yield event
+        actor = authenticated(request)
+        _LOGGER.info("sse.connected user_id=%s", actor.user.id)
+        try:
+            async for event in event_stream(
+                application,
+                request.cookies.get(SESSION_COOKIE),
+            ):
+                yield event
+        finally:
+            _LOGGER.info("sse.disconnected user_id=%s", actor.user.id)
 
     return routes
 
@@ -76,6 +82,11 @@ async def event_stream(
                     document = await player_view(application, initial)
                     await application.auth.authenticate(token)
                     last_revision = initial.session.revision
+                    _LOGGER.debug(
+                        "sse.state_sent session=%s revision=%d",
+                        initial.session.id,
+                        last_revision,
+                    )
                     yield ServerSentEvent(
                         event="state",
                         id=str(last_revision),
@@ -90,15 +101,28 @@ async def event_stream(
                     continue
 
                 if update is None:
+                    _LOGGER.debug("sse.upstream_closed")
                     return
                 if isinstance(update, Reauthenticate):
+                    _LOGGER.debug("sse.reauthentication_requested")
                     continue
                 if update.event.revision <= last_revision:
+                    _LOGGER.debug(
+                        "sse.stale_change_ignored revision=%d last_revision=%d",
+                        update.event.revision,
+                        last_revision,
+                    )
                     continue
 
                 document = await player_view(application, update.state)
                 await application.auth.authenticate(token)
                 last_revision = update.event.revision
+                _LOGGER.debug(
+                    "sse.change_sent session=%s revision=%d action=%s",
+                    update.event.session_id,
+                    last_revision,
+                    update.event.outcome.action.value,
+                )
                 yield ServerSentEvent(
                     event="change",
                     id=str(last_revision),
@@ -121,6 +145,9 @@ async def event_stream(
                     ),
                 )
             except AuthError as error:
+                _LOGGER.info(
+                    "sse.authentication_failed error_code=%s", error.code.value
+                )
                 yield ServerSentEvent(
                     event="auth",
                     data=AuthEventView(error=error.code.value),

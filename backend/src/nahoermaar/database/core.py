@@ -4,6 +4,9 @@
 
 """Ownership of the application's asynchronous database resources."""
 
+import logging
+from time import perf_counter
+
 from sqlalchemy import URL, make_url
 from sqlalchemy.exc import ArgumentError
 from sqlalchemy.ext.asyncio import (
@@ -12,6 +15,9 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class DatabaseConfigurationError(ValueError):
@@ -38,6 +44,13 @@ class Database:
             expire_on_commit=False,
             autobegin=False,
         )
+        _LOGGER.info(
+            "database.configured driver=%s host=%s port=%s database=%s",
+            url.drivername,
+            url.host,
+            url.port,
+            url.database,
+        )
 
     @property
     def engine(self) -> AsyncEngine:
@@ -51,4 +64,9 @@ class Database:
 
     async def close(self) -> None:
         """Release connections owned by this database instance."""
+        started_at = perf_counter()
         await self._engine.dispose()
+        _LOGGER.info(
+            "database.closed duration_ms=%.1f",
+            (perf_counter() - started_at) * 1000,
+        )

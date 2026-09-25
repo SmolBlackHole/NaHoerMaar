@@ -4,6 +4,7 @@
 
 import asyncio
 from datetime import UTC, datetime
+import logging
 import os
 from pathlib import Path
 from uuid import uuid4
@@ -27,6 +28,8 @@ from nahoermaar.database.schema import Base
 from nahoermaar.database.uow import UnitOfWork
 from nahoermaar.messaging import MessageBus
 from nahoermaar.listening.service import ListeningService
+from nahoermaar.observability import ContextFilter
+from nahoermaar.operations.logs import RecentLogBuffer
 from nahoermaar.player.session import CatalogRadioResolver, PlayerSessionManager
 from nahoermaar.users.service import (
     AccessService,
@@ -77,6 +80,12 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
     catalog = CatalogService(units, ())
     player = PlayerSessionManager(units, bus, CatalogRadioResolver(catalog))
     listening = ListeningService(units, bus)
+    logs = RecentLogBuffer()
+    logs.addFilter(ContextFilter())
+    root_logger = logging.getLogger()
+    previous_level = root_logger.level
+    root_logger.setLevel(logging.INFO)
+    root_logger.addHandler(logs)
     _register_handlers(bus, auth, access, player, listening)
     settings = Settings(
         os.environ["DATABASE_URL"],
@@ -91,9 +100,11 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
         catalog,
         player,
         listening,
+        logs,
     )
     app = create_app(application)
     assert "/api/events" in app.openapi()["paths"]
+    assert "/api/logs" in app.openapi()["paths"]
 
     async def scenario() -> None:
         await access.reconcile()
@@ -217,6 +228,14 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             assert access_state.status_code == 200
             assert access_state.json()["grants"][0]["discord"]["id"] == "7"
 
+            process_logs = await client.get("/api/logs", params={"limit": 200})
+            assert process_logs.status_code == 200
+            entries = process_logs.json()["entries"]
+            assert entries
+            assert any(entry["actor_id"] == str(current.user.id) for entry in entries)
+            assert all("q=test" not in entry["message"] for entry in entries)
+            assert all("state=" not in entry["message"] for entry in entries)
+
             wrong_origin = await client.get(
                 "/api/users/me", headers={"origin": "https://evil.example"}
             )
@@ -238,4 +257,6 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
     try:
         asyncio.run(scenario())
     finally:
+        root_logger.removeHandler(logs)
+        root_logger.setLevel(previous_level)
         asyncio.run(database.close())

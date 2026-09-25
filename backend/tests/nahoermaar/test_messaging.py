@@ -3,7 +3,9 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import asyncio
+import logging
 from dataclasses import dataclass
+from uuid import uuid4
 
 import pytest
 
@@ -15,6 +17,8 @@ from nahoermaar.messaging import (
     MessageContext,
     MissingCommandHandlerError,
 )
+from nahoermaar.observability import ContextFilter, LogContext, log_context
+from nahoermaar.operations.logs import RecentLogBuffer
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,3 +83,45 @@ def test_event_supports_zero_or_multiple_ordered_consumers() -> None:
     asyncio.run(bus.publish(Added(5)))
 
     assert calls == [("first", 5), ("second", 5)]
+
+
+def test_bus_logs_correlated_duration_and_unexpected_failure() -> None:
+    bus = MessageBus()
+
+    async def fail(_command: Add, _context: MessageContext) -> int:
+        raise RuntimeError("handler failed")
+
+    bus.register_command(Add, fail)
+    request_id = "request-1"
+    correlation_id = uuid4()
+    actor_id = uuid4()
+    logs = RecentLogBuffer()
+    logs.addFilter(ContextFilter())
+    root = logging.getLogger()
+    previous_level = root.level
+    root.setLevel(logging.DEBUG)
+    root.addHandler(logs)
+    try:
+        with log_context(
+            LogContext(
+                request_id=request_id,
+                correlation_id=correlation_id,
+                actor_id=actor_id,
+            )
+        ):
+            with pytest.raises(RuntimeError, match="handler failed"):
+                asyncio.run(bus.execute(Add(1, 1)))
+    finally:
+        root.removeHandler(logs)
+        root.setLevel(previous_level)
+
+    entries = logs.entries()
+    failed = next(
+        entry for entry in entries if "message.command_failed" in entry.message
+    )
+    assert "duration_ms=" in failed.message
+    assert "error_code=RuntimeError" in failed.message
+    assert failed.request_id == request_id
+    assert failed.correlation_id == correlation_id
+    assert failed.actor_id == actor_id
+    assert failed.message_id is not None

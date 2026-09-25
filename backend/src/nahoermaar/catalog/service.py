@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 
 from nahoermaar.database.uow import UnitOfWork
+from nahoermaar.observability import error_code, safe_log_value
 
 from .domain import (
     DiscoveryKind,
@@ -118,9 +119,17 @@ class CatalogService:
             raise CatalogError(CatalogErrorCode.INVALID_QUERY, 422)
         self._validate_limit(limit)
         provider = self._provider(provider_key)
+        _LOGGER.info(
+            "catalog.search_requested provider=%s query=%r limit=%d refresh=%s",
+            provider.key,
+            safe_log_value(normalized),
+            limit,
+            refresh,
+        )
         key = (DiscoveryKind.SEARCH, provider.key, normalized.casefold(), limit)
         cached = await self._latest(key)
         if cached is None:
+            _LOGGER.debug("catalog.cache_miss kind=search provider=%s", provider.key)
             return DiscoveryResult(
                 await self._refresh(
                     key, lambda: self._search_page(provider, normalized, limit)
@@ -129,6 +138,13 @@ class CatalogService:
                 False,
             )
         refreshing = refresh or not cached.is_fresh(self._clock())
+        _LOGGER.debug(
+            "catalog.cache_hit kind=search provider=%s snapshot_id=%s fresh=%s refresh=%s",
+            provider.key,
+            cached.id,
+            cached.is_fresh(self._clock()),
+            refreshing,
+        )
         if refreshing:
             self._schedule(key, lambda: self._search_page(provider, normalized, limit))
         return DiscoveryResult(cached, refreshing, not cached.is_fresh(self._clock()))
@@ -144,9 +160,17 @@ class CatalogService:
         self._ensure_open()
         self._validate_limit(limit)
         provider, reference = self._route(source_url, provider_key, MediaKind.PLAYLIST)
+        _LOGGER.info(
+            "catalog.playlist_requested provider=%s external_id=%s limit=%d refresh=%s",
+            provider.key,
+            safe_log_value(reference.external_id),
+            limit,
+            refresh,
+        )
         key = (DiscoveryKind.PLAYLIST, provider.key, reference.external_id, limit)
         cached = await self._latest(key)
         if cached is None:
+            _LOGGER.debug("catalog.cache_miss kind=playlist provider=%s", provider.key)
             return DiscoveryResult(
                 await self._refresh(
                     key, lambda: self._playlist_page(provider, reference, limit)
@@ -155,6 +179,14 @@ class CatalogService:
                 False,
             )
         refreshing = refresh or not cached.is_fresh(self._clock())
+        _LOGGER.debug(
+            "catalog.cache_hit kind=playlist provider=%s snapshot_id=%s fresh=%s "
+            "refresh=%s",
+            provider.key,
+            cached.id,
+            cached.is_fresh(self._clock()),
+            refreshing,
+        )
         if refreshing:
             self._schedule(key, lambda: self._playlist_page(provider, reference, limit))
         return DiscoveryResult(cached, refreshing, not cached.is_fresh(self._clock()))
@@ -167,6 +199,11 @@ class CatalogService:
     ) -> Track:
         self._ensure_open()
         provider, reference = self._route(source_url, provider_key, MediaKind.TRACK)
+        _LOGGER.info(
+            "catalog.track_requested provider=%s external_id=%s",
+            provider.key,
+            safe_log_value(reference.external_id),
+        )
         try:
             observation = await provider.track(reference)
         except ProviderError as error:
@@ -186,6 +223,12 @@ class CatalogService:
                 observation, observed_at
             )
             await work.commit()
+        _LOGGER.info(
+            "catalog.track_saved track_id=%s provider=%s external_id=%s",
+            track.id,
+            provider.key,
+            safe_log_value(reference.external_id),
+        )
         return track
 
     async def tracks(self, track_ids: set[TrackId]) -> dict[TrackId, Track]:
@@ -228,6 +271,14 @@ class CatalogService:
                 kind = MediaKind.PLAYLIST
 
         provider, reference = self._route(source_url, None, kind)
+        _LOGGER.info(
+            "catalog.radio_requested provider=%s kind=%s external_id=%s limit=%d continuation=%s",
+            provider.key,
+            kind.value,
+            safe_log_value(reference.external_id),
+            limit,
+            continuation is not None,
+        )
         try:
             page = await provider.radio(
                 reference,
@@ -253,7 +304,15 @@ class CatalogService:
                 )
                 sources.append(source)
             await work.commit()
-        return RadioPage(tuple(sources), page.continuation)
+        result = RadioPage(tuple(sources), page.continuation)
+        _LOGGER.info(
+            "catalog.radio_completed provider=%s kind=%s entries=%d continuation=%s",
+            provider.key,
+            kind.value,
+            len(result.entries),
+            result.continuation is not None,
+        )
+        return result
 
     async def prune_orphans(self, checked_before: datetime) -> tuple[int, int, int]:
         self._ensure_open()
@@ -262,6 +321,12 @@ class CatalogService:
                 checked_before
             )
             await work.commit()
+        _LOGGER.info(
+            "catalog.orphans_pruned tracks=%d artists=%d sources=%d",
+            removed[0],
+            removed[1],
+            removed[2],
+        )
         return removed
 
     async def close(self) -> None:
@@ -287,7 +352,16 @@ class CatalogService:
         load: RefreshLoader,
     ) -> None:
         if key in self._refreshes:
+            _LOGGER.debug(
+                "catalog.refresh_deduplicated kind=%s provider=%s", key[0].value, key[1]
+            )
             return
+        _LOGGER.debug(
+            "catalog.refresh_scheduled kind=%s provider=%s limit=%d",
+            key[0].value,
+            key[1],
+            key[3],
+        )
         task = asyncio.create_task(self._load_and_publish(key, load))
         self._refreshes[key] = task
         task.add_done_callback(lambda completed: self._finished(key, completed))
@@ -304,15 +378,18 @@ class CatalogService:
         if self._refreshes.get(key) is task:
             self._refreshes.pop(key, None)
         if task.cancelled():
+            _LOGGER.debug(
+                "catalog.refresh_cancelled kind=%s provider=%s", key[0].value, key[1]
+            )
             return
         error = task.exception()
         if error is not None:
             _LOGGER.warning(
-                "catalog.refresh_failed kind=%s provider=%s locator=%s error=%s",
+                "catalog.refresh_failed kind=%s provider=%s error_code=%s retryable=%s",
                 key[0].value,
                 key[1],
-                key[2],
-                type(error).__name__,
+                error_code(error),
+                getattr(error, "retryable", False),
             )
 
     async def _load_and_publish(

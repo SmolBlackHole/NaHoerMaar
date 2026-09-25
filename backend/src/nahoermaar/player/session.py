@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from hashlib import sha256
 import json
 import logging
+from time import perf_counter
 from typing import Protocol
 from uuid import UUID
 
@@ -93,6 +94,7 @@ class _Envelope:
     command: PlayerCommand
     context: MessageContext
     future: asyncio.Future[MutationReply]
+    enqueued_at: float
 
 
 class PlayerSession:
@@ -128,18 +130,46 @@ class PlayerSession:
         context: MessageContext,
     ) -> MutationReply:
         if self._closed:
+            _LOGGER.warning(
+                "player.command_rejected command=%s session=%s reason=session_closed",
+                type(command).__name__,
+                command.session_id,
+            )
             raise PlayerError(PlayerErrorCode.SESSION_CLOSED, 503)
         future = asyncio.get_running_loop().create_future()
         try:
-            self._mailbox.put_nowait(_Envelope(command, context, future))
+            self._mailbox.put_nowait(
+                _Envelope(command, context, future, perf_counter())
+            )
         except asyncio.QueueFull as error:
+            _LOGGER.warning(
+                "player.command_rejected command=%s session=%s reason=mailbox_full "
+                "mailbox_size=%d mailbox_capacity=%d actor=%s",
+                type(command).__name__,
+                command.session_id,
+                self._mailbox.qsize(),
+                _MAILBOX_CAPACITY,
+                context.actor_id,
+            )
             raise PlayerError(PlayerErrorCode.PLAYER_BUSY, 503) from error
+        _LOGGER.debug(
+            "player.command_enqueued command=%s session=%s mailbox_size=%d actor=%s",
+            type(command).__name__,
+            command.session_id,
+            self._mailbox.qsize(),
+            context.actor_id,
+        )
         return await asyncio.shield(future)
 
     async def close(self) -> None:
         if self._closed:
             return
         self._closed = True
+        _LOGGER.debug(
+            "player.session_draining session=%s pending_commands=%d",
+            self._state.session.id,
+            self._mailbox.qsize(),
+        )
         await self._mailbox.join()
         await self._mailbox.put(None)
         await self._worker
@@ -150,6 +180,15 @@ class PlayerSession:
             try:
                 if envelope is None:
                     return
+                _LOGGER.debug(
+                    "player.command_processing command=%s session=%s wait_ms=%.1f "
+                    "mailbox_remaining=%d actor=%s",
+                    type(envelope.command).__name__,
+                    envelope.command.session_id,
+                    (perf_counter() - envelope.enqueued_at) * 1000,
+                    self._mailbox.qsize(),
+                    envelope.context.actor_id,
+                )
                 try:
                     result = await self._mutate(envelope.command, envelope.context)
                 except BaseException as error:
@@ -180,6 +219,15 @@ class PlayerSession:
                 ):
                     raise PlayerError(PlayerErrorCode.IDEMPOTENCY_CONFLICT, 409)
                 await work.commit()
+                _LOGGER.info(
+                    "player.command_replayed command=%s session=%s operation=%s "
+                    "actor=%s action=%s",
+                    type(command).__name__,
+                    command.session_id,
+                    command.operation_id,
+                    context.actor_id,
+                    receipt.outcome.action.value,
+                )
                 return MutationReply(self._state, receipt.outcome, replayed=True)
 
             undo = (
@@ -190,7 +238,20 @@ class PlayerSession:
             actor_id = (
                 UserId(context.actor_id) if context.actor_id is not None else None
             )
-            change = transition(self._state, command, actor_id, now, undo=undo)
+            previous = self._state
+            change = transition(previous, command, actor_id, now, undo=undo)
+            _LOGGER.debug(
+                "player.transition_applied command=%s session=%s revision_from=%d "
+                "revision_to=%d queue_from=%d queue_to=%d events=%d action=%s",
+                type(command).__name__,
+                command.session_id,
+                previous.session.revision,
+                change.state.session.revision,
+                len(previous.queue.entries),
+                len(change.state.queue.entries),
+                len(change.events),
+                change.outcome.action.value,
+            )
             await repository.save(change.state)
             if change.save_undo is not None:
                 await repository.save_undo(change.save_undo)
@@ -330,6 +391,15 @@ class PlayerSessionManager:
         event: RadioRefillRequested,
         context: MessageContext,
     ) -> None:
+        _LOGGER.info(
+            "player.radio_refill_scheduled session=%s run=%s request=%s "
+            "generation=%s continuation=%s",
+            event.session_id,
+            event.run_id,
+            event.request_id,
+            event.generation,
+            event.continuation is not None,
+        )
         task = asyncio.create_task(
             self._resolve_radio(event, context),
             name=f"player-radio-{event.request_id}",
@@ -361,6 +431,15 @@ class PlayerSessionManager:
                 event.seed,
                 limit=20,
                 continuation=event.continuation,
+            )
+            _LOGGER.info(
+                "player.radio_candidates_resolved session=%s run=%s request=%s "
+                "candidates=%d continuation=%s",
+                event.session_id,
+                event.run_id,
+                event.request_id,
+                len(selections),
+                continuation is not None,
             )
             command = ApplyRadioCandidates(
                 event.session_id,

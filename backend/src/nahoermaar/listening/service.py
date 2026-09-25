@@ -207,6 +207,12 @@ class ListeningService:
                 ).start_playback(record)
                 await work.commit()
         if changed:
+            _LOGGER.info(
+                "listening.playback_started playback_id=%s session=%s request_id=%s",
+                result.id,
+                result.session_id,
+                result.request_id,
+            )
             await self._bus.publish(
                 PlaybackStarted(result.id, result.session_id, result.request_id),
                 _event_context(context),
@@ -239,6 +245,14 @@ class ListeningService:
                 )
                 await work.commit()
         if changed:
+            _LOGGER.debug(
+                "listening.playback_advanced session=%s playbacks=%d credited_playback_id=%s humans=%d audible_users=%d",
+                command.session_id,
+                len(command.progress),
+                command.credited_playback_id,
+                effective.human_count,
+                len(effective.audible_user_ids),
+            )
             await self._bus.publish(
                 PlaybackAdvanced(
                     command.session_id,
@@ -265,6 +279,12 @@ class ListeningService:
                 )
                 await work.commit()
         if changed:
+            _LOGGER.info(
+                "listening.playback_finished playback_id=%s session=%s reason=%s",
+                result.id,
+                result.session_id,
+                command.reason.value,
+            )
             await self._bus.publish(
                 PlaybackEnded(result.id, result.session_id, command.reason),
                 _event_context(context),
@@ -304,6 +324,13 @@ class ListeningService:
                 or previous.observed_at is None
             )
         if changed:
+            _LOGGER.info(
+                "listening.audience_changed session=%s humans=%d authorized_users=%d audible_users=%d",
+                audience.session_id,
+                audience.human_count,
+                len(audience.user_ids),
+                len(audience.audible_user_ids),
+            )
             await self._bus.publish(
                 AudienceChanged(
                     audience.session_id,
@@ -338,6 +365,12 @@ class ListeningService:
             )
             self._audience = unavailable
         if previous.observed_at is not None:
+            _LOGGER.info(
+                "listening.audience_disconnected session=%s humans=%d authorized_users=%d",
+                command.session_id,
+                previous.human_count,
+                len(previous.user_ids),
+            )
             await self._bus.publish(
                 AudienceUnavailable(command.session_id),
                 _event_context(context),

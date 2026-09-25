@@ -4,6 +4,8 @@
 
 """Discord OAuth exchange through Authlib and HTTPX."""
 
+import logging
+from time import perf_counter
 from types import TracebackType
 from typing import Protocol, Self, cast
 
@@ -16,6 +18,8 @@ from authlib.oauth2 import OAuth2Error  # type: ignore[import-untyped]
 from nahoermaar.config import AuthSettings
 from nahoermaar.users.domain import AuthError, AuthErrorCode
 from nahoermaar.users.service import ProvidedDiscordIdentity
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class OAuthClient(Protocol):
@@ -57,6 +61,7 @@ class DiscordOAuth:
 
     def _client(self) -> OAuthClient:
         if not self._settings.client_id or not self._settings.client_secret:
+            _LOGGER.warning("discord_oauth.unavailable reason=missing_credentials")
             raise AuthError(AuthErrorCode.LOGIN_UNAVAILABLE, 503)
         return cast(
             OAuthClient,
@@ -74,6 +79,7 @@ class DiscordOAuth:
         )
 
     async def authorization_url(self, state: str, verifier: str) -> str:
+        started_at = perf_counter()
         try:
             async with self._client() as client:
                 url, _ = client.create_authorization_url(
@@ -81,11 +87,23 @@ class DiscordOAuth:
                     state=state,
                     code_verifier=verifier,
                 )
+                _LOGGER.debug(
+                    "discord_oauth.authorization_created duration_ms=%.1f",
+                    (perf_counter() - started_at) * 1000,
+                )
                 return url
+        except AuthError:
+            raise
         except (httpx2.HTTPError, OAuth2Error, ValueError, AttributeError) as error:
+            _LOGGER.warning(
+                "discord_oauth.authorization_failed duration_ms=%.1f error=%s",
+                (perf_counter() - started_at) * 1000,
+                type(error).__name__,
+            )
             raise AuthError(AuthErrorCode.LOGIN_FAILED, 502) from error
 
     async def identity(self, code: str, verifier: str) -> ProvidedDiscordIdentity:
+        started_at = perf_counter()
         try:
             async with self._client() as client:
                 await client.fetch_token(
@@ -106,13 +124,29 @@ class DiscordOAuth:
                     or (avatar is not None and not isinstance(avatar, str))
                 ):
                     raise AuthError(AuthErrorCode.LOGIN_FAILED, 502)
-                return ProvidedDiscordIdentity(
+                identity = ProvidedDiscordIdentity(
                     discord_id,
                     username.strip()[:32],
                     avatar,
                 )
-        except AuthError:
+                _LOGGER.info(
+                    "discord_oauth.identity_resolved discord_id=%s duration_ms=%.1f",
+                    discord_id,
+                    (perf_counter() - started_at) * 1000,
+                )
+                return identity
+        except AuthError as error:
+            _LOGGER.warning(
+                "discord_oauth.identity_failed duration_ms=%.1f error_code=%s",
+                (perf_counter() - started_at) * 1000,
+                error.code.value,
+            )
             raise
         except (httpx2.HTTPError, OAuth2Error, ValueError, AttributeError) as error:
             # Never include token responses or OAuth codes in errors or logs.
+            _LOGGER.warning(
+                "discord_oauth.identity_failed duration_ms=%.1f error=%s",
+                (perf_counter() - started_at) * 1000,
+                type(error).__name__,
+            )
             raise AuthError(AuthErrorCode.LOGIN_FAILED, 502) from error

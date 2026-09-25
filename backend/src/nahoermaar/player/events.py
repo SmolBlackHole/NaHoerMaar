@@ -188,21 +188,41 @@ class PlayerEventStream:
             raise ValueError("Subscriber capacity must be positive.")
         queue: asyncio.Queue[LivePlayerEvent | None] = asyncio.Queue(capacity)
         self._subscribers.add(queue)
+        _LOGGER.debug(
+            "player.events.subscriber_connected subscribers=%d capacity=%d",
+            len(self._subscribers),
+            capacity,
+        )
         try:
             yield queue
         finally:
             self._subscribers.discard(queue)
+            _LOGGER.debug(
+                "player.events.subscriber_disconnected subscribers=%d",
+                len(self._subscribers),
+            )
 
     def publish(
         self, event: PlayerChanged, context: MessageContext, state: PlayerState
     ) -> None:
+        _LOGGER.debug(
+            "player.events.publish session=%s revision=%d action=%s subscribers=%d",
+            event.session_id,
+            event.revision,
+            event.outcome.action.value,
+            len(self._subscribers),
+        )
         self._send(PlayerStateChange(event, context, state))
 
     def reauthenticate(self) -> None:
+        _LOGGER.debug(
+            "player.events.reauthenticate subscribers=%d", len(self._subscribers)
+        )
         self._send(Reauthenticate())
 
     def close(self) -> None:
         self._closed = True
+        _LOGGER.debug("player.events.closing subscribers=%d", len(self._subscribers))
         for queue in tuple(self._subscribers):
             self._disconnect(queue)
         self._subscribers.clear()
@@ -210,7 +230,13 @@ class PlayerEventStream:
     def _send(self, event: LivePlayerEvent) -> None:
         for queue in tuple(self._subscribers):
             if queue.full():
-                _LOGGER.warning("player.events.slow_subscriber_disconnected")
+                _LOGGER.warning(
+                    "player.events.slow_subscriber_disconnected subscribers=%d "
+                    "capacity=%d queued=%d",
+                    len(self._subscribers),
+                    queue.maxsize,
+                    queue.qsize(),
+                )
                 self._subscribers.discard(queue)
                 self._disconnect(queue)
             else:

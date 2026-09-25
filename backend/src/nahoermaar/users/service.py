@@ -302,13 +302,25 @@ class AccessService:
         async with self._units() as work:
             user = await UserRepository(work.session).get(user_id)
         if user is None or not user.has_access:
+            _LOGGER.info("access.denied user_id=%s requirement=access", user_id)
             raise AuthError(AuthErrorCode.ACCESS_DENIED, 403)
+        _LOGGER.debug(
+            "access.allowed user_id=%s requirement=access role=%s",
+            user.id,
+            user.role.value if user.role is not None else None,
+        )
         return user
 
     async def require_admin(self, user_id: UserId) -> User:
         user = await self.require_access(user_id)
         if user.role is None or not user.role.privileged:
+            _LOGGER.info("access.denied user_id=%s requirement=admin", user_id)
             raise AuthError(AuthErrorCode.ACCESS_DENIED, 403)
+        _LOGGER.debug(
+            "access.allowed user_id=%s requirement=admin role=%s",
+            user.id,
+            user.role.value,
+        )
         return user
 
     async def grants(self) -> tuple[User, ...]:
@@ -331,6 +343,11 @@ class AccessService:
                 raise AuthError(AuthErrorCode.ACCESS_DENIED, 403)
             subject = await users.get_by_discord_id(discord_id, for_update=True)
             if subject is not None and subject.role is AccessRole.USER:
+                _LOGGER.debug(
+                    "access.grant_unchanged actor_id=%s subject_id=%s",
+                    actor.id,
+                    subject.id,
+                )
                 return None
             if subject is not None and subject.role is not None:
                 raise AuthError(AuthErrorCode.OPERATOR_ACCESS_MANAGED_IN_CONFIG, 409)
@@ -379,6 +396,11 @@ class AccessService:
                 raise AuthError(AuthErrorCode.ACCESS_DENIED, 403)
             subject = await users.get_by_discord_id(discord_id, for_update=True)
             if subject is None or subject.role is not AccessRole.USER:
+                _LOGGER.debug(
+                    "access.revoke_unchanged actor_id=%s discord_id=%s",
+                    actor.id,
+                    discord_id,
+                )
                 return None
             if (
                 actor.role is not AccessRole.OWNER
@@ -426,11 +448,12 @@ class AuthService:
         self._clock = clock
 
     async def begin(self, browser_token: str | None) -> LoginStart:
-        browser = (
-            browser_token
-            if browser_token is not None and _TOKEN.fullmatch(browser_token)
-            else secrets.token_urlsafe(32)
-        )
+        if browser_token is not None and _TOKEN.fullmatch(browser_token):
+            browser = browser_token
+            reused_browser = True
+        else:
+            browser = secrets.token_urlsafe(32)
+            reused_browser = False
         state = secrets.token_urlsafe(32)
         verifier = secrets.token_urlsafe(48)
         authorization_url = await self._provider.authorization_url(state, verifier)
@@ -447,7 +470,7 @@ class AuthService:
             if not accepted:
                 raise AuthError(AuthErrorCode.LOGIN_BUSY, 429)
             await work.commit()
-        _LOGGER.info("auth.login_started")
+        _LOGGER.info("auth.login_started browser_reused=%s", reused_browser)
         return LoginStart(authorization_url, browser)
 
     async def complete(
@@ -520,11 +543,17 @@ class AuthService:
                 ),
             )
             await work.commit()
-        _LOGGER.info("auth.login_completed user_id=%s", user.id)
+        _LOGGER.info(
+            "auth.login_completed user_id=%s role=%s previous_session=%s",
+            user.id,
+            user.role.value if user.role is not None else None,
+            previous_session is not None,
+        )
         return LoginCompletion(session_token, user)
 
     async def authenticate(self, session_token: str | None) -> Authenticated:
         if session_token is None or _TOKEN.fullmatch(session_token) is None:
+            _LOGGER.debug("auth.session_rejected reason=missing_or_invalid_token")
             raise AuthError(AuthErrorCode.SIGNED_OUT, 401)
         now = self._clock()
         token_hash = digest(session_token)
@@ -532,12 +561,22 @@ class AuthService:
             auth = AuthRepository(work.session)
             session = await auth.session(token_hash, now)
             if session is None:
+                _LOGGER.debug("auth.session_rejected reason=not_found_or_expired")
                 raise AuthError(AuthErrorCode.SIGNED_OUT, 401)
             user = await UserRepository(work.session).get(session.user_id)
             if user is None or not user.has_access:
                 await auth.delete_session(token_hash)
                 await work.commit()
+                _LOGGER.info(
+                    "auth.session_revoked user_id=%s reason=access_missing",
+                    session.user_id,
+                )
                 raise AuthError(AuthErrorCode.ACCESS_DENIED, 403)
+        _LOGGER.debug(
+            "auth.session_authenticated user_id=%s expires_at=%s",
+            user.id,
+            session.expires_at.isoformat(),
+        )
         return Authenticated(user, session.expires_at, csrf_token(session_token))
 
     async def logout(self, session_token: str | None) -> None:
@@ -546,7 +585,7 @@ class AuthService:
         async with self._units() as work:
             await AuthRepository(work.session).delete_session(digest(session_token))
             await work.commit()
-        _LOGGER.info("auth.logout_completed")
+        _LOGGER.info("auth.logout_completed session_present=true")
 
     async def profile(self, user_id: UserId) -> User:
         async with self._units() as work:
@@ -573,6 +612,11 @@ class AuthService:
             user = replace(user, profile=profile, updated_at=now)
             await users.update(user)
             await work.commit()
+        _LOGGER.info(
+            "profile.saved user_id=%s complete=%s",
+            user.id,
+            user.profile.complete,
+        )
         return user
 
     async def save_appearance(self, user_id: UserId, appearance: Appearance) -> User:
@@ -585,6 +629,18 @@ class AuthService:
             user = replace(user, appearance=appearance, updated_at=now)
             await users.update(user)
             await work.commit()
+        _LOGGER.info(
+            "appearance.saved user_id=%s mode=%s primary=%s neutral=%s "
+            "font=%s icons=%s text_size=%s artwork_colors=%s",
+            user.id,
+            appearance.mode.value,
+            appearance.primary_color.value,
+            appearance.neutral_color.value,
+            appearance.font_family.value,
+            appearance.icon_set.value,
+            appearance.text_size.value,
+            appearance.artwork_colors,
+        )
         return user
 
 

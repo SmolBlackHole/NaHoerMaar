@@ -8,6 +8,7 @@ import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from time import perf_counter
 
 from .catalog.service import CatalogService
 
@@ -27,6 +28,7 @@ from .listening.service import (
 )
 from .messaging import MessageBus, MessageContext
 from .observability import configure_logging
+from .operations.logs import RecentLogBuffer
 from .player.events import (
     AddTracks,
     ApplyRadioCandidates,
@@ -77,21 +79,33 @@ class Application:
     catalog: CatalogService
     player: PlayerSessionManager
     listening: ListeningService
+    logs: RecentLogBuffer
 
     async def start(self) -> None:
         """Migrate storage and reconcile startup-owned state before requests."""
+        started_at = perf_counter()
+        _LOGGER.info("application.starting")
         await migrate(self.database.engine)
         await self.bus.execute(ReconcileOperators())
         await self.player.start()
         await self.listening.start(self.player.state.session.id)
-        _LOGGER.info("application.started")
+        _LOGGER.info(
+            "application.started session=%s duration_ms=%.1f",
+            self.player.state.session.id,
+            (perf_counter() - started_at) * 1000,
+        )
 
     async def close(self) -> None:
         """Release process-owned resources."""
+        started_at = perf_counter()
+        _LOGGER.info("application.closing")
         await self.player.close()
         await self.catalog.close()
         await self.database.close()
-        _LOGGER.info("application.closed")
+        _LOGGER.info(
+            "application.closed duration_ms=%.1f",
+            (perf_counter() - started_at) * 1000,
+        )
 
 
 def bootstrap(
@@ -101,7 +115,11 @@ def bootstrap(
 ) -> Application:
     """Load configuration and compose the application process."""
     settings = Settings.load(environ, dotenv_path=dotenv_path)
-    configure_logging(settings.log_level)
+    logs = configure_logging(
+        settings.log_level,
+        settings.log_directory,
+        settings.log_retention_days,
+    )
     database = Database(settings.database_url)
 
     def units() -> UnitOfWork:
@@ -124,6 +142,7 @@ def bootstrap(
         catalog,
         player,
         listening,
+        logs,
     )
 
 

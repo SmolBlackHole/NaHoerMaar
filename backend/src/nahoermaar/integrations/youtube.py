@@ -6,11 +6,13 @@
 
 import asyncio
 import json
+import logging
 import math
 import re
 import sys
 from datetime import date, datetime
 from pathlib import Path
+from time import perf_counter
 from typing import Protocol, cast
 from urllib.parse import parse_qs, urlsplit
 
@@ -40,6 +42,7 @@ from .processes import (
 _VIDEO_ID = re.compile(r"[A-Za-z0-9_-]{11}")
 _PLAYLIST_ID = re.compile(r"[A-Za-z0-9_-]{10,150}")
 _HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"}
+_LOGGER = logging.getLogger(__name__)
 _TRANSIENT_ERRORS = (
     "http error 429",
     "http error 500",
@@ -310,6 +313,8 @@ class YouTubeProvider:
         return None
 
     async def search(self, query: str, *, limit: int) -> ProviderPage:
+        started_at = perf_counter()
+        _LOGGER.debug("youtube.search_started limit=%d", limit)
         result = await self._execute(
             (
                 sys.executable,
@@ -318,18 +323,25 @@ class YouTubeProvider:
                 "search",
                 query,
                 str(limit),
-            )
+            ),
+            operation="search",
         )
         entries = _payload(result).get("entries")
         if not isinstance(entries, list):
             raise ProviderError("YouTube Music returned invalid search results.")
-        return ProviderPage(
+        page = ProviderPage(
             tuple(
                 track
                 for entry in cast(list[object], entries)
                 if (track := _music_track(entry)) is not None
             )[:limit]
         )
+        _LOGGER.info(
+            "youtube.search_completed entries=%d duration_ms=%.1f",
+            len(page.entries),
+            (perf_counter() - started_at) * 1000,
+        )
+        return page
 
     async def playlist(
         self, reference: MediaReference, *, limit: int
@@ -339,6 +351,12 @@ class YouTubeProvider:
             or reference.kind is not MediaKind.PLAYLIST
         ):
             raise ProviderError("YouTube cannot load this playlist identity.")
+        started_at = perf_counter()
+        _LOGGER.debug(
+            "youtube.playlist_started external_id=%s limit=%d",
+            reference.external_id,
+            limit,
+        )
         result = await self._execute(
             _ytdlp(
                 self._node_path,
@@ -351,7 +369,8 @@ class YouTubeProvider:
                     "--playlist-items",
                     f"1:{limit + 1}",
                 ),
-            )
+            ),
+            operation="playlist",
         )
         payload = _payload(result, partial=True)
         raw_entries = payload.get("entries")
@@ -366,7 +385,16 @@ class YouTubeProvider:
         page = ProviderPage(
             converted[:limit], str(limit) if len(converted) > limit else None
         )
-        return ProviderPlaylist(reference, _text(payload.get("title")), page)
+        playlist = ProviderPlaylist(reference, _text(payload.get("title")), page)
+        _LOGGER.info(
+            "youtube.playlist_completed external_id=%s entries=%d has_more=%s "
+            "duration_ms=%.1f",
+            reference.external_id,
+            len(page.entries),
+            page.continuation is not None,
+            (perf_counter() - started_at) * 1000,
+        )
+        return playlist
 
     async def radio(
         self,
@@ -379,6 +407,13 @@ class YouTubeProvider:
             raise ProviderError("YouTube cannot load this radio identity.")
         if continuation is not None:
             raise ProviderError("YouTube Music radio has no continuation.")
+        started_at = perf_counter()
+        _LOGGER.debug(
+            "youtube.radio_started kind=%s external_id=%s limit=%d",
+            reference.kind.value,
+            reference.external_id,
+            limit,
+        )
         result = await self._execute(
             (
                 sys.executable,
@@ -388,18 +423,28 @@ class YouTubeProvider:
                 reference.kind.value,
                 reference.external_id,
                 str(limit),
-            )
+            ),
+            operation="radio",
         )
         entries = _payload(result).get("entries")
         if not isinstance(entries, list):
             raise ProviderError("YouTube Music returned invalid radio results.")
-        return ProviderPage(
+        page = ProviderPage(
             tuple(
                 track
                 for entry in cast(list[object], entries)
                 if (track := _music_track(entry)) is not None
             )[:limit]
         )
+        _LOGGER.info(
+            "youtube.radio_completed kind=%s external_id=%s entries=%d "
+            "duration_ms=%.1f",
+            reference.kind.value,
+            reference.external_id,
+            len(page.entries),
+            (perf_counter() - started_at) * 1000,
+        )
+        return page
 
     async def track(self, reference: MediaReference) -> ProviderTrack:
         if (
@@ -407,12 +452,15 @@ class YouTubeProvider:
             or reference.kind is not MediaKind.TRACK
         ):
             raise ProviderError("YouTube cannot load this track identity.")
+        started_at = perf_counter()
+        _LOGGER.debug("youtube.track_started external_id=%s", reference.external_id)
         result = await self._execute(
             _ytdlp(
                 self._node_path,
                 reference.source_url,
                 ("--no-playlist", "--dump-single-json"),
-            )
+            ),
+            operation="track",
         )
         track = _video_track(_payload(result), quality=ObservationQuality.DETAIL)
         if (
@@ -421,31 +469,58 @@ class YouTubeProvider:
             or track.availability is SourceAvailability.UNAVAILABLE
         ):
             raise ProviderError("YouTube returned no available track.")
+        _LOGGER.info(
+            "youtube.track_completed external_id=%s duration_seconds=%s "
+            "duration_ms=%.1f",
+            reference.external_id,
+            track.duration_seconds,
+            (perf_counter() - started_at) * 1000,
+        )
         return track
 
     async def close(self) -> None:
         self._closed = True
         tasks = tuple(task for task in self._requests if not task.done())
+        _LOGGER.info("youtube.closing active_requests=%d", len(tasks))
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        _LOGGER.info("youtube.closed")
 
-    async def _execute(self, arguments: tuple[str, ...]) -> ProcessResult:
+    async def _execute(
+        self, arguments: tuple[str, ...], *, operation: str
+    ) -> ProcessResult:
         if self._closed:
+            _LOGGER.warning(
+                "youtube.request_rejected operation=%s reason=provider_closed",
+                operation,
+            )
             raise ProviderError("YouTube provider is closed.")
         task = asyncio.create_task(self._runner(arguments, timeout=self._timeout))
         self._requests.add(task)
         try:
             return await task
         except ProcessTimeoutError:
+            _LOGGER.warning(
+                "youtube.request_failed operation=%s reason=timeout", operation
+            )
             raise ProviderError(
                 "YouTube took too long to respond.", retryable=True
             ) from None
         except ProcessOutputLimitError:
+            _LOGGER.warning(
+                "youtube.request_failed operation=%s reason=output_limit", operation
+            )
             raise ProviderError("YouTube returned too much metadata.") from None
         except ProcessCleanupError:
+            _LOGGER.warning(
+                "youtube.request_failed operation=%s reason=cleanup", operation
+            )
             raise ProviderError("YouTube cleanup failed.") from None
         except OSError:
+            _LOGGER.warning(
+                "youtube.request_failed operation=%s reason=process_start", operation
+            )
             raise ProviderError("YouTube resolver could not be started.") from None
         finally:
             self._requests.discard(task)

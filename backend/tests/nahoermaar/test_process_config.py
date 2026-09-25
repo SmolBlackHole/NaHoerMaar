@@ -18,6 +18,8 @@ def test_settings_load_explicit_environment() -> None:
             "DISCORD_CLIENT_SECRET": "local-secret",
             "PUBLIC_ORIGIN": "https://music.example.test",
             "ACCESS_PATH": "config/access.toml",
+            "NAHORMAAR_LOG_DIR": "var/logs",
+            "LOG_RETENTION_DAYS": "21",
         }
     )
 
@@ -28,6 +30,8 @@ def test_settings_load_explicit_environment() -> None:
         "https://music.example.test/api/auth/discord/callback"
     )
     assert settings.auth.secure
+    assert settings.log_directory == (Path.cwd() / "var/logs").resolve()
+    assert settings.log_retention_days == 21
 
 
 def test_process_environment_overrides_dotenv(
@@ -52,6 +56,14 @@ def test_process_environment_overrides_dotenv(
     [
         ({}, "DATABASE_URL"),
         ({"DATABASE_URL": "postgres", "LOG_LEVEL": "verbose"}, "LOG_LEVEL"),
+        (
+            {"DATABASE_URL": "postgres", "LOG_RETENTION_DAYS": "forever"},
+            "LOG_RETENTION_DAYS",
+        ),
+        (
+            {"DATABASE_URL": "postgres", "LOG_RETENTION_DAYS": "0"},
+            "LOG_RETENTION_DAYS",
+        ),
         (
             {
                 "DATABASE_URL": "postgres",

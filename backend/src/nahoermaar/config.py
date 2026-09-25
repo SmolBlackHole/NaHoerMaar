@@ -104,6 +104,8 @@ class Settings:
     auth: AuthSettings
     log_level: LogLevel = LogLevel.INFO
     node_path: Path = Path("node")
+    log_directory: Path = Path("data/logs")
+    log_retention_days: int = 14
 
     @classmethod
     def load(
@@ -123,6 +125,14 @@ class Settings:
             raise ConfigurationError(
                 "LOG_LEVEL must be DEBUG, INFO, WARNING, ERROR or CRITICAL."
             ) from error
+        try:
+            log_retention_days = int(values.get("LOG_RETENTION_DAYS", "14"))
+        except ValueError as error:
+            raise ConfigurationError(
+                "LOG_RETENTION_DAYS must be an integer."
+            ) from error
+        if not 1 <= log_retention_days <= 365:
+            raise ConfigurationError("LOG_RETENTION_DAYS must be between 1 and 365.")
         origin = values.get("PUBLIC_ORIGIN", "http://localhost:3000").strip()
         if origin.endswith("/"):
             origin = origin[:-1]
@@ -135,8 +145,12 @@ class Settings:
             ).resolve(),
         )
         return cls(
-            database_url,
-            auth,
-            log_level,
-            Path(values.get("NODE_PATH") or "node"),
+            database_url=database_url,
+            auth=auth,
+            log_level=log_level,
+            node_path=Path(values.get("NODE_PATH") or "node"),
+            log_directory=Path(
+                values.get("NAHORMAAR_LOG_DIR") or "data/logs"
+            ).resolve(),
+            log_retention_days=log_retention_days,
         )

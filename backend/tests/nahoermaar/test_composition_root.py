@@ -14,6 +14,7 @@ from nahoermaar.bootstrap import bootstrap
 from nahoermaar.catalog.service import CatalogService
 from nahoermaar.config import LogLevel
 from nahoermaar.messaging import MessageBus
+from nahoermaar.operations.logs import RecentLogBuffer
 from nahoermaar.users.domain import AccessRole
 
 
@@ -25,8 +26,13 @@ def test_bootstrap_loads_settings_and_composes_auth(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    configured: list[LogLevel] = []
-    monkeypatch.setattr("nahoermaar.bootstrap.configure_logging", configured.append)
+    configured: list[tuple[LogLevel, Path, int]] = []
+
+    def configure(level: LogLevel, directory: Path, retention: int) -> RecentLogBuffer:
+        configured.append((level, directory, retention))
+        return RecentLogBuffer()
+
+    monkeypatch.setattr("nahoermaar.bootstrap.configure_logging", configure)
     access_path = tmp_path / "access.toml"
     access_path.write_text('owner_id = "9"\nadmin_ids = ["8"]\n', encoding="utf-8")
 
@@ -48,7 +54,7 @@ def test_bootstrap_loads_settings_and_composes_auth(
         "/api/catalog/playlist",
         "/api/catalog/link",
     } <= paths.keys()
-    assert configured == [LogLevel.WARNING]
+    assert configured == [(LogLevel.WARNING, (Path.cwd() / "data/logs").resolve(), 14)]
     asyncio.run(application.close())
 
 

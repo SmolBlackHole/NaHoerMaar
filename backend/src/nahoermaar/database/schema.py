@@ -4,7 +4,9 @@
 
 """Shared relational schema primitives and startup migration."""
 
+import logging
 from pathlib import Path
+from time import perf_counter
 
 from alembic import command
 from alembic.config import Config
@@ -21,6 +23,7 @@ NAMING_CONVENTION = {
 }
 
 metadata = MetaData(naming_convention=NAMING_CONVENTION)
+_LOGGER = logging.getLogger(__name__)
 
 
 class Base(DeclarativeBase):
@@ -35,8 +38,14 @@ async def migrate(
 ) -> None:
     """Upgrade the configured database through the application's async engine."""
     path = configuration_path or Path(__file__).resolve().parents[4] / "alembic.ini"
+    started_at = perf_counter()
+    _LOGGER.info("database.migration_started configuration=%s", path)
     async with engine.begin() as connection:
         await connection.run_sync(_upgrade, path)
+    _LOGGER.info(
+        "database.migration_completed duration_ms=%.1f",
+        (perf_counter() - started_at) * 1000,
+    )
 
 
 def _upgrade(connection: Connection, configuration_path: Path) -> None:
