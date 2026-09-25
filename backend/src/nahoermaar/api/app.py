@@ -21,6 +21,7 @@ from .events import router as events_router
 from .logs import router as logs_router
 from .middleware import install_auth_middleware
 from .player import router as player_router
+from .statistics import router as statistics_router
 from .users import router as users_router
 
 
@@ -43,6 +44,7 @@ def create_app(application: Application | None = None) -> FastAPI:
     app.include_router(users_router(container))
     app.include_router(catalog_router(container.catalog))
     app.include_router(player_router(container))
+    app.include_router(statistics_router(container.statistics))
     app.include_router(events_router(container))
     app.include_router(logs_router(container))
 

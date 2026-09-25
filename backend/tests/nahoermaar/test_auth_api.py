@@ -8,6 +8,7 @@ import logging
 import os
 from pathlib import Path
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from alembic import command
 from alembic.config import Config
@@ -31,6 +32,7 @@ from nahoermaar.listening.service import ListeningService
 from nahoermaar.observability import ContextFilter
 from nahoermaar.operations.logs import RecentLogBuffer
 from nahoermaar.player.session import CatalogRadioResolver, PlayerSessionManager
+from nahoermaar.statistics.service import StatisticsService
 from nahoermaar.users.service import (
     AccessService,
     AuthService,
@@ -80,6 +82,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
     catalog = CatalogService(units, ())
     player = PlayerSessionManager(units, bus, CatalogRadioResolver(catalog))
     listening = ListeningService(units, bus)
+    statistics = StatisticsService(units, ZoneInfo("UTC"), clock=lambda: NOW)
     logs = RecentLogBuffer()
     logs.addFilter(ContextFilter())
     root_logger = logging.getLogger()
@@ -100,11 +103,14 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
         catalog,
         player,
         listening,
+        statistics,
         logs,
     )
     app = create_app(application)
     assert "/api/events" in app.openapi()["paths"]
     assert "/api/logs" in app.openapi()["paths"]
+    assert "/api/statistics/overview" in app.openapi()["paths"]
+    assert "/api/statistics/users/{user_id}" in app.openapi()["paths"]
 
     async def scenario() -> None:
         await access.reconcile()
@@ -138,6 +144,18 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             session = await client.get("/api/auth/session")
             assert session.status_code == 200
             assert session.json()["role"] == "owner"
+
+            overview = await client.get("/api/statistics/overview")
+            assert overview.status_code == 200
+            assert overview.json()["totals"]["plays"] == 0
+            own_statistics = await client.get(
+                f"/api/statistics/users/{current.user.id}"
+            )
+            assert own_statistics.status_code == 200
+            assert own_statistics.json()["user_id"] == str(current.user.id)
+            own_profile = await client.get(f"/api/users/{current.user.id}")
+            assert own_profile.status_code == 200
+            assert own_profile.json()["id"] == str(current.user.id)
 
             player_state = await client.get("/api/player")
             assert player_state.status_code == 200
@@ -227,6 +245,15 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             access_state = await client.get("/api/access")
             assert access_state.status_code == 200
             assert access_state.json()["grants"][0]["discord"]["id"] == "7"
+            granted_user_id = access_state.json()["grants"][0]["id"]
+            granted_profile = await client.get(f"/api/users/{granted_user_id}")
+            assert granted_profile.status_code == 200
+
+            revoked = await client.delete("/api/access/7", headers=headers)
+            assert revoked.status_code == 200
+            hidden_profile = await client.get(f"/api/users/{granted_user_id}")
+            assert hidden_profile.status_code == 404
+            assert hidden_profile.json() == {"error": "profile_not_found"}
 
             process_logs = await client.get("/api/logs", params={"limit": 200})
             assert process_logs.status_code == 200

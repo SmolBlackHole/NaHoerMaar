@@ -23,6 +23,7 @@ from nahoermaar.users.domain import (
     PrimaryColor,
     TextSize,
     User,
+    UserId,
     UserProfile,
 )
 from nahoermaar.users.service import (
@@ -157,9 +158,10 @@ def router(application: Application) -> APIRouter:
         )
         return _user_view(user)
 
-    @routes.get("/users/{discord_id}")
-    async def profile(discord_id: str) -> UserView:
-        return _user_view(await application.auth.profile_by_discord_id(discord_id))
+    @routes.get("/users/{user_id}")
+    async def profile(request: Request, user_id: UUID) -> UserView:
+        authenticated(request)
+        return _user_view(await application.auth.profile(UserId(user_id)))
 
     @routes.get("/access")
     async def access_state(

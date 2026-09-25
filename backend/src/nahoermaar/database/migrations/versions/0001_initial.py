@@ -1059,6 +1059,12 @@ def upgrade() -> None:
         unique=False,
     )
     op.create_index(
+        "ix_track_requests_requested_at",
+        "track_requests",
+        ["requested_at"],
+        unique=False,
+    )
+    op.create_index(
         op.f("ix_track_requests_source_id"),
         "track_requests",
         ["source_id"],
@@ -1074,6 +1080,7 @@ def upgrade() -> None:
         sa.Column("request_id", sa.Uuid(), nullable=False),
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("audio_seconds", sa.Float(), nullable=False),
+        sa.Column("group_audio_seconds", sa.Float(), nullable=False),
         sa.Column("ended_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column(
             "end_reason",
@@ -1091,6 +1098,10 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "audio_seconds >= 0",
             name=op.f("ck_playback_records_audio_seconds_non_negative"),
+        ),
+        sa.CheckConstraint(
+            "group_audio_seconds >= 0 AND group_audio_seconds <= audio_seconds",
+            name=op.f("ck_playback_records_group_audio_seconds_valid"),
         ),
         sa.CheckConstraint(
             "(ended_at IS NULL AND end_reason IS NULL) OR "
@@ -1128,6 +1139,12 @@ def upgrade() -> None:
         "ix_playback_records_session_started",
         "playback_records",
         ["session_id", "started_at"],
+        unique=False,
+    )
+    op.create_index(
+        "ix_playback_records_started_at",
+        "playback_records",
+        ["started_at"],
         unique=False,
     )
     op.create_table(
@@ -1338,12 +1355,14 @@ def downgrade() -> None:
         op.f("ix_listener_presence_session_id"), table_name="listener_presence"
     )
     op.drop_table("listener_presence")
+    op.drop_index("ix_playback_records_started_at", table_name="playback_records")
     op.drop_index("ix_playback_records_session_started", table_name="playback_records")
     op.drop_index(op.f("ix_playback_records_session_id"), table_name="playback_records")
     op.drop_index(op.f("ix_playback_records_request_id"), table_name="playback_records")
     op.drop_table("playback_records")
     op.drop_index(op.f("ix_track_requests_track_id"), table_name="track_requests")
     op.drop_index(op.f("ix_track_requests_source_id"), table_name="track_requests")
+    op.drop_index("ix_track_requests_requested_at", table_name="track_requests")
     op.drop_index("ix_track_requests_session_requested", table_name="track_requests")
     op.drop_index(op.f("ix_track_requests_requested_by"), table_name="track_requests")
     op.drop_index(op.f("ix_track_requests_radio_run_id"), table_name="track_requests")

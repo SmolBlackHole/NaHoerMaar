@@ -231,7 +231,7 @@ class ListeningService:
             effective = (
                 audience
                 if audience.observed_at is not None
-                else AudienceState(command.session_id, 0, (), command.observed_at)
+                else AudienceState(command.session_id, 0, 0, (), command.observed_at)
             )
             async with self._units() as work:
                 result, changed = await ListeningRepository(
@@ -246,11 +246,12 @@ class ListeningService:
                 await work.commit()
         if changed:
             _LOGGER.debug(
-                "listening.playback_advanced session=%s playbacks=%d credited_playback_id=%s humans=%d audible_users=%d",
+                "listening.playback_advanced session=%s playbacks=%d credited_playback_id=%s humans=%d audible_humans=%d audible_users=%d",
                 command.session_id,
                 len(command.progress),
                 command.credited_playback_id,
                 effective.human_count,
+                effective.audible_human_count,
                 len(effective.audible_user_ids),
             )
             await self._bus.publish(
@@ -308,6 +309,7 @@ class ListeningService:
                 audience = AudienceState(
                     command.session_id,
                     len(humans),
+                    sum(not member.deafened for member in humans),
                     tuple(
                         AudienceMember(users[member.discord_id], member.deafened)
                         for member in humans
@@ -320,14 +322,16 @@ class ListeningService:
             self._audience = audience
             changed = (
                 previous.human_count != audience.human_count
+                or previous.audible_human_count != audience.audible_human_count
                 or previous.members != audience.members
                 or previous.observed_at is None
             )
         if changed:
             _LOGGER.info(
-                "listening.audience_changed session=%s humans=%d authorized_users=%d audible_users=%d",
+                "listening.audience_changed session=%s humans=%d audible_humans=%d authorized_users=%d audible_users=%d",
                 audience.session_id,
                 audience.human_count,
+                audience.audible_human_count,
                 len(audience.user_ids),
                 len(audience.audible_user_ids),
             )
@@ -360,6 +364,7 @@ class ListeningService:
             unavailable = AudienceState(
                 command.session_id,
                 previous.human_count,
+                previous.audible_human_count,
                 previous.members,
                 None,
             )

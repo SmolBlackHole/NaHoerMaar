@@ -9,6 +9,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
+from zoneinfo import ZoneInfo
 
 from .catalog.service import CatalogService
 
@@ -44,6 +45,7 @@ from .player.events import (
     UndoQueue,
 )
 from .player.session import CatalogRadioResolver, PlayerSessionManager
+from .statistics.service import StatisticsService
 from .users.domain import AccessEvent, User
 from .users.service import (
     AccessService,
@@ -79,6 +81,7 @@ class Application:
     catalog: CatalogService
     player: PlayerSessionManager
     listening: ListeningService
+    statistics: StatisticsService
     logs: RecentLogBuffer
 
     async def start(self) -> None:
@@ -131,6 +134,7 @@ def bootstrap(
     bus = MessageBus()
     player = PlayerSessionManager(units, bus, CatalogRadioResolver(catalog))
     listening = ListeningService(units, bus)
+    statistics = StatisticsService(units, ZoneInfo(settings.statistics_timezone))
     _register_handlers(bus, auth, access, player, listening)
     _LOGGER.info("application.configured")
     return Application(
@@ -142,6 +146,7 @@ def bootstrap(
         catalog,
         player,
         listening,
+        statistics,
         logs,
     )
 

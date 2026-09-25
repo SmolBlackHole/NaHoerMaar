@@ -232,6 +232,7 @@ def test_requests_become_plays_only_after_audio_and_progress_is_idempotent() -> 
             ObserveAudience(session_id, _voice(blocked=True), NOW)
         )
         assert audience.human_count == 2
+        assert audience.audible_human_count == 2
         assert audience.user_ids == frozenset({listener_id})
 
         playback_id = PlaybackRecordId(uuid4())
@@ -296,6 +297,7 @@ def test_requests_become_plays_only_after_audio_and_progress_is_idempotent() -> 
             first = await repository.playback(playback_id)
             assert first is not None
             assert first.audio_seconds == 8.0
+            assert first.group_audio_seconds == 8.0
             assert first.end_reason is PlaybackEndReason.FAILED
             assert await repository.playback(retry_id) is not None
             listeners = await repository.playback_listeners(playback_id)
@@ -529,6 +531,9 @@ def test_crossfade_advances_both_plays_but_credits_real_time_once() -> None:
             incoming = await repository.playback(incoming_id)
             assert outgoing is not None and outgoing.audio_seconds == 7.0
             assert incoming is not None and incoming.audio_seconds == 2.0
+            assert outgoing.group_audio_seconds == 5.0
+            assert incoming.group_audio_seconds == 2.0
+            assert outgoing.group_audio_seconds + incoming.group_audio_seconds == 7.0
             outgoing_listeners = await repository.playback_listeners(outgoing_id)
             incoming_listeners = await repository.playback_listeners(incoming_id)
             assert [

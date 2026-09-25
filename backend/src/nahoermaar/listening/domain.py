@@ -50,6 +50,7 @@ class PlaybackRecord:
     request_id: TrackRequestId
     started_at: datetime
     audio_seconds: float = 0.0
+    group_audio_seconds: float = 0.0
     ended_at: datetime | None = None
     end_reason: PlaybackEndReason | None = None
 
@@ -57,6 +58,14 @@ class PlaybackRecord:
         _aware(self.started_at, "Playback start")
         if not isfinite(self.audio_seconds) or self.audio_seconds < 0:
             raise ValueError("Playback audio time must be finite and non-negative.")
+        if (
+            not isfinite(self.group_audio_seconds)
+            or self.group_audio_seconds < 0
+            or self.group_audio_seconds > self.audio_seconds
+        ):
+            raise ValueError(
+                "Group audio time must be finite and within playback audio time."
+            )
         if (self.ended_at is None) != (self.end_reason is None):
             raise ValueError("Playback end time and reason must be supplied together.")
         if self.ended_at is not None:
@@ -121,10 +130,16 @@ class AudienceMember:
 class AudienceState:
     session_id: ListeningSessionId
     human_count: int
+    audible_human_count: int
     members: tuple[AudienceMember, ...]
     observed_at: datetime | None
 
     def __post_init__(self) -> None:
+        if (
+            self.human_count < 0
+            or not 0 <= self.audible_human_count <= self.human_count
+        ):
+            raise ValueError("Audience human counts must be consistent.")
         if self.human_count < len(self.members):
             raise ValueError("Audience cannot contain more known users than humans.")
         if len({member.user_id for member in self.members}) != len(self.members):

@@ -590,15 +590,7 @@ class AuthService:
     async def profile(self, user_id: UserId) -> User:
         async with self._units() as work:
             user = await UserRepository(work.session).get(user_id)
-        if user is None:
-            raise AuthError(AuthErrorCode.PROFILE_NOT_FOUND, 404)
-        return user
-
-    async def profile_by_discord_id(self, discord_id: str) -> User:
-        _validate_discord_id(discord_id)
-        async with self._units() as work:
-            user = await UserRepository(work.session).get_by_discord_id(discord_id)
-        if user is None:
+        if user is None or not user.has_access:
             raise AuthError(AuthErrorCode.PROFILE_NOT_FOUND, 404)
         return user
 

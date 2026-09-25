@@ -14,8 +14,10 @@ from nahoermaar.bootstrap import bootstrap
 from nahoermaar.catalog.service import CatalogService
 from nahoermaar.config import LogLevel
 from nahoermaar.messaging import MessageBus
+from nahoermaar.database.uow import UnitOfWork
 from nahoermaar.operations.logs import RecentLogBuffer
 from nahoermaar.users.domain import AccessRole
+from nahoermaar.users.repository import UserRepository
 
 
 def _table_names(connection: Connection) -> set[str]:
@@ -80,9 +82,10 @@ def test_application_start_migrates_empty_database_and_reconciles_operators(
             "browser_sessions",
             "access_events",
         } <= tables
-        owner = await application.access.require_admin(
-            (await application.auth.profile_by_discord_id("9")).id
-        )
+        async with UnitOfWork(application.database.sessions) as work:
+            configured_owner = await UserRepository(work.session).get_by_discord_id("9")
+        assert configured_owner is not None
+        owner = await application.access.require_admin(configured_owner.id)
         assert owner.role is AccessRole.OWNER
         await application.close()
 

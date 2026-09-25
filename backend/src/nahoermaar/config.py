@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dotenv import dotenv_values
 
@@ -106,6 +107,7 @@ class Settings:
     node_path: Path = Path("node")
     log_directory: Path = Path("data/logs")
     log_retention_days: int = 14
+    statistics_timezone: str = "UTC"
 
     @classmethod
     def load(
@@ -133,6 +135,13 @@ class Settings:
             ) from error
         if not 1 <= log_retention_days <= 365:
             raise ConfigurationError("LOG_RETENTION_DAYS must be between 1 and 365.")
+        statistics_timezone = values.get("STATISTICS_TIMEZONE", "UTC").strip()
+        try:
+            ZoneInfo(statistics_timezone)
+        except ZoneInfoNotFoundError as error:
+            raise ConfigurationError(
+                "STATISTICS_TIMEZONE must be a valid IANA timezone."
+            ) from error
         origin = values.get("PUBLIC_ORIGIN", "http://localhost:3000").strip()
         if origin.endswith("/"):
             origin = origin[:-1]
@@ -153,4 +162,5 @@ class Settings:
                 values.get("NAHORMAAR_LOG_DIR") or "data/logs"
             ).resolve(),
             log_retention_days=log_retention_days,
+            statistics_timezone=statistics_timezone,
         )

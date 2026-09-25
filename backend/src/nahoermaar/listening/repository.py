@@ -82,6 +82,7 @@ class _TrackRequestRow(Base):
             name="origin_owner",
         ),
         Index("ix_track_requests_session_requested", "session_id", "requested_at"),
+        Index("ix_track_requests_requested_at", "requested_at"),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
@@ -109,12 +110,17 @@ class _PlaybackRecordRow(Base):
     __table_args__ = (
         CheckConstraint("audio_seconds >= 0", name="audio_seconds_non_negative"),
         CheckConstraint(
+            "group_audio_seconds >= 0 AND group_audio_seconds <= audio_seconds",
+            name="group_audio_seconds_valid",
+        ),
+        CheckConstraint(
             "(ended_at IS NULL AND end_reason IS NULL) OR "
             "(ended_at IS NOT NULL AND end_reason IS NOT NULL "
             "AND ended_at >= started_at)",
             name="end_valid",
         ),
         Index("ix_playback_records_session_started", "session_id", "started_at"),
+        Index("ix_playback_records_started_at", "started_at"),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
@@ -126,6 +132,7 @@ class _PlaybackRecordRow(Base):
     )
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     audio_seconds: Mapped[float] = mapped_column(Float)
+    group_audio_seconds: Mapped[float] = mapped_column(Float)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     end_reason: Mapped[PlaybackEndReason | None] = mapped_column(_PLAYBACK_END_REASON)
 
@@ -258,6 +265,7 @@ class ListeningRepository:
                 request_id=record.request_id,
                 started_at=record.started_at,
                 audio_seconds=record.audio_seconds,
+                group_audio_seconds=record.group_audio_seconds,
                 ended_at=record.ended_at,
                 end_reason=record.end_reason,
             )
@@ -311,6 +319,15 @@ class ListeningRepository:
         if changed:
             await self._confirm_audience(session_id, audience, observed_at)
         if listener_delta > 0:
+            if audience.observed_at is not None and audience.observed_at > observed_at:
+                raise ListeningError(ListeningErrorCode.AUDIENCE_SESSION_MISMATCH)
+            if audience.audible_human_count > 0 and audience.observed_at is not None:
+                interval_start = observed_at - timedelta(seconds=listener_delta)
+                credited_from = max(interval_start, audience.observed_at)
+                by_id[credited_playback_id].group_audio_seconds += min(
+                    listener_delta,
+                    max(0.0, (observed_at - credited_from).total_seconds()),
+                )
             await self._credit_listeners(
                 session_id,
                 credited_playback_id,
@@ -463,6 +480,7 @@ class ListeningRepository:
         return AudienceState(
             session_id,
             len(rows),
+            sum(not row.deafened for row in rows),
             tuple(AudienceMember(UserId(row.user_id), row.deafened) for row in rows),
             None,
         )
@@ -548,6 +566,7 @@ def _playback(row: _PlaybackRecordRow) -> PlaybackRecord:
         TrackRequestId(row.request_id),
         row.started_at,
         row.audio_seconds,
+        row.group_audio_seconds,
         row.ended_at,
         row.end_reason,
     )

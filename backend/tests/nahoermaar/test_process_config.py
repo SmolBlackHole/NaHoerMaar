@@ -20,6 +20,7 @@ def test_settings_load_explicit_environment() -> None:
             "ACCESS_PATH": "config/access.toml",
             "NAHORMAAR_LOG_DIR": "var/logs",
             "LOG_RETENTION_DAYS": "21",
+            "STATISTICS_TIMEZONE": "Europe/Berlin",
         }
     )
 
@@ -32,6 +33,7 @@ def test_settings_load_explicit_environment() -> None:
     assert settings.auth.secure
     assert settings.log_directory == (Path.cwd() / "var/logs").resolve()
     assert settings.log_retention_days == 21
+    assert settings.statistics_timezone == "Europe/Berlin"
 
 
 def test_process_environment_overrides_dotenv(
@@ -63,6 +65,10 @@ def test_process_environment_overrides_dotenv(
         (
             {"DATABASE_URL": "postgres", "LOG_RETENTION_DAYS": "0"},
             "LOG_RETENTION_DAYS",
+        ),
+        (
+            {"DATABASE_URL": "postgres", "STATISTICS_TIMEZONE": "Mars/Olympus"},
+            "STATISTICS_TIMEZONE",
         ),
         (
             {
