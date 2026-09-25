@@ -5,12 +5,15 @@
 """Profile, appearance and ordinary access administration endpoints."""
 
 from datetime import datetime
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from nahoermaar.bootstrap import Application
+from nahoermaar.listening.domain import PlaybackEndReason
+from nahoermaar.statistics.service import StatisticsPeriod
 from nahoermaar.users.domain import (
     AccessAction,
     AccessEvent,
@@ -33,8 +36,10 @@ from nahoermaar.users.service import (
     SaveAppearance,
     SaveProfile,
 )
+from nahoermaar.views.profile import ProfileReport
 
 from .middleware import authenticated
+from .statistics import StatisticsView, statistics_view
 
 
 class DiscordView(BaseModel):
@@ -77,6 +82,26 @@ class UserView(BaseModel):
     created_at: datetime
     updated_at: datetime
     last_login_at: datetime | None
+
+
+class RecentTrackView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    playback_id: UUID
+    track_id: UUID
+    title: str
+    artist_names: tuple[str, ...]
+    artwork_url: str | None
+    duration_seconds: float | None
+    started_at: datetime
+    last_heard_at: datetime
+    audio_seconds: float
+    end_reason: PlaybackEndReason | None
+
+
+class ProfilePageView(UserView):
+    statistics: StatisticsView
+    recent_tracks: tuple[RecentTrackView, ...]
 
 
 class ProfileUpdate(BaseModel):
@@ -141,26 +166,35 @@ def router(application: Application) -> APIRouter:
     routes = APIRouter(prefix="/api", tags=["users"])
 
     @routes.get("/users/me")
-    async def own_profile(request: Request) -> UserView:
-        return _user_view(
-            await application.auth.profile(authenticated(request).user.id)
+    async def own_profile(
+        request: Request,
+        period: Annotated[StatisticsPeriod, Query()] = StatisticsPeriod.DAYS_30,
+    ) -> ProfilePageView:
+        return _profile_page_view(
+            await application.profiles.get(authenticated(request).user.id, period)
         )
 
     @routes.put("/users/me/profile")
-    async def update_profile(request: Request, body: ProfileUpdate) -> UserView:
+    async def update_profile(
+        request: Request,
+        body: ProfileUpdate,
+    ) -> ProfilePageView:
         current = authenticated(request)
-        user = await application.bus.execute(
+        await application.bus.execute(
             SaveProfile(
                 current.user.id,
                 UserProfile(body.display_name.strip(), body.pixabot),
             )
         )
-        return _user_view(user)
+        return _profile_page_view(await application.profiles.get(current.user.id))
 
     @routes.put("/users/me/appearance")
-    async def update_appearance(request: Request, body: AppearanceUpdate) -> UserView:
+    async def update_appearance(
+        request: Request,
+        body: AppearanceUpdate,
+    ) -> ProfilePageView:
         current = authenticated(request)
-        user = await application.bus.execute(
+        await application.bus.execute(
             SaveAppearance(
                 current.user.id,
                 Appearance(
@@ -174,12 +208,18 @@ def router(application: Application) -> APIRouter:
                 ),
             )
         )
-        return _user_view(user)
+        return _profile_page_view(await application.profiles.get(current.user.id))
 
     @routes.get("/users/{user_id}")
-    async def profile(request: Request, user_id: UUID) -> UserView:
+    async def profile(
+        request: Request,
+        user_id: UUID,
+        period: Annotated[StatisticsPeriod, Query()] = StatisticsPeriod.DAYS_30,
+    ) -> ProfilePageView:
         authenticated(request)
-        return _user_view(await application.auth.profile(UserId(user_id)))
+        return _profile_page_view(
+            await application.profiles.get(UserId(user_id), period)
+        )
 
     @routes.get("/access")
     async def access_state(
@@ -254,6 +294,53 @@ def _user_view(user: User) -> UserView:
         created_at=user.created_at,
         updated_at=user.updated_at,
         last_login_at=user.last_login_at,
+    )
+
+
+def _profile_page_view(report: ProfileReport) -> ProfilePageView:
+    identity = report.identity
+    return ProfilePageView(
+        id=identity.user_id,
+        discord=DiscordView(
+            id=identity.discord.discord_id,
+            username=identity.discord.username,
+            avatar_hash=identity.discord.avatar_hash,
+            synced_at=identity.discord.synced_at,
+        ),
+        profile=ProfileView(
+            display_name=identity.profile.display_name,
+            pixabot=identity.profile.pixabot,
+            complete=identity.profile.complete,
+        ),
+        appearance=AppearanceView(
+            mode=identity.appearance.mode,
+            artwork_colors=identity.appearance.artwork_colors,
+            primary_color=identity.appearance.primary_color,
+            neutral_color=identity.appearance.neutral_color,
+            font_family=identity.appearance.font_family,
+            icon_set=identity.appearance.icon_set,
+            text_size=identity.appearance.text_size,
+        ),
+        role=identity.role,
+        created_at=identity.created_at,
+        updated_at=identity.updated_at,
+        last_login_at=identity.last_login_at,
+        statistics=statistics_view(report.statistics),
+        recent_tracks=tuple(
+            RecentTrackView(
+                playback_id=track.playback_id,
+                track_id=track.track_id,
+                title=track.title,
+                artist_names=track.artist_names,
+                artwork_url=track.artwork_url,
+                duration_seconds=track.duration_seconds,
+                started_at=track.started_at,
+                last_heard_at=track.last_heard_at,
+                audio_seconds=track.audio_seconds,
+                end_reason=track.end_reason,
+            )
+            for track in report.recent_tracks
+        ),
     )
 
 

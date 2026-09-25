@@ -40,6 +40,7 @@ from nahoermaar.users.service import (
     ProvidedDiscordIdentity,
     SESSION_COOKIE,
 )
+from nahoermaar.views.profile import ProfileView
 
 NOW = datetime(2026, 9, 24, 12, tzinfo=UTC)
 ROOT = Path(__file__).parents[3]
@@ -92,6 +93,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
         access,
         clock=lambda: NOW,
     )
+    profiles = ProfileView(units, statistics)
     logs = RecentLogBuffer()
     logs.addFilter(ContextFilter())
     root_logger = logging.getLogger()
@@ -113,6 +115,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
         player,
         listening,
         statistics,
+        profiles,
         logs,
     )
     app = create_app(application)
@@ -165,6 +168,11 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             own_profile = await client.get(f"/api/users/{current.user.id}")
             assert own_profile.status_code == 200
             assert own_profile.json()["id"] == str(current.user.id)
+            assert own_profile.json()["statistics"]["user_id"] == str(current.user.id)
+            assert own_profile.json()["recent_tracks"] == []
+            current_profile = await client.get("/api/users/me")
+            assert current_profile.status_code == 200
+            assert current_profile.json() == own_profile.json()
 
             player_state = await client.get("/api/player")
             assert player_state.status_code == 200
@@ -245,6 +253,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             assert profile.status_code == 200
             assert profile.json()["profile"]["display_name"] == "Local owner"
             assert profile.json()["discord"]["username"] == "Owner"
+            assert profile.json()["statistics"]["user_id"] == str(current.user.id)
 
             operator = await client.put("/api/access/9", headers=headers)
             assert operator.status_code == 409

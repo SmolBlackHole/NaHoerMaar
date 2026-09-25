@@ -28,6 +28,7 @@ from nahoermaar.users.domain import (
 )
 from nahoermaar.users.repository import UserRepository
 from nahoermaar.users.service import AccessService, Operators
+from nahoermaar.views.profile import ProfileView
 
 ROOT = Path(__file__).parents[3]
 NOW = datetime(2026, 9, 25, 12, tzinfo=UTC)
@@ -231,6 +232,7 @@ def test_statistics_project_shared_and_personal_facts_without_double_counting() 
             AccessService(units, Operators("9", ())),
             clock=lambda: NOW,
         )
+        profiles = ProfileView(units, service)
         overview = await service.overview(StatisticsPeriod.DAYS_7)
         personal = await service.user(listener_id, StatisticsPeriod.DAYS_7)
 
@@ -263,8 +265,26 @@ def test_statistics_project_shared_and_personal_facts_without_double_counting() 
         assert personal.top_listeners == ()
         assert personal.daily_activity[0].listening_seconds == 140.0
 
+        profile = await profiles.get(listener_id, StatisticsPeriod.DAYS_7)
+        assert profile.identity.user_id == listener_id
+        assert profile.identity.discord.username == "Listener"
+        assert profile.identity.profile.display_name == "Listener"
+        assert profile.identity.role is AccessRole.USER
+        assert profile.statistics.totals == personal.totals
+        assert profile.statistics.coverage == personal.coverage
+        assert [track.title for track in profile.recent_tracks] == [
+            "Second track",
+            "First track",
+        ]
+        assert profile.recent_tracks[0].artist_names == ("Shared artist",)
+        assert profile.recent_tracks[0].audio_seconds == 40.0
+        assert profile.recent_tracks[1].audio_seconds == 100.0
+
         with pytest.raises(AuthError) as caught:
             await service.user(blocked_id, StatisticsPeriod.ALL)
+        assert caught.value.status == 404
+        with pytest.raises(AuthError) as caught:
+            await profiles.get(blocked_id)
         assert caught.value.status == 404
 
     try:

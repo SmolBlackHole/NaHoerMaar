@@ -110,7 +110,7 @@ def router(statistics: StatisticsService) -> APIRouter:
         period: Annotated[StatisticsPeriod, Query()] = StatisticsPeriod.DAYS_7,
     ) -> StatisticsView:
         authenticated(request)
-        return _view(await statistics.overview(period))
+        return statistics_view(await statistics.overview(period))
 
     @routes.get("/users/{user_id}")
     async def user_statistics(
@@ -119,12 +119,12 @@ def router(statistics: StatisticsService) -> APIRouter:
         period: Annotated[StatisticsPeriod, Query()] = StatisticsPeriod.DAYS_30,
     ) -> StatisticsView:
         authenticated(request)
-        return _view(await statistics.user(UserId(user_id), period))
+        return statistics_view(await statistics.user(UserId(user_id), period))
 
     return routes
 
 
-def _view(report: StatisticsReport) -> StatisticsView:
+def statistics_view(report: StatisticsReport) -> StatisticsView:
     totals = report.totals
     return StatisticsView(
         user_id=report.user_id,

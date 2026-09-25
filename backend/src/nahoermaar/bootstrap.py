@@ -84,6 +84,7 @@ from .users.service import (
     UserLoggedIn,
     UserProfileChanged,
 )
+from .views.profile import ProfileView
 
 _LOGGER = logging.getLogger(__name__)
 type AsyncCloser = Callable[[], Awaitable[None]]
@@ -114,6 +115,7 @@ class Application:
     player: PlayerSessionManager
     listening: ListeningService
     statistics: StatisticsService
+    profiles: ProfileView
     logs: RecentLogBuffer
     gateway: DiscordGateway | None = None
     playback: PlaybackCoordinator | None = None
@@ -248,6 +250,7 @@ def bootstrap(
         ZoneInfo(settings.statistics_timezone),
         access,
     )
+    profiles = ProfileView(units, statistics)
 
     async def summon(discord_id: str, channel_id: int, correlation_id: UUID) -> None:
         user = await access.require_discord_access(discord_id)
@@ -303,6 +306,7 @@ def bootstrap(
         player,
         listening,
         statistics,
+        profiles,
         logs,
         gateway,
         playback,
