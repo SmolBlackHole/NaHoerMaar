@@ -42,7 +42,16 @@ class MessageContext:
 
     message_id: UUID = field(default_factory=uuid4)
     correlation_id: UUID = field(default_factory=current_correlation_id)
+    causation_id: UUID | None = None
     actor_id: UUID | None = field(default_factory=current_actor_id)
+
+    def child(self) -> MessageContext:
+        """Create context for a message caused directly by this message."""
+        return MessageContext(
+            correlation_id=self.correlation_id,
+            causation_id=self.message_id,
+            actor_id=self.actor_id,
+        )
 
 
 class HandlerRegistrationError(RuntimeError):
@@ -172,6 +181,7 @@ def _log_context(context: MessageContext) -> LogContext:
     return LogContext(
         message_id=context.message_id,
         correlation_id=context.correlation_id,
+        causation_id=context.causation_id,
         actor_id=context.actor_id,
     )
 

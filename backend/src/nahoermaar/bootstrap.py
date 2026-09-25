@@ -299,13 +299,6 @@ def bootstrap(
     )
 
 
-def _event_context(context: MessageContext) -> MessageContext:
-    return MessageContext(
-        correlation_id=context.correlation_id,
-        actor_id=context.actor_id,
-    )
-
-
 def _register_handlers(
     bus: MessageBus,
     auth: AuthService,
@@ -327,7 +320,7 @@ def _register_handlers(
             error=command.error,
             previous_session=command.previous_session,
         )
-        await bus.publish(UserLoggedIn(result.user.id), _event_context(context))
+        await bus.publish(UserLoggedIn(result.user.id), context.child())
         return result
 
     async def logout(command: Logout, _context: MessageContext) -> None:
@@ -338,7 +331,7 @@ def _register_handlers(
     ) -> tuple[AccessEvent, ...]:
         changes = await access.reconcile()
         for change in changes:
-            await bus.publish(UserAccessChanged(change), _event_context(context))
+            await bus.publish(UserAccessChanged(change), context.child())
         return changes
 
     async def grant(
@@ -346,7 +339,7 @@ def _register_handlers(
     ) -> AccessEvent | None:
         change = await access.grant(command.actor_id, command.discord_id)
         if change is not None:
-            await bus.publish(UserAccessChanged(change), _event_context(context))
+            await bus.publish(UserAccessChanged(change), context.child())
         return change
 
     async def revoke(
@@ -354,17 +347,17 @@ def _register_handlers(
     ) -> AccessEvent | None:
         change = await access.revoke(command.actor_id, command.discord_id)
         if change is not None:
-            await bus.publish(UserAccessChanged(change), _event_context(context))
+            await bus.publish(UserAccessChanged(change), context.child())
         return change
 
     async def save_profile(command: SaveProfile, context: MessageContext) -> User:
         user = await auth.save_profile(command.user_id, command.profile)
-        await bus.publish(UserProfileChanged(user.id), _event_context(context))
+        await bus.publish(UserProfileChanged(user.id), context.child())
         return user
 
     async def save_appearance(command: SaveAppearance, context: MessageContext) -> User:
         user = await auth.save_appearance(command.user_id, command.appearance)
-        await bus.publish(UserProfileChanged(user.id), _event_context(context))
+        await bus.publish(UserProfileChanged(user.id), context.child())
         return user
 
     bus.register_command(BeginLogin, begin_login)

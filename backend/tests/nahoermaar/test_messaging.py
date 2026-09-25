@@ -51,6 +51,18 @@ def test_command_has_exactly_one_awaited_handler_and_propagates_context() -> Non
         bus.register_command(Add, handle)
 
 
+def test_child_context_preserves_chain_and_records_direct_cause() -> None:
+    actor_id = uuid4()
+    parent = MessageContext(actor_id=actor_id)
+
+    child = parent.child()
+
+    assert child.message_id != parent.message_id
+    assert child.correlation_id == parent.correlation_id
+    assert child.causation_id == parent.message_id
+    assert child.actor_id == actor_id
+
+
 def test_command_errors_are_not_swallowed() -> None:
     bus = MessageBus()
 
@@ -123,5 +135,6 @@ def test_bus_logs_correlated_duration_and_unexpected_failure() -> None:
     assert "error_code=RuntimeError" in failed.message
     assert failed.request_id == request_id
     assert failed.correlation_id == correlation_id
+    assert failed.causation_id is None
     assert failed.actor_id == actor_id
     assert failed.message_id is not None

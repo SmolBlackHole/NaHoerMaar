@@ -293,10 +293,7 @@ class PlayerSession:
         try:
             await self._bus.publish(
                 event,
-                MessageContext(
-                    correlation_id=context.correlation_id,
-                    actor_id=context.actor_id,
-                ),
+                context.child(),
             )
         except Exception:
             _LOGGER.exception(
@@ -476,7 +473,7 @@ class PlayerSessionManager:
         try:
             await self._bus.execute(
                 command,
-                MessageContext(correlation_id=context.correlation_id),
+                context.child(),
             )
         except PlayerError as error:
             if error.code is not PlayerErrorCode.RADIO_CONFLICT:

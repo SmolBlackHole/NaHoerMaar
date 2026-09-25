@@ -238,7 +238,7 @@ class ListeningService:
             )
             await self._bus.publish(
                 PlaybackStarted(result.id, result.session_id, result.request_id),
-                _event_context(context),
+                context.child(),
             )
         return result
 
@@ -283,7 +283,7 @@ class ListeningService:
                     command.progress,
                     command.credited_playback_id,
                 ),
-                _event_context(context),
+                context.child(),
             )
         return result
 
@@ -311,7 +311,7 @@ class ListeningService:
             )
             await self._bus.publish(
                 PlaybackEnded(result.id, result.session_id, command.reason),
-                _event_context(context),
+                context.child(),
             )
         return result
 
@@ -365,7 +365,7 @@ class ListeningService:
                     audience.user_ids,
                     audience.audible_user_ids,
                 ),
-                _event_context(context),
+                context.child(),
             )
         return audience
 
@@ -401,13 +401,6 @@ class ListeningService:
             )
             await self._bus.publish(
                 AudienceUnavailable(command.session_id),
-                _event_context(context),
+                context.child(),
             )
         return unavailable
-
-
-def _event_context(context: MessageContext) -> MessageContext:
-    return MessageContext(
-        correlation_id=context.correlation_id,
-        actor_id=context.actor_id,
-    )

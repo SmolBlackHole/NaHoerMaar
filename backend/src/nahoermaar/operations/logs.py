@@ -26,6 +26,7 @@ class LogEntry:
     request_id: str | None
     message_id: UUID | None
     correlation_id: UUID | None
+    causation_id: UUID | None
     actor_id: UUID | None
 
 
@@ -52,6 +53,7 @@ class RecentLogBuffer(logging.Handler):
                 request_id=_text_field(record, "request_id"),
                 message_id=_uuid_field(record, "message_id"),
                 correlation_id=_uuid_field(record, "correlation_id"),
+                causation_id=_uuid_field(record, "causation_id"),
                 actor_id=_uuid_field(record, "actor_id"),
             )
             with self._entry_lock:
@@ -64,6 +66,7 @@ class RecentLogBuffer(logging.Handler):
                     entry.request_id,
                     entry.message_id,
                     entry.correlation_id,
+                    entry.causation_id,
                     entry.actor_id,
                 )
                 self._next_id += 1

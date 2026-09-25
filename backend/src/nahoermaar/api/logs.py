@@ -27,6 +27,7 @@ class LogEntryView(BaseModel):
     request_id: str | None
     message_id: UUID | None
     correlation_id: UUID | None
+    causation_id: UUID | None
     actor_id: UUID | None
 
 
@@ -67,5 +68,6 @@ def _entry_view(entry: LogEntry) -> LogEntryView:
         request_id=entry.request_id,
         message_id=entry.message_id,
         correlation_id=entry.correlation_id,
+        causation_id=entry.causation_id,
         actor_id=entry.actor_id,
     )

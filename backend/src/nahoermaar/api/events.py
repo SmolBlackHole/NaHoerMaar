@@ -27,6 +27,7 @@ _LOGGER = logging.getLogger(__name__)
 class ChangeView(View):
     message_id: UUID
     correlation_id: UUID
+    causation_id: UUID | None
     operation_id: UUID
     action: str
     outcome: OutcomeView
@@ -129,6 +130,7 @@ async def event_stream(
                     data=ChangeView(
                         message_id=update.context.message_id,
                         correlation_id=update.context.correlation_id,
+                        causation_id=update.context.causation_id,
                         operation_id=update.event.operation_id,
                         action=update.event.outcome.action.value,
                         outcome=OutcomeView(

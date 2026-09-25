@@ -24,6 +24,7 @@ from .operations.logs import RecentLogBuffer
 _REQUEST_ID: ContextVar[str | None] = ContextVar("request_id", default=None)
 _MESSAGE_ID: ContextVar[UUID | None] = ContextVar("message_id", default=None)
 _CORRELATION_ID: ContextVar[UUID | None] = ContextVar("correlation_id", default=None)
+_CAUSATION_ID: ContextVar[UUID | None] = ContextVar("causation_id", default=None)
 _ACTOR_ID: ContextVar[UUID | None] = ContextVar("actor_id", default=None)
 _OWNED_HANDLERS: set[logging.Handler] = set()
 _URL_QUERY = re.compile(r'(https?://[^\s"?]+)\?[^\s"]+')
@@ -40,6 +41,7 @@ class LogContext:
     request_id: str | None = None
     message_id: UUID | None = None
     correlation_id: UUID | None = None
+    causation_id: UUID | None = None
     actor_id: UUID | None = None
 
 
@@ -53,6 +55,9 @@ class ContextFilter(logging.Filter):
         record.message_id = _context_value(record, "message_id", _MESSAGE_ID.get())
         record.correlation_id = _context_value(
             record, "correlation_id", _CORRELATION_ID.get()
+        )
+        record.causation_id = _context_value(
+            record, "causation_id", _CAUSATION_ID.get()
         )
         record.actor_id = _context_value(record, "actor_id", _ACTOR_ID.get())
         return True
@@ -72,6 +77,11 @@ def log_context(context: LogContext) -> Generator[None]:
         if context.correlation_id is not None
         else None
     )
+    causation_token = (
+        _CAUSATION_ID.set(context.causation_id)
+        if context.causation_id is not None
+        else None
+    )
     actor_token = (
         _ACTOR_ID.set(context.actor_id) if context.actor_id is not None else None
     )
@@ -80,6 +90,8 @@ def log_context(context: LogContext) -> Generator[None]:
     finally:
         if actor_token is not None:
             _ACTOR_ID.reset(actor_token)
+        if causation_token is not None:
+            _CAUSATION_ID.reset(causation_token)
         if correlation_token is not None:
             _CORRELATION_ID.reset(correlation_token)
         if message_token is not None:
@@ -142,7 +154,8 @@ def configure_logging(
     formatter = logging.Formatter(
         "%(asctime)sZ %(levelname)s %(name)s "
         "request_id=%(request_id)s message_id=%(message_id)s "
-        "correlation_id=%(correlation_id)s actor_id=%(actor_id)s %(message)s",
+        "correlation_id=%(correlation_id)s causation_id=%(causation_id)s "
+        "actor_id=%(actor_id)s %(message)s",
         datefmt="%Y-%m-%dT%H:%M:%S",
     )
     formatter.converter = _utc_time

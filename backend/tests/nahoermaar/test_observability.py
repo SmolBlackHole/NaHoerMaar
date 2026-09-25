@@ -27,12 +27,14 @@ def test_recent_logs_are_bounded_sanitized_and_correlated() -> None:
     logger.propagate = False
     logger.setLevel(logging.INFO)
     correlation_id = uuid4()
+    causation_id = uuid4()
     actor_id = uuid4()
 
     with log_context(
         LogContext(
             request_id="request-1",
             correlation_id=correlation_id,
+            causation_id=causation_id,
             actor_id=actor_id,
         )
     ):
@@ -45,6 +47,7 @@ def test_recent_logs_are_bounded_sanitized_and_correlated() -> None:
     assert entries[0].source == "test.observability"
     assert entries[0].request_id == "request-1"
     assert entries[0].correlation_id == correlation_id
+    assert entries[0].causation_id == causation_id
     assert entries[0].actor_id == actor_id
     assert entries[1].actor_id == actor_id
     assert logs.entries(after=entries[0].id) == (entries[1],)

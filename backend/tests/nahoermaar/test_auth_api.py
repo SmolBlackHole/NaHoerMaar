@@ -213,6 +213,8 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             assert change.id == "1"
             assert isinstance(change.data, ChangeView)
             assert change.data.operation_id == operation_id
+            assert change.data.causation_id is not None
+            assert change.data.causation_id != change.data.message_id
             assert change.data.state.queue[0].request.requested_by == current.user.id
             replayed = await client.post(
                 "/api/player/queue",
