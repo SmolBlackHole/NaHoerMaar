@@ -4,6 +4,7 @@
 
 import asyncio
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import cast
 from uuid import UUID, uuid4
@@ -29,11 +30,14 @@ from nahoermaar.player.domain import (
     ListeningSessionId,
     PlaybackCheckpoint,
     PlaybackIntent,
+    PlayerAction,
     PlayerState,
     Queue,
     QueueEntry,
     QueueEntryId,
     RequestOrigin,
+    MutationOutcome,
+    OperationId,
     TrackRequest,
     TrackRequestId,
     VoiceConnectionPhase,
@@ -41,6 +45,7 @@ from nahoermaar.player.domain import (
 from nahoermaar.player.events import (
     CompletePlayback,
     FailPlayback,
+    PlayerChanged,
     VoiceConnectionChanged,
 )
 from nahoermaar.player.playback import (
@@ -65,12 +70,13 @@ NOW = datetime(2026, 9, 25, 12, tzinfo=UTC)
 
 
 class RecordingBus(MessageBus):
-    __slots__ = ("commands", "events")
+    __slots__ = ("commands", "contexts", "events")
 
     def __init__(self) -> None:
         super().__init__()
         self.commands: list[object] = []
         self.events: list[Event] = []
+        self.contexts: list[tuple[object, MessageContext | None]] = []
 
     async def execute[ResultT](
         self,
@@ -78,6 +84,7 @@ class RecordingBus(MessageBus):
         context: MessageContext | None = None,
     ) -> ResultT:
         self.commands.append(command)
+        self.contexts.append((command, context))
         return cast(ResultT, None)
 
     async def publish(
@@ -86,6 +93,7 @@ class RecordingBus(MessageBus):
         context: MessageContext | None = None,
     ) -> None:
         self.events.append(event)
+        self.contexts.append((event, context))
         await super().publish(event, context)
 
 
@@ -387,6 +395,14 @@ async def _wait_for_command(
     return await asyncio.wait_for(wait(), timeout=1)
 
 
+def _context_for(bus: RecordingBus, message: object) -> MessageContext:
+    for candidate, context in bus.contexts:
+        if candidate is message:
+            assert context is not None
+            return context
+    raise AssertionError(f"No context recorded for {type(message).__name__}.")
+
+
 def _coordinator(
     state: PlayerState,
     tracks: tuple[Track, ...],
@@ -466,6 +482,76 @@ def test_audio_facts_start_on_first_frame_and_next_track_is_preloaded() -> None:
         finally:
             await coordinator.close()
         assert transport.closed
+
+    asyncio.run(scenario())
+
+
+def test_player_change_context_reaches_async_audio_commands() -> None:
+    async def scenario() -> None:
+        tracks = (_track(1),)
+        playing, _current_request = _playing_state(tracks)
+        idle = replace(
+            playing,
+            session=replace(playing.session, channel_id=None),
+            checkpoint=PlaybackCheckpoint(playing.session.id),
+        )
+        player = StaticPlayer(idle)
+        transport = FakeTransport()
+        bus = RecordingBus()
+        coordinator = PlaybackCoordinator(
+            player,
+            StaticCatalog(tracks),
+            StaticListening(),
+            bus,
+            transport,
+        )
+        parent = MessageContext(actor_id=UserId(uuid4()))
+        try:
+            await coordinator.start()
+            player.state = playing
+            await coordinator.player_changed(
+                PlayerChanged(
+                    playing.session.id,
+                    playing.session.revision,
+                    OperationId(uuid4()),
+                    MutationOutcome(PlayerAction.PLAYBACK_PLAYED),
+                ),
+                parent,
+            )
+            await asyncio.wait_for(transport.play_ready.wait(), timeout=1)
+            assert transport.notify is not None
+            assert transport.attempt_id is not None
+            transport.notify(AudioStarted(transport.attempt_id, 0.0))
+
+            begin = await _wait_for_command(bus, BeginPlayback)
+            begin_context = _context_for(bus, begin)
+            assert begin_context.correlation_id == parent.correlation_id
+            assert begin_context.causation_id == parent.message_id
+            assert begin_context.actor_id == parent.actor_id
+
+            transport.notify(
+                AudioCompleted(
+                    transport.attempt_id,
+                    12.0,
+                    AudioEndReason.NATURAL,
+                )
+            )
+            complete = await _wait_for_command(bus, CompletePlayback)
+            assert isinstance(complete, CompletePlayback)
+            complete_context = _context_for(bus, complete)
+            assert complete_context.correlation_id == parent.correlation_id
+            assert complete_context.causation_id == parent.message_id
+            assert complete_context.actor_id == parent.actor_id
+            assert complete.operation_id == complete_context.message_id
+
+            for command in bus.commands:
+                if isinstance(command, (AdvancePlayback, FinishPlayback)):
+                    context = _context_for(bus, command)
+                    assert context.correlation_id == parent.correlation_id
+                    assert context.causation_id == parent.message_id
+                    assert context.actor_id == parent.actor_id
+        finally:
+            await coordinator.close()
 
     asyncio.run(scenario())
 
