@@ -170,6 +170,11 @@ class ListeningService:
         self._audience: AudienceState | None = None
 
     @property
+    def operational(self) -> bool:
+        """Return whether listening state has been restored for the session."""
+        return self._audience is not None
+
+    @property
     def audience(self) -> AudienceState:
         audience = self._audience
         if audience is None:

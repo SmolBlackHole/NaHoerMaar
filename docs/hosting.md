@@ -30,9 +30,10 @@ or crossfade.
 The `database` service runs PostgreSQL 17 and owns the durable
 `nahormaar-postgres` volume. The `backend` service owns the Discord connection
 and shared player, and reaches PostgreSQL over the private Compose network. The
-backend is deliberately not published on a host port. Its `/healthz` endpoint
-reports whether HTTP is alive, while `/readyz` becomes healthy only after the
-database, Discord and the engine have started.
+backend is deliberately not published on a host port. Its `/health` endpoint
+reports whether HTTP is alive. `/ready` checks PostgreSQL, the restored player
+and listening state, and the Discord gateway and playback workers when Discord
+is enabled. Its response names the component that is not ready.
 
 The `frontend` service serves Nuxt on host loopback at port 3000 by default. It
 forwards browser API requests to the backend over the Compose network. Your

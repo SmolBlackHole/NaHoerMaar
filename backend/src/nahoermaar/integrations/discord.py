@@ -1098,6 +1098,16 @@ class DiscordGateway(discord.Client):
             )
         )
 
+    @property
+    def operational(self) -> bool:
+        """Return whether the configured gateway task is connected and alive."""
+        return (
+            self._gateway_task is not None
+            and not self._gateway_task.done()
+            and self.is_ready()
+            and not self.is_closed()
+        )
+
     async def open(self) -> None:
         if self._gateway_task is not None:
             return

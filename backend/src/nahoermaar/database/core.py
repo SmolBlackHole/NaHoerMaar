@@ -62,6 +62,11 @@ class Database:
         """Return the shared factory for explicit database transactions."""
         return self._sessions
 
+    async def ping(self) -> None:
+        """Verify that PostgreSQL accepts a connection and a trivial query."""
+        async with self._engine.connect() as connection:
+            await connection.exec_driver_sql("SELECT 1")
+
     async def close(self) -> None:
         """Release connections owned by this database instance."""
         started_at = perf_counter()

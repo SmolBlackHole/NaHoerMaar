@@ -336,6 +336,11 @@ class PlayerSessionManager:
         return self._events
 
     @property
+    def operational(self) -> bool:
+        """Return whether the durable player session has been restored."""
+        return self._session is not None
+
+    @property
     def state(self) -> PlayerState:
         session = self._session
         if session is None:

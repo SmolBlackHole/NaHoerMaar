@@ -311,6 +311,17 @@ class PlaybackCoordinator:
         self._expected_stops: set[UUID] = set()
         self._accepting = False
 
+    @property
+    def operational(self) -> bool:
+        """Return whether both long-lived coordinator tasks are running."""
+        return (
+            self._accepting
+            and self._worker is not None
+            and not self._worker.done()
+            and self._ticker is not None
+            and not self._ticker.done()
+        )
+
     async def start(self) -> None:
         if self._accepting:
             return

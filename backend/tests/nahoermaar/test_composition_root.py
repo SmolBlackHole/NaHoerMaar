@@ -6,13 +6,16 @@ import asyncio
 import os
 from pathlib import Path
 
+import httpx
 import pytest
 from sqlalchemy import Connection, inspect
+from sqlalchemy.exc import SQLAlchemyError
 
 from nahoermaar.api.app import create_app
 from nahoermaar.bootstrap import bootstrap
 from nahoermaar.catalog.service import CatalogService
 from nahoermaar.config import LogLevel
+from nahoermaar.database.core import Database
 from nahoermaar.messaging import MessageBus
 from nahoermaar.database.uow import UnitOfWork
 from nahoermaar.operations.logs import RecentLogBuffer
@@ -62,6 +65,7 @@ def test_bootstrap_loads_settings_and_composes_auth(
 
 def test_application_start_migrates_empty_database_and_reconciles_operators(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     access_path = tmp_path / "access.toml"
     access_path.write_text('owner_id = "9"\nadmin_ids = ["8"]\n', encoding="utf-8")
@@ -74,6 +78,42 @@ def test_application_start_migrates_empty_database_and_reconciles_operators(
 
     async def scenario() -> None:
         await application.start()
+        api = create_app(application)
+        transport = httpx.ASGITransport(app=api)
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://localhost:3000",
+        ) as client:
+            assert (await client.get("/health")).json() == {"status": "alive"}
+            assert (await client.get("/ready")).json() == {
+                "status": "ready",
+                "checks": {
+                    "database": "ready",
+                    "player": "ready",
+                    "listening": "ready",
+                    "discord": "disabled",
+                    "playback": "disabled",
+                },
+            }
+
+            async def unavailable(_database: Database) -> None:
+                raise SQLAlchemyError("database unavailable")
+
+            monkeypatch.setattr(Database, "ping", unavailable)
+            unavailable_response = await client.get("/ready")
+            assert unavailable_response.status_code == 503
+            assert unavailable_response.json() == {
+                "status": "unavailable",
+                "checks": {
+                    "database": "unavailable",
+                    "player": "ready",
+                    "listening": "ready",
+                    "discord": "disabled",
+                    "playback": "disabled",
+                },
+            }
+            assert (await client.get("/health")).json() == {"status": "alive"}
+
         async with application.database.engine.connect() as connection:
             tables = await connection.run_sync(_table_names)
         assert {

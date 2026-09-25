@@ -4,11 +4,14 @@
 
 """FastAPI application assembled around the composition root."""
 
+import asyncio
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import SQLAlchemyError
 
 from nahoermaar.catalog.service import CatalogError
 from nahoermaar.bootstrap import Application, bootstrap
@@ -23,6 +26,8 @@ from .middleware import install_auth_middleware
 from .player import router as player_router
 from .statistics import router as statistics_router
 from .users import router as users_router
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def create_app(application: Application | None = None) -> FastAPI:
@@ -78,6 +83,48 @@ def create_app(application: Application | None = None) -> FastAPI:
 
     @app.get("/health", include_in_schema=False)
     async def health() -> dict[str, str]:
-        return {"status": "ok"}
+        return {"status": "alive"}
+
+    @app.get("/ready", include_in_schema=False)
+    async def ready() -> JSONResponse:
+        checks = {
+            "database": "ready",
+            "player": "ready" if container.player.operational else "unavailable",
+            "listening": (
+                "ready" if container.listening.operational else "unavailable"
+            ),
+        }
+        try:
+            async with asyncio.timeout(2):
+                await container.database.ping()
+        except (TimeoutError, SQLAlchemyError):
+            checks["database"] = "unavailable"
+            _LOGGER.warning("application.readiness_failed", exc_info=True)
+
+        if container.settings.discord.enabled:
+            checks["discord"] = (
+                "ready"
+                if container.gateway is not None and container.gateway.operational
+                else "unavailable"
+            )
+            checks["playback"] = (
+                "ready"
+                if container.playback is not None and container.playback.operational
+                else "unavailable"
+            )
+        else:
+            checks["discord"] = "disabled"
+            checks["playback"] = "disabled"
+
+        status = (
+            "ready"
+            if all(state in {"ready", "disabled"} for state in checks.values())
+            else "unavailable"
+        )
+        body: dict[str, str | dict[str, str]] = {
+            "status": status,
+            "checks": checks,
+        }
+        return JSONResponse(body, status_code=200 if status == "ready" else 503)
 
     return app
