@@ -11,7 +11,7 @@ import logging
 import re
 import secrets
 import tomllib
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field as dataclass_field, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -327,6 +327,21 @@ class AccessService:
             user.role.value if user.role is not None else None,
         )
         return user
+
+    async def has_access(self, user_id: UserId) -> bool:
+        """Return whether a user may access authenticated application data."""
+        async with self._units() as work:
+            return await UserRepository(work.session).has_access(user_id)
+
+    async def active_ids_by_discord_ids(
+        self,
+        discord_ids: Iterable[str],
+    ) -> dict[str, UserId]:
+        """Resolve authorized voice members to stable internal identities."""
+        async with self._units() as work:
+            return await UserRepository(work.session).active_ids_by_discord_ids(
+                discord_ids
+            )
 
     async def require_admin(self, user_id: UserId) -> User:
         user = await self.require_access(user_id)

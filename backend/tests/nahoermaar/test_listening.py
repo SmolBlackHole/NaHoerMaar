@@ -22,6 +22,7 @@ from nahoermaar.listening.domain import (
     ListeningErrorCode,
     PlaybackEndReason,
     PlaybackProgress,
+    PlaybackRecord,
     PlaybackRecordId,
 )
 from nahoermaar.listening.repository import ListeningRepository
@@ -46,7 +47,9 @@ from nahoermaar.player.domain import (
     TrackRequest,
     TrackRequestId,
 )
+from nahoermaar.player.repository import SessionRepository
 from nahoermaar.users.domain import UserId
+from nahoermaar.users.service import AccessService, Operators
 
 ROOT = Path(__file__).parents[3]
 NOW = datetime(2026, 9, 25, 12, tzinfo=UTC)
@@ -169,19 +172,21 @@ async def _seed(
                 updated_at=NOW,
             )
         )
-        await ListeningRepository(work.session).add_requests(requests)
+        await SessionRepository(work.session).add_requests(requests)
         await work.commit()
     return session_id, listener_id, requests
 
 
-def _service(
-    database: Database,
-) -> tuple[MessageBus, ListeningService, list[Event]]:
+def _service(database: Database) -> tuple[MessageBus, ListeningService, list[Event]]:
     def units() -> UnitOfWork:
         return UnitOfWork(database.sessions)
 
     bus = MessageBus()
-    service = ListeningService(units, bus)
+    service = ListeningService(
+        units,
+        bus,
+        AccessService(units, Operators("999", ())),
+    )
     events: list[Event] = []
 
     async def capture(event: Event, _context: MessageContext) -> None:
@@ -239,6 +244,12 @@ def test_requests_become_plays_only_after_audio_and_progress_is_idempotent() -> 
         begin = BeginPlayback(playback_id, session_id, requests[0].id, NOW)
         assert await bus.execute(begin) == await bus.execute(begin)
         assert sum(isinstance(event, PlaybackStarted) for event in events) == 1
+        active = await service.active_playback(
+            session_id,
+            requests[0].id,
+        )
+        assert active is not None
+        assert active.id == playback_id
 
         unchanged = AdvancePlayback(
             session_id,
@@ -324,6 +335,55 @@ def test_requests_become_plays_only_after_audio_and_progress_is_idempotent() -> 
             )
             assert request_two_plays == 2
             assert request_without_audio == 0
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        asyncio.run(database.close())
+
+
+def test_playback_request_must_belong_to_the_same_session() -> None:
+    database = _database()
+
+    async def scenario() -> None:
+        session_id, _listener_id, requests = await _seed(database, request_count=1)
+        other_session_id = ListeningSessionId(uuid4())
+        async with UnitOfWork(database.sessions) as work:
+            await work.session.execute(
+                insert(Base.metadata.tables["listening_sessions"]).values(
+                    id=other_session_id,
+                    session_key="other",
+                    revision=0,
+                    queue_revision=0,
+                    channel_id=None,
+                    volume=1.0,
+                    crossfade_seconds=7,
+                    created_at=NOW,
+                    updated_at=NOW,
+                )
+            )
+            await work.commit()
+
+        async with UnitOfWork(database.sessions) as work:
+            with pytest.raises(ListeningError) as caught:
+                await ListeningRepository(work.session).start_playback(
+                    PlaybackRecord(
+                        PlaybackRecordId(uuid4()),
+                        other_session_id,
+                        requests[0].id,
+                        NOW,
+                    )
+                )
+            assert caught.value.code is ListeningErrorCode.PLAYBACK_CONFLICT
+
+        async with UnitOfWork(database.sessions) as work:
+            count = await work.session.scalar(
+                select(func.count()).select_from(
+                    Base.metadata.tables["playback_records"]
+                )
+            )
+            assert count == 0
+            assert session_id != other_session_id
 
     try:
         asyncio.run(scenario())

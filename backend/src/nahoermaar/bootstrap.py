@@ -242,8 +242,12 @@ def bootstrap(
     )
     bus = MessageBus()
     player = PlayerSessionManager(units, bus, CatalogRadioResolver(catalog))
-    listening = ListeningService(units, bus)
-    statistics = StatisticsService(units, ZoneInfo(settings.statistics_timezone))
+    listening = ListeningService(units, bus, access)
+    statistics = StatisticsService(
+        units,
+        ZoneInfo(settings.statistics_timezone),
+        access,
+    )
 
     async def summon(discord_id: str, channel_id: int, correlation_id: UUID) -> None:
         user = await access.require_discord_access(discord_id)
@@ -280,7 +284,13 @@ def bootstrap(
             settings.discord.quotes_path,
             summon,
         )
-        playback = PlaybackCoordinator(player, catalog, listening, bus, gateway.output)
+        playback = PlaybackCoordinator(
+            player,
+            catalog,
+            listening,
+            bus,
+            gateway.output,
+        )
     _register_handlers(bus, auth, access, player, listening, playback)
     _LOGGER.info("application.configured")
     return Application(

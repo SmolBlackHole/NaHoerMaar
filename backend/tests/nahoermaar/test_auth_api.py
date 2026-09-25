@@ -81,8 +81,17 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
     bus = MessageBus()
     catalog = CatalogService(units, ())
     player = PlayerSessionManager(units, bus, CatalogRadioResolver(catalog))
-    listening = ListeningService(units, bus)
-    statistics = StatisticsService(units, ZoneInfo("UTC"), clock=lambda: NOW)
+    listening = ListeningService(
+        units,
+        bus,
+        access,
+    )
+    statistics = StatisticsService(
+        units,
+        ZoneInfo("UTC"),
+        access,
+        clock=lambda: NOW,
+    )
     logs = RecentLogBuffer()
     logs.addFilter(ContextFilter())
     root_logger = logging.getLogger()

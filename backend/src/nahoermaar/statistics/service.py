@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 
 from nahoermaar.database.uow import UnitOfWork
 from nahoermaar.users.domain import AuthError, AuthErrorCode, UserId
-from nahoermaar.users.repository import UserRepository
+from nahoermaar.users.service import AccessService
 
 from .repository import (
     DailyActivity,
@@ -84,17 +84,19 @@ class StatisticsReport:
 class StatisticsService:
     """Serve shared and personal statistics from one projection boundary."""
 
-    __slots__ = ("_clock", "_timezone", "_units")
+    __slots__ = ("_access", "_clock", "_timezone", "_units")
 
     def __init__(
         self,
         units: UnitFactory,
         timezone: ZoneInfo,
+        access: AccessService,
         *,
         clock: Clock = _utc_now,
     ) -> None:
         self._units = units
         self._timezone = timezone
+        self._access = access
         self._clock = clock
 
     async def overview(self, period: StatisticsPeriod) -> StatisticsReport:
@@ -105,9 +107,7 @@ class StatisticsService:
         user_id: UserId,
         period: StatisticsPeriod,
     ) -> StatisticsReport:
-        async with self._units() as work:
-            user = await UserRepository(work.session).get(user_id)
-        if user is None or not user.has_access:
+        if not await self._access.has_access(user_id):
             raise AuthError(AuthErrorCode.PROFILE_NOT_FOUND, 404)
         return await self._report(period, user_id)
 

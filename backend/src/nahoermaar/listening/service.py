@@ -14,7 +14,7 @@ from nahoermaar.database.uow import UnitOfWork
 from nahoermaar.messaging import Command, Event, MessageBus, MessageContext
 from nahoermaar.player.domain import ListeningSessionId, TrackRequestId
 from nahoermaar.users.domain import DiscordIdentity, UserId
-from nahoermaar.users.repository import UserRepository
+from nahoermaar.users.service import AccessService
 
 from .domain import (
     AudienceMember,
@@ -161,11 +161,17 @@ class AudienceUnavailable(Event):
 class ListeningService:
     """Own the ordered write boundary for listening measurements."""
 
-    __slots__ = ("_audience", "_bus", "_lock", "_units")
+    __slots__ = ("_access", "_audience", "_bus", "_lock", "_units")
 
-    def __init__(self, units: UnitFactory, bus: MessageBus) -> None:
+    def __init__(
+        self,
+        units: UnitFactory,
+        bus: MessageBus,
+        access: AccessService,
+    ) -> None:
         self._units = units
         self._bus = bus
+        self._access = access
         self._lock = asyncio.Lock()
         self._audience: AudienceState | None = None
 
@@ -325,10 +331,10 @@ class ListeningService:
             if previous.session_id != command.session_id:
                 raise ListeningError(ListeningErrorCode.AUDIENCE_SESSION_MISMATCH)
             humans = tuple(member for member in command.members if not member.bot)
+            users = await self._access.active_ids_by_discord_ids(
+                member.discord_id for member in humans
+            )
             async with self._units() as work:
-                users = await UserRepository(work.session).active_ids_by_discord_ids(
-                    member.discord_id for member in humans
-                )
                 audience = AudienceState(
                     command.session_id,
                     len(humans),

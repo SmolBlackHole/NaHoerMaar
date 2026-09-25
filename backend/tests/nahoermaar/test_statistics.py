@@ -27,6 +27,7 @@ from nahoermaar.users.domain import (
     UserProfile,
 )
 from nahoermaar.users.repository import UserRepository
+from nahoermaar.users.service import AccessService, Operators
 
 ROOT = Path(__file__).parents[3]
 NOW = datetime(2026, 9, 25, 12, tzinfo=UTC)
@@ -227,6 +228,7 @@ def test_statistics_project_shared_and_personal_facts_without_double_counting() 
         service = StatisticsService(
             units,
             ZoneInfo("Europe/Berlin"),
+            AccessService(units, Operators("9", ())),
             clock=lambda: NOW,
         )
         overview = await service.overview(StatisticsPeriod.DAYS_7)

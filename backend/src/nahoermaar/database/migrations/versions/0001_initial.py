@@ -1050,6 +1050,11 @@ def upgrade() -> None:
             ondelete="RESTRICT",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_track_requests")),
+        sa.UniqueConstraint(
+            "id",
+            "session_id",
+            name="uq_track_requests_id_session",
+        ),
     )
     op.create_index(
         op.f("ix_track_requests_radio_run_id"),
@@ -1121,9 +1126,9 @@ def upgrade() -> None:
             name=op.f("ck_playback_records_end_valid"),
         ),
         sa.ForeignKeyConstraint(
-            ["request_id"],
-            ["track_requests.id"],
-            name=op.f("fk_playback_records_request_id_track_requests"),
+            ["request_id", "session_id"],
+            ["track_requests.id", "track_requests.session_id"],
+            name="fk_playback_records_request_session_track_requests",
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(

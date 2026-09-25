@@ -354,6 +354,13 @@ class UserRepository:
         row = result.scalar_one_or_none()
         return _to_domain(row) if row is not None else None
 
+    async def has_access(self, user_id: UserId) -> bool:
+        """Return whether the user currently has a NaHörMaar role."""
+        role = await self._session.scalar(
+            select(_UserRow.role).where(_UserRow.id == user_id)
+        )
+        return role is not None
+
     async def active_ids_by_discord_ids(
         self,
         discord_ids: Iterable[str],
