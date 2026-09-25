@@ -24,14 +24,15 @@ that contract. A real Discord listening check remains
 ## Authentication
 
 Discord OAuth with PKCE, role-based access, session cookies and CSRF protect the
-API. Login attempts are browser-bound and single-use. Account sessions survive
+API. Login attempts are browser-bound and single-use. Browser sessions survive
 backend restarts, and profile and appearance preferences belong to the signed-in
-account.
+user.
 Authentication routes are:
 
 - `GET /api/auth/discord` and `GET /api/auth/discord/callback`
 - `GET /api/auth/session`, `POST /api/auth/logout`
-- `PUT /api/profile`, `PUT /api/profile/appearance`
+- `GET /api/users/me`, `PUT /api/users/me/profile`
+- `PUT /api/users/me/appearance`, `GET /api/users/{user_id}`
 
 All other `/api/` requests need a valid session cookie. Mutations also require
 the configured `Origin` and `X-CSRF-Token`. Replies are private and `no-store`.
@@ -46,10 +47,10 @@ Owners and admins use these administration routes:
 
 | Endpoint | Meaning |
 | --- | --- |
-| `GET /api/admin/access` | Operators, listener grants and recent access history |
-| `PUT /api/admin/access/{discord_id}` | Grant listener access |
-| `DELETE /api/admin/access/{discord_id}` | Revoke listener access and sessions |
-| `GET /api/admin/access/members` | Cached Discord members with guild details |
+| `GET /api/access` | Operators, listener grants and recent access history |
+| `PUT /api/access/{discord_id}` | Grant listener access |
+| `DELETE /api/access/{discord_id}` | Revoke listener access and sessions |
+| `GET /api/access/members` | Cached Discord members with guild details |
 
 The owner may revoke any normal grant. An admin may revoke only a grant created
 by that admin. The backend enforces this rule. Owner and admin roles cannot be
@@ -116,27 +117,26 @@ command may return its mutation envelope with a non-`ok` outcome and current sta
 ## Discovery and stable selections
 
 - `GET /api/catalog/search?q=...&provider=youtube_music&refresh=false`
-- `POST /api/catalog/playlist` with `source_url`, optional `provider`/`refresh`
-- `POST /api/catalog/track` with `source_url` and optional `provider`
+- `GET /api/catalog/playlist?url=...` with optional `provider` and `refresh`
+- `GET /api/catalog/link?url=...` with an optional `provider`
 - `GET /api/catalog/{search|playlist}/{version}?offset=0&limit=20`
 
 Search defaults to Music. Explicit `youtube` selects Videos when registered.
 Search and playlist observations remain bounded to 100 occurrences. Responses
 carry `version`, `offset`, `total`, `next_offset`, `source_has_more`, `entries`,
-`playlist`, `error` and `refresh`. `next_offset` paginates the pinned snapshot;
-`source_has_more` reports an upstream continuation beyond its bounded contents.
-Every playlist version includes `playlist: {title, reference}`, also after a
-refresh; search responses set it to null. Each result contains `track_id`,
-source `position`, nullable `reference`, `metadata` and `unavailable`.
-Unavailable rows have no track ID and may have no reference. There is no
-background preview job to create or cancel.
+`stale` and `refreshing`. Playlist responses additionally carry `source_url`
+and `playlist_title`; search responses carry the normalized query.
+`next_offset` paginates the pinned snapshot, while `source_has_more` reports an
+upstream continuation beyond its bounded contents. Each entry contains its
+stable position, canonical track and selected provider source.
 
 Clients select the track IDs from the displayed snapshot and submit them to
-`POST /api/queue`. Repeated playlist occurrences may supply the same track ID
-multiple times and create independent queue entries. This avoids interpreting
-positions against a refreshed list, and accepted additions remain replayable
-even after the discovery snapshot expires. Background refresh exposes a new
-version without replacing the old visible ordering or changing a user's selection.
+`POST /api/player/queue`. Repeated playlist occurrences may supply the same
+track ID multiple times and create independent queue entries. This avoids
+interpreting positions against a refreshed list, and accepted additions remain
+replayable even after the discovery snapshot expires. Background refresh
+exposes a new version without replacing the old visible ordering or changing a
+user's selection.
 
 A stale cached version can be shown while one shared refresh runs.
 `refresh=true` requests a fresh observation without moving the visible

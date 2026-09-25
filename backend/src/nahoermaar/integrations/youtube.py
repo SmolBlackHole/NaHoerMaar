@@ -243,7 +243,7 @@ def _ytdlp(node_path: Path, source: str, options: tuple[str, ...]) -> tuple[str,
 
 
 class YouTubeProvider:
-    key = "youtube_music"
+    key = "youtube"
 
     def __init__(
         self,
@@ -317,24 +317,27 @@ class YouTubeProvider:
         started_at = perf_counter()
         _LOGGER.debug("youtube.search_started limit=%d", limit)
         result = await self._execute(
-            (
-                sys.executable,
-                "-m",
-                "nahoermaar.integrations.youtube",
-                "search",
-                query,
-                str(limit),
+            _ytdlp(
+                self._node_path,
+                f"ytsearch{limit}:{query}",
+                ("--flat-playlist", "--dump-single-json"),
             ),
             operation="search",
         )
         entries = _payload(result).get("entries")
         if not isinstance(entries, list):
-            raise ProviderError("YouTube Music returned invalid search results.")
+            raise ProviderError("YouTube returned invalid search results.")
         page = ProviderPage(
             tuple(
                 track
                 for entry in cast(list[object], entries)
-                if (track := _music_track(entry)) is not None
+                if (
+                    track := _video_track(
+                        entry,
+                        quality=ObservationQuality.DISCOVERY,
+                    )
+                )
+                is not None
             )[:limit]
         )
         _LOGGER.info(
@@ -591,6 +594,43 @@ class YouTubeProvider:
             raise ProviderError("YouTube resolver could not be started.") from None
         finally:
             self._requests.discard(task)
+
+
+class YouTubeMusicProvider(YouTubeProvider):
+    """Music search with shared YouTube links, radio and audio resolution."""
+
+    key = "youtube_music"
+
+    async def search(self, query: str, *, limit: int) -> ProviderPage:
+        started_at = perf_counter()
+        _LOGGER.debug("youtube_music.search_started limit=%d", limit)
+        result = await self._execute(
+            (
+                sys.executable,
+                "-m",
+                "nahoermaar.integrations.youtube",
+                "search",
+                query,
+                str(limit),
+            ),
+            operation="search",
+        )
+        entries = _payload(result).get("entries")
+        if not isinstance(entries, list):
+            raise ProviderError("YouTube Music returned invalid search results.")
+        page = ProviderPage(
+            tuple(
+                track
+                for entry in cast(list[object], entries)
+                if (track := _music_track(entry)) is not None
+            )[:limit]
+        )
+        _LOGGER.info(
+            "youtube_music.search_completed entries=%d duration_ms=%.1f",
+            len(page.entries),
+            (perf_counter() - started_at) * 1000,
+        )
+        return page
 
 
 def _worker_main() -> None:

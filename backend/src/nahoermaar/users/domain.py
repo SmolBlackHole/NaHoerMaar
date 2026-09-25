@@ -173,6 +173,18 @@ class DiscordIdentity:
 
 
 @dataclass(frozen=True, slots=True)
+class DiscordMember:
+    """One human Discord member visible to the configured bot."""
+
+    discord_id: str
+    username: str
+    display_name: str
+    avatar_url: str | None
+    guild_id: str
+    guild_name: str
+
+
+@dataclass(frozen=True, slots=True)
 class UserProfile:
     """NaHörMaar-owned values that never overwrite the Discord identity."""
 

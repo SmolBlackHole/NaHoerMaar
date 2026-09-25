@@ -20,7 +20,7 @@ from .database.schema import migrate
 from .database.uow import UnitOfWork
 from .integrations.discord import DiscordGateway
 from .integrations.discord_oauth import DiscordOAuth
-from .integrations.youtube import YouTubeProvider
+from .integrations.youtube import YouTubeMusicProvider, YouTubeProvider
 from .listening.service import (
     AdvancePlayback,
     BeginPlayback,
@@ -157,8 +157,13 @@ def bootstrap(
 
     access = AccessService(units, Operators.load(settings.auth.access_path))
     auth = AuthService(units, DiscordOAuth(settings.auth))
-    provider = YouTubeProvider(settings.node_path)
-    catalog = CatalogService(units, (provider,))
+    catalog = CatalogService(
+        units,
+        (
+            YouTubeProvider(settings.node_path),
+            YouTubeMusicProvider(settings.node_path),
+        ),
+    )
     bus = MessageBus()
     player = PlayerSessionManager(units, bus, CatalogRadioResolver(catalog))
     listening = ListeningService(units, bus)

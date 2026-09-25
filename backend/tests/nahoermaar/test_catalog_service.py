@@ -9,8 +9,12 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+from fastapi import FastAPI
+import httpx
+import pytest
 from sqlalchemy import func, select
 
+from nahoermaar.api.catalog import router as catalog_router
 from nahoermaar.catalog.domain import (
     DiscoveryKind,
     MediaKind,
@@ -25,7 +29,7 @@ from nahoermaar.catalog.providers import (
     ProviderTrack,
 )
 from nahoermaar.catalog.repository import DiscoveryRepository
-from nahoermaar.catalog.service import CatalogService
+from nahoermaar.catalog.service import CatalogError, CatalogErrorCode, CatalogService
 from nahoermaar.database.core import Database
 from nahoermaar.database.schema import Base
 from nahoermaar.database.uow import UnitOfWork
@@ -54,6 +58,7 @@ class Provider:
         self.playlist_calls = 0
         self.radio_calls = 0
         self.title = "First title"
+        self.extra_tracks: tuple[ProviderTrack, ...] = ()
         self.fail = False
         self.started: asyncio.Event | None = None
         self.release: asyncio.Event | None = None
@@ -73,7 +78,7 @@ class Provider:
         return None
 
     async def search(self, query: str, *, limit: int) -> ProviderPage:
-        assert query == "Zara Larsson" and limit == 50
+        assert query in {"Zara Larsson", "Paging"} and limit == 50
         self.search_calls += 1
         if self.started is not None:
             self.started.set()
@@ -89,6 +94,7 @@ class Provider:
                     TRACK.source_url,
                     self.title,
                 ),
+                *self.extra_tracks,
             )
         )
 
@@ -184,6 +190,39 @@ def test_cache_first_refresh_is_shared_and_provider_failure_keeps_last_snapshot(
         latest = await service.search("Zara Larsson")
         assert latest.snapshot.entries[0].track.title == "Refreshed title"
 
+        reopened = await service.snapshot(latest.snapshot.id, DiscoveryKind.SEARCH)
+        assert reopened.snapshot == latest.snapshot
+        assert not reopened.stale
+        with pytest.raises(CatalogError) as mismatch:
+            await service.snapshot(latest.snapshot.id, DiscoveryKind.PLAYLIST)
+        assert mismatch.value.code is CatalogErrorCode.SNAPSHOT_NOT_FOUND
+
+        provider.extra_tracks = (
+            ProviderTrack(
+                ProviderName.YOUTUBE,
+                "secondtrack",
+                "https://www.youtube.com/watch?v=secondtrack",
+                "Second title",
+            ),
+        )
+        paged = await service.search("Paging")
+        api = FastAPI()
+        api.include_router(catalog_router(service))
+        transport = httpx.ASGITransport(app=api)
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://localhost:3000",
+        ) as client:
+            response = await client.get(
+                f"/api/catalog/search/{paged.snapshot.id}",
+                params={"offset": 1, "limit": 1},
+            )
+        assert response.status_code == 200
+        assert response.json()["offset"] == 1
+        assert response.json()["total"] == 2
+        assert response.json()["next_offset"] is None
+        assert response.json()["entries"][0]["track"]["title"] == "Second title"
+
         now[0] += timedelta(minutes=6)
         provider.fail = True
         failed_refresh = await service.search("Zara Larsson")
@@ -207,7 +246,7 @@ def test_cache_first_refresh_is_shared_and_provider_failure_keeps_last_snapshot(
             source_count = await work.session.scalar(
                 select(func.count()).select_from(Base.metadata.tables["track_sources"])
             )
-        assert source_count == 1
+        assert source_count == 2
         await service.close()
 
     try:

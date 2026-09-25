@@ -53,6 +53,7 @@ from nahoermaar.player.playback import (
     VoiceDisconnected,
     VoiceError,
 )
+from nahoermaar.users.domain import DiscordMember
 
 from .audio import (
     FRAME_SECONDS,
@@ -1106,6 +1107,31 @@ class DiscordGateway(discord.Client):
             and not self._gateway_task.done()
             and self.is_ready()
             and not self.is_closed()
+        )
+
+    def members(self) -> tuple[DiscordMember, ...]:
+        """Return human guild members as transport-neutral values."""
+        return tuple(
+            sorted(
+                (
+                    DiscordMember(
+                        str(member.id),
+                        member.name,
+                        member.display_name,
+                        str(member.display_avatar.url),
+                        str(guild.id),
+                        guild.name,
+                    )
+                    for guild in self.guilds
+                    for member in guild.members
+                    if not member.bot
+                ),
+                key=lambda member: (
+                    member.guild_name.casefold(),
+                    member.display_name.casefold(),
+                    member.discord_id,
+                ),
+            )
         )
 
     async def open(self) -> None:

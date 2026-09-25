@@ -53,6 +53,7 @@ class CatalogErrorCode(StrEnum):
     INVALID_RADIO_SEED = "invalid_radio_seed"
     TRACK_NOT_FOUND = "track_not_found"
     AUDIO_SOURCE_NOT_FOUND = "audio_source_not_found"
+    SNAPSHOT_NOT_FOUND = "snapshot_not_found"
 
 
 class CatalogError(RuntimeError):
@@ -248,6 +249,29 @@ class CatalogService:
         self._ensure_open()
         async with self._units() as work:
             return await CatalogRepository(work.session).tracks(track_ids)
+
+    async def snapshot(
+        self,
+        snapshot_id: DiscoverySnapshotId,
+        kind: DiscoveryKind,
+    ) -> DiscoveryResult:
+        """Load one immutable discovery version without provider I/O."""
+        self._ensure_open()
+        async with self._units() as work:
+            snapshot = await DiscoveryRepository(work.session).get(snapshot_id)
+        if snapshot is None or snapshot.kind is not kind:
+            raise CatalogError(CatalogErrorCode.SNAPSHOT_NOT_FOUND, 404)
+        key = (
+            snapshot.kind,
+            snapshot.provider_key,
+            snapshot.locator,
+            snapshot.limit,
+        )
+        return DiscoveryResult(
+            snapshot,
+            key in self._refreshes,
+            not snapshot.is_fresh(self._clock()),
+        )
 
     async def resolve_audio(
         self,

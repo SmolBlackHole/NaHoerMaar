@@ -17,6 +17,7 @@ from nahoermaar.users.domain import (
     AccessRole,
     Appearance,
     AppearanceMode,
+    DiscordMember,
     FontFamily,
     IconSet,
     NeutralColor,
@@ -118,6 +119,23 @@ class AccessView(BaseModel):
     history: tuple[AccessEventView, ...]
 
 
+class DiscordMemberView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    discord_id: str
+    username: str
+    display_name: str
+    avatar_url: str | None
+    guild_id: str
+    guild_name: str
+
+
+class DiscordMembersView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    members: tuple[DiscordMemberView, ...]
+
+
 def router(application: Application) -> APIRouter:
     """Build user and access routes around the composed application."""
     routes = APIRouter(prefix="/api", tags=["users"])
@@ -182,6 +200,14 @@ def router(application: Application) -> APIRouter:
             ),
         )
 
+    @routes.get("/access/members")
+    async def discord_members(request: Request) -> DiscordMembersView:
+        await application.access.require_admin(authenticated(request).user.id)
+        members = application.gateway.members() if application.gateway else ()
+        return DiscordMembersView(
+            members=tuple(_member_view(member) for member in members)
+        )
+
     @routes.put("/access/{discord_id}")
     async def grant_access(request: Request, discord_id: str) -> AccessEventView | None:
         change = await application.bus.execute(
@@ -240,4 +266,15 @@ def _event_view(event: AccessEvent) -> AccessEventView:
         role_before=event.role_before,
         role_after=event.role_after,
         occurred_at=event.occurred_at,
+    )
+
+
+def _member_view(member: DiscordMember) -> DiscordMemberView:
+    return DiscordMemberView(
+        discord_id=member.discord_id,
+        username=member.username,
+        display_name=member.display_name,
+        avatar_url=member.avatar_url,
+        guild_id=member.guild_id,
+        guild_name=member.guild_name,
     )

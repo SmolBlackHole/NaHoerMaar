@@ -26,17 +26,17 @@ recommendations and playable audio. The catalog selects a capable provider and
 coordinates the operation; it does not know YouTube response shapes.
 
 YouTube Music is the default search provider. Ordinary YouTube video search is
-available separately. Both implement the provider protocols in
-`engine/providers.py`; their concrete translation lives in `engine/youtube.py`.
-Adding another source means implementing those capabilities and composing the
-provider in `engine/bootstrap.py`, without teaching queue or playback about its
-wire format.
+available separately. Both implement the provider protocol in
+`catalog/providers.py`; their concrete translation lives in
+`integrations/youtube.py`. Adding another source means implementing those
+capabilities and composing the provider in `bootstrap.py`, without teaching
+queue or playback about its wire format.
 
 ## Tracks and observations
 
 A provider finding is an observation of a media source. It is not a queue item.
-The catalog resolves the source identity to a persistent track ID, then
-`engine/metadata.py` merges the observation with known metadata for that track.
+The catalog resolves the source identity to a persistent track ID, then its
+repository merges the observation with known metadata for that track.
 New observations can improve a title, artist, duration or artwork without
 rewriting queue entries and playback history.
 
@@ -69,20 +69,18 @@ defined in the
 
 ## Cache and refresh behavior
 
-`engine/cache.py` owns bounded, in-memory snapshot caches. Search and individual
-track observations are fresh for five minutes; playlist observations are fresh
-for one minute. Old visible versions remain available for a limited retention
-window so a listener can finish a selection.
+Search observations are fresh for five minutes; playlist observations are fresh
+for one minute. The latest three persisted versions remain available so a
+listener can finish a selection.
 
 When cached data becomes stale, the catalog can return it immediately while one
 shared refresh runs. Identical callers share that work. A changed result gets a
 new version; an unchanged result keeps its version. If a refresh fails, the last
 known result stays available and the cache backs off before trying again.
 
-These discovery caches are process-local and intentionally disposable. Durable
-track identities and merged metadata live in PostgreSQL. Restarting the backend
-clears cached result snapshots, not the catalog data already referenced by the
-queue or history.
+Discovery snapshots and canonical track data live in PostgreSQL. Restarting the
+backend therefore keeps pinned versions available until normal retention removes
+them.
 
 ## Audio resolution
 

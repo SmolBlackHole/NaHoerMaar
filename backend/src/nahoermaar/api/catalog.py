@@ -10,7 +10,13 @@ from uuid import UUID
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, ConfigDict
 
-from nahoermaar.catalog.domain import DiscoveryResult, Track, TrackSource
+from nahoermaar.catalog.domain import (
+    DiscoveryKind,
+    DiscoveryResult,
+    DiscoverySnapshotId,
+    Track,
+    TrackSource,
+)
 from nahoermaar.catalog.service import CatalogService
 
 
@@ -61,6 +67,9 @@ class DiscoveryView(View):
     expires_at: datetime
     stale: bool
     refreshing: bool
+    offset: int
+    total: int
+    next_offset: int | None
     source_has_more: bool
     entries: tuple[DiscoveryEntryView, ...]
 
@@ -102,6 +111,19 @@ def router(catalog: CatalogService) -> APIRouter:
     ) -> TrackView:
         return track_view(await catalog.track(url, provider_key=provider))
 
+    @api.get("/{kind}/{version}", response_model=DiscoveryView)
+    async def snapshot(
+        kind: DiscoveryKind,
+        version: UUID,
+        offset: int = Query(default=0, ge=0),
+        limit: int = Query(default=20, ge=1, le=100),
+    ) -> DiscoveryView:
+        return _discovery(
+            await catalog.snapshot(DiscoverySnapshotId(version), kind),
+            offset=offset,
+            limit=limit,
+        )
+
     return api
 
 
@@ -133,8 +155,17 @@ def track_view(track: Track) -> TrackView:
     )
 
 
-def _discovery(result: DiscoveryResult) -> DiscoveryView:
+def _discovery(
+    result: DiscoveryResult,
+    *,
+    offset: int = 0,
+    limit: int | None = None,
+) -> DiscoveryView:
     snapshot = result.snapshot
+    total = len(snapshot.entries)
+    end = None if limit is None else offset + limit
+    entries = snapshot.entries[offset:end]
+    next_offset = offset + len(entries)
     return DiscoveryView(
         version=snapshot.id,
         kind=snapshot.kind.value,
@@ -146,6 +177,9 @@ def _discovery(result: DiscoveryResult) -> DiscoveryView:
         expires_at=snapshot.expires_at,
         stale=result.stale,
         refreshing=result.refreshing,
+        offset=offset,
+        total=total,
+        next_offset=next_offset if next_offset < total else None,
         source_has_more=snapshot.source_has_more,
         entries=tuple(
             DiscoveryEntryView(
@@ -153,6 +187,6 @@ def _discovery(result: DiscoveryResult) -> DiscoveryView:
                 track=track_view(entry.track),
                 source=source_view(entry.source),
             )
-            for entry in snapshot.entries
+            for entry in entries
         ),
     )

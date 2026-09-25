@@ -8,7 +8,7 @@ from pathlib import Path
 
 from nahoermaar.catalog.domain import MediaKind, ObservationQuality, ProviderName
 from nahoermaar.integrations.processes import ProcessResult
-from nahoermaar.integrations.youtube import YouTubeProvider
+from nahoermaar.integrations.youtube import YouTubeMusicProvider, YouTubeProvider
 
 
 class Runner:
@@ -19,7 +19,17 @@ class Runner:
         assert timeout == 5
         self.calls.append(args)
         payload: dict[str, object]
-        if "radio" in args:
+        if any(argument.startswith("ytsearch") for argument in args):
+            payload = {
+                "entries": [
+                    {
+                        "id": "abcdefghijk",
+                        "title": "Video search title",
+                        "duration": 180,
+                    }
+                ]
+            }
+        elif "radio" in args:
             payload = {
                 "entries": [
                     {
@@ -65,7 +75,8 @@ class Runner:
 
 def test_youtube_provider_translates_search_playlist_and_details() -> None:
     runner = Runner()
-    provider = YouTubeProvider(Path("node"), timeout=5, runner=runner)
+    provider = YouTubeMusicProvider(Path("node"), timeout=5, runner=runner)
+    video_provider = YouTubeProvider(Path("node"), timeout=5, runner=runner)
     track_url = "https://music.youtube.com/watch?v=abcdefghijk&list=PLabcdefghijk"
     playlist_url = "https://youtube.com/playlist?list=PLabcdefghijk"
 
@@ -83,6 +94,11 @@ def test_youtube_provider_translates_search_playlist_and_details() -> None:
         assert search.entries[0].duration_seconds == 181
         assert search.entries[0].artwork_url == "https://img/large"
 
+        video_search = await video_provider.search("query", limit=10)
+        assert video_search.entries[0].title == "Video search title"
+        assert provider.key == "youtube_music"
+        assert video_provider.key == "youtube"
+
         playlist = await provider.playlist(playlist_reference, limit=10)
         assert playlist.title == "Playlist"
         assert playlist.page.entries[0].title == "Playlist title"
@@ -95,5 +111,6 @@ def test_youtube_provider_translates_search_playlist_and_details() -> None:
         assert detail.quality is ObservationQuality.DETAIL
         assert detail.release_date is not None
         await provider.close()
+        await video_provider.close()
 
     asyncio.run(scenario())
