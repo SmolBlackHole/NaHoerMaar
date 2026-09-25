@@ -298,6 +298,23 @@ class AccessService:
         )
         return tuple(changes)
 
+    async def require_discord_access(self, discord_id: str) -> User:
+        async with self._units() as work:
+            user = await UserRepository(work.session).get_by_discord_id(discord_id)
+        if user is None or not user.has_access:
+            _LOGGER.info(
+                "access.denied discord_id=%s requirement=access",
+                discord_id,
+            )
+            raise AuthError(AuthErrorCode.ACCESS_DENIED, 403)
+        _LOGGER.debug(
+            "access.allowed discord_id=%s user_id=%s requirement=access role=%s",
+            discord_id,
+            user.id,
+            user.role.value if user.role is not None else None,
+        )
+        return user
+
     async def require_access(self, user_id: UserId) -> User:
         async with self._units() as work:
             user = await UserRepository(work.session).get(user_id)

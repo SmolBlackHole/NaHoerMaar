@@ -21,6 +21,7 @@ from .domain import (
     DiscoverySnapshotId,
     MediaKind,
     MediaReference,
+    SourceAvailability,
     Track,
     TrackId,
     TrackSource,
@@ -28,6 +29,7 @@ from .domain import (
 )
 from .providers import (
     CatalogProvider,
+    ProviderAudio,
     ProviderError,
     ProviderPage,
     ProviderPlaylist,
@@ -49,6 +51,8 @@ class CatalogErrorCode(StrEnum):
     PROVIDER_FAILED = "provider_failed"
     CATALOG_CLOSED = "catalog_closed"
     INVALID_RADIO_SEED = "invalid_radio_seed"
+    TRACK_NOT_FOUND = "track_not_found"
+    AUDIO_SOURCE_NOT_FOUND = "audio_source_not_found"
 
 
 class CatalogError(RuntimeError):
@@ -63,6 +67,15 @@ class CatalogError(RuntimeError):
         self.code = code
         self.status = status
         self.retryable = retryable
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedAudio:
+    track: Track
+    source: TrackSource
+    stream_url: str
+    headers: tuple[tuple[str, str], ...] = ()
+    is_opus: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -235,6 +248,59 @@ class CatalogService:
         self._ensure_open()
         async with self._units() as work:
             return await CatalogRepository(work.session).tracks(track_ids)
+
+    async def resolve_audio(
+        self,
+        track_id: TrackId,
+        source_id: TrackSourceId | None = None,
+    ) -> ResolvedAudio:
+        """Resolve a short-lived provider stream for one canonical track."""
+        self._ensure_open()
+        async with self._units() as work:
+            catalog = CatalogRepository(work.session)
+            tracks = await catalog.tracks({track_id})
+            track = tracks.get(track_id)
+            if track is None:
+                raise CatalogError(CatalogErrorCode.TRACK_NOT_FOUND, 404)
+            if source_id is not None:
+                source = await catalog.source(source_id)
+                if source is None or source.track_id != track_id:
+                    raise CatalogError(CatalogErrorCode.AUDIO_SOURCE_NOT_FOUND, 404)
+            else:
+                source = next(
+                    (
+                        candidate
+                        for candidate in track.sources
+                        if candidate.availability is not SourceAvailability.UNAVAILABLE
+                    ),
+                    None,
+                )
+                if source is None:
+                    raise CatalogError(CatalogErrorCode.AUDIO_SOURCE_NOT_FOUND, 404)
+
+        provider, reference = self._route(source.source_url, None, MediaKind.TRACK)
+        try:
+            audio: ProviderAudio = await provider.resolve_audio(reference)
+        except ProviderError as error:
+            raise CatalogError(
+                CatalogErrorCode.PROVIDER_FAILED,
+                502,
+                retryable=error.retryable,
+            ) from error
+        _LOGGER.info(
+            "catalog.audio_resolved track_id=%s source_id=%s provider=%s opus=%s",
+            track.id,
+            source.id,
+            provider.key,
+            audio.is_opus,
+        )
+        return ResolvedAudio(
+            track,
+            source,
+            audio.stream_url,
+            audio.headers,
+            audio.is_opus,
+        )
 
     async def radio(
         self,

@@ -25,6 +25,7 @@ from nahoermaar.catalog.domain import (
 )
 from nahoermaar.catalog.providers import (
     ProviderArtist,
+    ProviderAudio,
     ProviderError,
     ProviderPage,
     ProviderPlaylist,
@@ -477,6 +478,72 @@ class YouTubeProvider:
             (perf_counter() - started_at) * 1000,
         )
         return track
+
+    async def resolve_audio(self, reference: MediaReference) -> ProviderAudio:
+        if (
+            reference.provider is not ProviderName.YOUTUBE
+            or reference.kind is not MediaKind.TRACK
+        ):
+            raise ProviderError("YouTube cannot resolve this audio identity.")
+        started_at = perf_counter()
+        result = await self._execute(
+            _ytdlp(
+                self._node_path,
+                reference.source_url,
+                (
+                    "--no-playlist",
+                    "--fragment-retries",
+                    "0",
+                    "--format",
+                    "bestaudio/best",
+                    "--dump-single-json",
+                ),
+            ),
+            operation="audio",
+        )
+        value = _payload(result)
+        stream_url = _text(value.get("url"))
+        try:
+            parsed = urlsplit(stream_url or "")
+            valid_stream = (
+                parsed.scheme in {"http", "https"}
+                and parsed.hostname is not None
+                and parsed.username is None
+                and parsed.password is None
+                and parsed.port != 0
+            )
+        except ValueError:
+            valid_stream = False
+        if stream_url is None or not valid_stream:
+            raise ProviderError("YouTube returned no playable audio stream.")
+
+        headers: list[tuple[str, str]] = []
+        raw_headers = value.get("http_headers")
+        if raw_headers is not None:
+            if not isinstance(raw_headers, dict):
+                raise ProviderError("YouTube returned invalid stream headers.")
+            for name, header in cast(dict[str, object], raw_headers).items():
+                if (
+                    not name.strip()
+                    or "\r" in name
+                    or "\n" in name
+                    or not isinstance(header, str)
+                    or "\r" in header
+                    or "\n" in header
+                ):
+                    raise ProviderError("YouTube returned invalid stream headers.")
+                headers.append((name, header))
+        _LOGGER.info(
+            "youtube.audio_resolved external_id=%s opus=%s duration_ms=%.1f",
+            reference.external_id,
+            value.get("acodec") == "opus",
+            (perf_counter() - started_at) * 1000,
+        )
+        return ProviderAudio(
+            stream_url,
+            tuple(headers),
+            value.get("acodec") == "opus",
+        )
 
     async def close(self) -> None:
         self._closed = True

@@ -18,6 +18,7 @@ from nahoermaar.catalog.domain import (
     ProviderName,
 )
 from nahoermaar.catalog.providers import (
+    ProviderAudio,
     ProviderError,
     ProviderPage,
     ProviderPlaylist,
@@ -113,6 +114,14 @@ class Provider:
         assert continuation is None
         self.radio_calls += 1
         return ProviderPage((TRACK,))
+
+    async def resolve_audio(self, reference: MediaReference) -> ProviderAudio:
+        assert reference.external_id == TRACK.external_id
+        return ProviderAudio(
+            "https://audio.example.test/stream",
+            (("User-Agent", "NaHoerMaar test"),),
+            True,
+        )
 
     async def close(self) -> None:
         return None
@@ -222,6 +231,11 @@ def test_radio_resolves_persisted_seed_and_returns_canonical_sources() -> None:
         assert provider.radio_calls == 1
         assert page.entries[0].track_id == track.id
         assert page.entries[0].id == track.sources[0].id
+        audio = await service.resolve_audio(track.id, track.sources[0].id)
+        assert audio.track.id == track.id
+        assert audio.source.id == track.sources[0].id
+        assert audio.is_opus
+        assert audio.headers == (("User-Agent", "NaHoerMaar test"),)
         await service.close()
 
     try:

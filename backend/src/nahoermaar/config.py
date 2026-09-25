@@ -6,6 +6,7 @@
 
 import os
 import re
+import shutil
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -13,6 +14,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+import imageio_ffmpeg  # type: ignore[import-untyped]
 from dotenv import dotenv_values
 
 CALLBACK_PATH = "/api/auth/discord/callback"
@@ -98,11 +100,31 @@ class AuthSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class DiscordSettings:
+    """Optional Discord gateway and voice-output configuration."""
+
+    token: str = field(repr=False)
+    ffmpeg_path: Path
+    quotes_path: Path
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.token)
+
+
+@dataclass(frozen=True, slots=True)
 class Settings:
     """Configuration currently required by the application."""
 
     database_url: str
     auth: AuthSettings
+    discord: DiscordSettings = field(
+        default_factory=lambda: DiscordSettings(
+            "",
+            Path("ffmpeg"),
+            Path("config/quotes.toml"),
+        )
+    )
     log_level: LogLevel = LogLevel.INFO
     node_path: Path = Path("node")
     log_directory: Path = Path("data/logs")
@@ -153,9 +175,28 @@ class Settings:
                 values.get("ACCESS_PATH") or "config/access.toml"
             ).resolve(),
         )
+        token = values.get("DISCORD_TOKEN", "").strip()
+        configured_ffmpeg = values.get("FFMPEG_PATH", "").strip()
+        if token:
+            try:
+                candidate = configured_ffmpeg or imageio_ffmpeg.get_ffmpeg_exe()
+            except RuntimeError as error:
+                raise ConfigurationError("No FFmpeg binary is available.") from error
+            executable = shutil.which(candidate)
+            if executable is None:
+                raise ConfigurationError("FFMPEG_PATH does not point to an executable.")
+            ffmpeg_path = Path(executable).resolve()
+        else:
+            ffmpeg_path = Path(configured_ffmpeg or "ffmpeg")
+        discord = DiscordSettings(
+            token,
+            ffmpeg_path,
+            Path(values.get("QUOTES_PATH") or "config/quotes.toml").resolve(),
+        )
         return cls(
             database_url=database_url,
             auth=auth,
+            discord=discord,
             log_level=log_level,
             node_path=Path(values.get("NODE_PATH") or "node"),
             log_directory=Path(

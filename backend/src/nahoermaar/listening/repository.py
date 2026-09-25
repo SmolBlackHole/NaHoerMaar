@@ -243,6 +243,23 @@ class ListeningRepository:
             for row in rows
         }
 
+    async def active_playback(
+        self,
+        session_id: ListeningSessionId,
+        request_id: TrackRequestId,
+    ) -> PlaybackRecord | None:
+        row = await self._session.scalar(
+            select(_PlaybackRecordRow)
+            .where(
+                _PlaybackRecordRow.session_id == session_id,
+                _PlaybackRecordRow.request_id == request_id,
+                _PlaybackRecordRow.ended_at.is_(None),
+            )
+            .order_by(_PlaybackRecordRow.started_at.desc())
+            .limit(1)
+        )
+        return _playback(row) if row is not None else None
+
     async def start_playback(
         self,
         record: PlaybackRecord,

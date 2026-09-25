@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from datetime import datetime
+from math import isfinite
 from uuid import UUID, uuid4
 
 from nahoermaar.users.domain import UserId
@@ -17,6 +18,8 @@ from .domain import (
     UNDO_LIFETIME,
     ListeningSessionId,
     MutationOutcome,
+    PlaybackCheckpoint,
+    PlaybackIntent,
     PlayerAction,
     PlayerError,
     PlayerErrorCode,
@@ -38,8 +41,14 @@ from .domain import (
 from .events import (
     AddTracks,
     ApplyRadioCandidates,
+    CheckpointPlayback,
     ClearQueue,
+    CompletePlayback,
+    FailPlayback,
+    JoinVoice,
     MoveQueueEntry,
+    Pause,
+    Play,
     PlayerChanged,
     PlayerCommand,
     PlayerEvent,
@@ -47,7 +56,12 @@ from .events import (
     RadioRefillRequested,
     RemoveQueueEntry,
     RetryRadio,
+    Seek,
+    SetCrossfade,
+    SetVolume,
+    Skip,
     StartRadio,
+    StopPlayback,
     StopRadio,
     UndoQueue,
 )
@@ -76,6 +90,12 @@ def transition(
 
     if isinstance(command, ApplyRadioCandidates):
         result = _apply_radio(state, command, now)
+    elif isinstance(command, CompletePlayback):
+        result = _complete_playback(state, command, now)
+    elif isinstance(command, FailPlayback):
+        result = _fail_playback(state, command, now)
+    elif isinstance(command, CheckpointPlayback):
+        result = _checkpoint_playback(state, command)
     else:
         actor = _actor(actor_id)
         if isinstance(command, AddTracks):
@@ -92,8 +112,26 @@ def transition(
             result = _start_radio(state, command, actor, now)
         elif isinstance(command, StopRadio):
             result = _stop_radio(state, command, now)
-        else:
+        elif isinstance(command, RetryRadio):
             result = _retry_radio(state, command, now)
+        elif isinstance(command, Play):
+            result = _play(state, now)
+        elif isinstance(command, Pause):
+            result = _pause(state)
+        elif isinstance(command, Skip):
+            result = _skip(state, now)
+        elif isinstance(command, StopPlayback):
+            result = _stop_playback(state)
+        elif isinstance(command, Seek):
+            result = _seek(state, command)
+        elif isinstance(command, SetVolume):
+            result = _set_volume(state, command)
+        elif isinstance(command, SetCrossfade):
+            result = _set_crossfade(state, command)
+        elif isinstance(command, JoinVoice):
+            result = _join_voice(state, command)
+        else:
+            result = _leave_voice(state)
 
     if result.state == state:
         return result
@@ -125,6 +163,225 @@ def _actor(actor_id: UserId | None) -> UserId:
     if actor_id is None:
         raise PlayerError(PlayerErrorCode.ACTOR_REQUIRED, 401)
     return actor_id
+
+
+def _play(state: PlayerState, now: datetime) -> Transition:
+    checkpoint = state.checkpoint
+    if checkpoint.intent is PlaybackIntent.PLAYING:
+        return Transition(state, MutationOutcome(PlayerAction.PLAYBACK_PLAYED))
+    if checkpoint.intent is PlaybackIntent.PAUSED:
+        updated = replace(
+            state,
+            checkpoint=replace(checkpoint, intent=PlaybackIntent.PLAYING),
+        )
+        return Transition(updated, MutationOutcome(PlayerAction.PLAYBACK_PLAYED))
+    return _advance_playback(state, PlayerAction.PLAYBACK_PLAYED, now)
+
+
+def _pause(state: PlayerState) -> Transition:
+    if state.checkpoint.intent is not PlaybackIntent.PLAYING:
+        raise PlayerError(PlayerErrorCode.NOTHING_PLAYING, 409)
+    updated = replace(
+        state,
+        checkpoint=replace(state.checkpoint, intent=PlaybackIntent.PAUSED),
+    )
+    return Transition(updated, MutationOutcome(PlayerAction.PLAYBACK_PAUSED))
+
+
+def _skip(state: PlayerState, now: datetime) -> Transition:
+    if state.checkpoint.intent is PlaybackIntent.STOPPED:
+        raise PlayerError(PlayerErrorCode.NOTHING_PLAYING, 409)
+    return _advance_playback(state, PlayerAction.PLAYBACK_SKIPPED, now)
+
+
+def _stop_playback(state: PlayerState) -> Transition:
+    checkpoint = state.checkpoint
+    if checkpoint.request is None:
+        raise PlayerError(PlayerErrorCode.NOTHING_PLAYING, 409)
+    returned = QueueEntry(
+        QueueEntryId(uuid4()),
+        state.session.id,
+        checkpoint.request,
+        0,
+    )
+    queue = _queue(state.queue, (returned, *state.queue.entries))
+    updated = replace(
+        state,
+        queue=queue,
+        checkpoint=PlaybackCheckpoint(state.session.id),
+    )
+    return Transition(
+        updated,
+        MutationOutcome(
+            PlayerAction.PLAYBACK_STOPPED,
+            restored_count=1,
+            entry_ids=(returned.id,),
+        ),
+    )
+
+
+def _seek(state: PlayerState, command: Seek) -> Transition:
+    if (
+        state.checkpoint.intent is PlaybackIntent.STOPPED
+        or not isfinite(command.seconds)
+        or command.seconds < 0
+    ):
+        raise PlayerError(PlayerErrorCode.INVALID_COMMAND, 422)
+    updated = replace(
+        state,
+        checkpoint=replace(
+            state.checkpoint,
+            position_seconds=command.seconds,
+        ),
+    )
+    return Transition(updated, MutationOutcome(PlayerAction.PLAYBACK_SEEKED))
+
+
+def _set_volume(state: PlayerState, command: SetVolume) -> Transition:
+    if not isfinite(command.volume) or not 0 <= command.volume <= 1:
+        raise PlayerError(PlayerErrorCode.INVALID_COMMAND, 422)
+    updated = replace(
+        state,
+        session=replace(state.session, volume=command.volume),
+    )
+    return Transition(updated, MutationOutcome(PlayerAction.VOLUME_CHANGED))
+
+
+def _set_crossfade(state: PlayerState, command: SetCrossfade) -> Transition:
+    if command.seconds not in {0, 3, 4, 5, 6, 7}:
+        raise PlayerError(PlayerErrorCode.INVALID_COMMAND, 422)
+    updated = replace(
+        state,
+        session=replace(state.session, crossfade_seconds=command.seconds),
+    )
+    return Transition(updated, MutationOutcome(PlayerAction.CROSSFADE_CHANGED))
+
+
+def _join_voice(state: PlayerState, command: JoinVoice) -> Transition:
+    if command.channel_id <= 0:
+        raise PlayerError(PlayerErrorCode.INVALID_COMMAND, 422)
+    updated = replace(
+        state,
+        session=replace(state.session, channel_id=command.channel_id),
+    )
+    return Transition(updated, MutationOutcome(PlayerAction.VOICE_JOINED))
+
+
+def _leave_voice(state: PlayerState) -> Transition:
+    updated = replace(
+        state,
+        session=replace(state.session, channel_id=None),
+    )
+    return Transition(updated, MutationOutcome(PlayerAction.VOICE_LEFT))
+
+
+def _complete_playback(
+    state: PlayerState,
+    command: CompletePlayback,
+    now: datetime,
+) -> Transition:
+    checkpoint = _expected_checkpoint(state, command.request_id)
+    action = PlayerAction.PLAYBACK_COMPLETED
+    return _advance_playback(state, action, now, intent=checkpoint.intent)
+
+
+def _fail_playback(
+    state: PlayerState,
+    command: FailPlayback,
+    now: datetime,
+) -> Transition:
+    checkpoint = _expected_checkpoint(state, command.request_id)
+    request = checkpoint.request
+    if request is None:
+        raise PlayerError(PlayerErrorCode.NOTHING_PLAYING, 409)
+    returned = QueueEntry(
+        QueueEntryId(uuid4()),
+        state.session.id,
+        request,
+        len(state.queue.entries),
+    )
+    updated = replace(
+        state,
+        queue=_queue(state.queue, (*state.queue.entries, returned)),
+        checkpoint=PlaybackCheckpoint(state.session.id),
+    )
+    updated, events = _maintain_radio(updated, now)
+    return Transition(
+        updated,
+        MutationOutcome(
+            PlayerAction.PLAYBACK_FAILED,
+            restored_count=1,
+            entry_ids=(returned.id,),
+        ),
+        events,
+    )
+
+
+def _checkpoint_playback(
+    state: PlayerState,
+    command: CheckpointPlayback,
+) -> Transition:
+    checkpoint = _expected_checkpoint(state, command.request_id)
+    if not isfinite(command.position_seconds) or command.position_seconds < 0:
+        raise PlayerError(PlayerErrorCode.INVALID_COMMAND, 422)
+    updated = replace(
+        state,
+        checkpoint=replace(
+            checkpoint,
+            position_seconds=command.position_seconds,
+        ),
+    )
+    return Transition(
+        updated,
+        MutationOutcome(PlayerAction.PLAYBACK_CHECKPOINTED),
+    )
+
+
+def _expected_checkpoint(
+    state: PlayerState,
+    request_id: UUID,
+) -> PlaybackCheckpoint:
+    checkpoint = state.checkpoint
+    if checkpoint.request is None or checkpoint.request.id != request_id:
+        raise PlayerError(PlayerErrorCode.IDEMPOTENCY_CONFLICT, 409)
+    return checkpoint
+
+
+def _advance_playback(
+    state: PlayerState,
+    action: PlayerAction,
+    now: datetime,
+    *,
+    intent: PlaybackIntent = PlaybackIntent.PLAYING,
+) -> Transition:
+    if not state.queue.entries:
+        if state.checkpoint.intent is PlaybackIntent.STOPPED:
+            raise PlayerError(PlayerErrorCode.NOTHING_TO_PLAY, 409)
+        updated = replace(
+            state,
+            checkpoint=PlaybackCheckpoint(state.session.id),
+        )
+        updated, events = _maintain_radio(updated, now)
+        return Transition(updated, MutationOutcome(action), events)
+
+    entry, *remaining = state.queue.entries
+    checkpoint = PlaybackCheckpoint(
+        state.session.id,
+        intent,
+        entry.request,
+        0.0,
+    )
+    updated = replace(
+        state,
+        queue=_queue(state.queue, tuple(remaining)),
+        checkpoint=checkpoint,
+    )
+    updated, events = _maintain_radio(updated, now)
+    return Transition(
+        updated,
+        MutationOutcome(action, removed_count=1, entry_ids=(entry.id,)),
+        events,
+    )
 
 
 def _add(

@@ -29,11 +29,21 @@ from nahoermaar.player.domain import (
 from nahoermaar.player.events import (
     AddTracks,
     ClearQueue,
+    JoinVoice,
+    LeaveVoice,
     MoveQueueEntry,
     MutationReply,
+    Pause,
+    Play,
+    PlayerCommand,
     RemoveQueueEntry,
+    Seek,
+    SetCrossfade,
+    SetVolume,
+    Skip,
     RetryRadio,
     StartRadio,
+    StopPlayback,
     StopRadio,
     TrackSelection,
     UndoQueue,
@@ -91,6 +101,35 @@ class StartRadioInput(View):
 class RadioMutationInput(View):
     operation_id: UUID
     expected_generation: UUID
+
+
+class OperationInput(View):
+    operation_id: UUID
+
+
+class SeekInput(OperationInput):
+    seconds: float = Field(ge=0)
+
+
+class VolumeInput(OperationInput):
+    volume: float = Field(ge=0, le=1)
+
+
+class CrossfadeInput(OperationInput):
+    seconds: int
+
+
+class JoinVoiceInput(OperationInput):
+    channel_id: int = Field(gt=0)
+
+
+class VoiceChannelView(View):
+    id: int
+    name: str
+    guild_id: int
+    guild_name: str
+    can_connect: bool
+    can_speak: bool
 
 
 class RequestView(View):
@@ -254,6 +293,101 @@ def router(application: Application) -> APIRouter:
         )
         return await _mutation(application, result)
 
+    @routes.post("/play")
+    async def play(request: Request, body: OperationInput) -> MutationView:
+        return await execute(
+            request,
+            Play(_session_id(application), OperationId(body.operation_id)),
+        )
+
+    @routes.post("/pause")
+    async def pause(request: Request, body: OperationInput) -> MutationView:
+        return await execute(
+            request,
+            Pause(_session_id(application), OperationId(body.operation_id)),
+        )
+
+    @routes.post("/skip")
+    async def skip(request: Request, body: OperationInput) -> MutationView:
+        return await execute(
+            request,
+            Skip(_session_id(application), OperationId(body.operation_id)),
+        )
+
+    @routes.post("/stop")
+    async def stop(request: Request, body: OperationInput) -> MutationView:
+        return await execute(
+            request,
+            StopPlayback(_session_id(application), OperationId(body.operation_id)),
+        )
+
+    @routes.post("/seek")
+    async def seek(request: Request, body: SeekInput) -> MutationView:
+        return await execute(
+            request,
+            Seek(
+                _session_id(application),
+                OperationId(body.operation_id),
+                body.seconds,
+            ),
+        )
+
+    @routes.put("/volume")
+    async def set_volume(request: Request, body: VolumeInput) -> MutationView:
+        return await execute(
+            request,
+            SetVolume(
+                _session_id(application),
+                OperationId(body.operation_id),
+                body.volume,
+            ),
+        )
+
+    @routes.put("/crossfade")
+    async def set_crossfade(request: Request, body: CrossfadeInput) -> MutationView:
+        return await execute(
+            request,
+            SetCrossfade(
+                _session_id(application),
+                OperationId(body.operation_id),
+                body.seconds,
+            ),
+        )
+
+    @routes.get("/voice/channels")
+    async def voice_channels() -> tuple[VoiceChannelView, ...]:
+        if application.playback is None:
+            return ()
+        return tuple(
+            VoiceChannelView(
+                id=channel.id,
+                name=channel.name,
+                guild_id=channel.guild_id,
+                guild_name=channel.guild_name,
+                can_connect=channel.can_connect,
+                can_speak=channel.can_speak,
+            )
+            for channel in application.playback.channels()
+        )
+
+    @routes.post("/voice/join")
+    async def join_voice(request: Request, body: JoinVoiceInput) -> MutationView:
+        return await execute(
+            request,
+            JoinVoice(
+                _session_id(application),
+                OperationId(body.operation_id),
+                body.channel_id,
+            ),
+        )
+
+    @routes.post("/voice/leave")
+    async def leave_voice(request: Request, body: OperationInput) -> MutationView:
+        return await execute(
+            request,
+            LeaveVoice(_session_id(application), OperationId(body.operation_id)),
+        )
+
     @routes.post("/radio")
     async def start_radio(request: Request, body: StartRadioInput) -> MutationView:
         current = authenticated(request)
@@ -309,6 +443,14 @@ def router(application: Application) -> APIRouter:
                 OperationId(body.operation_id),
                 body.expected_generation,
             ),
+            MessageContext(actor_id=current.user.id),
+        )
+        return await _mutation(application, result)
+
+    async def execute(request: Request, command: PlayerCommand) -> MutationView:
+        current = authenticated(request)
+        result = await application.bus.execute(
+            command,
             MessageContext(actor_id=current.user.id),
         )
         return await _mutation(application, result)

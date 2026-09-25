@@ -4,7 +4,7 @@
 
 """Provider observations at the catalog integration boundary."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Protocol, runtime_checkable
 
@@ -71,6 +71,21 @@ class ProviderTrack:
 
 
 @dataclass(frozen=True, slots=True)
+class ProviderAudio:
+    stream_url: str = field(repr=False)
+    headers: tuple[tuple[str, str], ...] = field(default=(), repr=False)
+    is_opus: bool = False
+
+    def __post_init__(self) -> None:
+        if not self.stream_url or self.stream_url != self.stream_url.strip():
+            raise ValueError("Audio stream URL must be non-empty and trimmed.")
+        if type(self.headers) is not tuple or any(
+            type(header) is not tuple or len(header) != 2 for header in self.headers
+        ):
+            raise ValueError("Audio stream headers must be immutable pairs.")
+
+
+@dataclass(frozen=True, slots=True)
 class ProviderPage:
     entries: tuple[ProviderTrack, ...]
     continuation: str | None = None
@@ -121,5 +136,7 @@ class CatalogProvider(Protocol):
         limit: int,
         continuation: str | None = None,
     ) -> ProviderPage: ...
+
+    async def resolve_audio(self, reference: MediaReference) -> ProviderAudio: ...
 
     async def close(self) -> None: ...

@@ -189,6 +189,18 @@ class ListeningService:
             len(self.audience.members),
         )
 
+    async def active_playback(
+        self,
+        session_id: ListeningSessionId,
+        request_id: TrackRequestId,
+    ) -> PlaybackRecord | None:
+        async with self._lock:
+            async with self._units() as work:
+                return await ListeningRepository(work.session).active_playback(
+                    session_id,
+                    request_id,
+                )
+
     async def begin(
         self,
         command: BeginPlayback,

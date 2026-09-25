@@ -114,6 +114,86 @@ class ApplyRadioCandidates(Command[MutationReply]):
     error: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class Play(Command[MutationReply]):
+    session_id: ListeningSessionId
+    operation_id: OperationId
+
+
+@dataclass(frozen=True, slots=True)
+class Pause(Command[MutationReply]):
+    session_id: ListeningSessionId
+    operation_id: OperationId
+
+
+@dataclass(frozen=True, slots=True)
+class Skip(Command[MutationReply]):
+    session_id: ListeningSessionId
+    operation_id: OperationId
+
+
+@dataclass(frozen=True, slots=True)
+class StopPlayback(Command[MutationReply]):
+    session_id: ListeningSessionId
+    operation_id: OperationId
+
+
+@dataclass(frozen=True, slots=True)
+class Seek(Command[MutationReply]):
+    session_id: ListeningSessionId
+    operation_id: OperationId
+    seconds: float
+
+
+@dataclass(frozen=True, slots=True)
+class SetVolume(Command[MutationReply]):
+    session_id: ListeningSessionId
+    operation_id: OperationId
+    volume: float
+
+
+@dataclass(frozen=True, slots=True)
+class SetCrossfade(Command[MutationReply]):
+    session_id: ListeningSessionId
+    operation_id: OperationId
+    seconds: int
+
+
+@dataclass(frozen=True, slots=True)
+class JoinVoice(Command[MutationReply]):
+    session_id: ListeningSessionId
+    operation_id: OperationId
+    channel_id: int
+
+
+@dataclass(frozen=True, slots=True)
+class LeaveVoice(Command[MutationReply]):
+    session_id: ListeningSessionId
+    operation_id: OperationId
+
+
+@dataclass(frozen=True, slots=True)
+class CompletePlayback(Command[MutationReply]):
+    session_id: ListeningSessionId
+    operation_id: OperationId
+    request_id: UUID
+
+
+@dataclass(frozen=True, slots=True)
+class FailPlayback(Command[MutationReply]):
+    session_id: ListeningSessionId
+    operation_id: OperationId
+    request_id: UUID
+
+
+@dataclass(frozen=True, slots=True)
+class CheckpointPlayback(Command[MutationReply]):
+    session_id: ListeningSessionId
+    operation_id: OperationId
+    request_id: UUID
+    position_seconds: float
+
+
 type PlayerCommand = (
     AddTracks
     | RemoveQueueEntry
@@ -124,6 +204,18 @@ type PlayerCommand = (
     | StopRadio
     | RetryRadio
     | ApplyRadioCandidates
+    | Play
+    | Pause
+    | Skip
+    | StopPlayback
+    | Seek
+    | SetVolume
+    | SetCrossfade
+    | JoinVoice
+    | LeaveVoice
+    | CompletePlayback
+    | FailPlayback
+    | CheckpointPlayback
 )
 
 

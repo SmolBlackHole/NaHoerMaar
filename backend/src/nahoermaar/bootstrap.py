@@ -8,6 +8,7 @@ import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from uuid import UUID, uuid5
 from time import perf_counter
 from zoneinfo import ZoneInfo
 
@@ -17,6 +18,7 @@ from .config import Settings
 from .database.core import Database
 from .database.schema import migrate
 from .database.uow import UnitOfWork
+from .integrations.discord import DiscordGateway
 from .integrations.discord_oauth import DiscordOAuth
 from .integrations.youtube import YouTubeProvider
 from .listening.service import (
@@ -30,20 +32,35 @@ from .listening.service import (
 from .messaging import MessageBus, MessageContext
 from .observability import configure_logging
 from .operations.logs import RecentLogBuffer
+from .player.domain import OperationId, PlayerError, PlayerErrorCode
 from .player.events import (
     AddTracks,
     ApplyRadioCandidates,
+    CheckpointPlayback,
     ClearQueue,
+    CompletePlayback,
+    FailPlayback,
+    JoinVoice,
+    LeaveVoice,
     MoveQueueEntry,
     MutationReply,
+    Pause,
+    Play,
+    PlayerCommand,
     PlayerChanged,
     RadioRefillRequested,
     RemoveQueueEntry,
+    Seek,
+    SetCrossfade,
+    SetVolume,
+    Skip,
     RetryRadio,
     StartRadio,
+    StopPlayback,
     StopRadio,
     UndoQueue,
 )
+from .player.playback import PlaybackCoordinator
 from .player.session import CatalogRadioResolver, PlayerSessionManager
 from .statistics.service import StatisticsService
 from .users.domain import AccessEvent, User
@@ -83,6 +100,8 @@ class Application:
     listening: ListeningService
     statistics: StatisticsService
     logs: RecentLogBuffer
+    gateway: DiscordGateway | None = None
+    playback: PlaybackCoordinator | None = None
 
     async def start(self) -> None:
         """Migrate storage and reconcile startup-owned state before requests."""
@@ -92,6 +111,10 @@ class Application:
         await self.bus.execute(ReconcileOperators())
         await self.player.start()
         await self.listening.start(self.player.state.session.id)
+        if self.gateway is not None:
+            await self.gateway.open()
+        if self.playback is not None:
+            await self.playback.start()
         _LOGGER.info(
             "application.started session=%s duration_ms=%.1f",
             self.player.state.session.id,
@@ -102,6 +125,10 @@ class Application:
         """Release process-owned resources."""
         started_at = perf_counter()
         _LOGGER.info("application.closing")
+        if self.playback is not None:
+            await self.playback.close()
+        if self.gateway is not None:
+            await self.gateway.close()
         await self.player.close()
         await self.catalog.close()
         await self.database.close()
@@ -130,12 +157,50 @@ def bootstrap(
 
     access = AccessService(units, Operators.load(settings.auth.access_path))
     auth = AuthService(units, DiscordOAuth(settings.auth))
-    catalog = CatalogService(units, (YouTubeProvider(settings.node_path),))
+    provider = YouTubeProvider(settings.node_path)
+    catalog = CatalogService(units, (provider,))
     bus = MessageBus()
     player = PlayerSessionManager(units, bus, CatalogRadioResolver(catalog))
     listening = ListeningService(units, bus)
     statistics = StatisticsService(units, ZoneInfo(settings.statistics_timezone))
-    _register_handlers(bus, auth, access, player, listening)
+
+    async def summon(discord_id: str, channel_id: int, correlation_id: UUID) -> None:
+        user = await access.require_discord_access(discord_id)
+        context = MessageContext(correlation_id=correlation_id, actor_id=user.id)
+        session_id = player.state.session.id
+        await bus.execute(
+            JoinVoice(
+                session_id,
+                OperationId(uuid5(correlation_id, "join-voice")),
+                channel_id,
+            ),
+            context,
+        )
+        state = player.state
+        if state.checkpoint.request is not None or state.queue.entries:
+            try:
+                await bus.execute(
+                    Play(
+                        session_id,
+                        OperationId(uuid5(correlation_id, "play")),
+                    ),
+                    context,
+                )
+            except PlayerError as error:
+                if error.code is not PlayerErrorCode.NOTHING_TO_PLAY:
+                    raise
+
+    gateway: DiscordGateway | None = None
+    playback: PlaybackCoordinator | None = None
+    if settings.discord.enabled:
+        gateway = DiscordGateway(
+            settings.discord.token,
+            settings.discord.ffmpeg_path,
+            settings.discord.quotes_path,
+            summon,
+        )
+        playback = PlaybackCoordinator(player, catalog, listening, bus, gateway.output)
+    _register_handlers(bus, auth, access, player, listening, playback)
     _LOGGER.info("application.configured")
     return Application(
         settings,
@@ -148,6 +213,8 @@ def bootstrap(
         listening,
         statistics,
         logs,
+        gateway,
+        playback,
     )
 
 
@@ -164,6 +231,7 @@ def _register_handlers(
     access: AccessService,
     player: PlayerSessionManager,
     listening: ListeningService,
+    playback: PlaybackCoordinator | None = None,
 ) -> None:
     async def begin_login(command: BeginLogin, _context: MessageContext) -> LoginStart:
         return await auth.begin(command.browser_token)
@@ -266,6 +334,12 @@ def _register_handlers(
     ) -> MutationReply:
         return await player.execute(command, context)
 
+    async def playback_command(
+        command: PlayerCommand,
+        context: MessageContext,
+    ) -> MutationReply:
+        return await player.execute(command, context)
+
     async def reauthenticate_stream(
         _event: UserAccessChanged, _context: MessageContext
     ) -> None:
@@ -281,11 +355,25 @@ def _register_handlers(
     bus.register_command(RetryRadio, retry_radio)
 
     bus.register_command(ApplyRadioCandidates, apply_radio)
+    bus.register_command(Play, playback_command)
+    bus.register_command(Pause, playback_command)
+    bus.register_command(Skip, playback_command)
+    bus.register_command(StopPlayback, playback_command)
+    bus.register_command(Seek, playback_command)
+    bus.register_command(SetVolume, playback_command)
+    bus.register_command(SetCrossfade, playback_command)
+    bus.register_command(JoinVoice, playback_command)
+    bus.register_command(LeaveVoice, playback_command)
+    bus.register_command(CompletePlayback, playback_command)
+    bus.register_command(FailPlayback, playback_command)
+    bus.register_command(CheckpointPlayback, playback_command)
     bus.register_command(BeginPlayback, listening.begin)
     bus.register_command(AdvancePlayback, listening.advance)
     bus.register_command(FinishPlayback, listening.finish)
     bus.register_command(ObserveAudience, listening.observe)
     bus.register_command(DisconnectAudience, listening.disconnect)
     bus.subscribe(PlayerChanged, player.broadcast)
+    if playback is not None:
+        bus.subscribe(PlayerChanged, playback.player_changed)
     bus.subscribe(RadioRefillRequested, player.refill)
     bus.subscribe(UserAccessChanged, reauthenticate_stream)
