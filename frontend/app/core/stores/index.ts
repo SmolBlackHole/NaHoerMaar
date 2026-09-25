@@ -50,8 +50,9 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 			error.value = null;
 		});
 
-		function restore(): Promise<boolean> {
-			if (account.value && status.value === "authenticated") return Promise.resolve(true);
+		function restore(force = false): Promise<boolean> {
+			if (!force && account.value && status.value === "authenticated")
+				return Promise.resolve(true);
 			if (restoring) return restoring;
 			const currentGeneration = authority.current().generation;
 			const controller = new AbortController();
@@ -128,6 +129,7 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 			busy,
 			loginUrl: client.account.loginUrl,
 			restore,
+			refresh: () => restore(true),
 			logout,
 		};
 	});

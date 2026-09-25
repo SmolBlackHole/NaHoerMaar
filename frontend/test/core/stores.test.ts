@@ -167,4 +167,40 @@ describe("new backend Pinia stores", () => {
 			own: true,
 		});
 	});
+
+	it("refreshes the current session after profile setup changes completeness", async () => {
+		const pinia = createPinia();
+		setActivePinia(pinia);
+		piniaInstances.push(pinia);
+		const fetcher = vi.fn<typeof fetch>();
+		fetcher
+			.mockResolvedValueOnce(
+				Response.json({
+					csrf: "session-token",
+					discord_id: "discord-user",
+					expires_at: "2026-09-26T00:00:00Z",
+					profile_complete: false,
+					role: "owner",
+					user_id: "user-id",
+				}),
+			)
+			.mockResolvedValueOnce(
+				Response.json({
+					csrf: "session-token",
+					discord_id: "discord-user",
+					expires_at: "2026-09-26T00:00:00Z",
+					profile_complete: true,
+					role: "owner",
+					user_id: "user-id",
+				}),
+			);
+		const core = createBackendCore({ fetch: fetcher });
+		const session = core.stores.useSessionStore();
+
+		expect(await session.restore()).toBe(true);
+		expect(session.account?.profile_complete).toBe(false);
+		expect(await session.refresh()).toBe(true);
+		expect(session.account?.profile_complete).toBe(true);
+		expect(fetcher).toHaveBeenCalledTimes(2);
+	});
 });

@@ -1,32 +1,43 @@
 <script setup lang="ts">
-import { useProfileStore } from "~/stores/profile";
-const emit = defineEmits<{ saved: [] }>();
-const profile = useProfileStore();
+import type { ProfileUpdate, UserProfile } from "~/core/models/account";
+import { randomAvatar } from "#shared/profile";
+
+const props = withDefaults(
+	defineProps<{
+		profile: UserProfile["profile"] | null;
+		complete?: boolean;
+		busy?: boolean;
+		error?: string | null;
+	}>(),
+	{ complete: false, busy: false, error: null },
+);
+const emit = defineEmits<{ save: [value: ProfileUpdate] }>();
 const { icons } = useTheme();
 const name = ref("");
-const avatar = ref(profile.randomAvatar());
-const error = ref("");
+const avatar = ref(randomAvatar());
+const validationError = ref("");
 const inputId = useId();
 const changed = computed(
-	() => name.value.trim() !== profile.profile?.name || avatar.value !== profile.profile?.avatar,
+	() =>
+		name.value.trim() !== props.profile?.display_name ||
+		avatar.value !== props.profile?.pixabot,
 );
 watch(
-	() => profile.profile?.id,
-	() => {
-		const suggestion = !profile.profileComplete ? profile.suggestion : null;
-		name.value = suggestion?.name ?? profile.profile?.name ?? "";
-		avatar.value = suggestion?.avatar ?? profile.profile?.avatar ?? profile.randomAvatar();
-		error.value = "";
+	() => props.profile,
+	(value) => {
+		if (!value) return;
+		name.value = value.display_name ?? "";
+		avatar.value = value.pixabot ?? randomAvatar(avatar.value);
+		validationError.value = "";
 	},
 	{ immediate: true },
 );
-async function save() {
+function save() {
 	if (!name.value.trim() || name.value.trim().length > 32) {
-		error.value = "Choose a name between 1 and 32 characters.";
+		validationError.value = "Choose a name between 1 and 32 characters.";
 		return;
 	}
-	if (await profile.save(name.value.trim(), avatar.value)) emit("saved");
-	else error.value = profile.error;
+	emit("save", { display_name: name.value.trim(), pixabot: avatar.value });
 }
 </script>
 
@@ -43,11 +54,12 @@ async function save() {
 			<div class="space-y-2">
 				<p class="text-sm font-medium">Your little bot</p>
 				<UButton
+					type="button"
 					label="Try another"
 					:icon="icons.reload"
 					variant="outline"
 					color="neutral"
-					@click="avatar = profile.randomAvatar(avatar)"
+					@click="avatar = randomAvatar(avatar)"
 				/>
 			</div>
 		</div>
@@ -61,32 +73,31 @@ async function save() {
 				:maxlength="32"
 				size="xl"
 				class="w-full"
-				:aria-invalid="!!error"
-				:aria-describedby="error ? `${inputId}-error` : undefined"
-				@update:model-value="error = ''"
+				:aria-invalid="!!validationError || !!props.error"
+				:aria-describedby="validationError || props.error ? `${inputId}-error` : undefined"
+				@update:model-value="validationError = ''"
 			/>
-			<p v-if="error" :id="`${inputId}-error`" class="text-error text-sm" role="alert">
-				{{ error }}
+			<p
+				v-if="validationError || props.error"
+				:id="`${inputId}-error`"
+				class="text-error text-sm"
+				role="alert"
+			>
+				{{ validationError || props.error }}
 			</p>
 		</div>
 		<UButton
 			type="submit"
 			:label="
-				profile.profileComplete
-					? changed
-						? 'Save profile'
-						: 'Profile up to date'
-					: 'Enter the player'
+				complete ? (changed ? 'Save profile' : 'Profile up to date') : 'Enter the player'
 			"
-			:trailing-icon="
-				profile.profileComplete && !changed ? 'i-lucide-check' : icons.arrowRight
-			"
-			:color="profile.profileComplete && !changed ? 'neutral' : 'primary'"
-			:variant="profile.profileComplete && !changed ? 'soft' : 'solid'"
+			:trailing-icon="complete && !changed ? 'i-lucide-check' : icons.arrowRight"
+			:color="complete && !changed ? 'neutral' : 'primary'"
+			:variant="complete && !changed ? 'soft' : 'solid'"
 			size="xl"
 			block
-			:disabled="!name.trim() || (profile.profileComplete && !changed)"
-			:loading="profile.busy"
+			:disabled="!name.trim() || (complete && !changed)"
+			:loading="busy"
 		/>
 	</form>
 </template>

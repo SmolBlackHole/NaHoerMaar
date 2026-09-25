@@ -685,6 +685,20 @@ export interface components {
              */
             subject_user_id: string;
         };
+        /** AccessGrantView */
+        AccessGrantView: {
+            /**
+             * Granted At
+             * Format: date-time
+             */
+            granted_at: string;
+            /**
+             * Granted By User Id
+             * Format: uuid
+             */
+            granted_by_user_id: string;
+            user: components["schemas"]["UserView"];
+        };
         /**
          * AccessRole
          * @description Roles understood by the access policy.
@@ -693,14 +707,12 @@ export interface components {
         AccessRole: "owner" | "admin" | "user";
         /** AccessView */
         AccessView: {
-            /** Admin Ids */
-            admin_ids: string[];
             /** Grants */
-            grants: components["schemas"]["UserView"][];
+            grants: components["schemas"]["AccessGrantView"][];
             /** History */
             history: components["schemas"]["AccessEventView"][];
-            /** Owner Id */
-            owner_id: string;
+            /** Operators */
+            operators: components["schemas"]["UserView"][];
         };
         /** AddQueueInput */
         AddQueueInput: {

@@ -17,7 +17,7 @@ export interface BackendDependencies {
 	openEvents?: OpenEvents;
 }
 
-/** Per-app composition, deliberately not installed in the existing Nuxt plugin yet. */
+/** Build the HTTP repositories used by one Nuxt application instance. */
 export function createBackendClient(dependencies: BackendDependencies) {
 	const request = createTransport(dependencies.fetch, dependencies.auth);
 	return {

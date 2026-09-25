@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { useProfileStore } from "~/stores/profile";
-const profile = useProfileStore();
+const session = useNuxtApp().$backendCore.stores.useSessionStore();
 const route = useRoute();
 const { icons } = useTheme();
 const retrying = ref(false);
@@ -35,8 +34,8 @@ const failures: Record<string, { title: string; text: string }> = {
 	},
 };
 const message = computed(() => {
-	if (profile.status === "forbidden") return failures.access_denied!;
-	if (profile.status === "unavailable")
+	if (session.status === "forbidden") return failures.access_denied!;
+	if (session.status === "unavailable")
 		return {
 			title: "Can't reach the bot",
 			text: "Your sign-in couldn't be checked. Try again when the connection is back.",
@@ -51,7 +50,7 @@ const message = computed(() => {
 async function retry() {
 	retrying.value = true;
 	try {
-		await profile.restore();
+		await session.refresh();
 	} finally {
 		retrying.value = false;
 	}
@@ -68,7 +67,7 @@ async function retry() {
 				<h1 id="login-title">{{ message.title }}</h1>
 				<p class="login-description" role="status">{{ message.text }}</p>
 				<UButton
-					v-if="profile.status === 'unavailable'"
+					v-if="session.status === 'unavailable'"
 					label="Try again"
 					:icon="icons.reload"
 					size="xl"
@@ -78,7 +77,7 @@ async function retry() {
 				/>
 				<UButton
 					v-else
-					to="/api/auth/discord"
+					:to="session.loginUrl"
 					external
 					label="Continue with Discord"
 					:trailing-icon="icons.arrowRight"

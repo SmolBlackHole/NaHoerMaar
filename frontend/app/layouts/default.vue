@@ -8,6 +8,9 @@ usePlayerNotifications();
 const player = usePlayerStore();
 const radio = useRadioPreviewStore();
 const profile = useProfileStore();
+// Remaining legacy player and settings views still use this session store.
+profile.lost("signed_out");
+onMounted(profile.restore);
 const settings = useSettingsStore();
 const toast = useToast();
 watch(
@@ -41,7 +44,10 @@ watch(
 		else toast.remove("appearance-save");
 	},
 );
-onBeforeUnmount(player.dispose);
+onBeforeUnmount(() => {
+	player.dispose();
+	profile.lost("signed_out");
+});
 
 const { icons } = useTheme();
 const open = ref(false);
@@ -161,10 +167,6 @@ const links = computed(() => [
 .music-shell :deep(.navigation-sidebar) {
 	background: var(--room-sidebar);
 	overflow: hidden;
-	transition: width 240ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-.music-shell :deep(.navigation-sidebar[data-collapsed="true"]) {
-	transition-duration: 180ms;
 }
 .music-shell :deep(.navigation-sidebar[data-dragging="true"]) {
 	transition: none;

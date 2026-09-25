@@ -70,7 +70,13 @@ def test_operators_grant_login_profile_and_revocation_share_internal_users() -> 
             owner = await UserRepository(work.session).get_by_discord_id("9")
         assert owner is not None
         assert owner.role is AccessRole.OWNER
-
+        assert [
+            (user.discord.discord_id, user.role)
+            for user in await access.operator_users()
+        ] == [
+            ("9", AccessRole.OWNER),
+            ("8", AccessRole.ADMIN),
+        ]
         grant = await access.grant(owner.id, "7")
         assert grant is not None
         assert grant.role_after is AccessRole.USER

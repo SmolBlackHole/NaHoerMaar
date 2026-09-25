@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { useProfileStore } from "~/stores/profile";
-
-const profile = useProfileStore();
+const core = useNuxtApp().$backendCore;
+const session = core.stores.useSessionStore();
 const consent = useConsentStore();
 const route = useRoute();
 const publicPage = computed(() => ["/licenses", "/licenses/"].includes(route.path));
@@ -12,24 +11,30 @@ onMounted(() => {
 	} catch {
 		/* Storage can be unavailable. */
 	}
+	if (!publicPage.value) void session.restore();
 });
-onMounted(profile.restore);
+watch(publicPage, (isPublic) => {
+	if (!isPublic && import.meta.client) void session.restore();
+});
 </script>
 
 <template>
 	<UApp :toaster="{ position: 'top-right', max: 3, ui: { viewport: 'top-16' } }">
 		<NuxtLoadingIndicator />
 		<div
-			v-if="!publicPage && !profile.ready"
+			v-if="!publicPage && session.status === 'checking'"
 			class="grid min-h-dvh place-items-center text-muted"
 			role="status"
 		>
 			Loading NaHörMaar…
 		</div>
-		<AuthWelcome v-else-if="!publicPage && profile.status !== 'authenticated'" />
-		<ProfileWelcome v-else-if="!publicPage && !profile.profileComplete" />
+		<AuthWelcome v-else-if="!publicPage && session.status !== 'authenticated'" />
+		<ProfileWelcome v-else-if="!publicPage && !session.account?.profile_complete" />
 		<div
-			v-show="publicPage || (profile.status === 'authenticated' && profile.profileComplete)"
+			v-if="
+				publicPage ||
+				(session.status === 'authenticated' && session.account?.profile_complete)
+			"
 			class="contents"
 		>
 			<NuxtLayout>

@@ -135,12 +135,19 @@ class AccessEventView(BaseModel):
     occurred_at: datetime
 
 
+class AccessGrantView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    user: UserView
+    granted_by_user_id: UUID
+    granted_at: datetime
+
+
 class AccessView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    owner_id: str
-    admin_ids: tuple[str, ...]
-    grants: tuple[UserView, ...]
+    operators: tuple[UserView, ...]
+    grants: tuple[AccessGrantView, ...]
     history: tuple[AccessEventView, ...]
 
 
@@ -227,12 +234,12 @@ def router(application: Application) -> APIRouter:
         history_limit: int = Query(default=100, ge=1, le=500),
     ) -> AccessView:
         await application.access.require_admin(authenticated(request).user.id)
-        operators = application.access.operators
         return AccessView(
-            owner_id=operators.owner_id,
-            admin_ids=operators.admin_ids,
+            operators=tuple(
+                _user_view(user) for user in await application.access.operator_users()
+            ),
             grants=tuple(
-                _user_view(user) for user in await application.access.grants()
+                _grant_view(user) for user in await application.access.grants()
             ),
             history=tuple(
                 _event_view(event)
@@ -294,6 +301,16 @@ def _user_view(user: User) -> UserView:
         created_at=user.created_at,
         updated_at=user.updated_at,
         last_login_at=user.last_login_at,
+    )
+
+
+def _grant_view(user: User) -> AccessGrantView:
+    if user.access_granted_by is None or user.access_granted_at is None:
+        raise ValueError("Ordinary access grant is missing its actor or timestamp.")
+    return AccessGrantView(
+        user=_user_view(user),
+        granted_by_user_id=user.access_granted_by,
+        granted_at=user.access_granted_at,
     )
 
 

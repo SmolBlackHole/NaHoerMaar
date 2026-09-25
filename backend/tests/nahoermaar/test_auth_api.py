@@ -338,11 +338,13 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             assert grant.json()["role_after"] == "user"
             access_state = await client.get("/api/access")
             assert access_state.status_code == 200
-            assert access_state.json()["grants"][0]["discord"]["id"] == "7"
+            assert access_state.json()["operators"][0]["id"] == str(current.user.id)
+            assert access_state.json()["operators"][0]["role"] == "owner"
+            assert access_state.json()["grants"][0]["user"]["discord"]["id"] == "7"
             members = await client.get("/api/access/members")
             assert members.status_code == 200
             assert members.json() == {"members": []}
-            granted_user_id = access_state.json()["grants"][0]["id"]
+            granted_user_id = access_state.json()["grants"][0]["user"]["id"]
             granted_profile = await client.get(f"/api/users/{granted_user_id}")
             assert granted_profile.status_code == 200
 

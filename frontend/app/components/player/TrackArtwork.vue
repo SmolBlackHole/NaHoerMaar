@@ -1,12 +1,16 @@
 <script setup lang="ts">
-import type { TrackDisplay } from "#shared/player";
-import { trackArtwork } from "#shared/player";
+interface ArtworkEntry {
+	artwork_url?: string | null;
+	thumbnail_url?: string | null;
+}
 
-const props = defineProps<{ entry: TrackDisplay | null; large?: boolean }>();
+const props = defineProps<{ entry: ArtworkEntry | null; large?: boolean }>();
 const { icons } = useTheme();
 const failed = ref(false);
 const consent = useConsentStore();
-const source = computed(() => (consent.youtube ? trackArtwork(props.entry) : null));
+const source = computed(() =>
+	consent.youtube ? (props.entry?.artwork_url ?? props.entry?.thumbnail_url ?? null) : null,
+);
 watch(source, () => {
 	failed.value = false;
 });

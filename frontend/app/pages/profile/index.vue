@@ -1,40 +1,27 @@
 <script setup lang="ts">
-import type { components } from "#shared/api.generated";
-import { useRepositories } from "~/repositories";
-import { useProfileStore } from "~/stores/profile";
-
-type ProfileView = components["schemas"]["ProfileView"];
+import type { ProfileUpdate } from "~/core/models/account";
 
 useSeoMeta({ title: "Your profile | NaHörMaar" });
-const profile = useProfileStore();
-const { account } = useRepositories();
+const core = useNuxtApp().$backendCore;
+const session = core.stores.useSessionStore();
+const profile = core.workflows.profile();
+const details = computed(() => profile.profile.data.value);
 const { icons } = useTheme();
 const toast = useToast();
 const consent = useConsentStore();
-const details = shallowRef<ProfileView | null>(null);
-const directoryUnavailable = ref(false);
-const member = computed(() => details.value?.members[0] ?? null);
-const guilds = computed(() => [
-	...new Set(details.value?.members.map((entry) => entry.guild_name) ?? []),
-]);
-const role = computed(() => {
-	if (profile.session?.role === "owner") return "Owner";
-	if (profile.session?.role === "admin") return "Admin";
-	return "Listener";
+
+const discordAvatar = computed(() => {
+	const discord = details.value?.discord;
+	if (!discord?.avatar_hash) return undefined;
+	const extension = discord.avatar_hash.startsWith("a_") ? "gif" : "png";
+	return `https://cdn.discordapp.com/avatars/${discord.id}/${discord.avatar_hash}.${extension}?size=128`;
 });
 
 async function load() {
-	const discordId = profile.session?.discord_id;
-	if (!discordId) return;
-	directoryUnavailable.value = false;
-	try {
-		details.value = await account.profile(discordId);
-	} catch {
-		directoryUnavailable.value = true;
-	}
+	await profile.loadMine();
 }
-
-function savedProfile() {
+async function save(value: ProfileUpdate) {
+	if (!(await profile.updateProfile(value))) return;
 	toast.add({
 		title: "Profile saved",
 		description: "Your updated name and Pixabot are visible to the group.",
@@ -43,10 +30,8 @@ function savedProfile() {
 	});
 }
 
-onMounted(async () => {
-	await profile.restore();
-	await load();
-});
+onMounted(load);
+onScopeDispose(profile.dispose);
 </script>
 
 <template>
@@ -58,143 +43,159 @@ onMounted(async () => {
 				</UDashboardNavbar>
 			</template>
 			<template #body>
-				<div class="mx-auto w-full max-w-5xl space-y-7 pb-4 sm:pb-6">
-					<header class="flex flex-wrap items-end justify-between gap-4">
-						<div class="max-w-2xl">
-							<p class="text-primary text-xs font-medium uppercase tracking-wide">
-								Your space
-							</p>
-							<h1 class="text-highlighted mt-2 text-2xl font-semibold sm:text-3xl">
-								Make yourself recognizable
-							</h1>
-							<p class="text-muted mt-2 text-sm leading-relaxed">
-								Your name and Pixabot appear beside the tracks you add and the radio
-								sessions you start.
-							</p>
+				<div class="mx-auto w-full max-w-6xl pb-4 sm:pb-6">
+					<div
+						v-if="profile.profile.loading.value && !details"
+						aria-label="Loading your profile"
+					>
+						<div class="flex flex-wrap items-center gap-5 border-b border-default pb-7">
+							<USkeleton class="size-20 rounded-2xl" />
+							<div class="min-w-64 space-y-3">
+								<USkeleton class="h-7 w-52" />
+								<USkeleton class="h-4 w-36" />
+							</div>
 						</div>
-						<UBadge :label="role" color="primary" variant="subtle" size="lg" />
-					</header>
-
-					<div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
-						<section
-							aria-labelledby="identity-heading"
-							class="rounded-2xl border border-default bg-elevated/30 p-6 sm:p-8"
+						<div
+							class="mt-7 grid overflow-hidden rounded-2xl border border-default sm:grid-cols-2 xl:grid-cols-4"
 						>
-							<h2
-								id="identity-heading"
-								class="text-highlighted text-lg font-semibold"
-							>
-								How friends see you
-							</h2>
-							<p class="text-muted mt-1 mb-7 text-sm">
-								Change either value whenever you feel like it.
-							</p>
-							<ProfileForm v-if="profile.profile" @saved="savedProfile" />
-						</section>
+							<div v-for="index in 4" :key="index" class="space-y-3 p-5">
+								<USkeleton class="h-4 w-28" />
+								<USkeleton class="h-8 w-20" />
+							</div>
+						</div>
+						<div
+							class="mt-7 grid gap-7 lg:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.65fr)]"
+						>
+							<USkeleton class="h-96 rounded-2xl" />
+							<USkeleton class="h-72 rounded-2xl" />
+						</div>
+					</div>
 
-						<aside class="space-y-4">
-							<section
-								aria-labelledby="discord-account-heading"
-								class="rounded-2xl border border-default p-5"
+					<div v-else-if="!details" class="grid min-h-80 place-items-center">
+						<div class="max-w-sm text-center">
+							<UIcon :name="icons.user" class="mx-auto size-10 text-muted" />
+							<h1 class="mt-4 text-lg font-semibold text-highlighted">
+								Your profile is unavailable
+							</h1>
+							<p class="mt-2 text-sm leading-relaxed text-muted" role="alert">
+								{{
+									profile.profile.error.value ??
+									"The profile could not be loaded."
+								}}
+							</p>
+							<UButton
+								class="mt-5"
+								label="Try again"
+								:icon="icons.reload"
+								color="neutral"
+								variant="outline"
+								@click="load"
+							/>
+						</div>
+					</div>
+
+					<ProfileOverview v-else :value="details">
+						<template #details>
+							<div
+								class="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.65fr)] lg:items-start"
 							>
-								<div class="flex items-center gap-3">
-									<UAvatar
-										:src="member?.avatar_url ?? undefined"
-										:alt="
-											member?.display_name ??
-											profile.profile?.name ??
-											'Discord account'
-										"
-										size="lg"
-									/>
-									<div class="min-w-0">
+								<section aria-labelledby="identity-heading">
+									<h2
+										id="identity-heading"
+										class="text-lg font-semibold text-highlighted"
+									>
+										How friends see you
+									</h2>
+									<p class="mt-1 text-sm text-muted">
+										Your name and Pixabot appear beside requests and radio
+										sessions.
+									</p>
+									<div
+										class="mt-5 rounded-2xl border border-default bg-elevated/30 p-6 sm:p-8"
+									>
+										<ProfileForm
+											:profile="details.profile"
+											:complete="true"
+											:busy="profile.saving.value"
+											:error="profile.mutationError.value"
+											@save="save"
+										/>
+									</div>
+								</section>
+
+								<aside class="space-y-7">
+									<section aria-labelledby="discord-account-heading">
 										<h2
 											id="discord-account-heading"
-											class="text-highlighted truncate text-sm font-semibold"
+											class="text-lg font-semibold text-highlighted"
 										>
-											{{ member?.display_name ?? "Discord account" }}
+											Discord account
 										</h2>
-										<p v-if="member" class="text-muted truncate text-xs">
-											@{{ member.name }}
-										</p>
-										<p v-else class="text-muted text-xs">Linked to NaHörMaar</p>
-									</div>
-								</div>
+										<div class="mt-4 flex items-center gap-3">
+											<UAvatar
+												:src="discordAvatar"
+												:alt="details.discord.username ?? 'Discord account'"
+												size="lg"
+											/>
+											<div class="min-w-0">
+												<p
+													class="truncate text-sm font-medium text-highlighted"
+												>
+													{{ details.discord.username ?? "Discord user" }}
+												</p>
+												<p class="truncate text-xs text-muted">
+													{{ details.discord.id }}
+												</p>
+											</div>
+										</div>
+									</section>
 
-								<dl class="mt-5 space-y-4">
-									<div>
-										<dt class="text-muted text-xs">Discord ID</dt>
-										<dd
-											class="text-highlighted mt-1 break-all text-sm font-medium"
+									<section
+										class="border-t border-default pt-6"
+										aria-labelledby="account-heading"
+									>
+										<h2
+											id="account-heading"
+											class="text-lg font-semibold text-highlighted"
 										>
-											{{ profile.session?.discord_id }}
-										</dd>
-									</div>
-									<div>
-										<dt class="text-muted text-xs">Connected servers</dt>
-										<dd class="text-highlighted mt-1 text-sm font-medium">
-											{{
-												guilds.length
-													? guilds.join(", ")
-													: "Not currently visible"
-											}}
-										</dd>
-									</div>
-								</dl>
-								<p
-									v-if="directoryUnavailable"
-									class="text-muted mt-4 text-xs leading-relaxed"
-									role="status"
-								>
-									Live Discord details are temporarily unavailable. Profile
-									editing still works.
-								</p>
-							</section>
-
-							<section
-								aria-labelledby="account-heading"
-								class="rounded-2xl border p-5"
-							>
-								<h2
-									id="account-heading"
-									class="text-highlighted text-sm font-semibold"
-								>
-									Account
-								</h2>
-								<p class="text-muted mt-1 mb-4 text-xs leading-relaxed">
-									Privacy choices and the current browser session.
-								</p>
-								<div class="grid gap-2">
-									<UButton
-										label="Cookie settings"
-										color="neutral"
-										variant="outline"
-										block
-										@click="consent.open = true"
-									/>
-									<UButton
-										label="Sign out"
-										:icon="icons.logOut"
-										color="neutral"
-										variant="ghost"
-										block
-										:loading="profile.busy"
-										@click="profile.signOut"
-									/>
-								</div>
-								<p class="text-muted mt-4 text-xs">
-									Music keeps playing in Discord.
-								</p>
-								<p
-									v-if="profile.error"
-									role="alert"
-									class="text-error mt-3 text-sm"
-								>
-									{{ profile.error }}
-								</p>
-							</section>
-						</aside>
-					</div>
+											Account
+										</h2>
+										<p class="mt-1 text-sm leading-relaxed text-muted">
+											Manage privacy choices or end this browser session.
+										</p>
+										<div class="mt-4 grid gap-2">
+											<UButton
+												label="Cookie settings"
+												color="neutral"
+												variant="outline"
+												block
+												@click="consent.open = true"
+											/>
+											<UButton
+												label="Sign out"
+												:icon="icons.logOut"
+												color="neutral"
+												variant="ghost"
+												block
+												:loading="session.busy"
+												@click="session.logout"
+											/>
+										</div>
+										<p class="mt-3 text-xs text-muted">
+											Music keeps playing in Discord.
+										</p>
+										<p
+											v-if="session.error"
+											class="mt-3 text-sm text-error"
+											role="alert"
+										>
+											{{ session.error }}
+										</p>
+									</section>
+								</aside>
+							</div>
+						</template>
+					</ProfileOverview>
 				</div>
 			</template>
 		</UDashboardPanel>

@@ -1,7 +1,19 @@
 <script setup lang="ts">
-import { useProfileStore } from "~/stores/profile";
-const profile = useProfileStore();
+import type { ProfileUpdate } from "~/core/models/account";
+
+const core = useNuxtApp().$backendCore;
+const session = core.stores.useSessionStore();
+const profile = core.workflows.profile();
+const currentProfile = computed(() => profile.profile.data.value?.profile ?? null);
 const { icons } = useTheme();
+
+onMounted(() => void profile.loadMine());
+onScopeDispose(profile.dispose);
+
+async function save(value: ProfileUpdate) {
+	if (!(await profile.updateProfile(value))) return;
+	await session.refresh();
+}
 </script>
 
 <template>
@@ -20,7 +32,12 @@ const { icons } = useTheme();
 				<p class="text-muted mt-3 mb-8 text-sm leading-relaxed">
 					Pick a name, then put something on.
 				</p>
-				<ProfileForm />
+				<ProfileForm
+					:profile="currentProfile"
+					:busy="profile.saving.value"
+					:error="profile.mutationError.value ?? session.error"
+					@save="save"
+				/>
 				<p class="text-muted mt-5 text-xs leading-relaxed">
 					Your name and avatar follow your Discord account.
 				</p>
@@ -29,11 +46,11 @@ const { icons } = useTheme();
 					variant="link"
 					color="neutral"
 					class="mt-4 px-0"
-					:loading="profile.busy"
-					@click="profile.signOut"
+					:loading="session.busy"
+					@click="session.logout"
 				/>
-				<p v-if="profile.error" role="alert" class="text-error mt-3 text-sm">
-					{{ profile.error }}
+				<p v-if="profile.profile.error.value" role="alert" class="text-error mt-3 text-sm">
+					{{ profile.profile.error.value }}
 				</p>
 			</section>
 		</div>

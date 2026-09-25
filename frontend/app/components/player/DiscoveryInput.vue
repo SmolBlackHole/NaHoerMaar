@@ -1,16 +1,24 @@
 <script setup lang="ts">
-import { musicSource, type SearchSource } from "#shared/catalog";
+import { musicSource, type SearchProvider } from "../../core/models/catalog";
+
 const source = defineModel<string>({ required: true });
-const provider = defineModel<SearchSource>("provider", { required: true });
-defineProps<{ connected: boolean; enabled: boolean; error: string; loading?: boolean }>();
+const provider = defineModel<SearchProvider>("provider", { required: true });
+defineProps<{
+	available: boolean;
+	canQueue: boolean;
+	error: string;
+	loading?: boolean;
+}>();
 const emit = defineEmits<{ submit: []; playlist: [url: string] }>();
 const { icons } = useTheme();
 const id = useId();
 const input = useTemplateRef<HTMLInputElement>("input");
+
 function clear() {
 	source.value = "";
 	input.value?.focus();
 }
+
 const parsed = computed(() => musicSource(source.value));
 const playlistLink = computed(() => (parsed.value.kind === "video" ? parsed.value.playlist : null));
 const submitLabel = computed(() =>
@@ -21,27 +29,28 @@ const submitLabel = computed(() =>
 			: "Search",
 );
 </script>
+
 <template>
 	<div class="discovery-input-wrap">
 		<form class="discovery-form" @submit.prevent="emit('submit')">
 			<div
 				class="discovery-search"
-				:class="{ 'is-invalid': error, 'is-disabled': !connected }"
+				:class="{ 'is-invalid': error, 'is-disabled': !available }"
 			>
 				<UIcon :name="icons.search" class="search-icon size-5 shrink-0 text-muted" />
 				<label class="sr-only" :for="id">Link, title or artist</label>
 				<input
-					ref="input"
 					:id="id"
+					ref="input"
 					v-model="source"
 					type="text"
 					placeholder="Link, title or artist"
 					autocomplete="off"
 					:maxlength="2048"
 					class="discovery-input"
-					:disabled="!connected"
+					:disabled="!available"
 					:aria-invalid="!!error"
-					:aria-describedby="error ? `${id}-error` : undefined"
+					:aria-describedby="error ? id + '-error' : undefined"
 				/>
 				<UTooltip v-if="source" text="Clear search">
 					<UButton
@@ -51,7 +60,7 @@ const submitLabel = computed(() =>
 						color="neutral"
 						variant="ghost"
 						class="search-clear"
-						:disabled="!connected"
+						:disabled="!available"
 						@click="clear"
 					/>
 				</UTooltip>
@@ -61,7 +70,7 @@ const submitLabel = computed(() =>
 						{ label: 'YouTube Music', value: 'youtube_music' },
 						{ label: 'Videos', value: 'youtube' },
 					]"
-					:disabled="!connected"
+					:disabled="!available"
 					:trailing-icon="icons.chevronDown"
 					:ui="{ content: 'min-w-44', item: 'min-h-11 items-center' }"
 					aria-label="Search source"
@@ -97,14 +106,15 @@ const submitLabel = computed(() =>
 					:disabled="
 						loading ||
 						!source.trim() ||
-						!connected ||
-						(parsed.kind === 'video' && !enabled)
+						!available ||
+						(parsed.kind === 'video' && !canQueue)
 					"
-					><span class="discovery-submit-label">{{ submitLabel }}</span></UButton
 				>
+					<span class="discovery-submit-label">{{ submitLabel }}</span>
+				</UButton>
 			</UTooltip>
 		</form>
-		<p v-if="error" :id="`${id}-error`" role="alert" class="mt-2 text-sm text-error">
+		<p v-if="error" :id="id + '-error'" role="alert" class="mt-2 text-sm text-error">
 			{{ error }}
 		</p>
 		<UButton
@@ -114,11 +124,12 @@ const submitLabel = computed(() =>
 			color="neutral"
 			variant="link"
 			class="mt-2 px-0"
-			:disabled="!connected"
+			:disabled="!available"
 			@click="emit('playlist', playlistLink)"
 		/>
 	</div>
 </template>
+
 <style scoped>
 .discovery-input-wrap {
 	container-type: inline-size;
@@ -199,7 +210,6 @@ const submitLabel = computed(() =>
 	min-width: 7.5rem;
 	min-height: 3rem;
 }
-
 @container discovery-input (max-width: 600px) {
 	.search-icon,
 	.discovery-submit-label,

@@ -1,17 +1,33 @@
 <script setup lang="ts">
-import { queuePresence, type CatalogTrack } from "#shared/catalog";
-import { formatTime, trackTitle } from "#shared/player";
-defineProps<{
-	entries: CatalogTrack[];
-	enabled: boolean;
+import { artistNames, formatDuration, type DiscoveryEntry } from "../../core/models/catalog";
+import type { PlayerState } from "../../core/models/player";
+
+const props = defineProps<{
+	entries: DiscoveryEntry[];
+	state: PlayerState | null;
+	canControl: boolean;
 	selectable?: boolean;
 	selected?: Set<number>;
+	pendingTrackIds?: Set<string>;
 	loading?: boolean;
 	loadingMore?: boolean;
 }>();
-const emit = defineEmits<{ add: [entry: CatalogTrack]; toggle: [index: number] }>();
+const emit = defineEmits<{
+	add: [entry: DiscoveryEntry];
+	radio: [entry: DiscoveryEntry];
+	toggle: [position: number];
+}>();
 const { icons } = useTheme();
-const player = usePlayerStore();
+
+function unavailable(entry: DiscoveryEntry) {
+	return entry.source.availability === "unavailable";
+}
+function presence(trackId: string): string | null {
+	if (props.state?.runtime.current?.track.id === trackId) return "Now playing";
+	return props.state?.queue.some(({ request }) => request.track.id === trackId)
+		? "Already queued"
+		: null;
+}
 </script>
 
 <template>
@@ -22,67 +38,70 @@ const player = usePlayerStore();
 	>
 		<li
 			v-for="item in entries"
-			:key="item.index"
+			:key="item.source.id + ':' + item.position"
 			class="catalog-row"
-			:class="{ 'is-unavailable': item.unavailable }"
+			:class="{ 'is-unavailable': unavailable(item) }"
 		>
 			<label v-if="selectable" class="catalog-select">
 				<input
 					type="checkbox"
-					:checked="selected?.has(item.index)"
-					:disabled="!enabled || !!item.unavailable || !item.source_url"
-					@change="emit('toggle', item.index)"
+					:checked="selected?.has(item.position)"
+					:disabled="!canControl || unavailable(item)"
+					@change="emit('toggle', item.position)"
 				/>
-				<span class="sr-only">Select {{ trackTitle(item) }}</span>
+				<span class="sr-only">Select {{ item.track.title }}</span>
 			</label>
-			<PlayerTrackArtwork :entry="item" class="catalog-cover" />
+			<PlayerTrackArtwork :entry="item.track" class="catalog-cover" />
 			<div class="catalog-copy">
-				<UTooltip v-if="item.source_url" :text="`Open ${trackTitle(item)} in a new tab`">
+				<UTooltip :text="'Open ' + item.track.title + ' in a new tab'">
 					<a
-						:href="item.source_url"
+						:href="item.source.source_url"
 						target="_blank"
 						rel="noopener noreferrer"
 						class="catalog-title"
-						>{{ trackTitle(item) }}</a
 					>
+						{{ item.track.title }}
+					</a>
 				</UTooltip>
-				<span v-else class="catalog-title">{{ item.title || "Unavailable video" }}</span>
 				<p class="catalog-detail">
-					<PlayerArtistLink :entry="item" /><span>{{
-						formatTime(item.duration_seconds)
-					}}</span>
+					<span>{{ artistNames(item.track) }}</span>
+					<span>{{ formatDuration(item.track.duration_seconds) }}</span>
 				</p>
-				<p v-if="item.unavailable" class="mt-1 text-xs text-muted">
-					{{ item.unavailable }}
-				</p>
-				<p
-					v-else-if="queuePresence(item.track_id, player.snapshot)"
-					class="mt-1 text-xs text-muted"
-				>
-					{{ queuePresence(item.track_id, player.snapshot) }}
+				<p v-if="unavailable(item)" class="mt-1 text-xs text-muted">Track unavailable</p>
+				<p v-else-if="presence(item.track.id)" class="mt-1 text-xs text-muted">
+					{{ presence(item.track.id) }}
 				</p>
 			</div>
-			<UTooltip v-if="!selectable" :text="`Add ${trackTitle(item)} to queue`">
-				<UButton
-					:icon="icons.plus"
-					color="neutral"
-					variant="ghost"
-					class="size-11 shrink-0 justify-center"
-					:aria-label="`Add ${trackTitle(item)} to queue`"
-					:disabled="!enabled || !!item.unavailable || !item.source_url"
-					:loading="!!item.source_url && player.isAdding(item.track_id ?? '')"
-					:aria-busy="!!item.source_url && player.isAdding(item.track_id ?? '')"
-					@click="emit('add', item)"
-				/>
-			</UTooltip>
-			<PlayerRadioAction
-				v-if="!selectable && item.source_url && !item.unavailable"
-				:entry="item"
-			/>
+			<template v-if="!selectable">
+				<UTooltip :text="'Add ' + item.track.title + ' to queue'">
+					<UButton
+						:icon="icons.plus"
+						color="neutral"
+						variant="ghost"
+						class="size-11 shrink-0 justify-center"
+						:aria-label="'Add ' + item.track.title + ' to queue'"
+						:disabled="!canControl || unavailable(item)"
+						:loading="pendingTrackIds?.has(item.track.id)"
+						:aria-busy="pendingTrackIds?.has(item.track.id)"
+						@click="emit('add', item)"
+					/>
+				</UTooltip>
+				<UTooltip text="Start a radio from this track">
+					<UButton
+						:icon="icons.radio"
+						color="neutral"
+						variant="ghost"
+						class="size-11 shrink-0 justify-center"
+						:aria-label="'Start a radio from ' + item.track.title"
+						:disabled="!canControl || unavailable(item)"
+						@click="emit('radio', item)"
+					/>
+				</UTooltip>
+			</template>
 		</li>
 		<li
 			v-for="index in loading ? 10 : loadingMore ? 4 : 0"
-			:key="`skeleton-${index}`"
+			:key="'skeleton-' + index"
 			class="catalog-row catalog-skeleton"
 			aria-hidden="true"
 		>

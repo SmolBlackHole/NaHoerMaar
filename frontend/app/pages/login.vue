@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { useProfileStore } from "~/stores/profile";
 useSeoMeta({ title: "Sign in | NaHörMaar" });
-const profile = useProfileStore();
+const session = useNuxtApp().$backendCore.stores.useSessionStore();
+
 watch(
-	() => profile.status === "authenticated" && profile.profileComplete,
+	() => session.status === "authenticated" && session.account?.profile_complete,
 	(ready) => {
 		if (ready) void navigateTo("/", { replace: true });
 	},

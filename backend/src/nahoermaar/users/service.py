@@ -355,6 +355,20 @@ class AccessService:
         )
         return user
 
+    async def operator_users(self) -> tuple[User, ...]:
+        """Return persisted operators in their configuration order."""
+        async with self._units() as work:
+            users = await UserRepository(work.session).privileged()
+        order = {
+            discord_id: index for index, discord_id in enumerate(self._operators.roles)
+        }
+        return tuple(
+            sorted(
+                users,
+                key=lambda user: order.get(user.discord.discord_id, len(order)),
+            )
+        )
+
     async def grants(self) -> tuple[User, ...]:
         async with self._units() as work:
             return await UserRepository(work.session).grants()
