@@ -14,6 +14,36 @@ export interface AuthBoundary {
 	lost(reason: string): void;
 }
 
+export interface SessionNotice {
+	credentials: SessionCredentials;
+	reason: string;
+}
+
+export interface SessionAuthority extends AuthBoundary {
+	replace(csrf: string | null, reason: string): void;
+	subscribe(listener: (notice: SessionNotice) => void): () => void;
+}
+
+/** Mutable auth boundary shared by the session store and all request workflows. */
+export function createSessionAuthority(): SessionAuthority {
+	let credentials: SessionCredentials = { generation: 0, csrf: null };
+	const listeners = new Set<(notice: SessionNotice) => void>();
+	const replace = (csrf: string | null, reason: string) => {
+		credentials = { generation: credentials.generation + 1, csrf };
+		const notice = { credentials: { ...credentials }, reason };
+		for (const listener of listeners) listener(notice);
+	};
+	return {
+		current: () => ({ ...credentials }),
+		lost: (reason) => replace(null, reason),
+		replace,
+		subscribe(listener) {
+			listeners.add(listener);
+			return () => listeners.delete(listener);
+		},
+	};
+}
+
 export class SessionLost extends Error {
 	constructor() {
 		super("The browser session is no longer current.");
@@ -83,7 +113,7 @@ export function createTransport(fetcher: typeof fetch, auth: AuthBoundary) {
 						? body.retryable
 						: response.status >= 500,
 			} satisfies components["schemas"]["ErrorView"];
-			if (response.status === 401 || error.error === "access_denied") {
+			if (response.status === 401) {
 				auth.lost(error.error);
 				throw new SessionLost();
 			}

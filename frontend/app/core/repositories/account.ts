@@ -17,6 +17,10 @@ export function createAccountRepository(request: Transport) {
 			request<AccountSession>("/api/auth/session", { allowSignedOut: true, signal }),
 		profile: (period: StatisticsPeriod = "30d", signal?: AbortSignal) =>
 			request<UserProfile>(`/api/users/me?period=${period}`, { signal }),
+		userProfile: (userId: string, period: StatisticsPeriod = "30d", signal?: AbortSignal) =>
+			request<UserProfile>(`/api/users/${encodeURIComponent(userId)}?period=${period}`, {
+				signal,
+			}),
 		updateProfile: (body: ProfileUpdate) =>
 			request<UserProfile>("/api/users/me/profile", {
 				method: "PUT",

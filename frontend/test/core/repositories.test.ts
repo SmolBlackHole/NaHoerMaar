@@ -74,4 +74,46 @@ describe("new backend repositories", () => {
 			["/api/player/seek", "POST", { operation_id: "op-seek", seconds: 42 }],
 		]);
 	});
+
+	it("uses the catalog, statistics, access and log contracts", async () => {
+		const { client, fetcher } = fixture();
+		fetcher.mockImplementation(async () => Response.json({}));
+		await client.catalog.search("Zara Larsson", {
+			limit: 8,
+			provider: "youtube music",
+			refresh: true,
+		});
+		await client.catalog.playlist("https://music.example/playlist?id=1", {
+			provider: "youtube music",
+		});
+		await client.catalog.link("https://video.example/watch?v=1");
+		await client.catalog.snapshot("search", "snapshot/one", 20, 10);
+		await client.statistics.overview("30d");
+		await client.statistics.user("user/one", "7d");
+		await client.access.state(50);
+		await client.access.members();
+		await client.access.grant("discord/one");
+		await client.access.revoke("discord/one");
+		await client.logs.recent(42, 100);
+
+		expect(fetcher.mock.calls.map(([url, options]) => [url, options?.method])).toEqual([
+			[
+				"/api/catalog/search?q=Zara+Larsson&limit=8&provider=youtube+music&refresh=true",
+				undefined,
+			],
+			[
+				"/api/catalog/playlist?url=https%3A%2F%2Fmusic.example%2Fplaylist%3Fid%3D1&provider=youtube+music",
+				undefined,
+			],
+			["/api/catalog/link?url=https%3A%2F%2Fvideo.example%2Fwatch%3Fv%3D1", undefined],
+			["/api/catalog/search/snapshot%2Fone?offset=20&limit=10", undefined],
+			["/api/statistics/overview?period=30d", undefined],
+			["/api/statistics/users/user%2Fone?period=7d", undefined],
+			["/api/access?history_limit=50", undefined],
+			["/api/access/members", undefined],
+			["/api/access/discord%2Fone", "PUT"],
+			["/api/access/discord%2Fone", "DELETE"],
+			["/api/logs?limit=100&after=42", undefined],
+		]);
+	});
 });

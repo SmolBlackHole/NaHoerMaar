@@ -55,7 +55,7 @@ describe("new backend HTTP boundary", () => {
 		expect(auth.lost).not.toHaveBeenCalled();
 	});
 
-	it("invalidates authentication but preserves ordinary forbidden errors", async () => {
+	it("preserves forbidden responses and invalidates authentication on unauthorized responses", async () => {
 		const { client, fetcher, auth } = fixture();
 		fetcher.mockResolvedValueOnce(
 			Response.json(
@@ -73,6 +73,12 @@ describe("new backend HTTP boundary", () => {
 		});
 		expect(auth.lost).not.toHaveBeenCalled();
 		fetcher.mockResolvedValueOnce(Response.json({ error: "access_denied" }, { status: 403 }));
+		await expect(client.account.profile()).rejects.toMatchObject({
+			status: 403,
+			error: { error: "access_denied" },
+		});
+		expect(auth.lost).not.toHaveBeenCalled();
+		fetcher.mockResolvedValueOnce(Response.json({ error: "access_denied" }, { status: 401 }));
 		await expect(client.account.profile()).rejects.toBeInstanceOf(SessionLost);
 		expect(auth.lost).toHaveBeenCalledWith("access_denied");
 	});
