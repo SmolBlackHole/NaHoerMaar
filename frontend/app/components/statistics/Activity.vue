@@ -13,10 +13,35 @@ const props = withDefaults(
 	}>(),
 	{ activity: () => [], loading: false, granularity: "day" },
 );
-const maxPlays = computed(() => Math.max(1, ...props.activity.map(({ plays }) => plays)));
+
+type Measure = "playback_seconds" | "listening_seconds" | "presence_seconds";
+
+const measures = [
+	{
+		value: "playback_seconds" as const,
+		label: "Playback time",
+		description: "Shared time with audible playback.",
+	},
+	{
+		value: "listening_seconds" as const,
+		label: "Time heard",
+		description: "Combined audible time across listeners.",
+	},
+	{
+		value: "presence_seconds" as const,
+		label: "Channel presence",
+		description: "Combined time listeners spent in the voice channel.",
+	},
+] satisfies readonly { value: Measure; label: string; description: string }[];
+
+const measure = ref<Measure>("playback_seconds");
+const selectedMeasure = computed(() => measures.find((item) => item.value === measure.value)!);
+const maxSeconds = computed(() =>
+	Math.max(1, ...props.activity.map((bucket) => bucket[measure.value])),
+);
 const yTicks = computed(() => {
-	const step = Math.max(1, Math.ceil(maxPlays.value / 3));
-	return [step * 3, step * 2, step, 0];
+	const maximum = maxSeconds.value;
+	return [maximum, maximum * (2 / 3), maximum / 3, 0];
 });
 const heading = computed(() =>
 	(props.activity[0]?.granularity ?? props.granularity) === "month"
@@ -32,14 +57,35 @@ function label(value: string, granularity: ActivityBucket["granularity"]) {
 			: { month: "short", day: "numeric", timeZone: "UTC" },
 	).format(new Date(`${value}T00:00:00Z`));
 }
+
+function durationLabel(seconds: number) {
+	if (seconds < 60) return `${Math.round(seconds)}s`;
+	return formatStatisticsDuration(seconds);
+}
 </script>
 
 <template>
 	<section class="min-w-0" aria-labelledby="statistics-activity-heading">
-		<h2 id="statistics-activity-heading" class="text-lg font-semibold text-highlighted">
-			{{ heading }}
-		</h2>
-		<p class="mt-1 text-xs text-muted">Confirmed playback starts in the selected period.</p>
+		<div class="flex flex-wrap items-end justify-between gap-4">
+			<div>
+				<h2 id="statistics-activity-heading" class="text-lg font-semibold text-highlighted">
+					{{ heading }}
+				</h2>
+				<p class="mt-1 text-xs text-muted">{{ selectedMeasure.description }}</p>
+			</div>
+			<div class="flex flex-wrap gap-1" role="group" aria-label="Activity measure">
+				<UButton
+					v-for="item in measures"
+					:key="item.value"
+					:label="item.label"
+					:color="measure === item.value ? 'primary' : 'neutral'"
+					:variant="measure === item.value ? 'soft' : 'ghost'"
+					size="xs"
+					:aria-pressed="measure === item.value"
+					@click="measure = item.value"
+				/>
+			</div>
+		</div>
 		<figure v-if="loading" class="mt-8" aria-hidden="true">
 			<div class="grid grid-cols-[2.5rem_minmax(0,1fr)] gap-2">
 				<div class="flex h-44 flex-col justify-between pb-px">
@@ -69,9 +115,9 @@ function label(value: string, granularity: ActivityBucket["granularity"]) {
 			<div class="grid grid-cols-[2.5rem_minmax(0,1fr)] gap-2">
 				<div
 					class="flex h-44 flex-col justify-between pb-px text-right text-[0.6875rem] tabular-nums text-muted"
-					aria-label="Plays"
+					aria-label="Duration"
 				>
-					<span v-for="tick in yTicks" :key="tick">{{ tick }}</span>
+					<span v-for="tick in yTicks" :key="tick">{{ durationLabel(tick) }}</span>
 				</div>
 				<div class="relative flex h-44 items-end gap-1 border-b border-default sm:gap-2">
 					<div
@@ -83,13 +129,13 @@ function label(value: string, granularity: ActivityBucket["granularity"]) {
 					<UTooltip
 						v-for="bucket in activity"
 						:key="bucket.started_on"
-						:text="`${label(bucket.started_on, bucket.granularity)}: ${bucket.plays} plays, ${formatStatisticsDuration(bucket.listening_seconds)} heard, ${formatStatisticsDuration(bucket.presence_seconds)} present`"
+						:text="`${label(bucket.started_on, bucket.granularity)}: ${durationLabel(bucket.playback_seconds)} playback, ${durationLabel(bucket.listening_seconds)} heard, ${durationLabel(bucket.presence_seconds)} present, ${bucket.plays} confirmed plays`"
 					>
 						<div class="relative flex h-full min-w-0 flex-1 items-end">
 							<div
 								class="w-full rounded-t-sm bg-primary/75"
 								:style="{
-									height: `${Math.max(bucket.plays ? 5 : 0, (bucket.plays / yTicks[0]!) * 100)}%`,
+									height: `${Math.max(bucket[measure] ? 5 : 0, (bucket[measure] / yTicks[0]!) * 100)}%`,
 								}"
 							/>
 						</div>
@@ -101,6 +147,6 @@ function label(value: string, granularity: ActivityBucket["granularity"]) {
 				<span>{{ label(activity.at(-1)!.started_on, activity.at(-1)!.granularity) }}</span>
 			</figcaption>
 		</figure>
-		<p v-else class="mt-8 text-sm text-muted">No confirmed playback in this period.</p>
+		<p v-else class="mt-8 text-sm text-muted">No listening activity in this period.</p>
 	</section>
 </template>

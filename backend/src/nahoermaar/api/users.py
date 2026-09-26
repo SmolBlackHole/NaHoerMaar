@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 SmolBlackHole
+ # SPDX-FileCopyrightText: 2026 SmolBlackHole
 #
 # SPDX-License-Identifier: MPL-2.0
 
@@ -42,7 +42,7 @@ from nahoermaar.views.profile import ProfileReport
 
 from .middleware import authenticated
 from .errors import ApiError, ApiErrorCode
-from .statistics import StatisticsView, statistics_view
+from .statistics import PersonalStatisticsView, personal_statistics_view
 
 
 class DiscordView(BaseModel):
@@ -103,7 +103,7 @@ class RecentTrackView(BaseModel):
 
 
 class ProfilePageView(UserView):
-    statistics: StatisticsView
+    statistics: PersonalStatisticsView
     recent_tracks: tuple[RecentTrackView, ...]
 
 
@@ -394,10 +394,8 @@ def _profile_page_view(
         created_at=identity.created_at,
         updated_at=identity.updated_at,
         last_login_at=identity.last_login_at,
-        statistics=statistics_view(
+        statistics=personal_statistics_view(
             report.statistics,
-            application.avatars,
-            members,
         ),
         recent_tracks=tuple(
             RecentTrackView(

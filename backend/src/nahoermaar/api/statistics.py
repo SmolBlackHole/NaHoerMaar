@@ -15,6 +15,8 @@ from nahoermaar.bootstrap import Application
 from nahoermaar.integrations.avatars import DiscordAvatarStore
 from nahoermaar.statistics.models import (
     ActivityGranularity,
+    GroupStatisticsReport,
+    PersonalStatisticsReport,
     PlaybackOutcomes,
     RankedListener,
     StatisticsPeriod,
@@ -70,6 +72,7 @@ class TotalsView(BaseModel):
 
     requests: RequestTotalsView
     playback: PlaybackBreakdownView
+    playback_seconds: float
     listening_seconds: float
     presence_seconds: float
     unique_tracks: int
@@ -83,6 +86,7 @@ class ActivityBucketView(BaseModel):
     started_on: date
     granularity: ActivityGranularity
     plays: int
+    playback_seconds: float
     listening_seconds: float
     presence_seconds: float
 
@@ -124,13 +128,20 @@ class RankedListenerView(BaseModel):
 class StatisticsView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    user_id: UUID | None
     coverage: CoverageView
     totals: TotalsView
     activity: tuple[ActivityBucketView, ...]
     top_tracks: tuple[RankedTrackView, ...]
     top_artists: tuple[RankedArtistView, ...]
+
+
+class GroupStatisticsView(StatisticsView):
+    active_listeners: int
     top_listeners: tuple[RankedListenerView, ...]
+
+
+class PersonalStatisticsView(StatisticsView):
+    user_id: UUID
 
 
 def router(application: Application) -> APIRouter:
@@ -140,9 +151,9 @@ def router(application: Application) -> APIRouter:
     async def overview(
         request: Request,
         period: Annotated[StatisticsPeriod, Query()] = StatisticsPeriod.DAYS_7,
-    ) -> StatisticsView:
+    ) -> GroupStatisticsView:
         authenticated(request)
-        return statistics_view(
+        return group_statistics_view(
             await application.statistics.overview(period),
             application.avatars,
             _discord_members(application),
@@ -153,12 +164,10 @@ def router(application: Application) -> APIRouter:
         request: Request,
         user_id: UUID,
         period: Annotated[StatisticsPeriod, Query()] = StatisticsPeriod.DAYS_30,
-    ) -> StatisticsView:
+    ) -> PersonalStatisticsView:
         authenticated(request)
-        return statistics_view(
+        return personal_statistics_view(
             await application.statistics.user(UserId(user_id), period),
-            application.avatars,
-            _discord_members(application),
         )
 
     return routes
@@ -166,15 +175,9 @@ def router(application: Application) -> APIRouter:
 
 def statistics_view(
     report: StatisticsReport,
-    avatars: DiscordAvatarStore,
-    discord_members: tuple[DiscordMember, ...] = (),
 ) -> StatisticsView:
-    members_by_id: dict[str, DiscordMember] = {}
-    for member in discord_members:
-        members_by_id.setdefault(member.discord_id, member)
     totals = report.totals
     return StatisticsView(
-        user_id=report.user_id,
         coverage=CoverageView(
             period=report.coverage.period,
             granularity=report.coverage.granularity,
@@ -195,6 +198,7 @@ def statistics_view(
                 manual=_playback_outcomes_view(totals.playback.manual),
                 radio=_playback_outcomes_view(totals.playback.radio),
             ),
+            playback_seconds=totals.playback_seconds,
             listening_seconds=totals.listening_seconds,
             presence_seconds=totals.presence_seconds,
             unique_tracks=totals.unique_tracks,
@@ -206,6 +210,7 @@ def statistics_view(
                 started_on=item.started_on,
                 granularity=item.granularity,
                 plays=item.plays,
+                playback_seconds=item.playback_seconds,
                 listening_seconds=item.listening_seconds,
                 presence_seconds=item.presence_seconds,
             )
@@ -231,10 +236,35 @@ def statistics_view(
             )
             for item in report.top_artists
         ),
+    )
+
+
+def group_statistics_view(
+    report: GroupStatisticsReport,
+    avatars: DiscordAvatarStore,
+    discord_members: tuple[DiscordMember, ...] = (),
+) -> GroupStatisticsView:
+    members_by_id: dict[str, DiscordMember] = {}
+    for member in discord_members:
+        members_by_id.setdefault(member.discord_id, member)
+    common = statistics_view(report)
+    return GroupStatisticsView(
+        **common.model_dump(),
+        active_listeners=report.active_listeners,
         top_listeners=tuple(
             _ranked_listener_view(item, members_by_id.get(item.discord_id), avatars)
             for item in report.top_listeners
         ),
+    )
+
+
+def personal_statistics_view(
+    report: PersonalStatisticsReport,
+) -> PersonalStatisticsView:
+    common = statistics_view(report)
+    return PersonalStatisticsView(
+        **common.model_dump(),
+        user_id=report.user_id,
     )
 
 

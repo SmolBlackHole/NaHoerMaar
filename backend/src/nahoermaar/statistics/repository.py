@@ -88,11 +88,12 @@ class StatisticsRepository:
             ended_at,
             user_id=user_id,
         )
-        listening_seconds, unique_tracks, unique_artists = await self._listening_totals(
-            started_at,
-            ended_at,
-            user_id=user_id,
-        )
+        (
+            playback_seconds,
+            listening_seconds,
+            unique_tracks,
+            unique_artists,
+        ) = await self._listening_totals(started_at, ended_at, user_id=user_id)
         presence = sum(
             (interval.ended_at - interval.started_at).total_seconds()
             for interval in await self.presence_intervals(
@@ -109,6 +110,7 @@ class StatisticsRepository:
         return StatisticsTotals(
             requests=requests,
             playback=playback,
+            playback_seconds=playback_seconds,
             listening_seconds=listening_seconds,
             presence_seconds=presence,
             unique_tracks=unique_tracks,
@@ -141,10 +143,13 @@ class StatisticsRepository:
         listening = func.coalesce(func.sum(audio_seconds), 0.0).label(
             "listening_seconds"
         )
+        playback = func.coalesce(
+            func.sum(self._playbacks.c.group_audio_seconds), 0.0
+        ).label("playback_seconds")
         rows = (
             (
                 await self._session.execute(
-                    select(bucket, plays, listening)
+                    select(bucket, plays, playback, listening)
                     .select_from(relation)
                     .where(and_(*conditions))
                     .group_by(bucket)
@@ -159,6 +164,7 @@ class StatisticsRepository:
                 started_on=row["started_on"],
                 granularity=granularity,
                 plays=int(row["plays"]),
+                playback_seconds=float(row["playback_seconds"]),
                 listening_seconds=float(row["listening_seconds"]),
                 presence_seconds=0.0,
             )
@@ -456,6 +462,39 @@ class StatisticsRepository:
             for row in rows
         )
 
+    async def active_listener_count(
+        self,
+        started_at: datetime,
+        ended_at: datetime,
+    ) -> int:
+        """Count people with any request, heard playback or channel presence."""
+        known_end = func.coalesce(
+            self._presence.c.left_at, self._presence.c.confirmed_at
+        )
+        active = union_all(
+            select(self._requests.c.requested_by.label("user_id")).where(
+                self._requests.c.requested_at >= started_at,
+                self._requests.c.requested_at < ended_at,
+            ),
+            select(self._listeners.c.user_id.label("user_id"))
+            .join(
+                self._playbacks,
+                self._playbacks.c.id == self._listeners.c.playback_id,
+            )
+            .where(
+                self._playbacks.c.started_at >= started_at,
+                self._playbacks.c.started_at < ended_at,
+            ),
+            select(self._presence.c.user_id.label("user_id")).where(
+                self._presence.c.joined_at < ended_at,
+                known_end > started_at,
+            ),
+        ).subquery()
+        value = await self._session.scalar(
+            select(func.count(func.distinct(active.c.user_id)))
+        )
+        return int(value or 0)
+
     async def _request_totals(
         self,
         started_at: datetime,
@@ -567,7 +606,7 @@ class StatisticsRepository:
         ended_at: datetime,
         *,
         user_id: UserId | None,
-    ) -> tuple[float, int, int]:
+    ) -> tuple[float, float, int, int]:
         relation, conditions, audio_seconds = self._listening_scope(
             started_at,
             ended_at,
@@ -577,6 +616,9 @@ class StatisticsRepository:
             (
                 await self._session.execute(
                     select(
+                        func.coalesce(
+                            func.sum(self._playbacks.c.group_audio_seconds), 0.0
+                        ).label("playback_seconds"),
                         func.coalesce(func.sum(audio_seconds), 0.0).label(
                             "listening_seconds"
                         ),
@@ -601,6 +643,7 @@ class StatisticsRepository:
             .where(and_(*conditions))
         )
         return (
+            float(row["playback_seconds"] or 0.0),
             float(row["listening_seconds"] or 0.0),
             int(row["unique_tracks"] or 0),
             int(unique_artists or 0),

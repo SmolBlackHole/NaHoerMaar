@@ -328,6 +328,7 @@ def test_statistics_project_shared_and_personal_facts_without_double_counting() 
         assert overview.totals.playback.overall.skipped == 1
         assert overview.totals.playback.manual.skipped == 1
         assert overview.totals.playback.radio.completed == 1
+        assert overview.totals.playback_seconds == 180.0
         assert overview.totals.listening_seconds == 170.0
         assert overview.totals.presence_seconds == 6600.0
         assert overview.totals.unique_tracks == 2
@@ -345,22 +346,37 @@ def test_statistics_project_shared_and_personal_facts_without_double_counting() 
         assert overview.top_listeners[0].discord_id == "200"
         assert overview.top_listeners[0].manual_requests == 1
         assert overview.top_listeners[0].presence_seconds == 5400.0
+        assert overview.active_listeners == 2
         assert len(overview.activity) == 7
+        assert sum(day.playback_seconds for day in overview.activity) == 180.0
         assert sum(day.listening_seconds for day in overview.activity) == 170.0
         assert sum(day.presence_seconds for day in overview.activity) == 6600.0
 
         assert personal.user_id == listener_id
         assert personal.totals.requests == overview.totals.requests
         assert personal.totals.playback == overview.totals.playback
+        assert personal.totals.playback_seconds == 180.0
         assert personal.totals.listening_seconds == 140.0
         assert personal.totals.presence_seconds == 5400.0
-        assert personal.top_listeners == ()
+        assert sum(day.playback_seconds for day in personal.activity) == 180.0
         assert sum(day.listening_seconds for day in personal.activity) == 140.0
 
         yearly = await service.overview(StatisticsPeriod.YEAR)
         assert yearly.coverage.granularity is ActivityGranularity.MONTH
         assert len(yearly.activity) == 9
         assert yearly.activity[0].started_on.isoformat() == "2026-01-01"
+        assert sum(bucket.playback_seconds for bucket in yearly.activity) == 180.0
+
+        monthly = await service.overview(StatisticsPeriod.DAYS_30)
+        assert monthly.coverage.granularity is ActivityGranularity.DAY
+        assert len(monthly.activity) == 30
+        assert sum(bucket.playback_seconds for bucket in monthly.activity) == 180.0
+
+        all_time = await service.overview(StatisticsPeriod.ALL)
+        assert all_time.coverage.granularity is ActivityGranularity.MONTH
+        assert not all_time.coverage.partial
+        assert all_time.coverage.started_at == NOW - timedelta(hours=2)
+        assert sum(bucket.playback_seconds for bucket in all_time.activity) == 180.0
 
         profile = await profiles.get(listener_id, StatisticsPeriod.DAYS_7)
         assert profile.identity.user_id == listener_id

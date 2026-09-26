@@ -7,6 +7,7 @@
 from collections.abc import Callable, Iterable
 from datetime import UTC, date, datetime, time, timedelta
 import logging
+from typing import overload
 from zoneinfo import ZoneInfo
 
 from nahoermaar.database.uow import UnitOfWork
@@ -17,8 +18,9 @@ from .models import (
     ActivityBucket,
     ActivityGranularity,
     Coverage,
+    GroupStatisticsReport,
+    PersonalStatisticsReport,
     StatisticsPeriod,
-    StatisticsReport,
 )
 from .repository import PresenceInterval, StatisticsRepository
 
@@ -50,23 +52,37 @@ class StatisticsService:
         self._access = access
         self._clock = clock
 
-    async def overview(self, period: StatisticsPeriod) -> StatisticsReport:
+    async def overview(self, period: StatisticsPeriod) -> GroupStatisticsReport:
         return await self._report(period, None)
 
     async def user(
         self,
         user_id: UserId,
         period: StatisticsPeriod,
-    ) -> StatisticsReport:
+    ) -> PersonalStatisticsReport:
         if not await self._access.has_access(user_id):
             raise AuthError(AuthErrorCode.PROFILE_NOT_FOUND, 404)
         return await self._report(period, user_id)
+
+    @overload
+    async def _report(
+        self,
+        period: StatisticsPeriod,
+        user_id: None,
+    ) -> GroupStatisticsReport: ...
+
+    @overload
+    async def _report(
+        self,
+        period: StatisticsPeriod,
+        user_id: UserId,
+    ) -> PersonalStatisticsReport: ...
 
     async def _report(
         self,
         period: StatisticsPeriod,
         user_id: UserId | None,
-    ) -> StatisticsReport:
+    ) -> GroupStatisticsReport | PersonalStatisticsReport:
         ended_at = self._clock()
         if ended_at.utcoffset() is None:
             raise ValueError("Statistics clock must return a timezone-aware value.")
@@ -115,33 +131,50 @@ class StatisticsService:
                 if user_id is None
                 else ()
             )
+            active_listeners = (
+                await repository.active_listener_count(started_at, ended_at)
+                if user_id is None
+                else 0
+            )
         _LOGGER.info(
             "statistics.projected scope=%s period=%s requests=%d plays=%d "
-            "listening_seconds=%.3f presence_seconds=%.3f partial=%s",
+            "playback_seconds=%.3f listening_seconds=%.3f "
+            "presence_seconds=%.3f partial=%s",
             user_id or "overview",
             period.value,
             totals.requests.total,
             totals.playback.overall.started,
+            totals.playback_seconds,
             totals.listening_seconds,
             totals.presence_seconds,
             partial,
         )
-        return StatisticsReport(
-            user_id,
-            Coverage(
-                period,
-                granularity,
-                self._timezone.key,
-                started_at,
-                ended_at,
-                recorded_since,
-                partial,
-            ),
-            totals,
-            activity,
-            top_tracks,
-            top_artists,
-            top_listeners,
+        coverage = Coverage(
+            period,
+            granularity,
+            self._timezone.key,
+            started_at,
+            ended_at,
+            recorded_since,
+            partial,
+        )
+        if user_id is None:
+            return GroupStatisticsReport(
+                coverage=coverage,
+                totals=totals,
+                activity=activity,
+                top_tracks=top_tracks,
+                top_artists=top_artists,
+                active_listeners=active_listeners,
+                top_listeners=top_listeners,
+            )
+        return PersonalStatisticsReport(
+            coverage=coverage,
+            totals=totals,
+            activity=activity,
+            top_tracks=top_tracks,
+            top_artists=top_artists,
+            user_id=user_id,
         )
 
     def _window(
@@ -201,6 +234,7 @@ class StatisticsService:
                     started_on=started_on,
                     granularity=granularity,
                     plays=item.plays if item else 0,
+                    playback_seconds=item.playback_seconds if item else 0.0,
                     listening_seconds=item.listening_seconds if item else 0.0,
                     presence_seconds=presence_seconds,
                 )

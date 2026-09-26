@@ -19,8 +19,8 @@ from nahoermaar.database.schema import Base
 from nahoermaar.database.uow import UnitOfWork
 from nahoermaar.listening.domain import PlaybackEndReason, PlaybackRecordId
 from nahoermaar.statistics.models import (
+    PersonalStatisticsReport,
     StatisticsPeriod,
-    StatisticsReport,
 )
 from nahoermaar.statistics.service import StatisticsService
 from nahoermaar.users.domain import (
@@ -74,7 +74,7 @@ class RecentTrack:
 @dataclass(frozen=True, slots=True)
 class ProfileReport:
     identity: ProfileIdentity
-    statistics: StatisticsReport
+    statistics: PersonalStatisticsReport
     recent_tracks: tuple[RecentTrack, ...]
 
 

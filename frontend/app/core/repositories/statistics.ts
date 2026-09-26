@@ -3,14 +3,14 @@
 
 import type { Transport } from "../api/transport";
 import type { StatisticsPeriod } from "../models/account";
-import type { Statistics } from "../models/statistics";
+import type { GroupStatistics, PersonalStatistics } from "../models/statistics";
 
 export function createStatisticsRepository(request: Transport) {
 	return {
 		overview: (period: StatisticsPeriod = "7d", signal?: AbortSignal) =>
-			request<Statistics>(`/api/statistics/overview?period=${period}`, { signal }),
+			request<GroupStatistics>(`/api/statistics/overview?period=${period}`, { signal }),
 		user: (userId: string, period: StatisticsPeriod = "30d", signal?: AbortSignal) =>
-			request<Statistics>(
+			request<PersonalStatistics>(
 				`/api/statistics/users/${encodeURIComponent(userId)}?period=${period}`,
 				{ signal },
 			),

@@ -787,6 +787,8 @@ export interface components {
             granularity: components["schemas"]["ActivityGranularity"];
             /** Listening Seconds */
             listening_seconds: number;
+            /** Playback Seconds */
+            playback_seconds: number;
             /** Plays */
             plays: number;
             /** Presence Seconds */
@@ -1099,6 +1101,21 @@ export interface components {
          * @enum {string}
          */
         FontFamily: "Public Sans" | "DM Sans" | "Geist" | "Inter" | "Poppins" | "Outfit" | "Raleway";
+        /** GroupStatisticsView */
+        GroupStatisticsView: {
+            /** Active Listeners */
+            active_listeners: number;
+            /** Activity */
+            activity: components["schemas"]["ActivityBucketView"][];
+            coverage: components["schemas"]["CoverageView"];
+            /** Top Artists */
+            top_artists: components["schemas"]["RankedArtistView"][];
+            /** Top Listeners */
+            top_listeners: components["schemas"]["RankedListenerView"][];
+            /** Top Tracks */
+            top_tracks: components["schemas"]["RankedTrackView"][];
+            totals: components["schemas"]["TotalsView"];
+        };
         /**
          * IconSet
          * @enum {string}
@@ -1203,6 +1220,22 @@ export interface components {
             /** Undo Id */
             undo_id: string | null;
         };
+        /** PersonalStatisticsView */
+        PersonalStatisticsView: {
+            /** Activity */
+            activity: components["schemas"]["ActivityBucketView"][];
+            coverage: components["schemas"]["CoverageView"];
+            /** Top Artists */
+            top_artists: components["schemas"]["RankedArtistView"][];
+            /** Top Tracks */
+            top_tracks: components["schemas"]["RankedTrackView"][];
+            totals: components["schemas"]["TotalsView"];
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+        };
         /** PlaybackBreakdownView */
         PlaybackBreakdownView: {
             manual: components["schemas"]["PlaybackOutcomesView"];
@@ -1303,7 +1336,7 @@ export interface components {
             /** Recent Tracks */
             recent_tracks: components["schemas"]["RecentTrackView"][];
             role: components["schemas"]["AccessRole"] | null;
-            statistics: components["schemas"]["StatisticsView"];
+            statistics: components["schemas"]["PersonalStatisticsView"];
             /**
              * Updated At
              * Format: date-time
@@ -1656,21 +1689,6 @@ export interface components {
          * @enum {string}
          */
         StatisticsPeriod: "7d" | "30d" | "year" | "all";
-        /** StatisticsView */
-        StatisticsView: {
-            /** Activity */
-            activity: components["schemas"]["ActivityBucketView"][];
-            coverage: components["schemas"]["CoverageView"];
-            /** Top Artists */
-            top_artists: components["schemas"]["RankedArtistView"][];
-            /** Top Listeners */
-            top_listeners: components["schemas"]["RankedListenerView"][];
-            /** Top Tracks */
-            top_tracks: components["schemas"]["RankedTrackView"][];
-            totals: components["schemas"]["TotalsView"];
-            /** User Id */
-            user_id: string | null;
-        };
         /**
          * TextSize
          * @enum {string}
@@ -1683,6 +1701,8 @@ export interface components {
             /** Listening Seconds */
             listening_seconds: number;
             playback: components["schemas"]["PlaybackBreakdownView"];
+            /** Playback Seconds */
+            playback_seconds: number;
             /** Presence Seconds */
             presence_seconds: number;
             requests: components["schemas"]["RequestTotalsView"];
@@ -6953,7 +6973,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["StatisticsView"];
+                    "application/json": components["schemas"]["GroupStatisticsView"];
                 };
             };
             /** @description Invalid request */
@@ -7085,7 +7105,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["StatisticsView"];
+                    "application/json": components["schemas"]["PersonalStatisticsView"];
                 };
             };
             /** @description Invalid request */

@@ -3,7 +3,8 @@
 
 import type { components } from "../api/schema.generated";
 
-export type Statistics = components["schemas"]["StatisticsView"];
+export type GroupStatistics = components["schemas"]["GroupStatisticsView"];
+export type PersonalStatistics = components["schemas"]["PersonalStatisticsView"];
 export type ActivityBucket = components["schemas"]["ActivityBucketView"];
 
 export function formatStatisticsDuration(seconds: number): string {

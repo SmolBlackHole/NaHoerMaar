@@ -5,30 +5,29 @@ import { formatStatistic, formatStatisticsDuration } from "~/core/models/statist
 definePageMeta({ pageTransition: { name: "page", mode: "out-in" } });
 useSeoMeta({ title: "Overview | NaHörMaar" });
 const core = useNuxtApp().$backendCore;
-const player = core.stores.usePlayerStore();
 const statistics = core.workflows.statistics();
 const recent = core.workflows.recent();
 const { icons } = useTheme();
 const period = ref<StatisticsPeriod>("7d");
-const report = computed(() => statistics.report.data.value);
+const report = computed(() => statistics.groupReport.data.value);
 const recentTracks = computed(() => (recent.recent.data.value?.entries ?? []).slice(0, 5));
 const metrics = computed(() => {
 	const totals = report.value?.totals;
 	return [
+		{
+			label: "Playback time",
+			value: formatStatisticsDuration(totals?.playback_seconds ?? 0),
+			icon: icons.value.play,
+		},
 		{
 			label: "Time heard",
 			value: formatStatisticsDuration(totals?.listening_seconds ?? 0),
 			icon: icons.value.headphones,
 		},
 		{
-			label: "Channel presence",
-			value: formatStatisticsDuration(totals?.presence_seconds ?? 0),
+			label: "Active listeners",
+			value: formatStatistic(report.value?.active_listeners ?? 0),
 			icon: icons.value.users,
-		},
-		{
-			label: "Requests",
-			value: formatStatistic(totals?.requests.total ?? 0),
-			icon: icons.value.list,
 		},
 		{
 			label: "Confirmed plays",
@@ -40,6 +39,11 @@ const metrics = computed(() => {
 const secondaryMetrics = computed(() => {
 	const totals = report.value?.totals;
 	return [
+		{
+			label: "Channel presence",
+			value: formatStatisticsDuration(totals?.presence_seconds ?? 0),
+			icon: icons.value.users,
+		},
 		{
 			label: "Different tracks",
 			value: formatStatistic(totals?.unique_tracks ?? 0),
@@ -57,11 +61,6 @@ const secondaryMetrics = computed(() => {
 					? "No plays yet"
 					: formatStatisticsDuration(totals.average_wait_seconds),
 			icon: icons.value.clock,
-		},
-		{
-			label: "In queue",
-			value: formatStatistic(player.state?.queue.length ?? 0),
-			icon: icons.value.list,
 		},
 	];
 });
@@ -146,7 +145,7 @@ onScopeDispose(() => {
 						<StatisticsPeriodSelect v-model="period" />
 					</div>
 
-					<div v-if="statistics.report.loading.value && !report" class="min-w-0">
+					<div v-if="statistics.groupReport.loading.value && !report" class="min-w-0">
 						<StatisticsOverviewSkeleton
 							:metrics="metrics"
 							:secondary-metrics="secondaryMetrics"
@@ -160,7 +159,7 @@ onScopeDispose(() => {
 								Statistics are unavailable
 							</h2>
 							<p class="mt-2 text-sm text-muted" role="alert">
-								{{ statistics.report.error.value }}
+								{{ statistics.groupReport.error.value }}
 							</p>
 							<UButton
 								class="mt-5"

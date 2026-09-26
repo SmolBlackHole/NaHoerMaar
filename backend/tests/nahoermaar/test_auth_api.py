@@ -211,11 +211,16 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             overview = await client.get("/api/statistics/overview")
             assert overview.status_code == 200
             assert overview.json()["totals"]["playback"]["overall"]["started"] == 0
+            assert overview.json()["totals"]["playback_seconds"] == 0.0
+            assert overview.json()["active_listeners"] == 0
+            assert "user_id" not in overview.json()
             own_statistics = await client.get(
                 f"/api/statistics/users/{current.user.id}"
             )
             assert own_statistics.status_code == 200
             assert own_statistics.json()["user_id"] == str(current.user.id)
+            assert "active_listeners" not in own_statistics.json()
+            assert "top_listeners" not in own_statistics.json()
             own_profile = await client.get(f"/api/profiles/{current.user.id}")
             assert own_profile.status_code == 200
             assert own_profile.json()["id"] == str(current.user.id)

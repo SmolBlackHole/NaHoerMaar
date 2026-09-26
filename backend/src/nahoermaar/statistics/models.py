@@ -75,6 +75,7 @@ class PlaybackBreakdown:
 class StatisticsTotals:
     requests: RequestTotals
     playback: PlaybackBreakdown
+    playback_seconds: float
     listening_seconds: float
     presence_seconds: float
     unique_tracks: int
@@ -87,6 +88,7 @@ class ActivityBucket:
     started_on: date
     granularity: ActivityGranularity
     plays: int
+    playback_seconds: float
     listening_seconds: float
     presence_seconds: float
 
@@ -124,10 +126,19 @@ class RankedListener:
 
 @dataclass(frozen=True, slots=True)
 class StatisticsReport:
-    user_id: UserId | None
     coverage: Coverage
     totals: StatisticsTotals
     activity: tuple[ActivityBucket, ...]
     top_tracks: tuple[RankedTrack, ...]
     top_artists: tuple[RankedArtist, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class GroupStatisticsReport(StatisticsReport):
+    active_listeners: int
     top_listeners: tuple[RankedListener, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class PersonalStatisticsReport(StatisticsReport):
+    user_id: UserId
