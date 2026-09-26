@@ -100,11 +100,20 @@ onScopeDispose(() => {
 					class="space-y-7"
 					aria-busy="true"
 				>
-					<div class="grid grid-cols-2 gap-4 xl:grid-cols-4">
+					<div
+						class="grid overflow-hidden rounded-2xl border border-default sm:grid-cols-2 xl:grid-cols-4"
+					>
 						<div
 							v-for="index in 4"
 							:key="index"
-							class="space-y-3 rounded-xl border border-default p-5"
+							class="space-y-3 p-5"
+							:class="[
+								index > 1 && 'border-t border-default sm:border-t-0',
+								index % 2 === 0 && 'sm:border-l sm:border-default',
+								index === 3 &&
+									'sm:border-l-0 sm:border-t xl:border-l xl:border-t-0',
+								index === 4 && 'sm:border-t xl:border-t-0',
+							]"
 						>
 							<USkeleton class="h-4 w-28" />
 							<USkeleton class="h-8 w-20" />
@@ -137,16 +146,25 @@ onScopeDispose(() => {
 				</div>
 
 				<template v-else>
-					<dl class="grid grid-cols-2 gap-4 xl:grid-cols-4">
+					<dl
+						class="grid overflow-hidden rounded-2xl border border-default sm:grid-cols-2 xl:grid-cols-4"
+					>
 						<div
-							v-for="metric in metrics"
+							v-for="(metric, index) in metrics"
 							:key="metric.label"
-							class="rounded-xl border border-default p-5"
+							class="p-5"
+							:class="[
+								index > 0 && 'border-t border-default sm:border-t-0',
+								index % 2 === 1 && 'sm:border-l sm:border-default',
+								index === 2 &&
+									'sm:border-l-0 sm:border-t xl:border-l xl:border-t-0',
+								index === 3 && 'sm:border-t xl:border-t-0',
+							]"
 						>
 							<dt class="flex items-center gap-2 text-sm text-muted">
 								<UIcon :name="metric.icon" class="size-4" />{{ metric.label }}
 							</dt>
-							<dd class="mt-4 text-3xl font-semibold tabular-nums text-highlighted">
+							<dd class="mt-3 text-2xl font-semibold tabular-nums text-highlighted">
 								{{ metric.value }}
 							</dd>
 						</div>
