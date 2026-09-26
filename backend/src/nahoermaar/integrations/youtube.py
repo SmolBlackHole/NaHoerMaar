@@ -65,6 +65,7 @@ _PERMANENT_ERRORS = (
     "video unavailable",
 )
 _YOUTUBE_OUTPUT_LIMIT_BYTES = 16 * 1024 * 1024
+_PROCESS_TIMEOUT_GRACE_SECONDS = 2.0
 
 
 class ProcessRunner(Protocol):
@@ -620,10 +621,19 @@ class YouTubeProvider:
         task = asyncio.create_task(self._runner(arguments, timeout=self._timeout))
         self._requests.add(task)
         try:
-            return await task
+            async with asyncio.timeout(self._timeout + _PROCESS_TIMEOUT_GRACE_SECONDS):
+                return await task
         except ProcessTimeoutError:
             _LOGGER.warning(
                 "youtube.request_failed operation=%s reason=timeout", operation
+            )
+            raise ProviderError(
+                "YouTube took too long to respond.", retryable=True
+            ) from None
+        except TimeoutError:
+            _LOGGER.warning(
+                "youtube.request_failed operation=%s reason=watchdog_timeout",
+                operation,
             )
             raise ProviderError(
                 "YouTube took too long to respond.", retryable=True

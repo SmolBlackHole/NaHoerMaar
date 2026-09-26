@@ -6,7 +6,10 @@ import asyncio
 import json
 from pathlib import Path
 
+import pytest
+
 from nahoermaar.catalog.domain import MediaKind, ObservationQuality, ProviderName
+from nahoermaar.catalog.providers import ProviderError
 from nahoermaar.integrations.processes import ProcessResult
 from nahoermaar.integrations.youtube import YouTubeMusicProvider, YouTubeProvider
 
@@ -85,6 +88,20 @@ class Runner:
         return ProcessResult(0, json.dumps(payload).encode(), b"")
 
 
+class StuckRunner:
+    def __init__(self) -> None:
+        self.cancelled = False
+
+    async def __call__(self, args: tuple[str, ...], *, timeout: float) -> ProcessResult:
+        del args, timeout
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            self.cancelled = True
+            raise
+        raise AssertionError("The stuck runner unexpectedly resumed.")
+
+
 def test_youtube_provider_translates_search_playlist_and_details() -> None:
     runner = Runner()
     provider = YouTubeMusicProvider(Path("node"), timeout=5, runner=runner)
@@ -137,5 +154,29 @@ def test_youtube_provider_translates_search_playlist_and_details() -> None:
         assert uploader_detail.artists[0].external_id == "UCpoKdKVhH-jcr3Pu0auKjmw"
         await provider.close()
         await video_provider.close()
+
+    asyncio.run(scenario())
+
+
+def test_youtube_provider_watchdog_cancels_a_stuck_runner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import nahoermaar.integrations.youtube as youtube_module
+
+    monkeypatch.setattr(youtube_module, "_PROCESS_TIMEOUT_GRACE_SECONDS", 0.01)
+    runner = StuckRunner()
+    provider = YouTubeProvider(Path("node"), timeout=0.01, runner=runner)
+    reference = provider.identify(
+        "https://www.youtube.com/watch?v=abcdefghijk",
+        kind=MediaKind.TRACK,
+    )
+    assert reference is not None
+
+    async def scenario() -> None:
+        with pytest.raises(ProviderError, match="too long") as caught:
+            await provider.track(reference)
+        assert caught.value.retryable is True
+        assert runner.cancelled is True
+        await provider.close()
 
     asyncio.run(scenario())
