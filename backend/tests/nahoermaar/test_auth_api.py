@@ -213,6 +213,18 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             assert overview.json()["totals"]["playback"]["overall"]["started"] == 0
             assert overview.json()["totals"]["playback_seconds"] == 0.0
             assert overview.json()["active_listeners"] == 0
+            assert overview.json()["requested_tracks"] == []
+            assert overview.json()["requested_artists"] == []
+            assert overview.json()["highlights"] == {
+                "most_shared_track": None,
+                "listener_pair": None,
+                "radio_conversion": None,
+                "contagious_track": None,
+                "busiest_weekday": None,
+                "busiest_hour": None,
+                "active_day_streaks": {"current": 0, "longest": 0},
+                "average_listeners": None,
+            }
             assert "user_id" not in overview.json()
             own_statistics = await client.get(
                 f"/api/statistics/users/{current.user.id}"
@@ -221,6 +233,9 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             assert own_statistics.json()["user_id"] == str(current.user.id)
             assert "active_listeners" not in own_statistics.json()
             assert "top_listeners" not in own_statistics.json()
+            assert "requested_tracks" not in own_statistics.json()
+            assert "requested_artists" not in own_statistics.json()
+            assert "highlights" not in own_statistics.json()
             own_profile = await client.get(f"/api/profiles/{current.user.id}")
             assert own_profile.status_code == 200
             assert own_profile.json()["id"] == str(current.user.id)

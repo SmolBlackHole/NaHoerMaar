@@ -782,6 +782,13 @@ export interface components {
             /** Operators */
             operators: components["schemas"]["UserView"][];
         };
+        /** ActiveDayStreaksView */
+        ActiveDayStreaksView: {
+            /** Current */
+            current: number;
+            /** Longest */
+            longest: number;
+        };
         /** ActivityBucketView */
         ActivityBucketView: {
             granularity: components["schemas"]["ActivityGranularity"];
@@ -907,6 +914,20 @@ export interface components {
             /** Running */
             running: boolean;
         };
+        /** BusiestHourView */
+        BusiestHourView: {
+            /** Hour */
+            hour: number;
+            /** Playback Seconds */
+            playback_seconds: number;
+        };
+        /** BusiestWeekdayView */
+        BusiestWeekdayView: {
+            /** Iso Weekday */
+            iso_weekday: number;
+            /** Playback Seconds */
+            playback_seconds: number;
+        };
         /** ChangeView */
         ChangeView: {
             /** Action */
@@ -951,6 +972,25 @@ export interface components {
             operation_id: string;
             /** Requested By */
             requested_by?: string | null;
+        };
+        /** ContagiousTrackHighlightView */
+        ContagiousTrackHighlightView: {
+            /** Artist Names */
+            artist_names: string[];
+            /** Artwork Url */
+            artwork_url: string | null;
+            /** Distinct Later Requesters */
+            distinct_later_requesters: number;
+            /** Later Manual Requests */
+            later_manual_requests: number;
+            original_requester: components["schemas"]["ListenerIdentityView"];
+            /** Title */
+            title: string;
+            /**
+             * Track Id
+             * Format: uuid
+             */
+            track_id: string;
         };
         /** ContributorView */
         ContributorView: {
@@ -1101,6 +1141,18 @@ export interface components {
          * @enum {string}
          */
         FontFamily: "Public Sans" | "DM Sans" | "Geist" | "Inter" | "Poppins" | "Outfit" | "Raleway";
+        /** GroupHighlightsView */
+        GroupHighlightsView: {
+            active_day_streaks: components["schemas"]["ActiveDayStreaksView"];
+            /** Average Listeners */
+            average_listeners: number | null;
+            busiest_hour: components["schemas"]["BusiestHourView"] | null;
+            busiest_weekday: components["schemas"]["BusiestWeekdayView"] | null;
+            contagious_track: components["schemas"]["ContagiousTrackHighlightView"] | null;
+            listener_pair: components["schemas"]["ListenerPairHighlightView"] | null;
+            most_shared_track: components["schemas"]["SharedTrackHighlightView"] | null;
+            radio_conversion: components["schemas"]["RadioConversionHighlightView"] | null;
+        };
         /** GroupStatisticsView */
         GroupStatisticsView: {
             /** Active Listeners */
@@ -1108,6 +1160,11 @@ export interface components {
             /** Activity */
             activity: components["schemas"]["ActivityBucketView"][];
             coverage: components["schemas"]["CoverageView"];
+            highlights: components["schemas"]["GroupHighlightsView"];
+            /** Requested Artists */
+            requested_artists: components["schemas"]["RankedRequestedArtistView"][];
+            /** Requested Tracks */
+            requested_tracks: components["schemas"]["RankedRequestedTrackView"][];
             /** Top Artists */
             top_artists: components["schemas"]["RankedArtistView"][];
             /** Top Listeners */
@@ -1130,6 +1187,42 @@ export interface components {
              * Format: uuid
              */
             operation_id: string;
+        };
+        /**
+         * ListenerBadgeKind
+         * @enum {string}
+         */
+        ListenerBadgeKind: "night_owl" | "explorer" | "resident_dj" | "radio_regular" | "repeat_offender";
+        /** ListenerBadgeView */
+        ListenerBadgeView: {
+            kind: components["schemas"]["ListenerBadgeKind"];
+            /** Sample Size */
+            sample_size: number;
+            /** Value */
+            value: number;
+        };
+        /** ListenerIdentityView */
+        ListenerIdentityView: {
+            /** Avatar Url */
+            avatar_url: string;
+            /** Discord Display Name */
+            discord_display_name: string | null;
+            /** Discord Username */
+            discord_username: string | null;
+            /** Display Name */
+            display_name: string | null;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+        };
+        /** ListenerPairHighlightView */
+        ListenerPairHighlightView: {
+            first: components["schemas"]["ListenerIdentityView"];
+            second: components["schemas"]["ListenerIdentityView"];
+            /** Shared Playbacks */
+            shared_playbacks: number;
         };
         /** LogEntryView */
         LogEntryView: {
@@ -1366,6 +1459,24 @@ export interface components {
             position: number;
             request: components["schemas"]["RequestView"];
         };
+        /** RadioConversionHighlightView */
+        RadioConversionHighlightView: {
+            /** Artist Names */
+            artist_names: string[];
+            /** Artwork Url */
+            artwork_url: string | null;
+            /** Distinct Requesters */
+            distinct_requesters: number;
+            /** Later Manual Requests */
+            later_manual_requests: number;
+            /** Title */
+            title: string;
+            /**
+             * Track Id
+             * Format: uuid
+             */
+            track_id: string;
+        };
         /** RadioMutationInput */
         RadioMutationInput: {
             /**
@@ -1443,25 +1554,71 @@ export interface components {
         RankedListenerView: {
             /** Avatar Url */
             avatar_url: string;
+            /** Badges */
+            badges: components["schemas"]["ListenerBadgeView"][];
+            /** Confirmed Manual Requests */
+            confirmed_manual_requests: number;
             /** Discord Display Name */
             discord_display_name: string | null;
             /** Discord Username */
             discord_username: string | null;
+            /** Discovery Ratio */
+            discovery_ratio: number | null;
             /** Display Name */
             display_name: string | null;
             /** Listening Seconds */
             listening_seconds: number;
             /** Manual Requests */
             manual_requests: number;
+            /** Night Listening Seconds */
+            night_listening_seconds: number;
+            /** Night Share */
+            night_share: number | null;
             /** Plays */
             plays: number;
             /** Presence Seconds */
             presence_seconds: number;
+            /** Radio Plays */
+            radio_plays: number;
+            /** Radio Share */
+            radio_share: number | null;
+            /** Repeat Ratio */
+            repeat_ratio: number | null;
+            /** Unique Tracks */
+            unique_tracks: number;
             /**
              * User Id
              * Format: uuid
              */
             user_id: string;
+        };
+        /** RankedRequestedArtistView */
+        RankedRequestedArtistView: {
+            /**
+             * Artist Id
+             * Format: uuid
+             */
+            artist_id: string;
+            /** Name */
+            name: string;
+            /** Requests */
+            requests: number;
+        };
+        /** RankedRequestedTrackView */
+        RankedRequestedTrackView: {
+            /** Artist Names */
+            artist_names: string[];
+            /** Artwork Url */
+            artwork_url: string | null;
+            /** Requests */
+            requests: number;
+            /** Title */
+            title: string;
+            /**
+             * Track Id
+             * Format: uuid
+             */
+            track_id: string;
         };
         /** RankedTrackView */
         RankedTrackView: {
@@ -1672,6 +1829,24 @@ export interface components {
              * Format: uuid
              */
             user_id: string;
+        };
+        /** SharedTrackHighlightView */
+        SharedTrackHighlightView: {
+            /** Artist Names */
+            artist_names: string[];
+            /** Artwork Url */
+            artwork_url: string | null;
+            /** Distinct Listeners */
+            distinct_listeners: number;
+            /** Plays */
+            plays: number;
+            /** Title */
+            title: string;
+            /**
+             * Track Id
+             * Format: uuid
+             */
+            track_id: string;
         };
         /** StartRadioInput */
         StartRadioInput: {

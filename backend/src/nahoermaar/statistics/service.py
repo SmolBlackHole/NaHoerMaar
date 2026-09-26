@@ -5,6 +5,7 @@
 """Period handling and access policy for statistics read projections."""
 
 from collections.abc import Callable, Iterable
+from dataclasses import replace
 from datetime import UTC, date, datetime, time, timedelta
 import logging
 from typing import overload
@@ -17,9 +18,16 @@ from nahoermaar.users.service import AccessService
 from .models import (
     ActivityBucket,
     ActivityGranularity,
+    ActiveDayStreaks,
     Coverage,
+    GroupHighlights,
     GroupStatisticsReport,
+    ListenerBadge,
+    ListenerBadgeKind,
     PersonalStatisticsReport,
+    RankedListener,
+    RankedRequestedArtist,
+    RankedRequestedTrack,
     StatisticsPeriod,
 )
 from .repository import PresenceInterval, StatisticsRepository
@@ -88,6 +96,11 @@ class StatisticsService:
             raise ValueError("Statistics clock must return a timezone-aware value.")
         ended_at = ended_at.astimezone(UTC)
         granularity = self._granularity(period)
+        top_listeners: tuple[RankedListener, ...] = ()
+        active_listeners = 0
+        requested_tracks: tuple[RankedRequestedTrack, ...] = ()
+        requested_artists: tuple[RankedRequestedArtist, ...] = ()
+        highlights: GroupHighlights | None = None
         async with self._units() as work:
             repository = StatisticsRepository(work.session)
             recorded_since = await repository.recorded_since()
@@ -126,16 +139,61 @@ class StatisticsService:
                 ended_at,
                 user_id=user_id,
             )
-            top_listeners = (
-                await repository.top_listeners(started_at, ended_at)
-                if user_id is None
-                else ()
-            )
-            active_listeners = (
-                await repository.active_listener_count(started_at, ended_at)
-                if user_id is None
-                else 0
-            )
+            if user_id is None:
+                listeners = await repository.top_listeners(
+                    started_at,
+                    ended_at,
+                    self._timezone.key,
+                )
+                top_listeners = assign_listener_badges(listeners)[:8]
+                active_listeners = await repository.active_listener_count(
+                    started_at, ended_at
+                )
+                requested_tracks = await repository.top_requested_tracks(
+                    started_at, ended_at
+                )
+                requested_artists = await repository.top_requested_artists(
+                    started_at, ended_at
+                )
+                most_shared_track = await repository.most_shared_track(
+                    started_at, ended_at
+                )
+                listener_pair = await repository.best_listener_pair(
+                    started_at, ended_at
+                )
+                radio_conversion = await repository.best_radio_conversion(
+                    started_at, ended_at
+                )
+                contagious_track = await repository.most_contagious_track(
+                    started_at, ended_at
+                )
+                busiest_weekday, busiest_hour = await repository.busiest_times(
+                    started_at,
+                    ended_at,
+                    self._timezone.key,
+                )
+                active_days = await repository.active_days(
+                    started_at,
+                    ended_at,
+                    self._timezone.key,
+                )
+                highlights = GroupHighlights(
+                    most_shared_track=most_shared_track,
+                    listener_pair=listener_pair,
+                    radio_conversion=radio_conversion,
+                    contagious_track=contagious_track,
+                    busiest_weekday=busiest_weekday,
+                    busiest_hour=busiest_hour,
+                    active_day_streaks=calculate_active_day_streaks(
+                        active_days,
+                        ended_at.astimezone(self._timezone).date(),
+                    ),
+                    average_listeners=(
+                        totals.listening_seconds / totals.playback_seconds
+                        if totals.playback_seconds > 0
+                        else None
+                    ),
+                )
         _LOGGER.info(
             "statistics.projected scope=%s period=%s requests=%d plays=%d "
             "playback_seconds=%.3f listening_seconds=%.3f "
@@ -159,6 +217,8 @@ class StatisticsService:
             partial,
         )
         if user_id is None:
+            if highlights is None:
+                raise RuntimeError("Group statistics highlights were not projected.")
             return GroupStatisticsReport(
                 coverage=coverage,
                 totals=totals,
@@ -167,6 +227,9 @@ class StatisticsService:
                 top_artists=top_artists,
                 active_listeners=active_listeners,
                 top_listeners=top_listeners,
+                requested_tracks=requested_tracks,
+                requested_artists=requested_artists,
+                highlights=highlights,
             )
         return PersonalStatisticsReport(
             coverage=coverage,
@@ -270,6 +333,97 @@ class StatisticsService:
             if bucket_start < bucket_end:
                 yield cursor.date(), bucket_start, bucket_end
             cursor = following
+
+
+def assign_listener_badges(
+    listeners: tuple[RankedListener, ...],
+) -> tuple[RankedListener, ...]:
+    awards: dict[UserId, list[ListenerBadge]] = {}
+    _award(
+        awards,
+        ListenerBadgeKind.NIGHT_OWL,
+        (item for item in listeners if item.night_listening_seconds > 0),
+        lambda item: item.night_share,
+        lambda item: item.plays,
+    )
+    _award(
+        awards,
+        ListenerBadgeKind.EXPLORER,
+        (item for item in listeners if item.unique_tracks >= 10),
+        lambda item: item.discovery_ratio,
+        lambda item: item.unique_tracks,
+    )
+    _award(
+        awards,
+        ListenerBadgeKind.RESIDENT_DJ,
+        (item for item in listeners if item.confirmed_manual_requests > 0),
+        lambda item: float(item.confirmed_manual_requests),
+        lambda item: item.confirmed_manual_requests,
+    )
+    _award(
+        awards,
+        ListenerBadgeKind.RADIO_REGULAR,
+        (item for item in listeners if item.plays >= 10),
+        lambda item: item.radio_share,
+        lambda item: item.plays,
+    )
+    _award(
+        awards,
+        ListenerBadgeKind.REPEAT_OFFENDER,
+        (item for item in listeners if item.plays >= 10),
+        lambda item: item.repeat_ratio,
+        lambda item: item.plays,
+    )
+    return tuple(
+        replace(item, badges=tuple(awards.get(item.user_id, ()))) for item in listeners
+    )
+
+
+def calculate_active_day_streaks(
+    active_days: tuple[date, ...],
+    current_day: date,
+) -> ActiveDayStreaks:
+    days = set(active_days)
+    current = 0
+    cursor = current_day
+    while cursor in days:
+        current += 1
+        cursor -= timedelta(days=1)
+
+    longest = 0
+    running = 0
+    previous: date | None = None
+    for active_day in sorted(days):
+        if previous is not None and active_day == previous + timedelta(days=1):
+            running += 1
+        else:
+            running = 1
+        longest = max(longest, running)
+        previous = active_day
+    return ActiveDayStreaks(current=current, longest=longest)
+
+
+def _award(
+    awards: dict[UserId, list[ListenerBadge]],
+    kind: ListenerBadgeKind,
+    candidates: Iterable[RankedListener],
+    metric: Callable[[RankedListener], float | None],
+    sample_size: Callable[[RankedListener], int],
+) -> None:
+    measured = tuple(
+        (item, value, sample_size(item))
+        for item in candidates
+        if (value := metric(item)) is not None
+    )
+    if not measured:
+        return
+    winner, value, sample = min(
+        measured,
+        key=lambda item: (-item[1], -item[2], str(item[0].user_id)),
+    )
+    awards.setdefault(winner.user_id, []).append(
+        ListenerBadge(kind=kind, value=value, sample_size=sample)
+    )
 
 
 def _next_local_bucket(

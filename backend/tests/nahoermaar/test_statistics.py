@@ -3,10 +3,11 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import asyncio
-from datetime import UTC, datetime, timedelta
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, timedelta
 import os
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from alembic import command
@@ -17,8 +18,17 @@ from sqlalchemy import insert
 from nahoermaar.database.core import Database
 from nahoermaar.database.schema import Base
 from nahoermaar.database.uow import UnitOfWork
-from nahoermaar.statistics.models import ActivityGranularity, StatisticsPeriod
-from nahoermaar.statistics.service import StatisticsService
+from nahoermaar.statistics.models import (
+    ActivityGranularity,
+    ListenerBadgeKind,
+    RankedListener,
+    StatisticsPeriod,
+)
+from nahoermaar.statistics.service import (
+    StatisticsService,
+    assign_listener_badges,
+    calculate_active_day_streaks,
+)
 from nahoermaar.users.domain import (
     AccessRole,
     AuthError,
@@ -35,6 +45,15 @@ ROOT = Path(__file__).parents[3]
 NOW = datetime(2026, 9, 25, 12, tzinfo=UTC)
 
 
+@dataclass(frozen=True, slots=True)
+class _Seed:
+    owner_id: UserId
+    listener_id: UserId
+    blocked_id: UserId
+    first_track_id: UUID
+    second_track_id: UUID
+
+
 def _database() -> Database:
     database_url = os.environ["DATABASE_URL"]
     configuration = Config(ROOT / "alembic.ini")
@@ -43,7 +62,7 @@ def _database() -> Database:
     return Database(database_url)
 
 
-async def _seed(database: Database) -> tuple[UserId, UserId]:
+async def _seed(database: Database) -> _Seed:
     owner_id = UserId(uuid4())
     listener_id = UserId(uuid4())
     blocked_id = UserId(uuid4())
@@ -55,6 +74,8 @@ async def _seed(database: Database) -> tuple[UserId, UserId]:
     radio_run_id = uuid4()
     first_request_id = uuid4()
     second_request_id = uuid4()
+    converted_request_id = uuid4()
+    contagious_request_id = uuid4()
     first_playback_id = uuid4()
     second_playback_id = uuid4()
     listener_presence_id = uuid4()
@@ -211,6 +232,26 @@ async def _seed(database: Database) -> tuple[UserId, UserId]:
                     "requested_by": listener_id,
                     "radio_run_id": None,
                 },
+                {
+                    "id": converted_request_id,
+                    "session_id": session_id,
+                    "track_id": first_track_id,
+                    "source_id": None,
+                    "requested_at": NOW - timedelta(minutes=30),
+                    "origin": "manual",
+                    "requested_by": owner_id,
+                    "radio_run_id": None,
+                },
+                {
+                    "id": contagious_request_id,
+                    "session_id": session_id,
+                    "track_id": second_track_id,
+                    "source_id": None,
+                    "requested_at": NOW - timedelta(minutes=20),
+                    "origin": "manual",
+                    "requested_by": owner_id,
+                    "radio_run_id": None,
+                },
             ),
         )
         await work.session.execute(
@@ -295,14 +336,22 @@ async def _seed(database: Database) -> tuple[UserId, UserId]:
             ),
         )
         await work.commit()
-    return listener_id, blocked_id
+    return _Seed(
+        owner_id=owner_id,
+        listener_id=listener_id,
+        blocked_id=blocked_id,
+        first_track_id=first_track_id,
+        second_track_id=second_track_id,
+    )
 
 
 def test_statistics_project_shared_and_personal_facts_without_double_counting() -> None:
     database = _database()
 
     async def scenario() -> None:
-        listener_id, blocked_id = await _seed(database)
+        seeded = await _seed(database)
+        listener_id = seeded.listener_id
+        blocked_id = seeded.blocked_id
 
         def units() -> UnitOfWork:
             return UnitOfWork(database.sessions)
@@ -320,8 +369,8 @@ def test_statistics_project_shared_and_personal_facts_without_double_counting() 
         assert overview.coverage.partial
         assert overview.coverage.timezone == "Europe/Berlin"
         assert overview.coverage.granularity is ActivityGranularity.DAY
-        assert overview.totals.requests.total == 2
-        assert overview.totals.requests.manual == 1
+        assert overview.totals.requests.total == 4
+        assert overview.totals.requests.manual == 3
         assert overview.totals.requests.radio == 1
         assert overview.totals.playback.overall.started == 2
         assert overview.totals.playback.overall.completed == 1
@@ -345,15 +394,58 @@ def test_statistics_project_shared_and_personal_facts_without_double_counting() 
         assert overview.top_listeners[0].user_id == listener_id
         assert overview.top_listeners[0].discord_id == "200"
         assert overview.top_listeners[0].manual_requests == 1
+        assert overview.top_listeners[0].confirmed_manual_requests == 1
+        assert overview.top_listeners[0].unique_tracks == 2
+        assert overview.top_listeners[0].discovery_ratio == 1.0
+        assert overview.top_listeners[0].repeat_ratio == 0.0
+        assert overview.top_listeners[0].radio_share == 0.5
         assert overview.top_listeners[0].presence_seconds == 5400.0
         assert overview.active_listeners == 2
+        assert {track.track_id for track in overview.requested_tracks} == {
+            seeded.first_track_id,
+            seeded.second_track_id,
+        }
+        assert {track.requests for track in overview.requested_tracks} == {2}
+        assert overview.requested_artists[0].name == "Shared artist"
+        assert overview.requested_artists[0].requests == 4
+        assert overview.highlights.most_shared_track is not None
+        assert overview.highlights.most_shared_track.track_id in {
+            seeded.first_track_id,
+            seeded.second_track_id,
+        }
+        assert overview.highlights.most_shared_track.distinct_listeners == 2
+        assert overview.highlights.listener_pair is not None
+        assert {
+            overview.highlights.listener_pair.first.user_id,
+            overview.highlights.listener_pair.second.user_id,
+        } == {seeded.owner_id, seeded.listener_id}
+        assert overview.highlights.listener_pair.shared_playbacks == 2
+        assert overview.highlights.radio_conversion is not None
+        assert overview.highlights.radio_conversion.track_id == seeded.first_track_id
+        assert overview.highlights.radio_conversion.later_manual_requests == 1
+        assert overview.highlights.radio_conversion.distinct_requesters == 1
+        assert overview.highlights.contagious_track is not None
+        assert overview.highlights.contagious_track.track_id == seeded.second_track_id
+        assert (
+            overview.highlights.contagious_track.original_requester.user_id
+            == seeded.listener_id
+        )
+        assert overview.highlights.contagious_track.later_manual_requests == 1
+        assert overview.highlights.contagious_track.distinct_later_requesters == 1
+        assert overview.highlights.busiest_weekday is not None
+        assert overview.highlights.busiest_hour is not None
+        assert overview.highlights.active_day_streaks.current == 1
+        assert overview.highlights.active_day_streaks.longest == 1
+        assert overview.highlights.average_listeners == pytest.approx(170 / 180)
         assert len(overview.activity) == 7
         assert sum(day.playback_seconds for day in overview.activity) == 180.0
         assert sum(day.listening_seconds for day in overview.activity) == 170.0
         assert sum(day.presence_seconds for day in overview.activity) == 6600.0
 
         assert personal.user_id == listener_id
-        assert personal.totals.requests == overview.totals.requests
+        assert personal.totals.requests.total == 2
+        assert personal.totals.requests.manual == 1
+        assert personal.totals.requests.radio == 1
         assert personal.totals.playback == overview.totals.playback
         assert personal.totals.playback_seconds == 180.0
         assert personal.totals.listening_seconds == 140.0
@@ -404,3 +496,103 @@ def test_statistics_project_shared_and_personal_facts_without_double_counting() 
         asyncio.run(scenario())
     finally:
         asyncio.run(database.close())
+
+
+def test_listener_badges_enforce_samples_and_stable_ties() -> None:
+    explorer = _ranked_listener(
+        1,
+        plays=10,
+        unique_tracks=10,
+        radio_plays=5,
+        confirmed_manual_requests=1,
+        listening_seconds=100,
+        night_listening_seconds=10,
+    )
+    repeater = _ranked_listener(
+        2,
+        plays=10,
+        unique_tracks=5,
+        radio_plays=9,
+        confirmed_manual_requests=3,
+        listening_seconds=100,
+        night_listening_seconds=20,
+    )
+    same_radio_share = _ranked_listener(
+        3,
+        plays=10,
+        unique_tracks=6,
+        radio_plays=9,
+        confirmed_manual_requests=2,
+        listening_seconds=100,
+        night_listening_seconds=5,
+    )
+    tiny_sample = _ranked_listener(
+        4,
+        plays=1,
+        unique_tracks=1,
+        radio_plays=1,
+        confirmed_manual_requests=0,
+        listening_seconds=10,
+        night_listening_seconds=10,
+    )
+
+    ranked = assign_listener_badges((explorer, repeater, same_radio_share, tiny_sample))
+    badges = {item.user_id: {badge.kind for badge in item.badges} for item in ranked}
+
+    assert badges[explorer.user_id] == {ListenerBadgeKind.EXPLORER}
+    assert badges[repeater.user_id] == {
+        ListenerBadgeKind.RESIDENT_DJ,
+        ListenerBadgeKind.RADIO_REGULAR,
+        ListenerBadgeKind.REPEAT_OFFENDER,
+    }
+    assert badges[same_radio_share.user_id] == set()
+    assert badges[tiny_sample.user_id] == {ListenerBadgeKind.NIGHT_OWL}
+
+
+def test_active_day_streaks_end_on_the_current_local_day() -> None:
+    streaks = calculate_active_day_streaks(
+        (
+            date(2026, 9, 20),
+            date(2026, 9, 21),
+            date(2026, 9, 23),
+            date(2026, 9, 24),
+            date(2026, 9, 25),
+        ),
+        date(2026, 9, 25),
+    )
+    assert streaks.current == 3
+    assert streaks.longest == 3
+
+    inactive_today = calculate_active_day_streaks(
+        (date(2026, 9, 23), date(2026, 9, 24)),
+        date(2026, 9, 25),
+    )
+    assert inactive_today.current == 0
+    assert inactive_today.longest == 2
+
+
+def _ranked_listener(
+    identity: int,
+    *,
+    plays: int,
+    unique_tracks: int,
+    radio_plays: int,
+    confirmed_manual_requests: int,
+    listening_seconds: float,
+    night_listening_seconds: float,
+) -> RankedListener:
+    return RankedListener(
+        user_id=UserId(UUID(int=identity)),
+        discord_id=str(identity),
+        display_name=f"Listener {identity}",
+        discord_username=f"listener-{identity}",
+        discord_avatar_hash=None,
+        manual_requests=confirmed_manual_requests,
+        confirmed_manual_requests=confirmed_manual_requests,
+        plays=plays,
+        unique_tracks=unique_tracks,
+        radio_plays=radio_plays,
+        presence_seconds=listening_seconds,
+        listening_seconds=listening_seconds,
+        night_listening_seconds=night_listening_seconds,
+    )
