@@ -162,11 +162,11 @@ async function openQueue() {
 	isolation: isolate;
 }
 .player-page.is-listening {
-	--ui-text: #e4e4e7;
-	--ui-text-highlighted: #fafafa;
-	--ui-text-muted: #b6b8c0;
-	--ui-text-dimmed: #a1a1aa;
-	--ui-primary: var(--color-primary-400);
+	--ui-text: light-dark(#3f3f46, #e4e4e7);
+	--ui-text-highlighted: light-dark(#18181b, #fafafa);
+	--ui-text-muted: light-dark(#52525b, #b6b8c0);
+	--ui-text-dimmed: light-dark(#71717a, #a1a1aa);
+	--ui-primary: light-dark(var(--color-primary-700), var(--color-primary-400));
 	color: var(--ui-text);
 }
 .is-listening .music-tab-content[data-state="active"] {
@@ -181,7 +181,7 @@ async function openQueue() {
 	width: 100%;
 }
 .is-listening :focus-visible {
-	outline-color: #fff;
+	outline-color: var(--ui-text-highlighted);
 }
 @container workspace (max-width: 600px) {
 	.music-tab-list {

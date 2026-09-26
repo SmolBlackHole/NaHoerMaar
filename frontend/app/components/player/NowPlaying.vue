@@ -347,82 +347,46 @@ watch(loadVideo, (visible) => {
 
 <style scoped>
 .listening-view {
-	--player-stage-bg: var(--ui-bg);
-	--player-foreground: var(--ui-text-highlighted);
-	--player-placeholder: rgb(9 9 11 / 6%);
+	--player-stage-bg: light-dark(var(--ui-bg), #17191c);
+	--player-foreground: light-dark(#18181b, #fff);
+	--player-placeholder: light-dark(rgb(9 9 11 / 6%), rgb(255 255 255 / 5%));
 	--player-shade-bottom: linear-gradient(
 		0deg,
-		rgb(250 250 250 / 96%),
-		rgb(250 250 250 / 48%) 34%,
+		light-dark(rgb(250 250 250 / 92%), rgb(8 10 13 / 92%)),
+		light-dark(rgb(250 250 250 / 62%), rgb(8 10 13 / 40%)) 34%,
 		transparent 72%
 	);
 	--player-shade-side: linear-gradient(
 		55deg,
-		rgb(250 250 250 / 92%) 0%,
-		rgb(250 250 250 / 60%) 30%,
+		light-dark(rgb(250 250 250 / 72%), rgb(8 10 13 / 90%)) 0%,
+		light-dark(rgb(250 250 250 / 42%), rgb(8 10 13 / 62%)) 30%,
 		transparent 78%
 	);
 	--player-shade-top: linear-gradient(
 		180deg,
-		rgb(250 250 250 / 76%),
-		rgb(250 250 250 / 22%) 20%,
+		light-dark(rgb(250 250 250 / 60%), rgb(8 10 13 / 78%)),
+		light-dark(rgb(250 250 250 / 20%), rgb(8 10 13 / 24%)) 20%,
 		transparent 40%
 	);
 	--player-shade-mobile: linear-gradient(
 		0deg,
-		rgb(250 250 250 / 98%),
-		rgb(250 250 250 / 72%) 38%,
-		rgb(250 250 250 / 30%) 70%,
-		rgb(250 250 250 / 12%) 100%
+		light-dark(rgb(250 250 250 / 96%), rgb(8 10 13 / 96%)),
+		light-dark(rgb(250 250 250 / 72%), rgb(8 10 13 / 65%)) 38%,
+		light-dark(rgb(250 250 250 / 30%), rgb(8 10 13 / 25%)) 70%,
+		light-dark(rgb(250 250 250 / 12%), rgb(8 10 13 / 10%)) 100%
 	);
-	--player-control-bg: rgb(255 255 255 / 82%);
-	--player-control-active: rgb(9 9 11 / 10%);
-	--player-control-hover: rgb(9 9 11 / 16%);
-	--player-divider: rgb(9 9 11 / 16%);
-	--player-divider-subtle: rgb(9 9 11 / 10%);
-	--player-icon-bg: rgb(9 9 11 / 7%);
+	--player-control-bg: light-dark(rgb(255 255 255 / 82%), rgb(8 10 13 / 78%));
+	--player-control-active: light-dark(rgb(9 9 11 / 10%), rgb(255 255 255 / 13%));
+	--player-control-hover: light-dark(rgb(9 9 11 / 16%), rgb(255 255 255 / 19%));
+	--player-divider: light-dark(rgb(9 9 11 / 16%), rgb(255 255 255 / 18%));
+	--player-divider-subtle: light-dark(rgb(9 9 11 / 10%), rgb(255 255 255 / 12%));
+	--player-icon-bg: light-dark(rgb(9 9 11 / 7%), rgb(255 255 255 / 8%));
 	display: flex;
 	flex-direction: column;
 	flex: 1;
 	min-width: 0;
 	min-height: 28rem;
 	color: var(--player-foreground);
-}
-:global(.dark) .listening-view {
-	--player-stage-bg: #17191c;
-	--player-foreground: #fff;
-	--player-placeholder: #ffffff0d;
-	--player-shade-bottom: linear-gradient(
-		0deg,
-		rgb(8 10 13 / 92%),
-		rgb(8 10 13 / 40%) 34%,
-		transparent 72%
-	);
-	--player-shade-side: linear-gradient(
-		55deg,
-		rgb(8 10 13 / 90%) 0%,
-		rgb(8 10 13 / 62%) 30%,
-		transparent 78%
-	);
-	--player-shade-top: linear-gradient(
-		180deg,
-		rgb(8 10 13 / 78%),
-		rgb(8 10 13 / 24%) 20%,
-		transparent 40%
-	);
-	--player-shade-mobile: linear-gradient(
-		0deg,
-		rgb(8 10 13 / 96%),
-		rgb(8 10 13 / 65%) 38%,
-		rgb(8 10 13 / 25%) 70%,
-		rgb(8 10 13 / 10%) 100%
-	);
-	--player-control-bg: rgb(8 10 13 / 78%);
-	--player-control-active: #ffffff20;
-	--player-control-hover: #ffffff30;
-	--player-divider: rgb(255 255 255 / 18%);
-	--player-divider-subtle: rgb(255 255 255 / 12%);
-	--player-icon-bg: rgb(255 255 255 / 8%);
 }
 .media-stage {
 	position: absolute;
