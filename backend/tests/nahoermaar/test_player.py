@@ -13,7 +13,13 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import func, insert, select, update
 
-from nahoermaar.catalog.domain import MediaKind, TrackId, TrackSourceId
+from nahoermaar.catalog.domain import (
+    DiscoveryKind,
+    MediaKind,
+    TrackId,
+    TrackSourceId,
+)
+from nahoermaar.catalog.repository import DiscoveryRepository
 from nahoermaar.database.core import Database
 from nahoermaar.database.schema import Base
 from nahoermaar.database.uow import UnitOfWork
@@ -292,7 +298,9 @@ def test_fsm_keeps_manual_requests_distinct_and_radio_at_target() -> None:
         RequestOrigin.MANUAL,
         RequestOrigin.MANUAL,
     ]
-    assert stopped.state.session.queue_revision == applied.state.session.queue_revision + 1
+    assert (
+        stopped.state.session.queue_revision == applied.state.session.queue_revision + 1
+    )
     assert stopped.outcome.action is PlayerAction.RADIO_STOPPED
     assert stopped.outcome.removed_count == 3
     assert stopped.outcome.entry_ids == tuple(
@@ -348,7 +356,10 @@ def test_fsm_keeps_manual_requests_distinct_and_radio_at_target() -> None:
     assert replacement.request_id is not None
     assert replacement.id != run.id
     assert replaced.outcome.removed_count == 3
-    assert replaced.state.session.queue_revision == applied.state.session.queue_revision + 1
+    assert (
+        replaced.state.session.queue_revision
+        == applied.state.session.queue_revision + 1
+    )
     assert [entry.request.origin for entry in replaced.state.queue.entries] == [
         RequestOrigin.MANUAL,
         RequestOrigin.MANUAL,
@@ -370,7 +381,9 @@ def test_fsm_keeps_manual_requests_distinct_and_radio_at_target() -> None:
         None,
         NOW + timedelta(seconds=9),
     )
-    assert [entry.request.origin for entry in replacement_filled.state.queue.entries] == [
+    assert [
+        entry.request.origin for entry in replacement_filled.state.queue.entries
+    ] == [
         RequestOrigin.MANUAL,
         RequestOrigin.MANUAL,
         RequestOrigin.RADIO,
@@ -488,6 +501,88 @@ def test_repository_restores_relational_queue_radio_and_prunes_ephemera() -> Non
             assert deleted_undos == 1
             assert deleted_receipts == 0
             await work.commit()
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        asyncio.run(database.close())
+
+
+def test_discovery_retention_preserves_snapshot_referenced_by_radio() -> None:
+    database = _database()
+    user_id = UserId(uuid4())
+    track_id = TrackId(uuid4())
+    source_id = TrackSourceId(uuid4())
+
+    async def scenario() -> None:
+        await _seed(
+            database,
+            user_id=user_id,
+            tracks=((track_id, source_id),),
+        )
+        async with UnitOfWork(database.sessions) as work:
+            discovery = DiscoveryRepository(work.session)
+            protected = await discovery.publish(
+                kind=DiscoveryKind.PLAYLIST,
+                provider_key="youtube_music",
+                locator="PLprotected",
+                limit=100,
+                source_url="https://music.youtube.com/playlist?list=PLprotected",
+                playlist_title="Protected radio seed",
+                source_ids=(source_id,),
+                fetched_at=NOW,
+                expires_at=NOW + timedelta(minutes=1),
+                source_has_more=False,
+                continuation=None,
+            )
+            await work.commit()
+
+        session_id = ListeningSessionId(uuid4())
+        started = transition(
+            PlayerState.empty(session_id, NOW),
+            StartRadio(
+                session_id,
+                OperationId(uuid4()),
+                RadioSeed(
+                    MediaKind.PLAYLIST,
+                    discovery_snapshot_id=protected.id,
+                ),
+            ),
+            user_id,
+            NOW + timedelta(seconds=1),
+        )
+        async with UnitOfWork(database.sessions) as work:
+            await SessionRepository(work.session).save(started.state)
+            await work.commit()
+
+        async with UnitOfWork(database.sessions) as work:
+            discovery = DiscoveryRepository(work.session)
+            for offset in range(1, 5):
+                fetched_at = NOW + timedelta(minutes=offset)
+                await discovery.publish(
+                    kind=DiscoveryKind.PLAYLIST,
+                    provider_key="youtube_music",
+                    locator="PLprotected",
+                    limit=100,
+                    source_url="https://music.youtube.com/playlist?list=PLprotected",
+                    playlist_title="Protected radio seed",
+                    source_ids=(source_id,),
+                    fetched_at=fetched_at,
+                    expires_at=fetched_at + timedelta(minutes=1),
+                    source_has_more=False,
+                    continuation=None,
+                )
+            await work.commit()
+
+        async with UnitOfWork(database.sessions) as work:
+            preserved = await DiscoveryRepository(work.session).get(protected.id)
+            snapshot_count = await work.session.scalar(
+                select(func.count()).select_from(
+                    Base.metadata.tables["discovery_snapshots"]
+                )
+            )
+        assert preserved is not None
+        assert snapshot_count == 4
 
     try:
         asyncio.run(scenario())

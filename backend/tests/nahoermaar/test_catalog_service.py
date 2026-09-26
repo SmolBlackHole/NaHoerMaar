@@ -350,9 +350,9 @@ def test_cache_first_refresh_is_shared_and_provider_failure_keeps_last_snapshot(
         asyncio.run(database.close())
 
 
-def test_catalog_maintenance_repairs_metadata_and_refreshes_recent_stale_searches() -> (
-    None
-):
+def test_catalog_maintenance_repairs_metadata_and_refreshes_recent_stale_searches(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     database = _database()
     music = Provider()
     youtube = YouTubeProvider()
@@ -392,6 +392,7 @@ def test_catalog_maintenance_repairs_metadata_and_refreshes_recent_stale_searche
         assert discovered.snapshot.entries[0].track.duration_seconds is None
 
         now[0] += timedelta(minutes=6)
+        caplog.set_level("INFO", logger="nahoermaar.catalog.service")
         repaired, refreshed = await service.maintain()
 
         assert (repaired, refreshed) == (1, 1)
@@ -404,6 +405,66 @@ def test_catalog_maintenance_repairs_metadata_and_refreshes_recent_stale_searche
         assert stored.duration_seconds == 181
         assert stored.album_title == "Known album"
         assert [credit.artist.name for credit in stored.artists] == ["Known artist"]
+        assert any(
+            "catalog.maintenance_metadata_repaired" in message
+            and "title='First title'" in message
+            and "added_fields=artist,duration,artwork,album" in message
+            for message in caplog.messages
+        )
+        assert any(
+            "catalog.maintenance_discovery_refreshed" in message
+            and "locator='zara larsson'" in message
+            for message in caplog.messages
+        )
+        await service.close()
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        asyncio.run(database.close())
+
+
+def test_catalog_maintenance_does_not_count_still_incomplete_metadata(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    database = _database()
+    music = Provider()
+    youtube = YouTubeProvider()
+    youtube.detail = ProviderTrack(
+        ProviderName.YOUTUBE,
+        TRACK.external_id,
+        TRACK.source_url,
+        TRACK.title,
+        quality=ObservationQuality.DETAIL,
+    )
+    now = [NOW]
+
+    def units() -> UnitOfWork:
+        return UnitOfWork(database.sessions)
+
+    service = CatalogService(
+        units,
+        (music, youtube),
+        clock=lambda: now[0],
+        maintenance_delay=0,
+    )
+
+    async def scenario() -> None:
+        discovered = await service.search("Zara Larsson")
+        now[0] += timedelta(minutes=6)
+        caplog.set_level("INFO", logger="nahoermaar.catalog.service")
+
+        repaired, refreshed = await service.maintain(batch_size=1)
+
+        assert (repaired, refreshed) == (0, 0)
+        assert youtube.track_calls == 1
+        assert service.maintenance_status().last_metadata_repaired == 0
+        assert any(
+            "catalog.maintenance_metadata_incomplete" in message
+            and f"source_id={discovered.snapshot.entries[0].source.id}" in message
+            and "remaining_fields=artist" in message
+            for message in caplog.messages
+        )
         await service.close()
 
     try:

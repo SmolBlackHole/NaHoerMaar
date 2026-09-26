@@ -28,11 +28,13 @@ from sqlalchemy import (
     Uuid,
     and_,
     case,
+    column,
     delete,
     exists,
     func,
     or_,
     select,
+    table,
 )
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -58,6 +60,12 @@ from .domain import (
     TrackSourceId,
 )
 from .providers import ProviderArtist, ProviderTrack
+
+
+_RADIO_RUNS = table(
+    "radio_runs",
+    column("seed_discovery_snapshot_id", Uuid(as_uuid=True)),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -376,8 +384,11 @@ class CatalogRepository:
         limit: int,
     ) -> tuple[TrackSource, ...]:
         """Return old source observations that still need one detail lookup."""
-        missing_artists = ~exists().where(
-            _TrackSourceArtistRow.track_source_id == _TrackSourceRow.id
+        missing_artist = and_(
+            _TrackSourceRow.observed_artist.is_(None),
+            ~exists().where(
+                _TrackSourceArtistRow.track_source_id == _TrackSourceRow.id
+            ),
         )
         rows = await self._session.scalars(
             select(_TrackSourceRow)
@@ -385,7 +396,7 @@ class CatalogRepository:
                 _TrackSourceRow.availability == SourceAvailability.AVAILABLE,
                 _TrackSourceRow.checked_at <= checked_before,
                 or_(
-                    missing_artists,
+                    missing_artist,
                     and_(
                         _TrackSourceRow.quality == ObservationQuality.DISCOVERY,
                         or_(
@@ -397,7 +408,7 @@ class CatalogRepository:
                 ),
             )
             .order_by(
-                case((missing_artists, 0), else_=1),
+                case((missing_artist, 0), else_=1),
                 case(
                     (_TrackSourceRow.quality == ObservationQuality.DETAIL, 0),
                     else_=1,
@@ -915,8 +926,16 @@ class DiscoveryRepository:
             )
         )
         if stale:
+            referenced_by_radio = exists(
+                select(_RADIO_RUNS.c.seed_discovery_snapshot_id).where(
+                    _RADIO_RUNS.c.seed_discovery_snapshot_id == _DiscoverySnapshotRow.id
+                )
+            )
             await self._session.execute(
-                delete(_DiscoverySnapshotRow).where(_DiscoverySnapshotRow.id.in_(stale))
+                delete(_DiscoverySnapshotRow).where(
+                    _DiscoverySnapshotRow.id.in_(stale),
+                    ~referenced_by_radio,
+                )
             )
         key = await self._session.get(_DiscoveryKeyRow, key_id)
         snapshot = await self._session.get(_DiscoverySnapshotRow, snapshot_id)

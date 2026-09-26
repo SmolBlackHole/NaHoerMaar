@@ -787,7 +787,7 @@ class CatalogService:
                         return
                     async with semaphore:
                         try:
-                            await self.track(
+                            track = await self.track(
                                 source.source_url,
                                 provider_key=source.provider.value,
                             )
@@ -796,15 +796,64 @@ class CatalogService:
                         except Exception as error:
                             self._maintenance_failed(retry_key, now)
                             _LOGGER.warning(
-                                "catalog.maintenance_metadata_failed source_id=%s "
-                                "provider=%s error=%s",
+                                "catalog.maintenance_metadata_failed track_id=%s "
+                                "title=%r source_id=%s provider=%s error=%s",
+                                source.track_id,
+                                safe_log_value(source.observed_title),
                                 source.id,
                                 source.provider,
                                 error_code(error),
                             )
                         else:
                             self._maintenance_failures.pop(retry_key, None)
-                            repaired += 1
+                            stored_source = next(
+                                (
+                                    candidate
+                                    for candidate in track.sources
+                                    if candidate.id == source.id
+                                ),
+                                None,
+                            )
+                            if stored_source is None:
+                                _LOGGER.warning(
+                                    "catalog.maintenance_metadata_incomplete "
+                                    "track_id=%s title=%r source_id=%s provider=%s "
+                                    "reason=source_missing_after_refresh",
+                                    track.id,
+                                    safe_log_value(track.title),
+                                    source.id,
+                                    source.provider,
+                                )
+                            elif not _needs_detail(track, stored_source):
+                                repaired += 1
+                                added = _added_metadata_fields(
+                                    source,
+                                    stored_source,
+                                )
+                                _LOGGER.info(
+                                    "catalog.maintenance_metadata_repaired "
+                                    "track_id=%s title=%r source_id=%s provider=%s "
+                                    "added_fields=%s resolution=%s",
+                                    track.id,
+                                    safe_log_value(track.title),
+                                    source.id,
+                                    source.provider,
+                                    ",".join(added) or "none",
+                                    "metadata_added" if added else "detail_confirmed",
+                                )
+                            else:
+                                _LOGGER.info(
+                                    "catalog.maintenance_metadata_incomplete "
+                                    "track_id=%s title=%r source_id=%s provider=%s "
+                                    "remaining_fields=%s",
+                                    track.id,
+                                    safe_log_value(track.title),
+                                    source.id,
+                                    source.provider,
+                                    ",".join(
+                                        _missing_detail_fields(track, stored_source)
+                                    ),
+                                )
                         finally:
                             self._maintenance_active_processed += 1
                             await self._maintenance_pause()
@@ -822,7 +871,7 @@ class CatalogService:
                         return
                     async with semaphore:
                         try:
-                            await self._refresh_candidate(candidate)
+                            snapshot = await self._refresh_candidate(candidate)
                         except asyncio.CancelledError:
                             raise
                         except Exception as error:
@@ -838,6 +887,15 @@ class CatalogService:
                         else:
                             self._maintenance_failures.pop(retry_key, None)
                             refreshed += 1
+                            _LOGGER.info(
+                                "catalog.maintenance_discovery_refreshed kind=%s "
+                                "provider=%s locator=%r snapshot_id=%s entries=%d",
+                                candidate.kind,
+                                candidate.provider_key,
+                                safe_log_value(candidate.locator),
+                                snapshot.id,
+                                len(snapshot.entries),
+                            )
                         finally:
                             self._maintenance_active_processed += 1
                             await self._maintenance_pause()
@@ -1305,12 +1363,51 @@ def _preferred_source(track: Track) -> TrackSource | None:
     )
 
 
+def _missing_detail_fields(track: Track, source: TrackSource) -> tuple[str, ...]:
+    missing: list[str] = []
+    if not track.artists and source.observed_artist is None:
+        missing.append("artist")
+    if source.quality is ObservationQuality.DISCOVERY:
+        if track.duration_seconds is None:
+            missing.append("duration")
+        if track.artwork_url is None:
+            missing.append("artwork")
+        if track.album_title is None:
+            missing.append("album")
+    return tuple(missing)
+
+
 def _needs_detail(track: Track, source: TrackSource) -> bool:
-    return not track.artists or (
-        source.quality is ObservationQuality.DISCOVERY
-        and (
-            track.duration_seconds is None
-            or track.artwork_url is None
-            or track.album_title is None
-        )
-    )
+    return bool(_missing_detail_fields(track, source))
+
+
+def _added_metadata_fields(
+    before_source: TrackSource,
+    after_source: TrackSource,
+) -> tuple[str, ...]:
+    added: list[str] = []
+    if (
+        before_source.observed_artist is None
+        and after_source.observed_artist is not None
+    ):
+        added.append("artist")
+    for name, old, new in (
+        (
+            "duration",
+            before_source.observed_duration_seconds,
+            after_source.observed_duration_seconds,
+        ),
+        (
+            "artwork",
+            before_source.observed_artwork_url,
+            after_source.observed_artwork_url,
+        ),
+        (
+            "album",
+            before_source.observed_album_title,
+            after_source.observed_album_title,
+        ),
+    ):
+        if old is None and new is not None:
+            added.append(name)
+    return tuple(added)
