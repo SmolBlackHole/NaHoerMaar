@@ -347,12 +347,82 @@ watch(loadVideo, (visible) => {
 
 <style scoped>
 .listening-view {
+	--player-stage-bg: var(--ui-bg);
+	--player-foreground: var(--ui-text-highlighted);
+	--player-placeholder: rgb(9 9 11 / 6%);
+	--player-shade-bottom: linear-gradient(
+		0deg,
+		rgb(250 250 250 / 96%),
+		rgb(250 250 250 / 48%) 34%,
+		transparent 72%
+	);
+	--player-shade-side: linear-gradient(
+		55deg,
+		rgb(250 250 250 / 92%) 0%,
+		rgb(250 250 250 / 60%) 30%,
+		transparent 78%
+	);
+	--player-shade-top: linear-gradient(
+		180deg,
+		rgb(250 250 250 / 76%),
+		rgb(250 250 250 / 22%) 20%,
+		transparent 40%
+	);
+	--player-shade-mobile: linear-gradient(
+		0deg,
+		rgb(250 250 250 / 98%),
+		rgb(250 250 250 / 72%) 38%,
+		rgb(250 250 250 / 30%) 70%,
+		rgb(250 250 250 / 12%) 100%
+	);
+	--player-control-bg: rgb(255 255 255 / 82%);
+	--player-control-active: rgb(9 9 11 / 10%);
+	--player-control-hover: rgb(9 9 11 / 16%);
+	--player-divider: rgb(9 9 11 / 16%);
+	--player-divider-subtle: rgb(9 9 11 / 10%);
+	--player-icon-bg: rgb(9 9 11 / 7%);
 	display: flex;
 	flex-direction: column;
 	flex: 1;
 	min-width: 0;
 	min-height: 28rem;
-	color: #fff;
+	color: var(--player-foreground);
+}
+:global(.dark) .listening-view {
+	--player-stage-bg: #17191c;
+	--player-foreground: #fff;
+	--player-placeholder: #ffffff0d;
+	--player-shade-bottom: linear-gradient(
+		0deg,
+		rgb(8 10 13 / 92%),
+		rgb(8 10 13 / 40%) 34%,
+		transparent 72%
+	);
+	--player-shade-side: linear-gradient(
+		55deg,
+		rgb(8 10 13 / 90%) 0%,
+		rgb(8 10 13 / 62%) 30%,
+		transparent 78%
+	);
+	--player-shade-top: linear-gradient(
+		180deg,
+		rgb(8 10 13 / 78%),
+		rgb(8 10 13 / 24%) 20%,
+		transparent 40%
+	);
+	--player-shade-mobile: linear-gradient(
+		0deg,
+		rgb(8 10 13 / 96%),
+		rgb(8 10 13 / 65%) 38%,
+		rgb(8 10 13 / 25%) 70%,
+		rgb(8 10 13 / 10%) 100%
+	);
+	--player-control-bg: rgb(8 10 13 / 78%);
+	--player-control-active: #ffffff20;
+	--player-control-hover: #ffffff30;
+	--player-divider: rgb(255 255 255 / 18%);
+	--player-divider-subtle: rgb(255 255 255 / 12%);
+	--player-icon-bg: rgb(255 255 255 / 8%);
 }
 .media-stage {
 	position: absolute;
@@ -360,7 +430,7 @@ watch(loadVideo, (visible) => {
 	z-index: -1;
 	overflow: hidden;
 	container-type: size;
-	background: #17191c;
+	background: var(--player-stage-bg);
 	pointer-events: none;
 }
 .media-artwork {
@@ -430,7 +500,7 @@ watch(loadVideo, (visible) => {
 	display: grid;
 	place-items: center end;
 	padding-right: 12%;
-	color: #ffffff0d;
+	color: var(--player-placeholder);
 }
 .media-placeholder > span {
 	width: 14rem;
@@ -448,17 +518,10 @@ watch(loadVideo, (visible) => {
 	mask-image: linear-gradient(55deg, #000 0%, #000 18%, transparent 64%);
 }
 .media-shade {
-	background:
-		linear-gradient(0deg, rgb(8 10 13 / 92%), rgb(8 10 13 / 40%) 34%, transparent 72%),
-		linear-gradient(55deg, rgb(8 10 13 / 90%) 0%, rgb(8 10 13 / 62%) 30%, transparent 78%);
+	background: var(--player-shade-bottom), var(--player-shade-side);
 }
 .media-top-shade {
-	background: linear-gradient(
-		180deg,
-		rgb(8 10 13 / 78%),
-		rgb(8 10 13 / 24%) 20%,
-		transparent 40%
-	);
+	background: var(--player-shade-top);
 }
 .media-toolbar {
 	display: flex;
@@ -470,7 +533,7 @@ watch(loadVideo, (visible) => {
 }
 .media-preview-switch {
 	display: inline-flex;
-	background: rgb(8 10 13 / 78%);
+	background: var(--player-control-bg);
 	border-radius: 0.5rem;
 	padding: 0.25rem;
 }
@@ -483,7 +546,7 @@ watch(loadVideo, (visible) => {
 	min-height: 2.25rem;
 	padding: 0.375rem 0.75rem;
 	font-size: 0.75rem;
-	color: #e4e4e7;
+	color: var(--player-foreground);
 	cursor: pointer;
 	border-radius: 0.375rem;
 	transition:
@@ -491,16 +554,16 @@ watch(loadVideo, (visible) => {
 		color 160ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .media-preview-switch button[aria-pressed="true"] {
-	background: #ffffff20;
-	color: #fff;
+	background: var(--player-control-active);
+	color: var(--player-foreground);
 }
 .media-preview-switch button:hover,
 .media-tool-button:hover {
-	background: #ffffff30;
-	color: #fff;
+	background: var(--player-control-hover);
+	color: var(--player-foreground);
 }
 .media-tool-button {
-	background: rgb(8 10 13 / 78%);
+	background: var(--player-control-bg);
 }
 .media-tool-button > span {
 	width: 1rem;
@@ -533,15 +596,15 @@ watch(loadVideo, (visible) => {
 .media-empty-help {
 	font-size: 1rem;
 	line-height: 1.65;
-	color: #d4d4d8;
+	color: var(--ui-text-muted);
 	margin-top: 1.25rem;
 }
 .media-empty-action {
 	display: inline-flex;
 	align-items: center;
 	gap: 0.5rem;
-	background: #f4f4f5;
-	color: #18181b;
+	background: var(--player-foreground);
+	color: var(--player-stage-bg);
 	padding: 0.75rem 1rem;
 	border-radius: 0.5rem;
 	margin-top: 1.5rem;
@@ -557,7 +620,7 @@ watch(loadVideo, (visible) => {
 	width: 100%;
 	min-width: 0;
 	padding: 0.25rem 0 0.25rem 2rem;
-	border-left: 1px solid rgb(255 255 255 / 18%);
+	border-left: 1px solid var(--player-divider);
 	text-align: left;
 	cursor: pointer;
 }
@@ -574,7 +637,7 @@ watch(loadVideo, (visible) => {
 	height: 3rem;
 	flex-shrink: 0;
 	border-radius: 0.5rem;
-	background: rgb(255 255 255 / 8%);
+	background: var(--player-icon-bg);
 	color: var(--ui-text-muted);
 }
 .next-track-icon > span {
@@ -601,7 +664,7 @@ watch(loadVideo, (visible) => {
 }
 .video-status-row button:hover,
 .video-status-row a:hover {
-	color: #fff;
+	color: var(--player-foreground);
 }
 .video-status-row button:disabled,
 .media-tool-button:disabled {
@@ -630,7 +693,7 @@ watch(loadVideo, (visible) => {
 		max-width: 30rem;
 		padding: 1.25rem 0 0;
 		border-left: 0;
-		border-top: 1px solid rgb(255 255 255 / 12%);
+		border-top: 1px solid var(--player-divider-subtle);
 	}
 }
 @container workspace (max-width: 600px) {
@@ -659,13 +722,7 @@ watch(loadVideo, (visible) => {
 		padding-inline: 0.625rem;
 	}
 	.media-shade {
-		background: linear-gradient(
-			0deg,
-			rgb(8 10 13 / 96%),
-			rgb(8 10 13 / 65%) 38%,
-			rgb(8 10 13 / 25%) 70%,
-			rgb(8 10 13 / 10%) 100%
-		);
+		background: var(--player-shade-mobile);
 	}
 	.media-blur {
 		mask-image: linear-gradient(0deg, #000, transparent 65%);
