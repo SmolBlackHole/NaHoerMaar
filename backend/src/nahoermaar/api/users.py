@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -41,6 +41,7 @@ from nahoermaar.users.service import (
 from nahoermaar.views.profile import ProfileReport
 
 from .middleware import authenticated
+from .errors import ApiError, ApiErrorCode
 from .statistics import StatisticsView, statistics_view
 
 
@@ -274,9 +275,7 @@ def router(application: Application) -> APIRouter:
         try:
             asset = await application.avatars.get(discord_id, v)
         except AvatarUnavailableError as error:
-            raise HTTPException(
-                status_code=404, detail="Avatar unavailable."
-            ) from error
+            raise ApiError(ApiErrorCode.AVATAR_UNAVAILABLE, 404) from error
         return FileResponse(asset.path, media_type=asset.media_type)
 
     @routes.put("/access/{discord_id}")

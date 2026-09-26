@@ -81,13 +81,30 @@ save it:
 http://localhost:3000/api/auth/discord/callback
 ```
 
+For the local Nuxt development server, add its callback too:
+
+```text
+http://localhost:3001/api/auth/discord/callback
+```
+
 The Compose dashboard stays on `http://localhost:3000`. The local Nuxt
 development server uses `http://localhost:3001`; `ALLOWED_ORIGINS` permits its
-authenticated API writes without changing the OAuth callback. `localhost` and
-`127.0.0.1`, different ports, and `http` and `https` are different origins. If
-you expose the dashboard through port forwarding, set `PUBLIC_ORIGIN` to that
-public HTTPS origin and register the matching callback in Discord. Keep local
-development origins in `ALLOWED_ORIGINS`.
+authenticated API writes and login callback. `localhost` and `127.0.0.1`,
+different ports, and `http` and `https` are different origins.
+
+For a temporary HTTPS tunnel, add its origin to `ALLOWED_ORIGINS` and register
+the matching callback in Discord. For example:
+
+```dotenv
+ALLOWED_ORIGINS=http://localhost:3001,https://example-3000.euw.devtunnels.ms
+```
+
+```text
+https://example-3000.euw.devtunnels.ms/api/auth/discord/callback
+```
+
+Nuxt passes the browser's external origin to the backend, so Discord returns to
+the same tunnel without replacing `PUBLIC_ORIGIN`.
 
 An “invalid OAuth2 redirect_uri” error usually means the redirect sent by the
 app does not match the one registered in Discord. Dashboard sign-in requests

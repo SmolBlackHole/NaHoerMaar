@@ -1238,8 +1238,7 @@ export interface components {
             current: components["schemas"]["RequestView"] | null;
             /** Duration Seconds */
             duration_seconds: number | null;
-            /** Last Error */
-            last_error: string | null;
+            last_error_code: components["schemas"]["PlayerRuntimeErrorCode"] | null;
             /** Phase */
             phase: string;
             /** Playback Id */
@@ -1250,6 +1249,12 @@ export interface components {
             position_updated_at: string | null;
             voice: components["schemas"]["VoiceRuntimeView"];
         };
+        /**
+         * PlayerRuntimeErrorCode
+         * @description Stable public reasons for runtime failures with details kept in logs.
+         * @enum {string}
+         */
+        PlayerRuntimeErrorCode: "playback_failed" | "radio_provider_failed" | "voice_connection_failed";
         /** PlayerView */
         PlayerView: {
             /** Channel Id */
@@ -1353,8 +1358,7 @@ export interface components {
         RadioView: {
             /** Continuation */
             continuation: string | null;
-            /** Error */
-            error: string | null;
+            error_code: components["schemas"]["PlayerRuntimeErrorCode"] | null;
             /**
              * Generation
              * Format: uuid
@@ -1800,8 +1804,7 @@ export interface components {
             attempt: number;
             /** Channel Id */
             channel_id: string | null;
-            /** Error */
-            error: string | null;
+            error_code: components["schemas"]["PlayerRuntimeErrorCode"] | null;
             /** Phase */
             phase: string;
         };
@@ -1880,6 +1883,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -1898,8 +1910,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1965,6 +2013,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -1983,8 +2040,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2050,6 +2143,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -2068,8 +2170,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2133,6 +2271,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -2151,8 +2298,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2214,6 +2397,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -2232,8 +2424,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2299,6 +2527,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -2317,8 +2554,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2380,6 +2653,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -2398,8 +2680,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2463,6 +2781,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -2481,8 +2808,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2552,6 +2915,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -2570,8 +2942,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2641,6 +3049,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -2659,8 +3076,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2727,6 +3180,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -2745,8 +3207,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2815,6 +3313,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -2833,8 +3340,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2903,6 +3446,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -2921,8 +3473,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2986,6 +3574,15 @@ export interface operations {
                     "text/event-stream": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -3004,8 +3601,44 @@ export interface operations {
                     "text/event-stream": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3069,6 +3702,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -3087,8 +3729,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3156,6 +3834,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -3174,8 +3861,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3242,6 +3965,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -3260,8 +3992,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3328,6 +4096,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -3346,8 +4123,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3411,6 +4224,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -3429,8 +4251,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3498,6 +4356,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -3516,8 +4383,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3585,6 +4488,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -3603,8 +4515,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3672,6 +4620,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -3690,8 +4647,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3759,6 +4752,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -3777,8 +4779,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3848,6 +4886,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -3866,8 +4913,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3937,6 +5020,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -3955,8 +5047,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4024,6 +5152,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -4042,8 +5179,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4111,6 +5284,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -4129,8 +5311,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4198,6 +5416,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -4216,8 +5443,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4285,6 +5548,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -4303,8 +5575,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4372,6 +5680,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -4390,8 +5707,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4459,6 +5812,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -4477,8 +5839,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4546,6 +5944,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -4564,8 +5971,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4633,6 +6076,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -4651,8 +6103,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4716,6 +6204,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -4734,8 +6231,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4803,6 +6336,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -4821,8 +6363,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4890,6 +6468,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -4908,8 +6495,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4977,6 +6600,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -4995,8 +6627,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5064,6 +6732,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -5082,8 +6759,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5149,6 +6862,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -5167,8 +6889,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5234,6 +6992,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -5252,8 +7019,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5321,6 +7124,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -5339,8 +7151,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5404,6 +7252,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -5422,8 +7279,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5491,6 +7384,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -5509,8 +7411,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5578,6 +7516,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -5596,8 +7543,44 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };

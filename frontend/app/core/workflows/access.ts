@@ -4,6 +4,7 @@
 import { ref } from "vue";
 import { SessionLost, type SessionAuthority } from "../api/transport";
 import type { BackendClient } from "../client";
+import { failureMessage } from "../errors";
 import type { AccessEvent, AccessState, DiscordMembers } from "../models/access";
 import { createQueryState } from "./queryState";
 
@@ -33,7 +34,7 @@ export function createAccessWorkflow(client: BackendClient, authority: SessionAu
 			return event;
 		} catch (failure) {
 			if (generation === authority.current().generation && !(failure instanceof SessionLost))
-				mutationError.value = failure instanceof Error ? failure.message : String(failure);
+				mutationError.value = failureMessage(failure);
 			return null;
 		} finally {
 			if (generation === authority.current().generation)

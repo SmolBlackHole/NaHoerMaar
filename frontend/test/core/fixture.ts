@@ -51,7 +51,12 @@ export const player = (revision = 1, sessionId = "listening-session"): PlayerSta
 		position_seconds: 0,
 		position_updated_at: null,
 		duration_seconds: null,
-		last_error: null,
-		voice: { phase: "connected", channel_id: "1550894913980465212", attempt: 0, error: null },
+		last_error_code: null,
+		voice: {
+			phase: "connected",
+			channel_id: "1550894913980465212",
+			attempt: 0,
+			error_code: null,
+		},
 	},
 });

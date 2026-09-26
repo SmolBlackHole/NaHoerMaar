@@ -14,7 +14,7 @@ from nahoermaar.integrations.discord_oauth import DiscordOAuth
 from nahoermaar.users.domain import AuthError, AuthErrorCode
 
 
-def test_discord_oauth_uses_fixed_redirect_pkce_and_returns_identity() -> None:
+def test_discord_oauth_uses_requested_redirect_pkce_and_returns_identity() -> None:
     requests: list[httpx2.Request] = []
 
     def respond(request: httpx2.Request) -> httpx2.Response:
@@ -42,11 +42,12 @@ def test_discord_oauth_uses_fixed_redirect_pkce_and_returns_identity() -> None:
     provider = DiscordOAuth(settings, transport=httpx2.MockTransport(respond))
 
     async def scenario() -> None:
-        url = await provider.authorization_url("state", "v" * 64)
+        redirect_uri = "https://tunnel.example.test/api/auth/discord/callback"
+        url = await provider.authorization_url("state", "v" * 64, redirect_uri)
         query = parse_qs(urlsplit(url).query)
-        assert query["redirect_uri"] == [settings.redirect_uri]
+        assert query["redirect_uri"] == [redirect_uri]
         assert query["code_challenge_method"] == ["S256"]
-        identity = await provider.identity("oauth-code", "v" * 64)
+        identity = await provider.identity("oauth-code", "v" * 64, redirect_uri)
         assert identity.discord_id == "7"
         assert identity.username == "Display name"
         assert identity.avatar_hash == "avatar-hash"
@@ -56,6 +57,10 @@ def test_discord_oauth_uses_fixed_redirect_pkce_and_returns_identity() -> None:
         "/api/oauth2/token",
         "/api/v10/users/@me",
     ]
+    token_form = parse_qs(requests[0].content.decode())
+    assert token_form["redirect_uri"] == [
+        "https://tunnel.example.test/api/auth/discord/callback"
+    ]
 
 
 def test_discord_oauth_fails_closed_without_credentials() -> None:
@@ -64,6 +69,12 @@ def test_discord_oauth_fails_closed_without_credentials() -> None:
     )
 
     with pytest.raises(AuthError) as error:
-        asyncio.run(provider.authorization_url("state", "v" * 64))
+        asyncio.run(
+            provider.authorization_url(
+                "state",
+                "v" * 64,
+                "http://localhost:3000/api/auth/discord/callback",
+            )
+        )
 
     assert error.value.code is AuthErrorCode.LOGIN_UNAVAILABLE

@@ -56,7 +56,7 @@ export class ApiFailure extends Error {
 		public readonly error: components["schemas"]["ErrorView"],
 		public readonly requestId: string | null,
 	) {
-		super(error.error);
+		super("The request could not be completed.");
 	}
 }
 
@@ -104,7 +104,7 @@ export function createTransport(fetcher: typeof fetch, auth: AuthBoundary) {
 					"error" in body &&
 					typeof body.error === "string"
 						? body.error
-						: "http_error",
+						: "invalid_response",
 				retryable:
 					body &&
 					typeof body === "object" &&

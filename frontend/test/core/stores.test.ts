@@ -5,6 +5,7 @@ import { createPinia, disposePinia, setActivePinia, type Pinia } from "pinia";
 import { nextTick } from "vue";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createBackendCore } from "../../app/core/bootstrap";
+import { ApiFailure } from "../../app/core/api/transport";
 import { defaultAppearance, type Account } from "../../app/core/models/account";
 import type { MutationResult, QueueEntry } from "../../app/core/models/player";
 import { FakeEvents, player } from "./fixture";
@@ -291,6 +292,24 @@ describe("new backend Pinia stores", () => {
 			source: "http",
 			own: true,
 		});
+	});
+
+	it("treats a received retryable client error as a definite rejection", async () => {
+		const fixture = playerFixture();
+		await authenticate(fixture);
+		fixture.events.send("state", player());
+		await nextTick();
+
+		await fixture.playerStore.run("queue.move", async () => {
+			throw new ApiFailure(409, { error: "queue_conflict", retryable: true }, "request-id");
+		});
+
+		expect(fixture.playerStore.uncertainOperation).toBeNull();
+		expect(fixture.playerStore.failure).toMatchObject({
+			code: "queue_conflict",
+			requestId: "request-id",
+		});
+		expect(fixture.playerStore.error).not.toContain("queue_conflict");
 	});
 
 	it("keeps queue order authoritative and sends the observed revision when moving an entry", async () => {

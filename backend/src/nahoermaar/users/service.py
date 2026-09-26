@@ -73,9 +73,13 @@ class ProvidedDiscordIdentity:
 
 
 class IdentityProvider(Protocol):
-    async def authorization_url(self, state: str, verifier: str) -> str: ...
+    async def authorization_url(
+        self, state: str, verifier: str, redirect_uri: str
+    ) -> str: ...
 
-    async def identity(self, code: str, verifier: str) -> ProvidedDiscordIdentity: ...
+    async def identity(
+        self, code: str, verifier: str, redirect_uri: str
+    ) -> ProvidedDiscordIdentity: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,7 +150,8 @@ class LoginCompletion:
 
 @dataclass(frozen=True, slots=True)
 class BeginLogin(Command[LoginStart]):
-    browser_token: str | None = dataclass_field(default=None, repr=False)
+    browser_token: str | None = dataclass_field(repr=False)
+    redirect_uri: str = dataclass_field(repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,6 +161,7 @@ class CompleteLogin(Command[LoginCompletion]):
     code: str | None = dataclass_field(repr=False)
     error: str | None
     previous_session: str | None = dataclass_field(repr=False)
+    redirect_uri: str = dataclass_field(repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -498,7 +504,7 @@ class AuthService:
         self._provider = provider
         self._clock = clock
 
-    async def begin(self, browser_token: str | None) -> LoginStart:
+    async def begin(self, browser_token: str | None, redirect_uri: str) -> LoginStart:
         if browser_token is not None and _TOKEN.fullmatch(browser_token):
             browser = browser_token
             reused_browser = True
@@ -507,7 +513,9 @@ class AuthService:
             reused_browser = False
         state = secrets.token_urlsafe(32)
         verifier = secrets.token_urlsafe(48)
-        authorization_url = await self._provider.authorization_url(state, verifier)
+        authorization_url = await self._provider.authorization_url(
+            state, verifier, redirect_uri
+        )
         now = self._clock()
         attempt = LoginAttempt(
             digest(state),
@@ -532,6 +540,7 @@ class AuthService:
         code: str | None,
         error: str | None,
         previous_session: str | None,
+        redirect_uri: str,
     ) -> LoginCompletion:
         if (
             state is None
@@ -555,7 +564,7 @@ class AuthService:
         if code is None or not code or len(code) > 2048:
             raise AuthError(AuthErrorCode.LOGIN_FAILED)
 
-        provided = await self._provider.identity(code, verifier)
+        provided = await self._provider.identity(code, verifier, redirect_uri)
         try:
             discord = DiscordIdentity(
                 provided.discord_id,

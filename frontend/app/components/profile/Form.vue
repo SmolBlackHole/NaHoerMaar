@@ -64,7 +64,7 @@ function save() {
 			:label="
 				complete ? (changed ? 'Save profile' : 'Profile up to date') : 'Enter the player'
 			"
-			:trailing-icon="complete && !changed ? 'i-lucide-check' : icons.arrowRight"
+			:trailing-icon="complete && !changed ? icons.check : icons.arrowRight"
 			:color="complete && !changed ? 'neutral' : 'primary'"
 			:variant="complete && !changed ? 'soft' : 'solid'"
 			size="xl"

@@ -56,15 +56,22 @@ ORIGIN = "http://localhost:3000"
 class Provider:
     state = ""
     verifier = ""
+    redirect_uri = ""
 
-    async def authorization_url(self, state: str, verifier: str) -> str:
+    async def authorization_url(
+        self, state: str, verifier: str, redirect_uri: str
+    ) -> str:
         self.state = state
         self.verifier = verifier
+        self.redirect_uri = redirect_uri
         return "https://discord.example/authorize"
 
-    async def identity(self, code: str, verifier: str) -> ProvidedDiscordIdentity:
+    async def identity(
+        self, code: str, verifier: str, redirect_uri: str
+    ) -> ProvidedDiscordIdentity:
         assert code == "oauth-code"
         assert verifier == self.verifier
+        assert redirect_uri == self.redirect_uri
         return ProvidedDiscordIdentity("9", "Owner", None)
 
 
@@ -185,6 +192,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             begin = await client.get("/api/auth/discord")
             assert begin.status_code == 302
             assert begin.headers["location"] == "https://discord.example/authorize"
+            assert provider.redirect_uri == ORIGIN + "/api/auth/discord/callback"
 
             callback = await client.get(
                 "/api/auth/discord/callback",
@@ -255,9 +263,9 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
                     "phase": "disconnected",
                     "channel_id": None,
                     "attempt": 0,
-                    "error": None,
+                    "error_code": None,
                 },
-                "last_error": None,
+                "last_error_code": None,
             }
             assert (await client.get("/api/listening/recent")).json() == {
                 "entries": [],
@@ -550,6 +558,22 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
                 json={"display_name": "Local owner"},
             )
             assert development_origin.status_code == 200
+
+            development_login = await client.get(
+                "/api/auth/discord",
+                headers={"x-nahormaar-browser-origin": "http://localhost:3001"},
+            )
+            assert development_login.status_code == 302
+            assert provider.redirect_uri == (
+                "http://localhost:3001/api/auth/discord/callback"
+            )
+
+            rejected_login_origin = await client.get(
+                "/api/auth/discord",
+                headers={"x-nahormaar-browser-origin": "https://evil.example"},
+            )
+            assert rejected_login_origin.status_code == 403
+            assert rejected_login_origin.json() == {"error": "origin_forbidden"}
 
             waiting = asyncio.create_task(anext(events))
             await asyncio.sleep(0)

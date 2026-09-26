@@ -333,7 +333,7 @@ def _register_handlers(
     playback: PlaybackCoordinator | None = None,
 ) -> None:
     async def begin_login(command: BeginLogin, _context: MessageContext) -> LoginStart:
-        return await auth.begin(command.browser_token)
+        return await auth.begin(command.browser_token, command.redirect_uri)
 
     async def complete_login(
         command: CompleteLogin, context: MessageContext
@@ -344,6 +344,7 @@ def _register_handlers(
             code=command.code,
             error=command.error,
             previous_session=command.previous_session,
+            redirect_uri=command.redirect_uri,
         )
         await bus.publish(UserLoggedIn(result.user.id), context.child())
         return result

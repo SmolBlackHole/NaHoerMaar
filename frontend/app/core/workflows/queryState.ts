@@ -3,6 +3,7 @@
 
 import { ref, shallowRef, type Ref, type ShallowRef } from "vue";
 import { SessionLost, type SessionAuthority } from "../api/transport";
+import { failureMessage } from "../errors";
 
 export interface QueryState<T> {
 	data: ShallowRef<T | null>;
@@ -54,7 +55,7 @@ export function createQueryState<T>(authority: SessionAuthority): QueryState<T> 
 				generation === authority.current().generation &&
 				!(failure instanceof SessionLost)
 			)
-				error.value = failure instanceof Error ? failure.message : String(failure);
+				error.value = failureMessage(failure);
 			return null;
 		} finally {
 			if (currentId === requestId) {

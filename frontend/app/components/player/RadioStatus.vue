@@ -1,7 +1,12 @@
 <script setup lang="ts">
+import { failureForCode } from "~/core/errors";
+
 const player = useNuxtApp().$backendCore.stores.usePlayerStore();
 const { icons } = useTheme();
 const radio = computed(() => player.state?.radio);
+const radioFailure = computed(() =>
+	radio.value?.error_code ? failureForCode(radio.value.error_code) : null,
+);
 function control(action: "retry" | "stop") {
 	void (action === "stop" ? player.stopRadio() : player.retryRadio());
 }
@@ -27,7 +32,7 @@ function control(action: "retry" | "stop") {
 			/>
 			<p class="mt-1 text-xs text-muted" role="status">
 				{{
-					radio.error ||
+					radioFailure?.description ||
 					(player.state?.runtime.phase === "paused"
 						? "Refill paused"
 						: radio.state === "loading"

@@ -59,7 +59,7 @@ class DiscordOAuth:
         self._settings = settings
         self._transport = transport
 
-    def _client(self) -> OAuthClient:
+    def _client(self, redirect_uri: str) -> OAuthClient:
         if not self._settings.client_id or not self._settings.client_secret:
             _LOGGER.warning("discord_oauth.unavailable reason=missing_credentials")
             raise AuthError(AuthErrorCode.LOGIN_UNAVAILABLE, 503)
@@ -69,7 +69,7 @@ class DiscordOAuth:
                 self._settings.client_id,
                 self._settings.client_secret,
                 scope="identify",
-                redirect_uri=self._settings.redirect_uri,
+                redirect_uri=redirect_uri,
                 code_challenge_method="S256",
                 token_endpoint_auth_method="client_secret_post",  # noqa: S106
                 timeout=15,
@@ -78,10 +78,12 @@ class DiscordOAuth:
             ),
         )
 
-    async def authorization_url(self, state: str, verifier: str) -> str:
+    async def authorization_url(
+        self, state: str, verifier: str, redirect_uri: str
+    ) -> str:
         started_at = perf_counter()
         try:
-            async with self._client() as client:
+            async with self._client(redirect_uri) as client:
                 url, _ = client.create_authorization_url(
                     "https://discord.com/oauth2/authorize",
                     state=state,
@@ -102,10 +104,12 @@ class DiscordOAuth:
             )
             raise AuthError(AuthErrorCode.LOGIN_FAILED, 502) from error
 
-    async def identity(self, code: str, verifier: str) -> ProvidedDiscordIdentity:
+    async def identity(
+        self, code: str, verifier: str, redirect_uri: str
+    ) -> ProvidedDiscordIdentity:
         started_at = perf_counter()
         try:
-            async with self._client() as client:
+            async with self._client(redirect_uri) as client:
                 await client.fetch_token(
                     "https://discord.com/api/oauth2/token",
                     code=code,

@@ -11,6 +11,7 @@ const core = useNuxtApp().$backendCore;
 const session = core.stores.useSessionStore();
 const access = core.workflows.access();
 const toast = useToast();
+const { icons } = useTheme();
 const query = ref("");
 const directId = ref("");
 const operatorsExpanded = ref(false);
@@ -74,22 +75,22 @@ const metrics = computed(() => [
 	{
 		label: "Your role",
 		value: roleLabel(session.account?.role),
-		icon: "i-lucide-shield-check",
+		icon: icons.value.shieldCheck,
 	},
 	{
 		label: "Allowed listeners",
 		value: state.value?.grants.length ?? 0,
-		icon: "i-lucide-user-round-check",
+		icon: icons.value.userCheck,
 	},
 	{
 		label: "Available members",
 		value: availableMembers.value.length,
-		icon: "i-lucide-users",
+		icon: icons.value.users,
 	},
 	{
 		label: "Operators",
 		value: operators.value.length,
-		icon: "i-lucide-key-round",
+		icon: icons.value.key,
 	},
 ]);
 const error = computed(() => access.mutationError.value ?? access.page.error.value);
@@ -140,9 +141,9 @@ function isPending(discordId: string) {
 	return access.pendingDiscordIds.value.includes(discordId);
 }
 function historyIcon(action: AccessState["history"][number]["action"]) {
-	if (action === "granted") return "i-lucide-user-plus";
-	if (action === "revoked") return "i-lucide-user-minus";
-	return "i-lucide-shield-check";
+	if (action === "granted") return icons.value.userPlus;
+	if (action === "revoked") return icons.value.userMinus;
+	return icons.value.shieldCheck;
 }
 function historyTone(action: AccessState["history"][number]["action"]) {
 	if (action === "granted") return "text-success";
@@ -173,7 +174,7 @@ async function grant(discordId: string) {
 	toast.add({
 		title: "Listener added",
 		description: `${member?.display_name ?? identifier} can now use NaHörMaar.`,
-		icon: "i-lucide-user-check",
+		icon: icons.value.userCheck,
 		color: "success",
 	});
 }
@@ -183,7 +184,7 @@ async function revoke(grant: AccessGrant) {
 	toast.add({
 		title: "Listener removed",
 		description: `${displayUser(grant.user)} can no longer use NaHörMaar.`,
-		icon: "i-lucide-user-minus",
+		icon: icons.value.userMinus,
 		color: "neutral",
 	});
 }
@@ -207,7 +208,7 @@ onScopeDispose(access.dispose);
 					<template #right>
 						<UButton
 							label="Refresh"
-							icon="i-lucide-refresh-cw"
+							:icon="icons.reload"
 							color="neutral"
 							variant="outline"
 							:loading="access.page.loading.value"
@@ -219,7 +220,7 @@ onScopeDispose(access.dispose);
 			<template #body>
 				<div v-if="!isAdmin" class="grid min-h-80 place-items-center" role="alert">
 					<div class="max-w-sm text-center">
-						<UIcon name="i-lucide-shield-x" class="mx-auto size-10 text-muted" />
+						<UIcon :name="icons.error" class="mx-auto size-10 text-muted" />
 						<h1 class="mt-4 text-lg font-semibold text-highlighted">
 							Admin access required
 						</h1>
@@ -242,7 +243,7 @@ onScopeDispose(access.dispose);
 						class="flex items-center gap-2.5 rounded-xl bg-error/10 px-3.5 py-3 text-sm text-error"
 						role="alert"
 					>
-						<UIcon name="i-lucide-circle-alert" class="size-4 shrink-0" />
+						<UIcon :name="icons.caution" class="size-4 shrink-0" />
 						<span>{{ error }}</span>
 					</div>
 
@@ -312,11 +313,7 @@ onScopeDispose(access.dispose);
 											? 'Show fewer'
 											: `Show all ${operators.length}`
 									"
-									:icon="
-										operatorsExpanded
-											? 'i-lucide-chevron-up'
-											: 'i-lucide-chevron-down'
-									"
+									:icon="operatorsExpanded ? icons.chevronUp : icons.chevronDown"
 									color="neutral"
 									variant="ghost"
 									size="sm"
@@ -356,7 +353,7 @@ onScopeDispose(access.dispose);
 										size="sm"
 									/>
 									<UIcon
-										name="i-lucide-chevron-right"
+										:name="icons.chevronRight"
 										class="size-4 shrink-0 text-muted transition-transform group-hover:translate-x-0.5"
 									/>
 								</NuxtLink>
@@ -383,14 +380,14 @@ onScopeDispose(access.dispose);
 								</div>
 								<UInput
 									v-model="query"
-									icon="i-lucide-search"
+									:icon="icons.search"
 									placeholder="Search people or servers"
 									aria-label="Search Discord members"
 									class="mt-5 w-full"
 								>
 									<template v-if="query" #trailing>
 										<UButton
-											icon="i-lucide-x"
+											:icon="icons.close"
 											aria-label="Clear search"
 											color="neutral"
 											variant="link"
@@ -431,7 +428,7 @@ onScopeDispose(access.dispose);
 												:icon="
 													isPending(member.discord_id)
 														? undefined
-														: 'i-lucide-user-plus'
+														: icons.userPlus
 												"
 												color="neutral"
 												variant="soft"
@@ -444,7 +441,7 @@ onScopeDispose(access.dispose);
 										</div>
 									</UTooltip>
 									<div v-if="!availableMembers.length" class="empty-state">
-										<UIcon name="i-lucide-users" class="size-5" />
+										<UIcon :name="icons.users" class="size-5" />
 										<p class="text-sm font-medium text-highlighted">
 											{{
 												query
@@ -491,7 +488,7 @@ onScopeDispose(access.dispose);
 									<UButton
 										type="submit"
 										:label="isPending(directId.trim()) ? 'Adding…' : 'Add'"
-										icon="i-lucide-user-plus"
+										:icon="icons.userPlus"
 										:disabled="
 											!directId.trim() ||
 											access.pendingDiscordIds.value.length > 0
@@ -533,7 +530,7 @@ onScopeDispose(access.dispose);
 											"
 										>
 											<UButton
-												icon="i-lucide-user-minus"
+												:icon="icons.userMinus"
 												aria-label="Remove listener access"
 												color="error"
 												variant="ghost"
@@ -546,12 +543,12 @@ onScopeDispose(access.dispose);
 											/>
 										</UTooltip>
 										<UIcon
-											name="i-lucide-chevron-right"
+											:name="icons.chevronRight"
 											class="size-4 shrink-0 text-muted transition-transform group-hover:translate-x-0.5"
 										/>
 									</NuxtLink>
 									<div v-if="!state.grants.length" class="empty-state">
-										<UIcon name="i-lucide-user-round-check" class="size-5" />
+										<UIcon :name="icons.userCheck" class="size-5" />
 										<p class="text-sm font-medium text-highlighted">
 											No listeners yet
 										</p>

@@ -24,7 +24,7 @@ async function save(value: ProfileUpdate) {
 	toast.add({
 		title: "Profile saved",
 		description: "Your updated name is visible to the group.",
-		icon: "i-lucide-circle-check",
+		icon: icons.value.success,
 		color: "success",
 	});
 }

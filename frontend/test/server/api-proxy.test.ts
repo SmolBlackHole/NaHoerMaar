@@ -76,6 +76,7 @@ describe("Nitro API proxy", () => {
 					origin: incoming.headers.origin,
 					cookie: incoming.headers.cookie,
 					traceId: incoming.headers["x-request-id"],
+					browserOrigin: incoming.headers["x-nahormaar-browser-origin"],
 					body,
 				};
 				response.writeHead(409, {
@@ -110,8 +111,33 @@ describe("Nitro API proxy", () => {
 			origin: "http://localhost:3000",
 			cookie: "nahormaar_session=session; consent=accepted",
 			traceId,
+			browserOrigin: new URL(frontend).origin,
 			body: '{"track_ids":["one"]}',
 		});
+	});
+
+	it("forwards the public tunnel origin for OAuth navigation", async () => {
+		let receivedBrowserOrigin: string | undefined;
+		backendUrl = await listen(
+			createServer((incoming, response) => {
+				receivedBrowserOrigin = incoming.headers["x-nahormaar-browser-origin"] as
+					| string
+					| undefined;
+				response.writeHead(302, { location: "https://discord.com/oauth2/authorize" });
+				response.end();
+			}),
+		);
+		const frontend = await listen(createServer(toNodeListener(createApp().use(apiProxy))));
+
+		const result = await request(`${frontend}/api/auth/discord`, {
+			headers: {
+				"x-forwarded-host": "kgx87rj0-3000.euw.devtunnels.ms",
+				"x-forwarded-proto": "https",
+			},
+		});
+
+		expect(result.status).toBe(302);
+		expect(receivedBrowserOrigin).toBe("https://kgx87rj0-3000.euw.devtunnels.ms");
 	});
 
 	it("replaces invalid request IDs and never logs query values", async () => {

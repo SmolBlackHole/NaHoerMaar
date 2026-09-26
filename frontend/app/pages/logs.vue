@@ -8,6 +8,7 @@ useSeoMeta({ title: "Bot logs | NaHörMaar" });
 const core = useNuxtApp().$backendCore;
 const session = core.stores.useSessionStore();
 const logs = core.workflows.logs();
+const { icons } = useTheme();
 const level = ref("all");
 const filter = ref("");
 const live = ref(true);
@@ -110,7 +111,7 @@ onBeforeUnmount(() => {
 					<div class="flex flex-wrap items-center gap-2">
 						<UInput
 							v-model="filter"
-							icon="i-lucide-search"
+							:icon="icons.search"
 							placeholder="Filter actor, source, message, or ID"
 							aria-label="Filter logs"
 							class="w-72 max-w-full"
@@ -123,7 +124,7 @@ onBeforeUnmount(() => {
 						/>
 						<UButton
 							:label="live ? 'Pause' : 'Resume'"
-							:icon="live ? 'i-lucide-pause' : 'i-lucide-play'"
+							:icon="live ? icons.pause : icons.play"
 							color="neutral"
 							variant="outline"
 							@click="live = !live"

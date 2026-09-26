@@ -4,6 +4,7 @@ import { onScopeDispose, watch } from "vue";
 export function usePlayerNotifications() {
 	const player = useNuxtApp().$backendCore.stores.usePlayerStore();
 	const toast = useToast();
+	const { icons } = useTheme();
 	let errorToastId: string | number | undefined;
 	let connectionToastId: string | number | undefined;
 	let operationId: string | undefined;
@@ -12,7 +13,9 @@ export function usePlayerNotifications() {
 	watch(
 		() => player.lastOperation,
 		(operation) => {
-			if (!operation?.own || operation.operationId === operationId) return;
+			if (!operation || operation.operationId === operationId) return;
+			const incident = ["playback.failed", "radio.failed"].includes(operation.action);
+			if (!operation.own && !incident) return;
 			operationId = operation.operationId;
 			const outcome = operation.outcome;
 			const count =
@@ -26,6 +29,8 @@ export function usePlayerNotifications() {
 				"queue.cleared": `${count} ${count === 1 ? "track" : "tracks"} removed`,
 				"queue.restored": `${count} ${count === 1 ? "track" : "tracks"} restored`,
 				"queue.moved": "Queue order updated",
+				"playback.failed": "That track refused to play",
+				"radio.failed": "Radio could not find more tracks",
 			};
 			const title = titles[operation.action];
 			if (!title) return;
@@ -41,9 +46,16 @@ export function usePlayerNotifications() {
 			toast.add({
 				id,
 				title,
-				description: outcome.skipped_count
-					? `${outcome.skipped_count} duplicate requests skipped`
-					: undefined,
+				description:
+					operation.action === "playback.failed"
+						? "It was returned to the queue and NaHörMaar moved on."
+						: operation.action === "radio.failed"
+							? "Retry the radio when the provider behaves again."
+							: outcome.skipped_count
+								? `${outcome.skipped_count} duplicate requests skipped`
+								: undefined,
+				color: incident ? "warning" : undefined,
+				icon: incident ? icons.value.warning : undefined,
 				duration: remaining || 5000,
 				actions:
 					remaining && undoId
@@ -57,14 +69,17 @@ export function usePlayerNotifications() {
 	);
 
 	watch(
-		() => player.error,
-		(description) => {
+		() => player.failure,
+		(failure) => {
 			if (errorToastId !== undefined) toast.remove(errorToastId);
-			if (!description) return;
+			if (!failure) return;
 			errorToastId = toast.add({
-				title: player.uncertainOperation ? "Response not received" : "Action not completed",
-				description,
+				title: failure.title,
+				description: failure.requestId
+					? `${failure.description} Reference: ${failure.requestId}`
+					: failure.description,
 				color: "warning",
+				icon: icons.value[failure.icon],
 				duration: player.uncertainOperation ? 0 : 7000,
 				actions: player.uncertainOperation
 					? [{ label: "Check result", onClick: () => void player.retryUncertain() }]
@@ -84,6 +99,7 @@ export function usePlayerNotifications() {
 					title: "Connection lost",
 					description: "Controls return once the player is in sync.",
 					color: "warning",
+					icon: icons.value.radio,
 				}).id;
 			}
 		},

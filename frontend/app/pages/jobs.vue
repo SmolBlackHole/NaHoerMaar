@@ -1,15 +1,21 @@
 <script setup lang="ts">
+import { failureForCode } from "~/core/errors";
+
 definePageMeta({ pageTransition: { name: "page", mode: "out-in" } });
 useSeoMeta({ title: "Background Jobs | NaHörMaar" });
 
 const core = useNuxtApp().$backendCore;
 const session = core.stores.useSessionStore();
 const workflow = core.workflows.jobs();
+const { icons } = useTheme();
 const visibility = useDocumentVisibility();
 const batchSize = ref(10);
 const submitting = ref(false);
 const allowed = computed(() => ["owner", "admin"].includes(session.account?.role ?? ""));
 const job = computed(() => workflow.jobs.data.value?.jobs[0] ?? null);
+const jobFailure = computed(() =>
+	job.value?.last_error ? failureForCode(job.value.last_error) : null,
+);
 let timer: ReturnType<typeof setTimeout> | undefined;
 let disposed = false;
 
@@ -143,7 +149,7 @@ onBeforeUnmount(() => {
 								>
 									<UButton
 										label="Run now"
-										icon="i-lucide-play"
+										:icon="icons.play"
 										:loading="submitting"
 										:disabled="job.running || submitting"
 										@click="runNow"
@@ -224,9 +230,11 @@ onBeforeUnmount(() => {
 							/>
 						</div>
 					</div>
-					<p v-if="job.last_error" class="mt-4 text-sm text-error" role="alert">
-						Last run failed: {{ job.last_error }}
-					</p>
+					<div v-if="jobFailure" class="mt-4 text-sm text-error" role="alert">
+						<p class="font-medium">{{ jobFailure.title }}</p>
+						<p>{{ jobFailure.description }}</p>
+						<p class="mt-1 font-mono text-xs text-muted">Code: {{ jobFailure.code }}</p>
+					</div>
 				</UCard>
 			</div>
 		</template>

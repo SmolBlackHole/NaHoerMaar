@@ -29,15 +29,22 @@ ROOT = Path(__file__).parents[3]
 class Provider:
     state = ""
     verifier = ""
+    redirect_uri = ""
 
-    async def authorization_url(self, state: str, verifier: str) -> str:
+    async def authorization_url(
+        self, state: str, verifier: str, redirect_uri: str
+    ) -> str:
         self.state = state
         self.verifier = verifier
+        self.redirect_uri = redirect_uri
         return f"https://discord.example/authorize?state={state}"
 
-    async def identity(self, code: str, verifier: str) -> ProvidedDiscordIdentity:
+    async def identity(
+        self, code: str, verifier: str, redirect_uri: str
+    ) -> ProvidedDiscordIdentity:
         assert code == "oauth-code"
         assert verifier == self.verifier
+        assert redirect_uri == self.redirect_uri
         return ProvidedDiscordIdentity("7", "Discord name", "avatar-hash")
 
 
@@ -87,13 +94,15 @@ def test_operators_grant_login_profile_and_revocation_share_internal_users() -> 
         assert not listener.discord.complete
         assert listener.access_granted_by == owner.id
 
-        started = await auth.begin(None)
+        redirect_uri = "https://music.example.test/api/auth/discord/callback"
+        started = await auth.begin(None, redirect_uri)
         completed = await auth.complete(
             state=provider.state,
             browser_token=started.browser_token,
             code="oauth-code",
             error=None,
             previous_session=None,
+            redirect_uri=redirect_uri,
         )
         assert completed.user.id == listener.id
         assert completed.user.discord.username == "Discord name"

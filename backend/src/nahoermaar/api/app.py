@@ -8,11 +8,13 @@ import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from enum import StrEnum
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from nahoermaar.catalog.service import CatalogError
 from nahoermaar.bootstrap import Application, bootstrap
@@ -21,7 +23,7 @@ from nahoermaar.users.domain import AuthError
 
 from .auth import router as auth_router
 from .catalog import router as catalog_router
-from .errors import ERROR_RESPONSES, ErrorView
+from .errors import ERROR_RESPONSES, ApiError, ApiErrorCode, ErrorView
 from .events import router as events_router
 from .listening import router as listening_router
 from .logs import router as logs_router
@@ -52,6 +54,7 @@ def create_app(application: Application | None = None) -> FastAPI:
         responses=ERROR_RESPONSES,
     )
     app.state.application = container
+    install_error_handlers(app)
     install_auth_middleware(app, container.auth, container.settings.auth)
     app.include_router(auth_router(container))
     app.include_router(users_router(container))
@@ -62,49 +65,6 @@ def create_app(application: Application | None = None) -> FastAPI:
     app.include_router(events_router(container))
     app.include_router(logs_router(container))
     app.include_router(jobs_router(container))
-
-    @app.exception_handler(AuthError)
-    async def auth_error(request: Request, error: AuthError) -> JSONResponse:
-        request.state.error_code = error.code.value
-        return JSONResponse(
-            ErrorView(error=error.code.value).model_dump(exclude_none=True),
-            status_code=error.status,
-            headers={"cache-control": "no-store"},
-        )
-
-    @app.exception_handler(PlayerError)
-    async def player_error(request: Request, error: PlayerError) -> JSONResponse:
-        request.state.error_code = error.code.value
-        return JSONResponse(
-            ErrorView(error=error.code.value).model_dump(exclude_none=True),
-            status_code=error.status,
-            headers={"cache-control": "no-store"},
-        )
-
-    @app.exception_handler(CatalogError)
-    async def catalog_error(request: Request, error: CatalogError) -> JSONResponse:
-        request.state.error_code = error.code.value
-        request.state.error_retryable = error.retryable
-        return JSONResponse(
-            ErrorView(
-                error=error.code.value,
-                retryable=error.retryable,
-            ).model_dump(exclude_none=True),
-            status_code=error.status,
-            headers={"cache-control": "no-store"},
-        )
-
-    @app.exception_handler(RequestValidationError)
-    async def validation_error(
-        request: Request,
-        _error: RequestValidationError,
-    ) -> JSONResponse:
-        request.state.error_code = "validation_failed"
-        return JSONResponse(
-            ErrorView(error="validation_failed").model_dump(exclude_none=True),
-            status_code=422,
-            headers={"cache-control": "no-store"},
-        )
 
     @app.get("/health", include_in_schema=False)
     async def health() -> dict[str, str]:
@@ -153,3 +113,105 @@ def create_app(application: Application | None = None) -> FastAPI:
         return JSONResponse(body, status_code=200 if status == "ready" else 503)
 
     return app
+
+
+def install_error_handlers(app: FastAPI) -> None:
+    """Expose stable error documents without leaking exception details."""
+
+    @app.exception_handler(AuthError)
+    async def auth_error(request: Request, error: AuthError) -> JSONResponse:
+        return _error_response(request, error.code.value, error.status)
+
+    @app.exception_handler(PlayerError)
+    async def player_error(request: Request, error: PlayerError) -> JSONResponse:
+        return _error_response(request, error.code.value, error.status)
+
+    @app.exception_handler(CatalogError)
+    async def catalog_error(request: Request, error: CatalogError) -> JSONResponse:
+        return _error_response(
+            request,
+            error.code.value,
+            error.status,
+            retryable=error.retryable,
+        )
+
+    @app.exception_handler(ApiError)
+    async def api_error(request: Request, error: ApiError) -> JSONResponse:
+        return _error_response(
+            request,
+            error.code.value,
+            error.status,
+            retryable=error.retryable,
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(
+        request: Request,
+        _error: RequestValidationError,
+    ) -> JSONResponse:
+        return _error_response(
+            request,
+            ApiErrorCode.VALIDATION_FAILED,
+            422,
+        )
+
+    @app.exception_handler(StarletteHTTPException)
+    async def http_error(
+        request: Request,
+        error: StarletteHTTPException,
+    ) -> JSONResponse:
+        code = {
+            400: ApiErrorCode.INVALID_REQUEST,
+            401: ApiErrorCode.AUTHENTICATION_REQUIRED,
+            403: ApiErrorCode.ACCESS_DENIED,
+            404: ApiErrorCode.NOT_FOUND,
+            405: ApiErrorCode.METHOD_NOT_ALLOWED,
+            408: ApiErrorCode.REQUEST_TIMEOUT,
+            409: ApiErrorCode.CONFLICT,
+            422: ApiErrorCode.VALIDATION_FAILED,
+            429: ApiErrorCode.RATE_LIMITED,
+            502: ApiErrorCode.UPSTREAM_FAILED,
+            503: ApiErrorCode.SERVICE_UNAVAILABLE,
+            504: ApiErrorCode.GATEWAY_TIMEOUT,
+        }.get(
+            error.status_code,
+            (
+                ApiErrorCode.INVALID_REQUEST
+                if error.status_code < 500
+                else ApiErrorCode.INTERNAL_ERROR
+            ),
+        )
+        return _error_response(
+            request,
+            code,
+            error.status_code,
+            retryable=(
+                error.status_code in {408, 423, 425, 429} or error.status_code >= 500
+            ),
+        )
+
+    @app.exception_handler(Exception)
+    async def internal_error(request: Request, _error: Exception) -> JSONResponse:
+        return _error_response(
+            request,
+            ApiErrorCode.INTERNAL_ERROR,
+            500,
+            retryable=True,
+        )
+
+
+def _error_response(
+    request: Request,
+    code: str | StrEnum,
+    status: int,
+    *,
+    retryable: bool | None = None,
+) -> JSONResponse:
+    value = code.value if isinstance(code, StrEnum) else code
+    request.state.error_code = value
+    request.state.error_retryable = retryable
+    return JSONResponse(
+        ErrorView(error=value, retryable=retryable).model_dump(exclude_none=True),
+        status_code=status,
+        headers={"cache-control": "no-store"},
+    )

@@ -13,7 +13,8 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict
 
 from nahoermaar.bootstrap import Application
-from nahoermaar.users.domain import AccessRole, AuthError
+from nahoermaar.config import CALLBACK_PATH, AuthSettings
+from nahoermaar.users.domain import AccessRole, AuthError, AuthErrorCode
 from nahoermaar.users.service import (
     BeginLogin,
     CompleteLogin,
@@ -25,6 +26,8 @@ from nahoermaar.users.service import (
 )
 
 from .middleware import authenticated
+
+_BROWSER_ORIGIN_HEADER = "x-nahormaar-browser-origin"
 
 
 class SessionView(BaseModel):
@@ -38,6 +41,15 @@ class SessionView(BaseModel):
     csrf: str
 
 
+def _browser_origin(request: Request, settings: AuthSettings) -> str:
+    origin = request.headers.get(_BROWSER_ORIGIN_HEADER)
+    if origin is None:
+        return settings.public_origin
+    if origin not in settings.browser_origins:
+        raise AuthError(AuthErrorCode.ORIGIN_FORBIDDEN, 403)
+    return origin
+
+
 def router(application: Application) -> APIRouter:
     """Build auth routes around the composed application."""
     routes = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -45,8 +57,12 @@ def router(application: Application) -> APIRouter:
 
     @routes.get("/discord", response_class=RedirectResponse)
     async def begin(request: Request) -> RedirectResponse:
+        origin = _browser_origin(request, settings)
         result = await application.bus.execute(
-            BeginLogin(request.cookies.get(LOGIN_COOKIE))
+            BeginLogin(
+                request.cookies.get(LOGIN_COOKIE),
+                origin + CALLBACK_PATH,
+            )
         )
         response = RedirectResponse(result.authorization_url, status_code=302)
         response.set_cookie(
@@ -54,7 +70,7 @@ def router(application: Application) -> APIRouter:
             result.browser_token,
             max_age=int(LOGIN_LIFETIME.total_seconds()),
             httponly=True,
-            secure=settings.secure,
+            secure=origin.startswith("https://"),
             samesite="lax",
             path="/api/auth",
         )
@@ -67,6 +83,7 @@ def router(application: Application) -> APIRouter:
         code: str | None = None,
         error: str | None = None,
     ) -> RedirectResponse:
+        origin = _browser_origin(request, settings)
         try:
             result = await application.bus.execute(
                 CompleteLogin(
@@ -75,25 +92,26 @@ def router(application: Application) -> APIRouter:
                     code,
                     error,
                     request.cookies.get(SESSION_COOKIE),
+                    origin + CALLBACK_PATH,
                 )
             )
         except AuthError as auth_error:
             response = RedirectResponse(
-                f"{settings.public_origin}/login?error={quote(auth_error.code.value)}",
+                f"{origin}/login?error={quote(auth_error.code.value)}",
                 status_code=302,
             )
             response.delete_cookie(LOGIN_COOKIE, path="/api/auth")
             return response
 
         target = "/" if result.user.profile_complete else "/profile"
-        response = RedirectResponse(settings.public_origin + target, status_code=302)
+        response = RedirectResponse(origin + target, status_code=302)
         response.delete_cookie(LOGIN_COOKIE, path="/api/auth")
         response.set_cookie(
             SESSION_COOKIE,
             result.session_token,
             max_age=int(SESSION_LIFETIME.total_seconds()),
             httponly=True,
-            secure=settings.secure,
+            secure=origin.startswith("https://"),
             samesite="lax",
             path="/api",
         )

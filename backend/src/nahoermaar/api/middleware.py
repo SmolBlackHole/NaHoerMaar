@@ -18,7 +18,7 @@ from nahoermaar.observability import LogContext, log_context
 from nahoermaar.users.domain import Authenticated, AuthError, AuthErrorCode
 from nahoermaar.users.service import AuthService, SESSION_COOKIE
 
-from .errors import ErrorView
+from .errors import ApiErrorCode, ErrorView
 
 type RequestHandler = Callable[[Request], Awaitable[Response]]
 
@@ -104,11 +104,15 @@ def install_auth_middleware(
                     return response
             except Exception:
                 with log_context(LogContext(actor_id=actor_id)):
+                    request.state.error_code = ApiErrorCode.INTERNAL_ERROR.value
+                    request.state.error_retryable = True
                     _LOGGER.exception(
-                        "http.request_failed method=%s path=%s status=500 duration_ms=%.2f",
+                        "http.request_failed method=%s path=%s status=500 "
+                        "duration_ms=%.2f error_code=%s retryable=true",
                         request.method,
                         path,
                         _elapsed_ms(started),
+                        ApiErrorCode.INTERNAL_ERROR.value,
                     )
                 raise
 

@@ -74,11 +74,13 @@ The server binds to `127.0.0.1:8000`. Its
 worker: every backend process would otherwise start its own bot and player.
 Keep FastAPI internal and route dashboard requests through Nuxt.
 
-`PUBLIC_ORIGIN` fixes the Discord OAuth redirect and the canonical deployed
-dashboard address. `ALLOWED_ORIGINS` adds browser origins that may send
-authenticated API writes. The example configuration allows the local Nuxt
-server on port 3001 while the Compose dashboard stays on port 3000. Forwarded
-host headers do not change the OAuth redirect. See
+`PUBLIC_ORIGIN` is the canonical Compose dashboard address and the fallback for
+direct backend requests. `ALLOWED_ORIGINS` adds browser addresses that may send
+authenticated API writes or start a Discord login. The example configuration
+allows the local Nuxt server on port 3001 while the Compose dashboard stays on
+port 3000. Nuxt forwards the address the browser actually used, so a permitted
+HTTPS tunnel returns to that tunnel after login. Register its matching
+`/api/auth/discord/callback` URL in the Discord Developer Portal. See
 [Hosting considerations](hosting.md) before exposing the dashboard outside a
 local network.
 

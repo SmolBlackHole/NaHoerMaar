@@ -35,7 +35,7 @@ onScopeDispose(profile.dispose);
 						<UButton
 							to="/access"
 							label="Back to access"
-							icon="i-lucide-arrow-left"
+							:icon="icons.arrowLeft"
 							color="neutral"
 							variant="outline"
 						/>

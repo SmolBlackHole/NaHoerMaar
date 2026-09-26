@@ -1,4 +1,4 @@
-import { computed, onMounted, shallowRef, watch } from "vue";
+import { computed, onMounted, watch } from "vue";
 import { useSettingsStore } from "~/stores/settings";
 import { loadArtworkPalette, type ArtworkPalette } from "~/utils/artworkPalette";
 
@@ -6,7 +6,7 @@ export function useArtworkPalette() {
 	const player = useNuxtApp().$backendCore.stores.usePlayerStore();
 	const settings = useSettingsStore();
 	const consent = useConsentStore();
-	const palette = shallowRef<ArtworkPalette | null>(null);
+	const palette = useState<ArtworkPalette | null>("artwork-palette", () => null);
 	const artwork = computed(() => player.currentTrack?.track.artwork_url ?? null);
 	onMounted(() => {
 		watch(
@@ -19,7 +19,7 @@ export function useArtworkPalette() {
 					return;
 				}
 				const next = await loadArtworkPalette(url, controller.signal);
-				if (!controller.signal.aborted) palette.value = next;
+				if (!controller.signal.aborted && next) palette.value = next;
 			},
 			{ immediate: true },
 		);

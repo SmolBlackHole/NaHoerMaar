@@ -5,6 +5,7 @@
 """Authenticated player queries and serialized queue and radio commands."""
 
 from datetime import datetime
+from enum import StrEnum
 from uuid import UUID
 
 from fastapi import APIRouter, Request
@@ -62,6 +63,14 @@ from .middleware import authenticated
 
 class View(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+class PlayerRuntimeErrorCode(StrEnum):
+    """Stable public reasons for runtime failures with details kept in logs."""
+
+    PLAYBACK_FAILED = "playback_failed"
+    RADIO_PROVIDER_FAILED = "radio_provider_failed"
+    VOICE_CONNECTION_FAILED = "voice_connection_failed"
 
 
 class TrackSelectionInput(View):
@@ -182,7 +191,7 @@ class RadioView(View):
     seed_title: str | None
     seed_track: TrackView | None
     continuation: str | None
-    error: str | None
+    error_code: PlayerRuntimeErrorCode | None
     initiator: ContributorView | None
 
 
@@ -190,7 +199,7 @@ class VoiceRuntimeView(View):
     phase: str
     channel_id: str | None
     attempt: int
-    error: str | None
+    error_code: PlayerRuntimeErrorCode | None
 
 
 class PlaybackRuntimeView(View):
@@ -202,7 +211,7 @@ class PlaybackRuntimeView(View):
     position_updated_at: datetime | None
     duration_seconds: float | None
     voice: VoiceRuntimeView
-    last_error: str | None
+    last_error_code: PlayerRuntimeErrorCode | None
 
 
 class PlayerView(View):
@@ -631,7 +640,11 @@ async def player_view(
                     else None
                 ),
                 continuation=run.continuation,
-                error=run.error,
+                error_code=(
+                    PlayerRuntimeErrorCode.RADIO_PROVIDER_FAILED
+                    if run.error is not None
+                    else None
+                ),
                 initiator=_contributor_view(
                     contributors.get(run.initiated_by),
                     application,
@@ -668,9 +681,17 @@ async def player_view(
                     else None
                 ),
                 attempt=runtime.voice.attempt,
-                error=runtime.voice.error,
+                error_code=(
+                    PlayerRuntimeErrorCode.VOICE_CONNECTION_FAILED
+                    if runtime.voice.error is not None
+                    else None
+                ),
             ),
-            last_error=runtime.last_error,
+            last_error_code=(
+                PlayerRuntimeErrorCode.PLAYBACK_FAILED
+                if runtime.last_error is not None
+                else None
+            ),
         ),
     )
 

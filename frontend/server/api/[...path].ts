@@ -16,6 +16,7 @@ export default defineEventHandler(async (event) => {
 		xForwardedHost: true,
 		xForwardedProto: true,
 	}).origin;
+	const browserOrigin = forwardedOrigin;
 	const requestOrigin = event.node.req.headers.origin;
 	const requestIdHeader = event.node.req.headers["x-request-id"];
 	const requestId =
@@ -49,6 +50,7 @@ export default defineEventHandler(async (event) => {
 				signal: abort.signal,
 				headers: {
 					...(origin ? { origin } : {}),
+					"x-nahormaar-browser-origin": browserOrigin,
 					"x-request-id": requestId,
 				},
 			},

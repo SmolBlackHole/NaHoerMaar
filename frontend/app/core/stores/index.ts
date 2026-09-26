@@ -5,6 +5,12 @@ import { defineStore } from "pinia";
 import { computed, onScopeDispose, ref, shallowRef, watch } from "vue";
 import { ApiFailure, SessionLost, type SessionAuthority } from "../api/transport";
 import type { BackendClient } from "../client";
+import {
+	failureForCode,
+	failureMessage,
+	presentFailure,
+	type FailurePresentation,
+} from "../errors";
 import type { Account, AccountSession, AppearanceUpdate, ProfileUpdate } from "../models/account";
 import type {
 	MutationResult,
@@ -94,7 +100,7 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 							(failure.status === 403 || failure.error.error === "access_denied")
 								? "forbidden"
 								: "unavailable";
-						error.value = failure instanceof Error ? failure.message : String(failure);
+						error.value = failureMessage(failure);
 					}
 					return false;
 				} finally {
@@ -116,7 +122,7 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 				return true;
 			} catch (failure) {
 				if (failure instanceof SessionLost) return true;
-				error.value = failure instanceof Error ? failure.message : String(failure);
+				error.value = failureMessage(failure);
 				return false;
 			} finally {
 				busy.value = false;
@@ -164,7 +170,7 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 				return value;
 			} catch (failure) {
 				if (!controller.signal.aborted && !(failure instanceof SessionLost))
-					error.value = failure instanceof Error ? failure.message : String(failure);
+					error.value = failureMessage(failure);
 				return null;
 			} finally {
 				if (loadController === controller) {
@@ -185,8 +191,7 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 				account.value = value;
 				return value;
 			} catch (failure) {
-				if (!(failure instanceof SessionLost))
-					error.value = failure instanceof Error ? failure.message : String(failure);
+				if (!(failure instanceof SessionLost)) error.value = failureMessage(failure);
 				return null;
 			} finally {
 				if (generation === session.generation) saving.value = false;
@@ -232,7 +237,8 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 		const channels = shallowRef<Awaited<ReturnType<typeof client.player.channels>>>([]);
 		const channelsLoading = ref(false);
 		const channelError = ref<string | null>(null);
-		const error = ref<string | null>(null);
+		const problem = shallowRef<FailurePresentation | null>(null);
+		const error = computed(() => problem.value?.description ?? null);
 		const pendingOperationIds = ref<string[]>([]);
 		const uncertainOperation = shallowRef<{ operationId: string; action: string } | null>(null);
 		const lastOperation = shallowRef<SettledOperation | null>(null);
@@ -266,7 +272,7 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 			channelsLoading.value = false;
 			channelError.value = null;
 			connection.value = "closed";
-			error.value = null;
+			problem.value = null;
 			pendingOperationIds.value = [];
 			uncertainOperation.value = null;
 			lastOperation.value = null;
@@ -312,7 +318,7 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 			if (uncertainOperation.value?.operationId === operationId)
 				uncertainOperation.value = null;
 			lastOperation.value = result;
-			error.value = null;
+			problem.value = null;
 		}
 
 		function receive(event: PlayerEvent) {
@@ -321,12 +327,13 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 			if (event.type === "connection") {
 				connection.value = event.status;
 				awaitingSnapshot = event.status !== "closed";
-				if (event.status === "closed") error.value = "The player event stream closed.";
+				if (event.status === "closed")
+					problem.value = failureForCode("event_stream_closed");
 				return;
 			}
 			if (event.type === "invalid") {
 				connection.value = "closed";
-				error.value = event.error.message;
+				problem.value = failureForCode("event_stream_invalid");
 				return;
 			}
 			if (event.type === "auth") return;
@@ -334,7 +341,7 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 				accept(event.state, awaitingSnapshot || state.value === null);
 				awaitingSnapshot = false;
 				connection.value = "live";
-				error.value = null;
+				problem.value = null;
 				return;
 			}
 			const change: PlayerChange = event.change;
@@ -366,8 +373,7 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 					generation === session.generation &&
 					!(failure instanceof SessionLost)
 				)
-					channelError.value =
-						failure instanceof Error ? failure.message : String(failure);
+					channelError.value = failureMessage(failure);
 			} finally {
 				if (channelController === controller) {
 					channelsLoading.value = false;
@@ -406,7 +412,7 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 			if (!canControl.value || generation !== session.generation) return null;
 			if (!pendingOperationIds.value.includes(operationId))
 				pendingOperationIds.value = [...pendingOperationIds.value, operationId];
-			error.value = null;
+			problem.value = null;
 			try {
 				const result = await execute(operationId);
 				if (generation !== session.generation || session.status !== "authenticated")
@@ -428,19 +434,14 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 				pendingOperationIds.value = pendingOperationIds.value.filter(
 					(id) => id !== operationId,
 				);
-				if (
-					failure instanceof ApiFailure &&
-					failure.status < 500 &&
-					!failure.error.retryable
-				) {
+				if (failure instanceof ApiFailure && failure.status < 500) {
 					commands.delete(operationId);
 					pendingActions.delete(operationId);
-					error.value = failure.error.error;
+					problem.value = presentFailure(failure);
 					return null;
 				}
 				uncertainOperation.value = { operationId, action };
-				error.value =
-					"The response was lost. Check the player state before retrying this command.";
+				problem.value = failureForCode("response_lost");
 				return null;
 			}
 		}
@@ -561,6 +562,7 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 			channels,
 			channelsLoading,
 			channelError,
+			failure: problem,
 			error,
 			pendingOperationIds,
 			uncertainOperation,
