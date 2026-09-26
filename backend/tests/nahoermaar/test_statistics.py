@@ -256,6 +256,7 @@ def test_statistics_project_shared_and_personal_facts_without_double_counting() 
         ]
         assert overview.top_artists[0].name == "Shared artist"
         assert overview.top_listeners[0].user_id == listener_id
+        assert overview.top_listeners[0].discord_id == "200"
         assert overview.daily_activity[0].listening_seconds == 180.0
 
         assert personal.user_id == listener_id

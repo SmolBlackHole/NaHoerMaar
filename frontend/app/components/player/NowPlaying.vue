@@ -1,18 +1,23 @@
 <script setup lang="ts">
-import { trackArtwork, trackTitle, youtubeVideoId } from "#shared/player";
-import { usePlayerStore } from "~/stores/player";
+import { trackSource, youtubeVideoId } from "~/core/models/player";
 import { loadArtworkCrop, type ArtworkCrop } from "~/utils/artworkCrop";
 
 const props = defineProps<{ active: boolean }>();
 const emit = defineEmits<{ queue: [] }>();
-const player = usePlayerStore();
+const player = useNuxtApp().$backendCore.stores.usePlayerStore();
 const consent = useConsentStore();
 const { icons } = useTheme();
 const { currentPosition } = usePlaybackPosition();
-const current = computed(() => player.snapshot?.current ?? null);
-const nextTrack = computed(() => player.snapshot?.upcoming[0] ?? null);
-const videoId = computed(() => (current.value ? youtubeVideoId(current.value.source_url) : null));
-const artwork = computed(() => (consent.youtube ? trackArtwork(current.value) : null));
+const current = computed(() => player.state?.runtime.current ?? null);
+const nextTrack = computed(() => player.state?.queue[0]?.request ?? null);
+const source = computed(() => (current.value ? trackSource(current.value) : undefined));
+const videoId = computed(() => (current.value ? youtubeVideoId(current.value) : null));
+const artwork = computed(() =>
+	consent.youtube ? (current.value?.track.artwork_url ?? null) : null,
+);
+const nextArtwork = computed(() =>
+	consent.youtube ? (nextTrack.value?.track.artwork_url ?? null) : null,
+);
 const preview = ref<"cover" | "video">("cover");
 const videoControls = ref(false);
 const browserVolume = useState<number>("browser-video-volume", () => 0);
@@ -20,6 +25,7 @@ const visibility = useDocumentVisibility();
 const reducedMotion = usePreferredReducedMotion();
 const motionPaused = ref(false);
 const artworkCrop = shallowRef<ArtworkCrop | null>(null);
+const preloadedArtwork = shallowRef<HTMLImageElement | null>(null);
 const videoFailed = ref(false);
 const artworkFailed = ref(false);
 const videoReady = ref(false);
@@ -32,6 +38,19 @@ watch(artwork, () => {
 	artworkFailed.value = false;
 });
 onMounted(() => {
+	watch(
+		nextArtwork,
+		(url) => {
+			preloadedArtwork.value = null;
+			if (!url) return;
+			const image = new Image();
+			image.decoding = "async";
+			image.referrerPolicy = "no-referrer";
+			image.src = url;
+			preloadedArtwork.value = image;
+		},
+		{ immediate: true },
+	);
 	watch(
 		artwork,
 		async (url, _previous, onCleanup) => {
@@ -51,12 +70,12 @@ const coverMoving = computed(
 		props.active &&
 		visibility.value === "visible" &&
 		coverVisible.value &&
-		player.snapshot?.state === "playing" &&
+		["starting", "playing", "transitioning"].includes(player.state?.runtime.phase ?? "idle") &&
 		!motionPaused.value &&
 		reducedMotion.value !== "reduce",
 );
 watch(
-	() => player.snapshot?.playback_id,
+	() => player.state?.runtime.playback_id,
 	() => {
 		videoFailed.value = false;
 		videoReady.value = false;
@@ -129,12 +148,12 @@ watch(loadVideo, (visible) => {
 			<PlayerVideo
 				v-if="consent.youtube && preview === 'video' && current && !videoFailed && videoId"
 				ref="video"
-				:key="player.snapshot?.playback_id ?? videoId"
+				:key="player.state?.runtime.playback_id ?? videoId"
 				:video-id="videoId"
-				:title="trackTitle(current)"
+				:title="current.track.title"
 				:get-position="currentPosition"
 				:active="loadVideo"
-				:state="player.snapshot?.state ?? 'idle'"
+				:state="player.state?.runtime.phase ?? 'idle'"
 				:interactive="videoControls"
 				:volume="browserVolume"
 				@ready="videoReady = $event"
@@ -238,18 +257,18 @@ watch(loadVideo, (visible) => {
 		<div v-show="!videoControls || videoFailed" class="media-details">
 			<div class="media-copy">
 				<PlayerContributor
-					v-if="current?.added_by"
-					:contributor="current.added_by"
+					v-if="current"
+					:contributor="current.contributor"
 					:origin="current.origin"
 					class="media-contributor"
 				/>
 				<h2
 					class="media-title"
-					:class="{ 'is-long': current && trackTitle(current).length > 48 }"
+					:class="{ 'is-long': current && current.track.title.length > 48 }"
 				>
-					<UTooltip v-if="current" :text="`Open source: ${trackTitle(current)}`">
-						<a :href="current.source_url" target="_blank" rel="noopener noreferrer">{{
-							trackTitle(current)
+					<UTooltip v-if="current" :text="`Open source: ${current.track.title}`">
+						<a :href="source?.source_url" target="_blank" rel="noopener noreferrer">{{
+							current.track.title
 						}}</a>
 					</UTooltip>
 					<template v-else>What are we<br />listening to?</template>
@@ -269,21 +288,25 @@ watch(loadVideo, (visible) => {
 			<UTooltip
 				v-if="current"
 				:text="
-					nextTrack ? `Open queue: ${trackTitle(nextTrack)}` : 'Open queue to add a track'
+					nextTrack ? `Open queue: ${nextTrack.track.title}` : 'Open queue to add a track'
 				"
 			>
 				<button type="button" class="next-track-cue" @click="emit('queue')">
 					<span class="next-track-label text-xs text-muted">{{
 						nextTrack ? "Coming up" : "Keep it going"
 					}}</span>
-					<PlayerTrackArtwork v-if="nextTrack" :entry="nextTrack" class="size-12!" />
+					<PlayerTrackArtwork
+						v-if="nextTrack"
+						:entry="nextTrack.track"
+						class="size-12!"
+					/>
 					<span v-else class="next-track-icon"><UIcon :name="icons.plus" /></span>
 					<span class="min-w-0 text-left">
 						<span class="line-clamp-2 text-sm font-medium text-highlighted">{{
-							nextTrack ? trackTitle(nextTrack) : "Add the next track"
+							nextTrack ? nextTrack.track.title : "Add the next track"
 						}}</span>
 						<span v-if="nextTrack" class="mt-1 block text-xs text-muted"
-							>{{ player.snapshot?.upcoming.length ?? 0 }} in queue</span
+							>{{ player.state?.queue.length ?? 0 }} in queue</span
 						>
 					</span>
 					<UIcon :name="icons.arrowRight" class="size-4 shrink-0 text-muted" />
@@ -309,7 +332,7 @@ watch(loadVideo, (visible) => {
 			</p>
 			<a
 				v-if="videoFailed"
-				:href="current.source_url"
+				:href="source?.source_url"
 				target="_blank"
 				rel="noopener noreferrer"
 				class="hover:underline"

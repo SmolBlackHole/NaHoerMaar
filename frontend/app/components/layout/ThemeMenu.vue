@@ -7,7 +7,7 @@ const { settings, icons } = useTheme();
 const appConfig = useAppConfig();
 const { themeItems } = useThemeMenu({
 	get artworkColors() {
-		return settings.artworkColors;
+		return settings.artwork_colors;
 	},
 	get primary() {
 		return appConfig.ui.colors.primary;
@@ -19,39 +19,39 @@ const { themeItems } = useThemeMenu({
 		return settings.mode;
 	},
 	get fontFamily() {
-		return settings.fontFamily;
+		return settings.font_family;
 	},
 	get iconSet() {
-		return settings.iconSet;
+		return settings.icon_set;
 	},
 	get textSize() {
-		return settings.textSize;
+		return settings.text_size;
 	},
 	get icons() {
 		return icons.value;
 	},
 	setPrimary(value) {
-		settings.artworkColors = false;
-		settings.primaryColor = value;
+		settings.artwork_colors = false;
+		settings.primary_color = value;
 	},
 	setNeutral(value) {
-		settings.artworkColors = false;
-		settings.neutralColor = value;
+		settings.artwork_colors = false;
+		settings.neutral_color = value;
 	},
 	setArtworkColors(value) {
-		settings.artworkColors = value;
+		settings.artwork_colors = value;
 	},
 	setMode(value) {
 		settings.mode = value;
 	},
 	setFontFamily(value) {
-		settings.fontFamily = value;
+		settings.font_family = value;
 	},
 	setIconSet(value) {
-		settings.iconSet = value;
+		settings.icon_set = value;
 	},
 	setTextSize(value) {
-		settings.textSize = value;
+		settings.text_size = value;
 	},
 });
 </script>

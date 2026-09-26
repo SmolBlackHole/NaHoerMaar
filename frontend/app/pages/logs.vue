@@ -1,26 +1,21 @@
 <script setup lang="ts">
-import type { components } from "#shared/api.generated";
-import { useRepositories } from "~/repositories";
-import { useProfileStore } from "~/stores/profile";
+import type { LogPage } from "~/core/models/logs";
 
-type LogEntry = components["schemas"]["LogEntryView"];
+type LogEntry = LogPage["entries"][number];
 
+definePageMeta({ pageTransition: { name: "page", mode: "out-in" } });
 useSeoMeta({ title: "Bot logs | NaHörMaar" });
-const profile = useProfileStore();
-const { diagnostics } = useRepositories();
-const entries = ref<LogEntry[]>([]);
+const core = useNuxtApp().$backendCore;
+const session = core.stores.useSessionStore();
+const logs = core.workflows.logs();
 const level = ref("all");
 const filter = ref("");
 const live = ref(true);
-const loading = ref(false);
-const error = ref("");
 const viewport = ref<HTMLElement | null>(null);
-let cursor: number | undefined;
-let timer: ReturnType<typeof setTimeout> | undefined;
-let request: AbortController | undefined;
-let disposed = false;
-let generation = 0;
+const visibility = useDocumentVisibility();
 const levels = ["all", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"];
+const allowed = computed(() => ["owner", "admin"].includes(session.account?.role ?? ""));
+const entries = computed(() => logs.page.data.value?.entries ?? []);
 const visibleEntries = computed(() => {
 	const needle = filter.value.trim().toLocaleLowerCase();
 	return entries.value.filter(
@@ -28,89 +23,63 @@ const visibleEntries = computed(() => {
 			(level.value === "all" || entry.level === level.value) &&
 			(!needle ||
 				[
-					entry.trace_id,
 					entry.actor_id,
-					entry.actor_name,
 					entry.source,
 					entry.message,
+					entry.request_id,
+					entry.message_id,
+					entry.correlation_id,
+					entry.causation_id,
 				].some((value) => value?.toLocaleLowerCase().includes(needle))),
 	);
 });
+let timer: ReturnType<typeof setTimeout> | undefined;
+let disposed = false;
+
 const time = (value: string) =>
 	new Intl.DateTimeFormat(undefined, { dateStyle: "short", timeStyle: "medium" }).format(
 		new Date(value),
 	);
-const actorLabel = (entry: LogEntry) => entry.actor_name || entry.actor_id || "System";
-const actorHelp = (entry: LogEntry) =>
-	entry.actor_id
-		? entry.actor_name
-			? `${entry.actor_name} (${entry.actor_id})`
-			: entry.actor_id
-		: "Background task or system event";
-const traceLabel = (traceId: string) => traceId.slice(0, 8);
-const copyTrace = (traceId: string) => navigator.clipboard.writeText(traceId);
-
-function stop() {
-	generation++;
-	clearTimeout(timer);
-	request?.abort();
-	request = undefined;
-	loading.value = false;
-}
+const reference = (entry: LogEntry) =>
+	entry.correlation_id ?? entry.request_id ?? entry.message_id ?? entry.causation_id;
+const shortReference = (entry: LogEntry) => reference(entry)?.slice(0, 8) ?? "system";
+const copyReference = (entry: LogEntry) => {
+	const value = reference(entry);
+	if (value) void globalThis.navigator.clipboard.writeText(value);
+};
 
 async function poll() {
-	if (!live.value || !profile.session?.is_admin || document.hidden) {
-		if (!disposed && live.value && profile.session?.is_admin) timer = setTimeout(poll, 2000);
-		return;
-	}
-	const version = generation;
-	const controller = new AbortController();
-	request = controller;
-	loading.value = true;
-	try {
-		const result = await diagnostics.logs(cursor, controller.signal);
-		if (version !== generation) return;
-		const atBottom =
-			!viewport.value ||
-			viewport.value.scrollHeight - viewport.value.scrollTop - viewport.value.clientHeight <
-				64;
-		if (result.entries.length) {
-			cursor = result.entries.at(-1)!.id;
-			entries.value = [...entries.value, ...result.entries].slice(-500);
-			if (atBottom)
-				await nextTick(() =>
-					viewport.value?.scrollTo({ top: viewport.value.scrollHeight }),
-				);
-		}
-		error.value = "";
-	} catch (failure) {
-		if (
-			version === generation &&
-			!(failure instanceof DOMException && failure.name === "AbortError")
-		)
-			error.value = "Could not load bot logs. Retrying…";
-	} finally {
-		if (request === controller) request = undefined;
-		if (version === generation) {
-			loading.value = false;
-			if (!disposed && live.value && profile.session?.is_admin)
-				timer = setTimeout(poll, 2000);
-		}
-	}
+	if (disposed || !live.value || !allowed.value || visibility.value !== "visible") return;
+	const atBottom =
+		!viewport.value ||
+		viewport.value.scrollHeight - viewport.value.scrollTop - viewport.value.clientHeight < 64;
+	await logs.poll(200);
+	if (atBottom)
+		await nextTick(() => viewport.value?.scrollTo({ top: viewport.value!.scrollHeight }));
 }
-
-watch(
-	[live, () => profile.session?.is_admin],
-	() => {
-		if (!import.meta.client) return;
-		stop();
-		if (live.value && profile.session?.is_admin) void poll();
-	},
-	{ immediate: true },
-);
+function schedule() {
+	clearTimeout(timer);
+	if (!disposed && live.value && allowed.value)
+		timer = setTimeout(async () => {
+			await poll();
+			schedule();
+		}, 2000);
+}
+async function start() {
+	if (!allowed.value) return;
+	await logs.loadLatest(200);
+	await nextTick(() => viewport.value?.scrollTo({ top: viewport.value!.scrollHeight }));
+	schedule();
+}
+watch([live, allowed, visibility], () => {
+	clearTimeout(timer);
+	if (live.value && allowed.value && visibility.value === "visible") void start();
+});
+onMounted(start);
 onBeforeUnmount(() => {
 	disposed = true;
-	stop();
+	clearTimeout(timer);
+	logs.dispose();
 });
 </script>
 
@@ -120,29 +89,29 @@ onBeforeUnmount(() => {
 			<UDashboardNavbar title="Bot logs">
 				<template #leading><UDashboardSidebarCollapse /></template>
 				<template #right>
-					<span v-if="profile.session?.is_admin" class="text-muted text-xs">
-						{{ live ? "Live" : "Paused" }}
-					</span>
+					<span v-if="allowed" class="text-xs text-muted">{{
+						live ? "Live" : "Paused"
+					}}</span>
 				</template>
 			</UDashboardNavbar>
 		</template>
 		<template #body>
-			<div v-if="!profile.session?.is_admin" class="p-6 text-muted" role="alert">
+			<div v-if="!allowed" class="p-6 text-muted" role="alert">
 				Only admins can read bot logs.
 			</div>
 			<div v-else class="logs-page flex min-h-0 flex-col gap-4 pb-4 sm:pb-6">
 				<div class="flex flex-wrap items-end justify-between gap-3">
 					<div>
-						<h1 class="text-highlighted text-xl font-semibold">Live diagnostics</h1>
-						<p class="text-muted mt-1 text-sm">
-							Recent bot events from this run. Older messages disappear automatically.
+						<h1 class="text-xl font-semibold text-highlighted">Live diagnostics</h1>
+						<p class="mt-1 text-sm text-muted">
+							Actor, request and event context from the current backend.
 						</p>
 					</div>
-					<div class="flex items-center gap-2">
+					<div class="flex flex-wrap items-center gap-2">
 						<UInput
 							v-model="filter"
 							icon="i-lucide-search"
-							placeholder="Filter trace, actor, source, or message"
+							placeholder="Filter actor, source, message, or ID"
 							aria-label="Filter logs"
 							class="w-72 max-w-full"
 						/>
@@ -163,11 +132,18 @@ onBeforeUnmount(() => {
 							label="Clear view"
 							color="neutral"
 							variant="ghost"
-							@click="entries = []"
+							@click="
+								logs.page.set({
+									entries: [],
+									cursor: logs.page.data.value?.cursor ?? 0,
+								})
+							"
 						/>
 					</div>
 				</div>
-				<p v-if="error" role="alert" class="text-warning text-sm">{{ error }}</p>
+				<p v-if="logs.page.error.value" role="alert" class="text-sm text-warning">
+					{{ logs.page.error.value }}
+				</p>
 				<div
 					ref="viewport"
 					class="log-viewport rounded-lg border border-default bg-elevated/30"
@@ -175,8 +151,12 @@ onBeforeUnmount(() => {
 					aria-label="Bot logs"
 					aria-live="off"
 				>
-					<div v-if="!visibleEntries.length" class="text-muted p-6 text-sm">
-						{{ loading ? "Loading logs…" : "No log messages in this view yet." }}
+					<div v-if="!visibleEntries.length" class="p-6 text-sm text-muted">
+						{{
+							logs.page.loading.value
+								? "Loading logs…"
+								: "No log messages in this view yet."
+						}}
 					</div>
 					<div
 						v-for="entry in visibleEntries"
@@ -197,23 +177,31 @@ onBeforeUnmount(() => {
 							class="font-semibold"
 							>{{ entry.level }}</span
 						>
-						<UTooltip v-if="entry.trace_id" :text="`Copy trace ${entry.trace_id}`">
+						<UTooltip
+							v-if="reference(entry)"
+							:text="`Copy correlation or request ID ${reference(entry)}`"
+						>
 							<button
 								type="button"
-								class="log-trace text-muted cursor-copy truncate text-left hover:text-highlighted"
-								@click="copyTrace(entry.trace_id)"
+								class="log-trace cursor-copy truncate text-left text-muted hover:text-highlighted"
+								@click="copyReference(entry)"
 							>
-								{{ traceLabel(entry.trace_id) }}
+								{{ shortReference(entry) }}
 							</button>
 						</UTooltip>
 						<span v-else class="log-trace text-dimmed">system</span>
-						<UTooltip :text="actorHelp(entry)">
-							<span class="log-actor text-muted truncate">{{
-								actorLabel(entry)
-							}}</span>
+						<UTooltip :text="entry.actor_id ?? 'Background task or system event'">
+							<NuxtLink
+								v-if="entry.actor_id"
+								:to="`/profile/${entry.actor_id}`"
+								class="log-actor truncate text-muted hover:text-highlighted"
+							>
+								{{ entry.actor_id }}
+							</NuxtLink>
+							<span v-else class="log-actor truncate text-muted">System</span>
 						</UTooltip>
 						<UTooltip :text="entry.source">
-							<span class="log-source text-muted truncate">{{ entry.source }}</span>
+							<span class="log-source truncate text-muted">{{ entry.source }}</span>
 						</UTooltip>
 						<span class="log-message min-w-0 break-all text-highlighted">{{
 							entry.message

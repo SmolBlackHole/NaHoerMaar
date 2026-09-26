@@ -36,13 +36,22 @@ const {
 	importSelection,
 	openTrackRadio,
 	openPlaylistRadio,
-	startRadio,
+	startRadio: commitRadio,
 	backFromRadio,
 } = useBackendDiscovery();
 
 const launcher = ref<HTMLElement>();
 const scrollArea = ref<HTMLElement>();
+const confirmingRadio = ref(false);
 let scrollTop = 0;
+
+async function requestRadioStart() {
+	if (player.state?.radio) confirmingRadio.value = true;
+	else await commitRadio();
+}
+async function replaceRadio() {
+	if (await commitRadio()) confirmingRadio.value = false;
+}
 
 watch([view, query, playlistUrl], () => {
 	scrollTop = 0;
@@ -293,7 +302,7 @@ function restoreScroll() {
 						color="primary"
 						class="ml-auto min-h-11"
 						:disabled="!canControl"
-						@click="startRadio"
+						@click="requestRadioStart"
 					/>
 				</div>
 				<div v-else class="w-full space-y-3">
@@ -338,6 +347,12 @@ function restoreScroll() {
 				</div>
 			</template>
 		</USlideover>
+		<PlayerRadioReplaceConfirmation
+			:open="confirmingRadio"
+			:busy="player.isPending('radio.start')"
+			@update:open="confirmingRadio = $event"
+			@confirm="replaceRadio"
+		/>
 	</section>
 </template>
 

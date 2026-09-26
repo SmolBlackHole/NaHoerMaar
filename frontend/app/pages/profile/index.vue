@@ -4,8 +4,8 @@ import type { ProfileUpdate } from "~/core/models/account";
 useSeoMeta({ title: "Your profile | NaHörMaar" });
 const core = useNuxtApp().$backendCore;
 const session = core.stores.useSessionStore();
-const profile = core.workflows.profile();
-const details = computed(() => profile.profile.data.value);
+const profile = core.stores.useProfileStore();
+const details = computed(() => profile.profile);
 const { icons } = useTheme();
 const toast = useToast();
 const consent = useConsentStore();
@@ -18,7 +18,7 @@ const discordAvatar = computed(() => {
 });
 
 async function load() {
-	await profile.loadMine();
+	await profile.refresh();
 }
 async function save(value: ProfileUpdate) {
 	if (!(await profile.updateProfile(value))) return;
@@ -31,7 +31,6 @@ async function save(value: ProfileUpdate) {
 }
 
 onMounted(load);
-onScopeDispose(profile.dispose);
 </script>
 
 <template>
@@ -43,11 +42,8 @@ onScopeDispose(profile.dispose);
 				</UDashboardNavbar>
 			</template>
 			<template #body>
-				<div class="mx-auto w-full max-w-6xl pb-4 sm:pb-6">
-					<div
-						v-if="profile.profile.loading.value && !details"
-						aria-label="Loading your profile"
-					>
+				<div class="w-full pb-4 sm:pb-6">
+					<div v-if="profile.loading && !details" aria-label="Loading your profile">
 						<div class="flex flex-wrap items-center gap-5 border-b border-default pb-7">
 							<USkeleton class="size-20 rounded-2xl" />
 							<div class="min-w-64 space-y-3">
@@ -78,10 +74,7 @@ onScopeDispose(profile.dispose);
 								Your profile is unavailable
 							</h1>
 							<p class="mt-2 text-sm leading-relaxed text-muted" role="alert">
-								{{
-									profile.profile.error.value ??
-									"The profile could not be loaded."
-								}}
+								{{ profile.error ?? "The profile could not be loaded." }}
 							</p>
 							<UButton
 								class="mt-5"
@@ -116,8 +109,8 @@ onScopeDispose(profile.dispose);
 										<ProfileForm
 											:profile="details.profile"
 											:complete="true"
-											:busy="profile.saving.value"
-											:error="profile.mutationError.value"
+											:busy="profile.saving"
+											:error="profile.error"
 											@save="save"
 										/>
 									</div>

@@ -127,15 +127,12 @@ export function useBackendDiscovery() {
 		const ids = new Set(items.map(({ track }) => track.id));
 		pendingTrackIds.value = new Set([...pendingTrackIds.value, ...ids]);
 		try {
-			const result = await player.run("queue.add", (operationId) =>
-				core.client.player.add({
-					operation_id: operationId,
-					skip_duplicates: skip,
-					tracks: items.map(({ source: trackSource, track }) => ({
-						track_id: track.id,
-						source_id: trackSource.id,
-					})),
-				}),
+			const result = await player.add(
+				items.map(({ source: trackSource, track }) => ({
+					track_id: track.id,
+					source_id: trackSource.id,
+				})),
+				skip,
 			);
 			return result !== null;
 		} finally {
@@ -238,14 +235,9 @@ export function useBackendDiscovery() {
 	async function startRadio() {
 		const seed = radioSeed.value;
 		if (!seed || !player.canControl) return;
-		const result = await player.run("radio.start", (operationId) =>
-			core.client.player.startRadio({
-				operation_id: operationId,
-				expected_generation: player.state?.radio?.generation ?? null,
-				seed,
-			}),
-		);
+		const result = await player.startRadio(seed);
 		if (result) panelOpen.value = false;
+		return result;
 	}
 
 	function backFromRadio() {

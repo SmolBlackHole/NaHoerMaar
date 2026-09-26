@@ -1,28 +1,33 @@
 <script setup lang="ts">
-const player = usePlayerStore();
+const player = useNuxtApp().$backendCore.stores.usePlayerStore();
 const { icons } = useTheme();
-const radio = computed(() => player.snapshot?.radio);
+const radio = computed(() => player.state?.radio);
 function control(action: "retry" | "stop") {
-	if (radio.value?.generation)
-		void (action === "stop" ? player.stopRadio : player.retryRadio)(radio.value.generation);
+	void (action === "stop" ? player.stopRadio() : player.retryRadio());
 }
 </script>
 
 <template>
-	<div v-if="radio && radio.state !== 'off'" class="radio-status" aria-label="Active radio">
+	<div v-if="radio" class="radio-status" aria-label="Active radio">
 		<UIcon :name="icons.radio" class="size-5 shrink-0 text-primary" />
 		<div class="min-w-0 flex-1">
-			<UTooltip :text="`Radio · ${radio.title}`">
-				<p class="text-sm text-highlighted truncate">Radio · {{ radio.title }}</p>
+			<UTooltip text="Automatic queue">
+				<p class="truncate text-sm text-highlighted">Radio</p>
 			</UTooltip>
+			<PlayerContributor
+				v-if="radio.initiator"
+				:contributor="radio.initiator"
+				origin="radio"
+				class="mt-1"
+			/>
 			<p class="mt-1 text-xs text-muted" role="status">
 				{{
 					radio.error ||
-					(player.snapshot?.state === "paused"
+					(player.state?.runtime.phase === "paused"
 						? "Refill paused"
 						: radio.state === "loading"
 							? "Finding the next tracks…"
-							: `Started by ${radio.initiator?.name ?? "a listener"} · Your requests play first`)
+							: "Keeps the queue filled · Your requests play first")
 				}}
 			</p>
 		</div>
@@ -34,8 +39,8 @@ function control(action: "retry" | "stop") {
 				variant="ghost"
 				color="neutral"
 				class="min-h-11"
-				:disabled="!player.enabled"
-				:loading="player.isPending('radio.retried', radio.generation ?? undefined)"
+				:disabled="!player.canControl"
+				:loading="player.isPending('radio.retry')"
 				@click="control('retry')"
 			/>
 			<UButton
@@ -43,8 +48,8 @@ function control(action: "retry" | "stop") {
 				variant="ghost"
 				color="neutral"
 				class="min-h-11"
-				:disabled="!player.enabled"
-				:loading="player.isPending('radio.stopped', radio.generation ?? undefined)"
+				:disabled="!player.canControl"
+				:loading="player.isPending('radio.stop')"
 				@click="control('stop')"
 			/>
 		</div>

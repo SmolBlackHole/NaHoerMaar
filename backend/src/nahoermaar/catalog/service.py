@@ -303,6 +303,52 @@ class CatalogService:
                     raise CatalogError(CatalogErrorCode.AUDIO_SOURCE_NOT_FOUND, 404)
 
         provider, reference = self._route(source.source_url, None, MediaKind.TRACK)
+        if not track.artists:
+            try:
+                observation = await provider.track(reference)
+            except ProviderError as error:
+                _LOGGER.warning(
+                    "catalog.metadata_refresh_failed track_id=%s source_id=%s "
+                    "provider=%s error_code=%s retryable=%s",
+                    track.id,
+                    source.id,
+                    provider.key,
+                    error_code(error),
+                    error.retryable,
+                )
+            else:
+                if (
+                    observation.provider == reference.provider
+                    and observation.external_id == reference.external_id
+                ):
+                    async with self._units() as work:
+                        track = await CatalogRepository(work.session).upsert(
+                            observation,
+                            self._clock(),
+                            track_id=track.id,
+                        )
+                        await work.commit()
+                    source = next(
+                        candidate
+                        for candidate in track.sources
+                        if candidate.id == source.id
+                    )
+                    _LOGGER.info(
+                        "catalog.metadata_refreshed track_id=%s source_id=%s "
+                        "provider=%s artists=%d",
+                        track.id,
+                        source.id,
+                        provider.key,
+                        len(track.artists),
+                    )
+                else:
+                    _LOGGER.warning(
+                        "catalog.metadata_refresh_rejected track_id=%s source_id=%s "
+                        "provider=%s reason=identity_mismatch",
+                        track.id,
+                        source.id,
+                        provider.key,
+                    )
         try:
             audio: ProviderAudio = await provider.resolve_audio(reference)
         except ProviderError as error:

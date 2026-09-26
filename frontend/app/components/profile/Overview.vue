@@ -8,7 +8,11 @@ const props = defineProps<{ value: UserProfile }>();
 const { icons } = useTheme();
 
 const displayName = computed(
-	() => props.value.profile.display_name ?? props.value.discord.username ?? "Listener",
+	() =>
+		props.value.profile.display_name ??
+		props.value.discord.display_name ??
+		props.value.discord.username ??
+		"Listener",
 );
 const role = computed(() => {
 	if (props.value.role === "owner") return "Owner";
@@ -17,6 +21,7 @@ const role = computed(() => {
 });
 const discordAvatar = computed(() => {
 	const discord = props.value.discord;
+	if (discord.avatar_url) return discord.avatar_url;
 	if (!discord.avatar_hash) return undefined;
 	const extension = discord.avatar_hash.startsWith("a_") ? "gif" : "png";
 	return `https://cdn.discordapp.com/avatars/${discord.id}/${discord.avatar_hash}.${extension}?size=128`;
@@ -73,7 +78,7 @@ function formatDate(value: string) {
 				<UAvatar
 					v-else
 					:src="discordAvatar"
-					:alt="value.discord.username ?? 'Discord account'"
+					:alt="value.discord.display_name ?? value.discord.username ?? 'Discord account'"
 					size="3xl"
 				/>
 				<div class="min-w-0">

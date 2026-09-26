@@ -254,6 +254,7 @@ class PlaybackTransport(Protocol):
         preparation_id: UUID,
         attempt_id: UUID,
         notify: Callable[[AudioEvent], None],
+        immediate: bool = False,
     ) -> bool: ...
 
     async def set_presence(self, presence: NowPlaying) -> None: ...
@@ -302,6 +303,7 @@ class _PreparedPlayback:
     preparation_id: UUID
     source: PlayableSource
     seconds: float
+    end_reason: PlaybackEndReason = PlaybackEndReason.COMPLETED
 
 
 @dataclass(frozen=True, slots=True)
@@ -545,16 +547,20 @@ class PlaybackCoordinator:
         elif action is PlayerAction.PLAYBACK_SEEKED:
             await self._sample(context=context)
             await self._restart_current(state.checkpoint, context)
-        elif action in {
-            PlayerAction.PLAYBACK_SKIPPED,
-            PlayerAction.PLAYBACK_STOPPED,
-        }:
-            reason = (
-                PlaybackEndReason.SKIPPED
-                if action is PlayerAction.PLAYBACK_SKIPPED
-                else PlaybackEndReason.STOPPED
+        elif action is PlayerAction.PLAYBACK_SKIPPED:
+            if not await self._activate_prepared_skip(state.checkpoint, context):
+                await self._retire_current(
+                    PlaybackEndReason.SKIPPED,
+                    stop=True,
+                    context=context,
+                )
+                await self._sync_output(state.checkpoint, context)
+        elif action is PlayerAction.PLAYBACK_STOPPED:
+            await self._retire_current(
+                PlaybackEndReason.STOPPED,
+                stop=True,
+                context=context,
             )
-            await self._retire_current(reason, stop=True, context=context)
             await self._sync_output(state.checkpoint, context)
         elif action is PlayerAction.PLAYBACK_FAILED:
             await self._retire_current(
@@ -1027,6 +1033,58 @@ class PlaybackCoordinator:
                 ),
             )
 
+    async def _activate_prepared_skip(
+        self,
+        checkpoint: PlaybackCheckpoint,
+        context: MessageContext,
+    ) -> bool:
+        current, prepared = self._current, self._prepared
+        if (
+            current is None
+            or prepared is None
+            or checkpoint.request is None
+            or checkpoint.request.id != prepared.request.id
+            or self._transport.connection is None
+        ):
+            return False
+        await self._sample(context=context)
+        incoming = _LogicalPlayback(
+            prepared.request,
+            uuid4(),
+            context,
+            None,
+            0.0,
+            0.0,
+            duration_seconds=prepared.source.duration_seconds,
+        )
+        self._transitioning = replace(
+            prepared,
+            seconds=0.0,
+            end_reason=PlaybackEndReason.SKIPPED,
+        )
+        self._prepared = None
+        self._outgoing = current
+        self._current = incoming
+        accepted = self._transport.start_transition(
+            outgoing_attempt_id=current.attempt_id,
+            preparation_id=prepared.preparation_id,
+            attempt_id=incoming.attempt_id,
+            notify=self.notify_audio,
+            immediate=True,
+        )
+        if accepted:
+            _LOGGER.info(
+                "playback.prepared_skip request_id=%s preparation_id=%s",
+                prepared.request.id,
+                prepared.preparation_id,
+            )
+            return True
+        self._current = current
+        self._outgoing = None
+        self._transitioning = None
+        await self._transport.discard_next(prepared.preparation_id)
+        return False
+
     async def _start_crossfade(self, event: CrossfadeDue) -> None:
         current, prepared = self._current, self._prepared
         state = self._player.state
@@ -1104,7 +1162,7 @@ class PlaybackCoordinator:
             return
         outgoing.audio_seconds += transition.seconds
         await self._sample(context=current.context)
-        await self._finish(outgoing, PlaybackEndReason.COMPLETED)
+        await self._finish(outgoing, transition.end_reason)
         self._outgoing = None
         self._transitioning = None
         await self._ensure_prepared(self._player.state)

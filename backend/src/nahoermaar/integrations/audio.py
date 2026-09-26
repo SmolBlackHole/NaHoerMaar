@@ -715,6 +715,8 @@ class CrossfadeSource(discord.AudioSource):
         on_faded: Callable[[], None],
         on_activate: Callable[[], None] = lambda: None,
         on_started: Callable[[], None] = lambda: None,
+        *,
+        immediate: bool = False,
     ) -> bool:
         with self._lock:
             prepared = self._prepared
@@ -722,14 +724,14 @@ class CrossfadeSource(discord.AudioSource):
                 self._stopping
                 or self._ended
                 or prepared is None
-                or not prepared.requested
+                or (not immediate and not prepared.requested)
             ):
                 return False
             self._prepared = None
             self._outgoing = self.current
             self.current = prepared.audio
             self._position = 0
-            self._fade_frames = prepared.frames
+            self._fade_frames = 1 if immediate else prepared.frames
             self._fade_index = 0
             self._starved_at = None
             self._underrun_count = 0

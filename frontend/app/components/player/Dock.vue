@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { canControl, formatTime, trackTitle } from "#shared/player";
-import { usePlayerStore } from "~/stores/player";
+import { formatTime } from "~/core/models/player";
 
-const player = usePlayerStore();
+const player = useNuxtApp().$backendCore.stores.usePlayerStore();
 const { icons } = useTheme();
 const { position } = usePlaybackPosition();
-const current = computed(() => player.snapshot?.current ?? null);
+const current = computed(() => player.state?.runtime.current ?? null);
+const duration = computed(
+	() => player.state?.runtime.duration_seconds ?? current.value?.track.duration_seconds ?? null,
+);
 const seekTarget = ref<string | null>(null);
 const seekDraft = ref<{ position: number; playbackId: string } | null>(null);
 const hoverPosition = ref<number | null>(null);
@@ -14,17 +16,15 @@ const confirmation = ref<"skip" | "stop" | null>(null);
 let lastSkipAt = 0;
 const seekEnabled = computed(
 	() =>
-		player.enabled &&
-		player.snapshot?.voice_state === "connected" &&
-		!!player.snapshot.attempt_id &&
-		!!current.value?.duration_seconds &&
-		["playing", "paused"].includes(player.snapshot.state),
+		player.canControl &&
+		player.state?.runtime.voice.phase === "connected" &&
+		!!player.state.runtime.attempt_id &&
+		!!duration.value &&
+		["playing", "paused"].includes(player.state.runtime.phase),
 );
-const seekMaximum = computed(() =>
-	Math.max(0, Math.ceil(current.value?.duration_seconds ?? 0) - 1),
-);
+const seekMaximum = computed(() => Math.max(0, Math.ceil(duration.value ?? 0) - 1));
 const timelinePosition = computed(() =>
-	seekDraft.value && seekDraft.value.playbackId === player.snapshot?.attempt_id
+	seekDraft.value && seekDraft.value.playbackId === player.state?.runtime.attempt_id
 		? seekDraft.value.position
 		: position.value,
 );
@@ -51,13 +51,13 @@ function cancelSeek() {
 	hoverPosition.value = null;
 	keyboardPreview.value = false;
 }
-watch(() => player.snapshot?.attempt_id, cancelSeek);
+watch(() => player.state?.runtime.attempt_id, cancelSeek);
 function beginSeek() {
-	seekTarget.value = seekEnabled.value ? (player.snapshot?.attempt_id ?? null) : null;
+	seekTarget.value = seekEnabled.value ? (player.state?.runtime.attempt_id ?? null) : null;
 }
 function previewSeek(event: Event) {
 	if (!seekTarget.value) beginSeek();
-	if (seekTarget.value && seekTarget.value === player.snapshot?.attempt_id)
+	if (seekTarget.value && seekTarget.value === player.state?.runtime.attempt_id)
 		seekDraft.value = {
 			position: (event.target as HTMLInputElement).valueAsNumber,
 			playbackId: seekTarget.value,
@@ -83,26 +83,30 @@ function seekKey(event: KeyboardEvent) {
 }
 async function commitSeek() {
 	const draft = seekDraft.value;
-	if (draft && draft.playbackId === player.snapshot?.attempt_id && seekEnabled.value)
-		await player.seek(draft.position, draft.playbackId);
+	if (draft && draft.playbackId === player.state?.runtime.attempt_id && seekEnabled.value)
+		await player.seek(draft.position);
 	seekDraft.value = null;
 	seekTarget.value = null;
 }
-const action = computed(() => (player.snapshot?.state === "playing" ? "pause" : "play"));
+const action = computed(() =>
+	["playing", "transitioning"].includes(player.state?.runtime.phase ?? "idle") ? "pause" : "play",
+);
 const label = computed(
 	() =>
 		({
+			disabled: "Play",
 			idle: "Play",
-			loading: "Loading",
+			starting: "Loading",
 			playing: "Pause",
 			paused: "Resume",
-			error: "Retry track",
-		})[player.snapshot?.state ?? "idle"],
+			transitioning: "Pause",
+			failed: "Retry track",
+		})[player.state?.runtime.phase ?? "idle"],
 );
 const volume = ref(100);
 const browserVolume = useState<number>("browser-video-volume", () => 0);
 watch(
-	() => player.snapshot?.volume,
+	() => player.state?.volume,
 	(value) => {
 		if (value !== undefined) volume.value = Math.round(value * 100);
 	},
@@ -110,11 +114,11 @@ watch(
 );
 async function setVolume() {
 	await player.setVolume(volume.value / 100);
-	volume.value = Math.round((player.snapshot?.volume ?? 1) * 100);
+	volume.value = Math.round((player.state?.volume ?? 1) * 100);
 }
 const crossfade = ref(7);
 watch(
-	() => player.snapshot?.crossfade_seconds,
+	() => player.state?.crossfade_seconds,
 	(value) => {
 		crossfade.value = value ?? 7;
 	},
@@ -122,8 +126,8 @@ watch(
 );
 async function setCrossfade(seconds: number) {
 	crossfade.value = seconds;
-	await player.setCrossfade(seconds as Parameters<typeof player.setCrossfade>[0]);
-	crossfade.value = player.snapshot?.crossfade_seconds ?? 7;
+	await player.setCrossfade(seconds);
+	crossfade.value = player.state?.crossfade_seconds ?? 7;
 }
 function requestStop() {
 	confirmation.value = "stop";
@@ -136,12 +140,13 @@ async function requestSkip() {
 		return;
 	}
 	lastSkipAt = now;
-	await player.control("skip");
+	await player.skip();
 }
 async function confirmControl() {
 	const action = confirmation.value;
 	confirmation.value = null;
-	if (action) await player.control(action);
+	if (action === "skip") await player.skip();
+	else if (action === "stop") await player.stop();
 }
 const confirmationTitle = computed(() =>
 	confirmation.value === "stop" ? "Stop playback?" : "Skip another track?",
@@ -156,17 +161,17 @@ const confirmationDescription = computed(() =>
 <template>
 	<section class="player-dock" aria-label="Playback controls">
 		<div class="dock-track flex min-w-0 items-center gap-3">
-			<PlayerTrackArtwork :entry="current" class="dock-cover" />
+			<PlayerTrackArtwork :entry="current?.track ?? null" class="dock-cover" />
 			<div class="min-w-0 flex-1">
-				<UTooltip :text="current ? `Open player: ${trackTitle(current)}` : 'Open player'">
+				<UTooltip :text="current ? `Open player: ${current.track.title}` : 'Open player'">
 					<NuxtLink
 						to="/"
 						class="block truncate text-sm font-semibold text-highlighted hover:underline"
-						>{{ current ? trackTitle(current) : "Nothing playing" }}</NuxtLink
+						>{{ current?.track.title ?? "Nothing playing" }}</NuxtLink
 					>
 				</UTooltip>
 				<p class="mt-1 truncate text-xs text-muted">
-					<PlayerArtistLink v-if="current" :entry="current" /><template v-else
+					<PlayerArtistLink v-if="current" :entry="current.track" /><template v-else
 						>Your next track is up to you</template
 					>
 				</p>
@@ -178,11 +183,11 @@ const confirmationDescription = computed(() =>
 				<UButton
 					:icon="icons.stop"
 					aria-label="Stop playback"
-					:loading="player.isControlPending('stop')"
+					:loading="player.isPending('stop')"
 					color="neutral"
 					variant="ghost"
 					class="size-10 justify-center"
-					:disabled="!player.enabled || !canControl(player.snapshot, 'stop')"
+					:disabled="!player.canControl || !current"
 					@click="requestStop"
 				/>
 			</UTooltip>
@@ -194,23 +199,23 @@ const confirmationDescription = computed(() =>
 					class="dock-play size-10 justify-center rounded-full"
 					color="neutral"
 					:loading="
-						player.snapshot?.state === 'loading' ||
-						player.isControlPending('play') ||
-						player.isControlPending('pause')
+						player.state?.runtime.phase === 'starting' ||
+						player.isPending('play') ||
+						player.isPending('pause')
 					"
-					:disabled="!player.enabled || !canControl(player.snapshot, action)"
-					@click="player.control(action)"
+					:disabled="!player.canControl || (action === 'pause' && !current)"
+					@click="action === 'pause' ? player.pause() : player.play()"
 				/>
 			</UTooltip>
 			<UTooltip text="Skip track">
 				<UButton
 					:icon="icons.skip"
 					aria-label="Skip track"
-					:loading="player.isControlPending('skip')"
+					:loading="player.isPending('skip')"
 					color="neutral"
 					variant="ghost"
 					class="size-10 justify-center"
-					:disabled="!player.enabled || !canControl(player.snapshot, 'skip')"
+					:disabled="!player.canControl || !current"
 					@click="requestSkip"
 				/>
 			</UTooltip>
@@ -218,7 +223,7 @@ const confirmationDescription = computed(() =>
 		<div class="dock-timeline flex items-center gap-3 text-[0.6875rem] tabular-nums text-muted">
 			<span class="w-9 text-right">{{ formatTime(timelinePosition) }}</span>
 			<div
-				v-if="current?.duration_seconds"
+				v-if="duration"
 				class="seek-control min-w-0 flex-1"
 				:style="{ '--seek-preview': (seekPreview ?? 0) / (seekMaximum || 1) }"
 			>
@@ -235,7 +240,7 @@ const confirmationDescription = computed(() =>
 					:style="{ '--seek-progress': timelineFill }"
 					:disabled="!seekEnabled"
 					aria-label="Playback position"
-					:aria-valuetext="`${formatTime(timelinePosition)} of ${formatTime(current.duration_seconds)}`"
+					:aria-valuetext="`${formatTime(timelinePosition)} of ${formatTime(duration)}`"
 					aria-description="Seek for everyone in the channel"
 					@pointerenter="hoverSeek"
 					@pointermove="hoverSeek"
@@ -258,7 +263,7 @@ const confirmationDescription = computed(() =>
 				/>
 			</div>
 			<div v-else class="h-1 min-w-0 flex-1 rounded-full bg-accented" />
-			<span class="w-9">{{ formatTime(current?.duration_seconds ?? null) }}</span>
+			<span class="w-9">{{ formatTime(duration) }}</span>
 		</div>
 		<div class="dock-volume flex items-center gap-3">
 			<UPopover :ui="{ content: 'w-72 max-w-[calc(100vw-2rem)] p-4' }">
@@ -286,7 +291,7 @@ const confirmationDescription = computed(() =>
 						max="100"
 						step="1"
 						class="volume-slider w-full"
-						:disabled="!player.enabled"
+						:disabled="!player.canControl"
 						:aria-valuetext="`${volume} percent`"
 						@change="setVolume"
 					/>
@@ -314,9 +319,9 @@ const confirmationDescription = computed(() =>
 								:model-value="crossfade > 0"
 								aria-labelledby="crossfade-label"
 								:disabled="
-									!player.enabled ||
-									player.snapshot?.crossfade_seconds === undefined ||
-									player.isPending('playback.crossfade')
+									!player.canControl ||
+									player.state?.crossfade_seconds === undefined ||
+									player.isPending('crossfade')
 								"
 								@update:model-value="setCrossfade($event ? 7 : 0)"
 							/>
@@ -331,9 +336,7 @@ const confirmationDescription = computed(() =>
 								class="volume-slider min-w-0 flex-1"
 								aria-label="Crossfade duration"
 								:aria-valuetext="`${crossfade} seconds`"
-								:disabled="
-									!player.enabled || player.isPending('playback.crossfade')
-								"
+								:disabled="!player.canControl || player.isPending('crossfade')"
 								@change="setCrossfade(crossfade)"
 							/>
 							<output class="w-7 text-right text-sm tabular-nums text-muted"
@@ -391,11 +394,11 @@ const confirmationDescription = computed(() =>
 				<UButton
 					:label="confirmation === 'stop' ? 'Stop and return' : 'Skip track'"
 					:color="confirmation === 'stop' ? 'error' : 'primary'"
-					:disabled="!player.enabled"
+					:disabled="!player.canControl"
 					:loading="
 						confirmation === 'stop'
-							? player.isControlPending('stop')
-							: player.isControlPending('skip')
+							? player.isPending('stop')
+							: player.isPending('skip')
 					"
 					@click="confirmControl"
 				/>

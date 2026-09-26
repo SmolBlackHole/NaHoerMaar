@@ -1,11 +1,17 @@
 <script setup lang="ts">
-import { useProfileStore } from "~/stores/profile";
 defineProps<{ collapsed?: boolean }>();
-const profile = useProfileStore();
+const profile = useNuxtApp().$backendCore.stores.useProfileStore();
+const details = computed(() => profile.profile);
+const discordAvatar = computed(() => {
+	const discord = details.value?.discord;
+	if (!discord?.avatar_hash) return undefined;
+	const extension = discord.avatar_hash.startsWith("a_") ? "gif" : "png";
+	return `https://cdn.discordapp.com/avatars/${discord.id}/${discord.avatar_hash}.${extension}?size=64`;
+});
 </script>
 
 <template>
-	<UTooltip v-if="profile.profile" text="Edit your profile">
+	<UTooltip v-if="details" text="Edit your profile">
 		<UButton
 			to="/profile"
 			color="neutral"
@@ -15,14 +21,22 @@ const profile = useProfileStore();
 			aria-label="Edit your profile"
 		>
 			<img
-				:src="`/avatars/${profile.profile.avatar}.png`"
+				v-if="details.profile.pixabot"
+				:src="`/avatars/${details.profile.pixabot}.png`"
 				alt=""
 				width="32"
 				height="32"
 				class="size-8 shrink-0 rounded-lg [image-rendering:pixelated]"
 			/>
+			<UAvatar
+				v-else
+				:src="discordAvatar"
+				:alt="details.discord.username ?? 'Profile'"
+				size="sm"
+				class="shrink-0"
+			/>
 			<span v-if="!collapsed" class="min-w-0 flex-1 truncate text-left">{{
-				profile.profile.name
+				details.profile.display_name ?? details.discord.username ?? "Profile"
 			}}</span>
 		</UButton>
 	</UTooltip>

@@ -19,9 +19,11 @@ from nahoermaar.catalog.domain import (
     DiscoveryKind,
     MediaKind,
     MediaReference,
+    ObservationQuality,
     ProviderName,
 )
 from nahoermaar.catalog.providers import (
+    ProviderArtist,
     ProviderAudio,
     ProviderError,
     ProviderPage,
@@ -57,7 +59,9 @@ class Provider:
         self.search_calls = 0
         self.playlist_calls = 0
         self.radio_calls = 0
+        self.track_calls = 0
         self.title = "First title"
+        self.detail = TRACK
         self.extra_tracks: tuple[ProviderTrack, ...] = ()
         self.fail = False
         self.started: asyncio.Event | None = None
@@ -106,7 +110,8 @@ class Provider:
         return ProviderPlaylist(reference, "Playlist", ProviderPage((TRACK,)))
 
     async def track(self, reference: MediaReference) -> ProviderTrack:
-        return TRACK
+        self.track_calls += 1
+        return self.detail
 
     async def radio(
         self,
@@ -275,6 +280,50 @@ def test_radio_resolves_persisted_seed_and_returns_canonical_sources() -> None:
         assert audio.source.id == track.sources[0].id
         assert audio.is_opus
         assert audio.headers == (("User-Agent", "NaHoerMaar test"),)
+        await service.close()
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        asyncio.run(database.close())
+
+
+def test_audio_resolution_enriches_incomplete_discovery_metadata() -> None:
+    database = _database()
+    provider = Provider()
+    provider.detail = ProviderTrack(
+        ProviderName.YOUTUBE,
+        TRACK.external_id,
+        TRACK.source_url,
+        TRACK.title,
+        "Detail artist",
+        (
+            ProviderArtist(
+                ProviderName.YOUTUBE,
+                "UCdetail",
+                "Detail artist",
+            ),
+        ),
+        quality=ObservationQuality.DETAIL,
+    )
+
+    def units() -> UnitOfWork:
+        return UnitOfWork(database.sessions)
+
+    service = CatalogService(units, (provider,), clock=lambda: NOW)
+
+    async def scenario() -> None:
+        playlist = await service.playlist(PLAYLIST.source_url)
+        discovered = playlist.snapshot.entries[0].track
+        assert discovered.artists == ()
+
+        resolved = await service.resolve_audio(discovered.id)
+
+        assert provider.track_calls == 1
+        assert resolved.track.artists[0].artist.name == "Detail artist"
+        assert resolved.source.observed_artist == "Detail artist"
+        stored = (await service.tracks({discovered.id}))[discovered.id]
+        assert stored.artists == resolved.track.artists
         await service.close()
 
     try:

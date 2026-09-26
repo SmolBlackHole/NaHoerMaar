@@ -1,20 +1,25 @@
 <script setup lang="ts">
-import { usePlayerStore } from "~/stores/player";
-import { groupHistory } from "#shared/player";
-
-const player = usePlayerStore();
+const core = useNuxtApp().$backendCore;
+const player = core.stores.usePlayerStore();
+const recent = core.workflows.recent();
 const expanded = ref(false);
-const history = computed(() => groupHistory(player.snapshot?.recently_played ?? []));
+const history = computed(() => recent.recent.data.value ?? []);
 const visible = computed(() => (expanded.value ? history.value : history.value.slice(0, 5)));
+
+onMounted(() => void recent.load(50));
+watch(
+	() => player.state?.runtime.playback_id,
+	(value, previous) => {
+		if (previous && value !== previous) void recent.load(50);
+	},
+);
+onScopeDispose(recent.dispose);
 </script>
 
 <template>
 	<section id="recently-played" aria-labelledby="history-heading" class="history-section">
 		<div class="mb-3 flex items-center justify-between gap-4">
-			<h2
-				id="history-heading"
-				class="text-xl font-semibold tracking-tight text-highlighted"
-			>
+			<h2 id="history-heading" class="text-xl font-semibold tracking-tight text-highlighted">
 				Recently played
 			</h2>
 			<UButton
@@ -29,8 +34,19 @@ const visible = computed(() => (expanded.value ? history.value : history.value.s
 				@click="expanded = !expanded"
 			/>
 		</div>
-		<p v-if="!player.snapshot" role="status" class="text-sm text-muted">
-			Waiting for playback history…
+		<div
+			v-if="recent.recent.loading.value && !history.length"
+			class="space-y-2"
+			aria-busy="true"
+		>
+			<USkeleton v-for="row in 4" :key="row" class="h-16 w-full" />
+		</div>
+		<p
+			v-else-if="recent.recent.error.value && !history.length"
+			role="alert"
+			class="text-sm text-warning"
+		>
+			{{ recent.recent.error.value }}
 		</p>
 		<PlayerRecentList v-else id="history-tracks" :entries="visible" />
 	</section>

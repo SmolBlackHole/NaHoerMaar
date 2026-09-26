@@ -3,12 +3,11 @@ import type { ProfileUpdate } from "~/core/models/account";
 
 const core = useNuxtApp().$backendCore;
 const session = core.stores.useSessionStore();
-const profile = core.workflows.profile();
-const currentProfile = computed(() => profile.profile.data.value?.profile ?? null);
+const profile = core.stores.useProfileStore();
+const currentProfile = computed(() => profile.profile?.profile ?? null);
 const { icons } = useTheme();
 
-onMounted(() => void profile.loadMine());
-onScopeDispose(profile.dispose);
+onMounted(() => void profile.load());
 
 async function save(value: ProfileUpdate) {
 	if (!(await profile.updateProfile(value))) return;
@@ -34,8 +33,8 @@ async function save(value: ProfileUpdate) {
 				</p>
 				<ProfileForm
 					:profile="currentProfile"
-					:busy="profile.saving.value"
-					:error="profile.mutationError.value ?? session.error"
+					:busy="profile.saving"
+					:error="profile.error ?? session.error"
 					@save="save"
 				/>
 				<p class="text-muted mt-5 text-xs leading-relaxed">
@@ -49,8 +48,8 @@ async function save(value: ProfileUpdate) {
 					:loading="session.busy"
 					@click="session.logout"
 				/>
-				<p v-if="profile.profile.error.value" role="alert" class="text-error mt-3 text-sm">
-					{{ profile.profile.error.value }}
+				<p v-if="profile.error" role="alert" class="text-error mt-3 text-sm">
+					{{ profile.error }}
 				</p>
 			</section>
 		</div>

@@ -894,6 +894,7 @@ class DiscordOutput:
         preparation_id: UUID,
         attempt_id: UUID,
         notify: Callable[[AudioEvent], None],
+        immediate: bool = False,
     ) -> bool:
         output, prepared = self._output, self._prepared
         reason = (
@@ -957,7 +958,13 @@ class DiscordOutput:
             correlation_id=current_correlation_id(),
             actor_id=actor_id,
             created_at=time.monotonic(),
-            start_mode=("crossfade" if prepared.crossfade_seconds > 0 else "preloaded"),
+            start_mode=(
+                "preloaded_skip"
+                if immediate
+                else "crossfade"
+                if prepared.crossfade_seconds > 0
+                else "preloaded"
+            ),
             audio_pid=getattr(prepared.buffer, "process_id", None),
             first_frame_seconds=getattr(prepared.buffer, "first_frame_seconds", None),
             preparation_id=preparation_id,
@@ -996,12 +1003,14 @@ class DiscordOutput:
                 faded,
                 activated,
                 lambda: self._started(output, attempt),
+                immediate=immediate,
             )
             if accepted:
                 _LOGGER.info(
-                    "discord.audio.transition preparation=%s prepared_age_seconds=%.3f",
+                    "discord.audio.transition preparation=%s prepared_age_seconds=%.3f immediate=%s",
                     preparation_id,
                     time.monotonic() - prepared.created_at,
+                    immediate,
                 )
                 self._prepared = None
             else:

@@ -16,14 +16,14 @@ export function useThemeEffects() {
 	);
 
 	watch(
-		() => artworkPalette.value?.primary ?? store.settings.primaryColor,
+		() => artworkPalette.value?.primary ?? store.settings.primary_color,
 		(value) => {
 			appConfig.ui.colors.primary = value;
 		},
 		{ immediate: true },
 	);
 	watch(
-		() => artworkPalette.value?.neutral ?? store.settings.neutralColor,
+		() => artworkPalette.value?.neutral ?? store.settings.neutral_color,
 		(value) => {
 			appConfig.ui.colors.neutral = value;
 		},
@@ -45,7 +45,7 @@ export function useThemeEffects() {
 		style: [
 			{
 				key: "appearance",
-				textContent: `:root { --font-sans: '${store.settings.fontFamily}', sans-serif; font-size: ${{ sm: "14px", md: "16px", lg: "18px" }[store.settings.textSize]}; }`,
+				textContent: `:root { --font-sans: '${store.settings.font_family}', sans-serif; font-size: ${{ sm: "14px", md: "16px", lg: "18px" }[store.settings.text_size]}; }`,
 			},
 		],
 	}));

@@ -47,7 +47,9 @@ class DiscordView(BaseModel):
 
     id: str
     username: str | None
+    display_name: str | None
     avatar_hash: str | None
+    avatar_url: str | None
     synced_at: datetime | None
 
 
@@ -178,7 +180,8 @@ def router(application: Application) -> APIRouter:
         period: Annotated[StatisticsPeriod, Query()] = StatisticsPeriod.DAYS_30,
     ) -> ProfilePageView:
         return _profile_page_view(
-            await application.profiles.get(authenticated(request).user.id, period)
+            await application.profiles.get(authenticated(request).user.id, period),
+            application,
         )
 
     @routes.put("/users/me/profile")
@@ -193,7 +196,10 @@ def router(application: Application) -> APIRouter:
                 UserProfile(body.display_name.strip(), body.pixabot),
             )
         )
-        return _profile_page_view(await application.profiles.get(current.user.id))
+        return _profile_page_view(
+            await application.profiles.get(current.user.id),
+            application,
+        )
 
     @routes.put("/users/me/appearance")
     async def update_appearance(
@@ -215,7 +221,10 @@ def router(application: Application) -> APIRouter:
                 ),
             )
         )
-        return _profile_page_view(await application.profiles.get(current.user.id))
+        return _profile_page_view(
+            await application.profiles.get(current.user.id),
+            application,
+        )
 
     @routes.get("/users/{user_id}")
     async def profile(
@@ -225,7 +234,8 @@ def router(application: Application) -> APIRouter:
     ) -> ProfilePageView:
         authenticated(request)
         return _profile_page_view(
-            await application.profiles.get(UserId(user_id), period)
+            await application.profiles.get(UserId(user_id), period),
+            application,
         )
 
     @routes.get("/access")
@@ -280,7 +290,9 @@ def _user_view(user: User) -> UserView:
         discord=DiscordView(
             id=user.discord.discord_id,
             username=user.discord.username,
+            display_name=None,
             avatar_hash=user.discord.avatar_hash,
+            avatar_url=None,
             synced_at=user.discord.synced_at,
         ),
         profile=ProfileView(
@@ -314,14 +326,28 @@ def _grant_view(user: User) -> AccessGrantView:
     )
 
 
-def _profile_page_view(report: ProfileReport) -> ProfilePageView:
+def _profile_page_view(
+    report: ProfileReport,
+    application: Application,
+) -> ProfilePageView:
     identity = report.identity
+    members = application.gateway.members() if application.gateway else ()
+    member = next(
+        (
+            candidate
+            for candidate in members
+            if candidate.discord_id == identity.discord.discord_id
+        ),
+        None,
+    )
     return ProfilePageView(
         id=identity.user_id,
         discord=DiscordView(
             id=identity.discord.discord_id,
-            username=identity.discord.username,
+            username=identity.discord.username or (member.username if member else None),
+            display_name=member.display_name if member else None,
             avatar_hash=identity.discord.avatar_hash,
+            avatar_url=member.avatar_url if member else None,
             synced_at=identity.discord.synced_at,
         ),
         profile=ProfileView(
@@ -342,7 +368,10 @@ def _profile_page_view(report: ProfileReport) -> ProfilePageView:
         created_at=identity.created_at,
         updated_at=identity.updated_at,
         last_login_at=identity.last_login_at,
-        statistics=statistics_view(report.statistics),
+        statistics=statistics_view(
+            report.statistics,
+            members,
+        ),
         recent_tracks=tuple(
             RecentTrackView(
                 playback_id=track.playback_id,

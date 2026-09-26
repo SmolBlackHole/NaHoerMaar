@@ -19,6 +19,7 @@ from nahoermaar.catalog.domain import (
     TrackSourceId,
 )
 from nahoermaar.catalog.service import ResolvedAudio
+from nahoermaar.listening.domain import PlaybackEndReason
 from nahoermaar.listening.service import (
     AdvancePlayback,
     BeginPlayback,
@@ -55,6 +56,7 @@ from nahoermaar.player.playback import (
     AudioProgress,
     AudioSourceNotReady,
     AudioStarted,
+    CrossfadeCompleted,
     NowPlaying,
     PlayableSource,
     PlaybackCoordinator,
@@ -151,6 +153,7 @@ class FakeTransport(PlaybackTransport):
         *,
         fail_starts: bool = False,
         fail_connects: int = 0,
+        accept_transitions: bool = False,
     ) -> None:
         self._connection: VoiceConnection | None = None
         self._progress: AudioProgress | None = None
@@ -162,11 +165,15 @@ class FakeTransport(PlaybackTransport):
         self.connect_attempts = 0
         self.fail_starts = fail_starts
         self.fail_connects = fail_connects
+        self.accept_transitions = accept_transitions
         self.volume = 0.0
         self.prepared: list[tuple[PlayableSource, float]] = []
+        self.preparation_id: UUID | None = None
+        self.transition_immediate: list[bool] = []
         self.presences: list[NowPlaying] = []
         self.play_ready = asyncio.Event()
         self.prepare_ready = asyncio.Event()
+        self.transition_ready = asyncio.Event()
         self.closed = False
 
     @property
@@ -262,6 +269,7 @@ class FakeTransport(PlaybackTransport):
         assert outgoing_attempt_id == self.attempt_id
         assert preparation_id
         _ = notify
+        self.preparation_id = preparation_id
         self.prepared.append((source, seconds))
         self.prepare_ready.set()
         return True
@@ -276,12 +284,20 @@ class FakeTransport(PlaybackTransport):
         preparation_id: UUID,
         attempt_id: UUID,
         notify: Callable[[AudioEvent], None],
+        immediate: bool = False,
     ) -> bool:
-        assert outgoing_attempt_id
-        assert preparation_id
-        assert attempt_id
-        _ = notify
-        return False
+        assert outgoing_attempt_id == self.attempt_id
+        assert preparation_id == self.preparation_id
+        self.transition_immediate.append(immediate)
+        if not self.accept_transitions:
+            return False
+        self.attempt_id = attempt_id
+        self.notify = notify
+        self._progress = AudioProgress(attempt_id, 0.0, False, True)
+        self.transition_ready.set()
+        notify(AudioStarted(attempt_id, 0.0))
+        notify(CrossfadeCompleted(attempt_id, preparation_id))
+        return True
 
     async def set_presence(self, presence: NowPlaying) -> None:
         self.presences.append(presence)
@@ -493,6 +509,71 @@ def test_audio_facts_start_on_first_frame_and_next_track_is_preloaded() -> None:
         finally:
             await coordinator.close()
         assert transport.closed
+
+    asyncio.run(scenario())
+
+
+def test_skip_activates_the_preloaded_track_without_restarting_output() -> None:
+    async def scenario() -> None:
+        tracks = (_track(1), _track(2))
+        state, current_request = _playing_state(tracks)
+        next_request = state.queue.entries[0].request
+        player = StaticPlayer(state)
+        transport = FakeTransport(accept_transitions=True)
+        bus = RecordingBus()
+        coordinator = PlaybackCoordinator(
+            player,
+            StaticCatalog(tracks),
+            StaticListening(),
+            bus,
+            transport,
+        )
+        try:
+            await coordinator.start()
+            await asyncio.wait_for(transport.play_ready.wait(), timeout=1)
+            assert transport.notify is not None
+            assert transport.attempt_id is not None
+            transport.notify(AudioStarted(transport.attempt_id, 0.0))
+            await _wait_for_command(bus, BeginPlayback)
+            await asyncio.wait_for(transport.prepare_ready.wait(), timeout=1)
+
+            queue_revision = state.queue.revision + 1
+            skipped = replace(
+                state,
+                session=replace(
+                    state.session,
+                    revision=state.session.revision + 1,
+                    queue_revision=queue_revision,
+                ),
+                queue=Queue(state.session.id, queue_revision, ()),
+                checkpoint=PlaybackCheckpoint(
+                    state.session.id,
+                    PlaybackIntent.PLAYING,
+                    next_request,
+                    0.0,
+                ),
+            )
+            player.state = skipped
+            await coordinator.player_changed(
+                PlayerChanged(
+                    skipped.session.id,
+                    skipped.session.revision,
+                    OperationId(uuid4()),
+                    MutationOutcome(PlayerAction.PLAYBACK_SKIPPED),
+                ),
+                MessageContext(actor_id=UserId(uuid4())),
+            )
+
+            await asyncio.wait_for(transport.transition_ready.wait(), timeout=1)
+            finish = await _wait_for_command(bus, FinishPlayback)
+            assert isinstance(finish, FinishPlayback)
+            assert finish.reason is PlaybackEndReason.SKIPPED
+            assert transport.transition_immediate == [True]
+            assert transport.play_attempts == 1
+            assert coordinator.status.request == next_request
+            assert coordinator.status.request != current_request
+        finally:
+            await coordinator.close()
 
     asyncio.run(scenario())
 

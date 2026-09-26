@@ -37,18 +37,25 @@ async def migrate(
     configuration_path: Path | None = None,
 ) -> None:
     """Upgrade the configured database through the application's async engine."""
-    path = configuration_path or Path(__file__).resolve().parents[4] / "alembic.ini"
     started_at = perf_counter()
-    _LOGGER.info("database.migration_started configuration=%s", path)
+    _LOGGER.info(
+        "database.migration_started configuration=%s",
+        configuration_path or "packaged migrations",
+    )
     async with engine.begin() as connection:
-        await connection.run_sync(_upgrade, path)
+        await connection.run_sync(_upgrade, configuration_path)
     _LOGGER.info(
         "database.migration_completed duration_ms=%.1f",
         (perf_counter() - started_at) * 1000,
     )
 
 
-def _upgrade(connection: Connection, configuration_path: Path) -> None:
-    configuration = Config(str(configuration_path))
+def _upgrade(connection: Connection, configuration_path: Path | None) -> None:
+    configuration = Config(str(configuration_path)) if configuration_path else Config()
+    if configuration_path is None:
+        configuration.set_main_option(
+            "script_location",
+            str(Path(__file__).with_name("migrations")),
+        )
     configuration.attributes["connection"] = connection
     command.upgrade(configuration, "head")

@@ -67,6 +67,8 @@ class Runner:
                 "title": "Detail title",
                 "duration": 182,
                 "thumbnail": "https://img/detail",
+                "artist": "Detail artist",
+                "channel_id": "UCdetail",
                 "uploader": "Uploader",
                 "upload_date": "20260924",
             }
@@ -108,6 +110,9 @@ def test_youtube_provider_translates_search_playlist_and_details() -> None:
 
         detail = await provider.track(track_reference)
         assert detail.title == "Detail title"
+        assert detail.artist_text == "Detail artist"
+        assert detail.artists[0].external_id == "UCdetail"
+        assert detail.artists[0].name == "Detail artist"
         assert detail.quality is ObservationQuality.DETAIL
         assert detail.release_date is not None
         await provider.close()

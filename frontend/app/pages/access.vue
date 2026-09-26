@@ -5,7 +5,8 @@ type AccessGrant = AccessState["grants"][number];
 type AccessUser = AccessState["operators"][number];
 type DirectoryMember = DiscordMembers["members"][number] & { guildNames: string[] };
 
-useSeoMeta({ title: "Access | NaHÃ¶rMaar" });
+definePageMeta({ pageTransition: { name: "page", mode: "out-in" } });
+useSeoMeta({ title: "Access | NaHörMaar" });
 const core = useNuxtApp().$backendCore;
 const session = core.stores.useSessionStore();
 const access = core.workflows.access();
@@ -99,7 +100,21 @@ function roleLabel(role: AccessUser["role"] | undefined) {
 	return "Listener";
 }
 function displayUser(user: AccessUser) {
-	return user.profile.display_name ?? user.discord.username ?? user.discord.id;
+	const member = memberByDiscordId.value.get(user.discord.id);
+	return (
+		user.profile.display_name ??
+		member?.display_name ??
+		user.discord.username ??
+		member?.username ??
+		user.discord.id
+	);
+}
+function discordUsername(user: AccessUser) {
+	return (
+		user.discord.username ??
+		memberByDiscordId.value.get(user.discord.id)?.username ??
+		user.discord.id
+	);
 }
 function displayUserId(userId: string | null) {
 	if (!userId) return "System";
@@ -157,7 +172,7 @@ async function grant(discordId: string) {
 	directId.value = "";
 	toast.add({
 		title: "Listener added",
-		description: `${member?.display_name ?? identifier} can now use NaHÃ¶rMaar.`,
+		description: `${member?.display_name ?? identifier} can now use NaHörMaar.`,
 		icon: "i-lucide-user-check",
 		color: "success",
 	});
@@ -167,7 +182,7 @@ async function revoke(grant: AccessGrant) {
 	if (!(await access.revoke(discordId))) return;
 	toast.add({
 		title: "Listener removed",
-		description: `${displayUser(grant.user)} can no longer use NaHÃ¶rMaar.`,
+		description: `${displayUser(grant.user)} can no longer use NaHörMaar.`,
 		icon: "i-lucide-user-minus",
 		color: "neutral",
 	});
@@ -214,7 +229,7 @@ onScopeDispose(access.dispose);
 					</div>
 				</div>
 
-				<div v-else class="mx-auto w-full max-w-7xl space-y-8 pb-4 sm:pb-6">
+				<div v-else class="w-full space-y-8 pb-4 sm:pb-6">
 					<header>
 						<h1 class="text-2xl font-semibold text-highlighted">Listener access</h1>
 						<p class="mt-2 max-w-2xl text-sm text-muted">
@@ -331,7 +346,7 @@ onScopeDispose(access.dispose);
 											{{ displayUser(operator) }}
 										</p>
 										<p class="truncate text-xs text-muted">
-											@{{ operator.discord.username ?? operator.discord.id }}
+											@{{ discordUsername(operator) }}
 										</p>
 									</div>
 									<UBadge
@@ -403,14 +418,14 @@ onScopeDispose(access.dispose);
 													{{ member.display_name }}
 												</p>
 												<p class="truncate text-xs text-muted">
-													@{{ member.username }} Â·
+													@{{ member.username }} ·
 													{{ member.guildNames.join(", ") }}
 												</p>
 											</div>
 											<UButton
 												:label="
 													isPending(member.discord_id)
-														? 'Addingâ€¦'
+														? 'Adding…'
 														: 'Allow'
 												"
 												:icon="
@@ -475,7 +490,7 @@ onScopeDispose(access.dispose);
 									/>
 									<UButton
 										type="submit"
-										:label="isPending(directId.trim()) ? 'Addingâ€¦' : 'Add'"
+										:label="isPending(directId.trim()) ? 'Adding…' : 'Add'"
 										icon="i-lucide-user-plus"
 										:disabled="
 											!directId.trim() ||

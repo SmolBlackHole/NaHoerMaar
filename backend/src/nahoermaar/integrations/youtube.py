@@ -198,13 +198,19 @@ def _video_track(raw: object, *, quality: ObservationQuality) -> ProviderTrack |
     }:
         return None
     artist = _text(value.get("artist"))
+    artist_identity = _text(value.get("channel_id")) or _text(value.get("uploader_id"))
+    artists = (
+        (ProviderArtist(ProviderName.YOUTUBE, artist_identity, artist),)
+        if artist is not None and artist_identity is not None
+        else ()
+    )
     return ProviderTrack(
         ProviderName.YOUTUBE,
         external_id,
         f"https://www.youtube.com/watch?v={external_id}",
         title,
         artist,
-        (),
+        artists,
         _duration(value.get("duration")),
         _thumbnail(value.get("thumbnail") or value.get("thumbnails")),
         _text(value.get("uploader")) or _text(value.get("channel")),

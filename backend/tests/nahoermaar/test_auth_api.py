@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 import logging
 import os
 from pathlib import Path
+from typing import cast
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -27,6 +28,7 @@ from nahoermaar.config import AuthSettings, Settings
 from nahoermaar.database.core import Database
 from nahoermaar.database.schema import Base
 from nahoermaar.database.uow import UnitOfWork
+from nahoermaar.integrations.discord import DiscordGateway
 from nahoermaar.messaging import MessageBus
 from nahoermaar.listening.service import ListeningService
 from nahoermaar.observability import ContextFilter
@@ -40,6 +42,7 @@ from nahoermaar.users.service import (
     ProvidedDiscordIdentity,
     SESSION_COOKIE,
 )
+from nahoermaar.users.domain import DiscordMember
 from nahoermaar.views.profile import ProfileView
 from nahoermaar.views.recent import RecentListeningView
 
@@ -61,6 +64,20 @@ class Provider:
         assert code == "oauth-code"
         assert verifier == self.verifier
         return ProvidedDiscordIdentity("9", "Owner", None)
+
+
+class Gateway:
+    def members(self) -> tuple[DiscordMember, ...]:
+        return (
+            DiscordMember(
+                "9",
+                "owner",
+                "Andrey",
+                "https://cdn.discordapp.test/owner.png",
+                "1",
+                "Spoon's server",
+            ),
+        )
 
 
 def _database() -> Database:
@@ -120,6 +137,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
         profiles,
         recent,
         logs,
+        gateway=cast(DiscordGateway, Gateway()),
     )
     app = create_app(application)
     contract = app.openapi()
@@ -182,6 +200,10 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             own_profile = await client.get(f"/api/users/{current.user.id}")
             assert own_profile.status_code == 200
             assert own_profile.json()["id"] == str(current.user.id)
+            assert own_profile.json()["discord"]["display_name"] == "Andrey"
+            assert own_profile.json()["discord"]["avatar_url"] == (
+                "https://cdn.discordapp.test/owner.png"
+            )
             assert own_profile.json()["statistics"]["user_id"] == str(current.user.id)
             assert own_profile.json()["recent_tracks"] == []
             current_profile = await client.get("/api/users/me")
@@ -261,8 +283,18 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             assert queued.json()["player"]["queue"][0]["request"][
                 "requested_by"
             ] == str(current.user.id)
+            contributor = queued.json()["player"]["queue"][0]["request"]["contributor"]
+            assert contributor == {
+                "user_id": str(current.user.id),
+                "display_name": "Owner",
+                "pixabot": None,
+                "discord_id": "9",
+                "discord_username": "Owner",
+                "discord_avatar_hash": None,
+            }
             request_id = queued.json()["player"]["queue"][0]["request"]["id"]
             playback_id = uuid4()
+            prior_playback_id = uuid4()
             async with units() as work:
                 await work.session.execute(
                     insert(Base.metadata.tables["playback_records"]).values(
@@ -276,7 +308,36 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
                         end_reason="completed",
                     )
                 )
+                await work.session.execute(
+                    insert(Base.metadata.tables["playback_records"]).values(
+                        id=prior_playback_id,
+                        session_id=application.player.state.session.id,
+                        request_id=request_id,
+                        started_at=NOW - timedelta(seconds=60),
+                        audio_seconds=50.0,
+                        group_audio_seconds=48.0,
+                        ended_at=NOW - timedelta(seconds=10),
+                        end_reason="completed",
+                    )
+                )
+                await work.session.execute(
+                    insert(Base.metadata.tables["playback_listeners"]).values(
+                        playback_id=prior_playback_id,
+                        user_id=current.user.id,
+                        audio_seconds=40.0,
+                        first_heard_at=NOW - timedelta(seconds=60),
+                        last_heard_at=NOW - timedelta(seconds=20),
+                    )
+                )
                 await work.commit()
+            enriched_overview = await client.get("/api/statistics/overview")
+            assert enriched_overview.status_code == 200
+            top_listener = enriched_overview.json()["top_listeners"][0]
+            assert top_listener["discord_username"] == "Owner"
+            assert top_listener["discord_display_name"] == "Andrey"
+            assert top_listener["discord_avatar_url"] == (
+                "https://cdn.discordapp.test/owner.png"
+            )
             recent = await client.get("/api/listening/recent", params={"limit": 1})
             assert recent.status_code == 200
             assert recent.json() == [
@@ -290,6 +351,17 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
                     "duration_seconds": 180.0,
                     "origin": "manual",
                     "requested_by": str(current.user.id),
+                    "source_id": None,
+                    "source_url": None,
+                    "source_provider": None,
+                    "contributor": {
+                        "user_id": str(current.user.id),
+                        "display_name": "Owner",
+                        "pixabot": None,
+                        "discord_id": "9",
+                        "discord_username": "Owner",
+                        "discord_avatar_hash": None,
+                    },
                     "started_at": NOW.isoformat().replace("+00:00", "Z"),
                     "ended_at": (NOW + timedelta(seconds=42))
                     .isoformat()
@@ -297,6 +369,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
                     "end_reason": "completed",
                     "audio_seconds": 42.0,
                     "group_audio_seconds": 40.0,
+                    "play_count": 2,
                 }
             ]
             change = await anext(events)
@@ -307,6 +380,10 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             assert change.data.causation_id is not None
             assert change.data.causation_id != change.data.message_id
             assert change.data.state.queue[0].request.requested_by == current.user.id
+            assert change.data.state.queue[0].request.contributor is not None
+            assert (
+                change.data.state.queue[0].request.contributor.display_name == "Owner"
+            )
             replayed = await client.post(
                 "/api/player/queue",
                 headers=headers,
@@ -319,6 +396,33 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             assert replayed.json()["replayed"] is True
             assert len(replayed.json()["player"]["queue"]) == 1
 
+            cleared = await client.post(
+                "/api/player/queue/clear",
+                headers=headers,
+                json={
+                    "operation_id": str(uuid4()),
+                    "expected_queue_revision": replayed.json()["player"][
+                        "queue_revision"
+                    ],
+                    "requested_by": str(current.user.id),
+                },
+            )
+            assert cleared.status_code == 200
+            assert cleared.json()["player"]["queue"] == []
+            assert cleared.json()["outcome"]["removed_count"] == 1
+            await anext(events)
+            restored = await client.post(
+                "/api/player/queue/undo",
+                headers=headers,
+                json={
+                    "operation_id": str(uuid4()),
+                    "undo_id": cleared.json()["outcome"]["undo_id"],
+                },
+            )
+            assert restored.status_code == 200
+            assert len(restored.json()["player"]["queue"]) == 1
+            await anext(events)
+
             profile = await client.put(
                 "/api/users/me/profile",
                 headers=headers,
@@ -328,6 +432,19 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             assert profile.json()["profile"]["display_name"] == "Local owner"
             assert profile.json()["discord"]["username"] == "Owner"
             assert profile.json()["statistics"]["user_id"] == str(current.user.id)
+
+            played = await client.post(
+                "/api/player/play",
+                headers=headers,
+                json={"operation_id": str(uuid4())},
+            )
+            assert played.status_code == 200
+            runtime = played.json()["player"]["runtime"]
+            assert runtime["phase"] == "starting"
+            assert runtime["current"]["id"] == request_id
+            assert runtime["current"]["track"]["title"] == "API track"
+            assert runtime["current"]["contributor"]["display_name"] == "Local owner"
+            assert runtime["current"]["contributor"]["pixabot"] == "12ab"
 
             operator = await client.put("/api/access/9", headers=headers)
             assert operator.status_code == 409
@@ -343,7 +460,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             assert access_state.json()["grants"][0]["user"]["discord"]["id"] == "7"
             members = await client.get("/api/access/members")
             assert members.status_code == 200
-            assert members.json() == {"members": []}
+            assert members.json()["members"][0]["display_name"] == "Andrey"
             granted_user_id = access_state.json()["grants"][0]["user"]["id"]
             granted_profile = await client.get(f"/api/users/{granted_user_id}")
             assert granted_profile.status_code == 200

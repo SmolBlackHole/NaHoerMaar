@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "reka-ui";
-import { usePlayerStore } from "~/stores/player";
 
 useSeoMeta({ title: "Player | NaHörMaar" });
-const player = usePlayerStore();
+const player = useNuxtApp().$backendCore.stores.usePlayerStore();
 const { icons } = useTheme();
 const route = useRoute();
 const router = useRouter();
@@ -51,7 +50,7 @@ async function openQueue() {
 								<UIcon :name="tab.icon" class="size-5 shrink-0" />
 								{{ tab.label }}
 								<span v-if="tab.value === 'queue'" class="tab-count">{{
-									player.snapshot?.upcoming.length ?? 0
+									player.state?.queue.length ?? 0
 								}}</span>
 							</TabsTrigger>
 						</TabsList>

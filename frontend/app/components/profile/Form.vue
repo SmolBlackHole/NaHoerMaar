@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import type { ProfileUpdate, UserProfile } from "~/core/models/account";
-import { randomAvatar } from "#shared/profile";
+import avatars from "~/config/avatars.json";
+
+function randomAvatar(previous?: string): string {
+	const choices = avatars.filter((id) => id !== previous);
+	return choices[Math.floor(Math.random() * choices.length)]!;
+}
 
 const props = withDefaults(
 	defineProps<{

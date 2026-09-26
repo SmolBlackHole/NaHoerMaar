@@ -343,6 +343,11 @@ class AccessService:
                 discord_ids
             )
 
+    async def users(self, user_ids: Iterable[UserId]) -> dict[UserId, User]:
+        """Return user projections needed by authenticated application views."""
+        async with self._units() as work:
+            return await UserRepository(work.session).get_many(user_ids)
+
     async def require_admin(self, user_id: UserId) -> User:
         user = await self.require_access(user_id)
         if user.role is None or not user.role.privileged:

@@ -1,28 +1,13 @@
 <script setup lang="ts">
 import { useTheme } from "~/composables/useTheme";
 import { useThemeEffects } from "~/composables/useThemeEffects";
-import { usePlayerStore } from "~/stores/player";
 
 useThemeEffects();
 usePlayerNotifications();
-const player = usePlayerStore();
-const radio = useRadioPreviewStore();
-const profile = useProfileStore();
-// Remaining legacy player and settings views still use this session store.
-profile.lost("signed_out");
-onMounted(profile.restore);
+const core = useNuxtApp().$backendCore;
+const session = core.stores.useSessionStore();
 const settings = useSettingsStore();
 const toast = useToast();
-watch(
-	() =>
-		profile.status === "authenticated" && profile.profileComplete ? profile.profile?.id : null,
-	(signedIn) => {
-		player.dispose();
-		radio.dispose();
-		if (signedIn) player.connect();
-	},
-	{ flush: "sync", immediate: true },
-);
 watch(
 	() => settings.error,
 	(description) => {
@@ -44,10 +29,6 @@ watch(
 		else toast.remove("appearance-save");
 	},
 );
-onBeforeUnmount(() => {
-	player.dispose();
-	profile.lost("signed_out");
-});
 
 const { icons } = useTheme();
 const open = ref(false);
@@ -74,12 +55,12 @@ const links = computed(() => [
 		label: "Overview",
 		"aria-label": "Overview",
 		icon: icons.value.layoutDashboard,
-		to: "/dashboard",
+		to: "/overview",
 		onSelect: () => {
 			open.value = false;
 		},
 	},
-	...(profile.session?.is_admin
+	...(["owner", "admin"].includes(session.account?.role ?? "")
 		? [
 				{
 					label: "Access",

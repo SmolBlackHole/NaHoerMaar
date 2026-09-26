@@ -60,6 +60,7 @@ class RankedArtist:
 @dataclass(frozen=True, slots=True)
 class RankedListener:
     user_id: UserId
+    discord_id: str
     display_name: str | None
     discord_username: str | None
     pixabot: str | None
@@ -444,6 +445,7 @@ class StatisticsRepository:
                 await self._session.execute(
                     select(
                         self._users.c.id,
+                        self._discord.c.discord_id,
                         self._profiles.c.display_name,
                         self._profiles.c.pixabot,
                         self._discord.c.username,
@@ -458,6 +460,7 @@ class StatisticsRepository:
                     )
                     .group_by(
                         self._users.c.id,
+                        self._discord.c.discord_id,
                         self._profiles.c.display_name,
                         self._profiles.c.pixabot,
                         self._discord.c.username,
@@ -472,6 +475,7 @@ class StatisticsRepository:
         return tuple(
             RankedListener(
                 user_id=UserId(row["id"]),
+                discord_id=row["discord_id"],
                 display_name=row["display_name"],
                 discord_username=row["username"],
                 pixabot=row["pixabot"],

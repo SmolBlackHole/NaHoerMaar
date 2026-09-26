@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { usePlayerStore } from "~/stores/player";
-const player = usePlayerStore();
+const player = useNuxtApp().$backendCore.stores.usePlayerStore();
 const { icons } = useTheme();
 const visibility = useDocumentVisibility();
 const mounted = useMounted();
@@ -8,7 +7,7 @@ const mounted = useMounted();
 
 <template>
 	<div class="connection-controls">
-		<UTooltip v-if="player.uncertain" text="Check the result of the last action">
+		<UTooltip v-if="player.uncertainOperation" text="Check the result of the last action">
 			<UButton
 				label="Check result"
 				aria-label="Check the result of the last action"
@@ -16,10 +15,10 @@ const mounted = useMounted();
 				color="neutral"
 				variant="ghost"
 				class="recovery-button"
-				:loading="player.pending"
-				:aria-busy="player.pending"
-				:disabled="player.pending || player.connection !== 'live'"
-				@click="player.retry()"
+				:loading="player.isPending()"
+				:aria-busy="player.isPending()"
+				:disabled="player.isPending() || player.connection !== 'live'"
+				@click="player.retryUncertain()"
 			/>
 		</UTooltip>
 		<UTooltip
@@ -44,7 +43,7 @@ const mounted = useMounted();
 						? 'Connecting to the bot'
 						: 'Reconnect to the bot'
 				"
-				@click="player.connect()"
+				@click="player.reconnect()"
 			/>
 		</UTooltip>
 		<span

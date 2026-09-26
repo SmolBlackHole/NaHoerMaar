@@ -57,7 +57,7 @@ def create_app(application: Application | None = None) -> FastAPI:
     app.include_router(catalog_router(container.catalog))
     app.include_router(player_router(container))
     app.include_router(listening_router(container.recent))
-    app.include_router(statistics_router(container.statistics))
+    app.include_router(statistics_router(container))
     app.include_router(events_router(container))
     app.include_router(logs_router(container))
 

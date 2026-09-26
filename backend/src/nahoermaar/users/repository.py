@@ -339,6 +339,16 @@ class UserRepository:
         row = await self._get_row(user_id)
         return _to_domain(row) if row is not None else None
 
+    async def get_many(self, user_ids: Iterable[UserId]) -> dict[UserId, User]:
+        """Load several complete users without repeating aggregate queries."""
+        identifiers = tuple(dict.fromkeys(user_ids))
+        if not identifiers:
+            return {}
+        result = await self._session.scalars(
+            _aggregate_select().where(_UserRow.id.in_(identifiers))
+        )
+        return {UserId(row.id): _to_domain(row) for row in result.unique()}
+
     async def get_by_discord_id(
         self, discord_id: str, *, for_update: bool = False
     ) -> User | None:

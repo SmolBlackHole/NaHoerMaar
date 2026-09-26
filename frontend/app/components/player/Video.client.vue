@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import { loadYouTube, type YouTubePlayer } from "~/player/youtube";
-import type { PlaybackState } from "#shared/player";
 const props = defineProps<{
 	videoId: string;
 	title: string;
 	getPosition: () => number;
 	active: boolean;
-	state: PlaybackState;
+	state: string;
 	interactive: boolean;
 	volume: number;
 }>();
@@ -28,7 +27,7 @@ function updateInteraction() {
 }
 function followPlayer() {
 	if (!ready.value || !embed) return;
-	if (props.active && props.state === "playing") embed.playVideo();
+	if (props.active && ["playing", "transitioning"].includes(props.state)) embed.playVideo();
 	else embed.pauseVideo();
 }
 function applyVolume() {

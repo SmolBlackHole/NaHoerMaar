@@ -11,12 +11,13 @@ from uuid import UUID
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, ConfigDict
 
+from nahoermaar.bootstrap import Application
+from nahoermaar.statistics.repository import RankedListener
 from nahoermaar.statistics.service import (
     StatisticsPeriod,
     StatisticsReport,
-    StatisticsService,
 )
-from nahoermaar.users.domain import UserId
+from nahoermaar.users.domain import DiscordMember, UserId
 
 from .middleware import authenticated
 
@@ -84,6 +85,8 @@ class RankedListenerView(BaseModel):
     user_id: UUID
     display_name: str | None
     discord_username: str | None
+    discord_display_name: str | None
+    discord_avatar_url: str | None
     pixabot: str | None
     plays: int
     listening_seconds: float
@@ -101,7 +104,7 @@ class StatisticsView(BaseModel):
     top_listeners: tuple[RankedListenerView, ...]
 
 
-def router(statistics: StatisticsService) -> APIRouter:
+def router(application: Application) -> APIRouter:
     routes = APIRouter(prefix="/api/statistics", tags=["statistics"])
 
     @routes.get("/overview")
@@ -110,7 +113,10 @@ def router(statistics: StatisticsService) -> APIRouter:
         period: Annotated[StatisticsPeriod, Query()] = StatisticsPeriod.DAYS_7,
     ) -> StatisticsView:
         authenticated(request)
-        return statistics_view(await statistics.overview(period))
+        return statistics_view(
+            await application.statistics.overview(period),
+            _discord_members(application),
+        )
 
     @routes.get("/users/{user_id}")
     async def user_statistics(
@@ -119,12 +125,21 @@ def router(statistics: StatisticsService) -> APIRouter:
         period: Annotated[StatisticsPeriod, Query()] = StatisticsPeriod.DAYS_30,
     ) -> StatisticsView:
         authenticated(request)
-        return statistics_view(await statistics.user(UserId(user_id), period))
+        return statistics_view(
+            await application.statistics.user(UserId(user_id), period),
+            _discord_members(application),
+        )
 
     return routes
 
 
-def statistics_view(report: StatisticsReport) -> StatisticsView:
+def statistics_view(
+    report: StatisticsReport,
+    discord_members: tuple[DiscordMember, ...] = (),
+) -> StatisticsView:
+    members_by_id: dict[str, DiscordMember] = {}
+    for member in discord_members:
+        members_by_id.setdefault(member.discord_id, member)
     totals = report.totals
     return StatisticsView(
         user_id=report.user_id,
@@ -180,14 +195,28 @@ def statistics_view(report: StatisticsReport) -> StatisticsView:
             for item in report.top_artists
         ),
         top_listeners=tuple(
-            RankedListenerView(
-                user_id=item.user_id,
-                display_name=item.display_name,
-                discord_username=item.discord_username,
-                pixabot=item.pixabot,
-                plays=item.plays,
-                listening_seconds=item.listening_seconds,
-            )
+            _ranked_listener_view(item, members_by_id.get(item.discord_id))
             for item in report.top_listeners
         ),
+    )
+
+
+def _discord_members(application: Application) -> tuple[DiscordMember, ...]:
+    return application.gateway.members() if application.gateway else ()
+
+
+def _ranked_listener_view(
+    listener: RankedListener,
+    member: DiscordMember | None,
+) -> RankedListenerView:
+    return RankedListenerView(
+        user_id=listener.user_id,
+        display_name=listener.display_name,
+        discord_username=listener.discord_username
+        or (member.username if member else None),
+        discord_display_name=member.display_name if member else None,
+        discord_avatar_url=member.avatar_url if member else None,
+        pixabot=listener.pixabot,
+        plays=listener.plays,
+        listening_seconds=listener.listening_seconds,
     )

@@ -9,10 +9,8 @@
 		"node": ">=24.11.0"
 	},
 	"scripts": {
-		"api:generate": "python ../scripts/api_contract.py",
-		"api:check": "python ../scripts/api_contract.py --check",
-		"api:core:generate": "python ../scripts/nahoermaar_api_contract.py",
-		"api:core:check": "python ../scripts/nahoermaar_api_contract.py --check",
+		"api:generate": "python ../scripts/nahoermaar_api_contract.py",
+		"api:check": "python ../scripts/nahoermaar_api_contract.py --check",
 		"predev": "node ../scripts/licenses.mjs",
 		"dev": "nuxt dev --host 127.0.0.1 --port 3000 --dotenv ../.env",
 		"prebuild": "node ../scripts/licenses.mjs",
@@ -20,7 +18,7 @@
 		"preview": "nuxt preview --host 127.0.0.1",
 		"postinstall": "nuxt prepare",
 		"typecheck": "nuxt typecheck && tsc --noEmit -p test/server/tsconfig.json && tsc --noEmit -p test/core/tsconfig.json",
-		"check": "npm run api:check && npm run api:core:check && npm run test && npm run typecheck && npm run build",
+		"check": "npm run api:check && npm run test && npm run typecheck && npm run build",
 		"test": "vitest run"
 	},
 	"dependencies": {

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { formatTime, trackTitle, type RecentTrack } from "#shared/player";
-import { usePlayerStore } from "~/stores/player";
-defineProps<{ entries: RecentTrack[] }>();
-const player = usePlayerStore();
+import { formatTime } from "~/core/models/player";
+import type { RecentPlayback } from "~/core/models/listening";
+
+defineProps<{ entries: RecentPlayback[] }>();
+const player = useNuxtApp().$backendCore.stores.usePlayerStore();
 const { icons } = useTheme();
 function playedAt(value: string) {
 	return new Intl.DateTimeFormat(undefined, {
@@ -12,8 +13,12 @@ function playedAt(value: string) {
 		minute: "2-digit",
 	}).format(new Date(value));
 }
-async function requeue(item: RecentTrack) {
-	await player.addMany([item.entry.track_id]);
+function artistUrl(item: RecentPlayback) {
+	const artist = item.artist_names.join(", ");
+	return artist ? `https://music.youtube.com/search?q=${encodeURIComponent(artist)}` : null;
+}
+function requeue(item: RecentPlayback) {
+	return player.add([{ track_id: item.track_id, source_id: null }]);
 }
 </script>
 
@@ -22,64 +27,85 @@ async function requeue(item: RecentTrack) {
 		<ol v-if="entries.length" aria-label="Recently played tracks" class="space-y-1">
 			<li
 				v-for="item in entries"
-				:key="item.id"
+				:key="item.playback_id"
 				class="recent-row flex flex-wrap items-center gap-3 py-4"
 			>
-				<PlayerTrackArtwork :entry="item.entry" class="recent-cover" />
+				<PlayerTrackArtwork
+					:entry="{ artwork_url: item.artwork_url }"
+					class="recent-cover"
+				/>
 				<div class="recent-track min-w-0 flex-1 basis-32">
-					<UTooltip :text="`Open ${trackTitle(item.entry)} in a new tab`">
+					<UTooltip v-if="item.source_url" :text="`Open ${item.title} in a new tab`">
 						<a
-							:href="item.entry.source_url"
+							:href="item.source_url"
 							target="_blank"
 							rel="noopener noreferrer"
-							class="recent-title text-highlighted block truncate text-sm font-medium hover:underline"
-							>{{ trackTitle(item.entry) }}</a
+							class="recent-title block truncate text-sm font-medium text-highlighted hover:underline"
 						>
+							{{ item.title }}
+						</a>
 					</UTooltip>
-					<p class="recent-details text-muted mt-1 flex items-center gap-3 text-xs">
-						<PlayerArtistLink :entry="item.entry" class="truncate" />
-						<span class="recent-mobile-duration shrink-0 tabular-nums">{{
-							formatTime(item.entry.duration_seconds)
-						}}</span>
+					<p
+						v-else
+						class="recent-title block truncate text-sm font-medium text-highlighted"
+					>
+						{{ item.title }}
+					</p>
+					<p class="recent-details mt-1 flex items-center gap-3 text-xs text-muted">
+						<a
+							v-if="artistUrl(item)"
+							:href="artistUrl(item)!"
+							target="_blank"
+							rel="noopener noreferrer"
+							class="truncate hover:text-highlighted hover:underline"
+						>
+							{{ item.artist_names.join(", ") }}
+						</a>
+						<span v-else class="truncate">Unknown artist</span>
+						<span class="recent-mobile-duration shrink-0 tabular-nums">
+							{{ formatTime(item.duration_seconds) }}
+						</span>
 						<UTooltip
 							v-if="item.play_count > 1"
-							text="Playback starts in the last 100 history entries"
+							text="Playback starts in the latest 100 history entries"
 						>
 							<span class="shrink-0 tabular-nums">{{ item.play_count }} plays</span>
 						</UTooltip>
 					</p>
 				</div>
-				<UTooltip
-					v-if="item.entry.origin === 'radio'"
-					:text="`Radio started by ${item.entry.added_by?.name ?? 'a listener'}`"
-				>
-					<span class="recent-radio text-xs text-muted"
-						>Radio · {{ item.entry.added_by?.name ?? "a listener" }}</span
-					>
-				</UTooltip>
-				<span class="recent-duration text-muted text-xs tabular-nums">{{
-					formatTime(item.entry.duration_seconds)
-				}}</span>
+				<PlayerContributor
+					v-if="item.origin === 'radio'"
+					:contributor="item.contributor"
+					origin="radio"
+					class="recent-radio"
+				/>
+				<span class="recent-duration text-xs tabular-nums text-muted">
+					{{ formatTime(item.duration_seconds) }}
+				</span>
 				<time
-					:datetime="item.played_at"
-					class="text-muted hidden text-xs tabular-nums lg:block lg:w-36"
-					>{{ playedAt(item.played_at) }}</time
+					:datetime="item.ended_at ?? item.started_at"
+					class="hidden text-xs tabular-nums text-muted lg:block lg:w-36"
 				>
-				<div class="recent-actions flex items-center ml-auto">
-					<UTooltip :text="`Queue ${trackTitle(item.entry)} again`">
+					{{ item.ended_at ? playedAt(item.ended_at) : "Playing now" }}
+				</time>
+				<div class="recent-actions ml-auto flex items-center">
+					<UTooltip :text="`Queue ${item.title} again`">
 						<UButton
 							:icon="icons.plus"
 							color="neutral"
 							variant="ghost"
-							:aria-label="`Queue ${trackTitle(item.entry)} again`"
+							:aria-label="`Queue ${item.title} again`"
 							class="recent-add ml-auto size-11 shrink-0 justify-center"
-							:disabled="!player.enabled"
-							:loading="player.isAdding(item.entry.track_id)"
-							:aria-busy="player.isAdding(item.entry.track_id)"
+							:disabled="!player.canControl"
+							:loading="player.isPending('queue.add')"
 							@click="requeue(item)"
 						/>
 					</UTooltip>
-					<PlayerRadioAction :entry="item.entry" />
+					<PlayerRadioAction
+						v-if="item.source_id"
+						:source-id="item.source_id"
+						:title="item.title"
+					/>
 				</div>
 			</li>
 		</ol>
@@ -133,19 +159,12 @@ async function requeue(item: RecentTrack) {
 		gap: 0.25rem 0.75rem;
 		margin-top: 0.375rem;
 	}
-	.recent-details > a,
-	.recent-details > span:first-child {
-		flex-basis: 100%;
-	}
 	.recent-mobile-duration {
 		display: inline;
 	}
 	.recent-duration,
 	.recent-row > time {
 		display: none;
-	}
-	.recent-add {
-		align-self: center;
 	}
 }
 </style>

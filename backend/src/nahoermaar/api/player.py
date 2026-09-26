@@ -24,6 +24,7 @@ from nahoermaar.player.domain import (
     OperationId,
     PlayerState,
     QueueEntryId,
+    RadioRun,
     RadioSeed,
     TrackRequest,
     UndoId,
@@ -52,6 +53,7 @@ from nahoermaar.player.events import (
     UndoQueue,
 )
 from nahoermaar.player.playback import PlaybackPhase, PlaybackRuntimeState
+from nahoermaar.users.domain import User, UserId
 
 from .catalog import TrackView, track_view
 from .middleware import authenticated
@@ -82,7 +84,7 @@ class MoveQueueInput(RevisionInput):
 
 
 class ClearQueueInput(RevisionInput):
-    only_mine: bool = False
+    requested_by: UUID | None = None
 
 
 class UndoQueueInput(View):
@@ -136,6 +138,15 @@ class VoiceChannelView(View):
     can_speak: bool
 
 
+class ContributorView(View):
+    user_id: UUID
+    display_name: str
+    pixabot: str | None
+    discord_id: str
+    discord_username: str | None
+    discord_avatar_hash: str | None
+
+
 class RequestView(View):
     id: UUID
     origin: str
@@ -143,6 +154,7 @@ class RequestView(View):
     requested_by: UUID | None
     radio_run_id: UUID | None
     source_id: UUID | None
+    contributor: ContributorView | None
     track: TrackView
 
 
@@ -169,6 +181,7 @@ class RadioView(View):
     seed_discovery_snapshot_id: UUID | None
     continuation: str | None
     error: str | None
+    initiator: ContributorView | None
 
 
 class VoiceRuntimeView(View):
@@ -298,7 +311,7 @@ def router(application: Application) -> APIRouter:
                 _session_id(application),
                 OperationId(body.operation_id),
                 body.expected_queue_revision,
-                current.user.id if body.only_mine else None,
+                UserId(body.requested_by) if body.requested_by is not None else None,
             ),
             MessageContext(actor_id=current.user.id),
         )
@@ -527,18 +540,41 @@ async def player_view(
         )
     )
     track_ids = {entry.track_id for entry in state.queue.entries}
-    if runtime.request is not None:
-        track_ids.add(runtime.request.track_id)
+    checkpoint_request = state.checkpoint.request
+    current_request = checkpoint_request or runtime.request
+    if current_request is not None:
+        track_ids.add(current_request.track_id)
     tracks = await application.catalog.tracks(track_ids)
+    radio_run = state.radio
+    contributor_ids = {
+        entry.request.requested_by
+        for entry in state.queue.entries
+        if entry.request.requested_by is not None
+    }
+    if current_request is not None and current_request.requested_by is not None:
+        contributor_ids.add(current_request.requested_by)
+    if radio_run is not None:
+        contributor_ids.add(radio_run.initiated_by)
+    contributors = await application.access.users(contributor_ids)
     queue = tuple(
         QueueEntryView(
             id=entry.id,
             position=entry.position,
-            request=_request_view(entry.request, tracks),
+            request=_request_view(entry.request, tracks, contributors, radio_run),
         )
         for entry in state.queue.entries
     )
     run = state.radio if state.radio is not None and state.radio.active else None
+    runtime_matches_current = (
+        current_request is not None
+        and runtime.request is not None
+        and runtime.request.id == current_request.id
+    )
+    runtime_phase = (
+        runtime.phase
+        if current_request is None or runtime_matches_current
+        else PlaybackPhase.STARTING
+    )
     return PlayerView(
         session_id=state.session.id,
         revision=state.session.revision,
@@ -572,22 +608,31 @@ async def player_view(
                 seed_discovery_snapshot_id=run.seed.discovery_snapshot_id,
                 continuation=run.continuation,
                 error=run.error,
+                initiator=_contributor_view(contributors.get(run.initiated_by)),
             )
             if run is not None
             else None
         ),
         runtime=PlaybackRuntimeView(
-            phase=runtime.phase.value,
+            phase=runtime_phase.value,
             current=(
-                _request_view(runtime.request, tracks)
-                if runtime.request is not None
+                _request_view(current_request, tracks, contributors, radio_run)
+                if current_request is not None
                 else None
             ),
-            playback_id=runtime.playback_id,
-            attempt_id=runtime.attempt_id,
-            position_seconds=runtime.position_seconds,
-            position_updated_at=runtime.position_updated_at,
-            duration_seconds=runtime.duration_seconds,
+            playback_id=runtime.playback_id if runtime_matches_current else None,
+            attempt_id=runtime.attempt_id if runtime_matches_current else None,
+            position_seconds=(
+                runtime.position_seconds
+                if runtime_matches_current
+                else state.checkpoint.position_seconds
+            ),
+            position_updated_at=(
+                runtime.position_updated_at if runtime_matches_current else None
+            ),
+            duration_seconds=(
+                runtime.duration_seconds if runtime_matches_current else None
+            ),
             voice=VoiceRuntimeView(
                 phase=runtime.voice.phase.value,
                 channel_id=(
@@ -606,12 +651,21 @@ async def player_view(
 def _request_view(
     request: TrackRequest,
     tracks: dict[TrackId, Track],
+    contributors: dict[UserId, User],
+    radio_run: RadioRun | None,
 ) -> RequestView:
     track = tracks.get(request.track_id)
     if track is None:
         raise RuntimeError(
             f"Track is missing from player projection: {request.track_id}"
         )
+    contributor_id = request.requested_by
+    if (
+        contributor_id is None
+        and radio_run is not None
+        and request.radio_run_id == radio_run.id
+    ):
+        contributor_id = radio_run.initiated_by
     return RequestView(
         id=request.id,
         origin=request.origin.value,
@@ -619,5 +673,25 @@ def _request_view(
         requested_by=request.requested_by,
         radio_run_id=request.radio_run_id,
         source_id=request.source_id,
+        contributor=_contributor_view(
+            contributors.get(contributor_id) if contributor_id is not None else None
+        ),
         track=track_view(track),
+    )
+
+
+def _contributor_view(user: User | None) -> ContributorView | None:
+    if user is None:
+        return None
+    return ContributorView(
+        user_id=user.id,
+        display_name=(
+            user.profile.display_name
+            or user.discord.username
+            or f"Listener {str(user.id)[:8]}"
+        ),
+        pixabot=user.profile.pixabot,
+        discord_id=user.discord.discord_id,
+        discord_username=user.discord.username,
+        discord_avatar_hash=user.discord.avatar_hash,
     )

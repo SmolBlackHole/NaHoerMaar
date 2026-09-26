@@ -1,14 +1,12 @@
 <script setup lang="ts">
-import { usePlayerStore } from "~/stores/player";
-
 defineProps<{ collapsed?: boolean; compact?: boolean }>();
-const player = usePlayerStore();
+const player = useNuxtApp().$backendCore.stores.usePlayerStore();
 const { icons } = useTheme();
 const id = useId();
 const selected = ref("");
 const selectedGuild = ref("");
 const activeChannel = computed(() =>
-	player.channels.find((channel) => channel.id === player.snapshot?.channel_id),
+	player.channels.find((channel) => channel.id === player.state?.runtime.voice.channel_id),
 );
 const guildOptions = computed(() =>
 	Array.from(
@@ -16,7 +14,7 @@ const guildOptions = computed(() =>
 	).map(([value, label]) => ({ value, label })),
 );
 watch(
-	[() => player.snapshot?.channel_id, () => player.channels],
+	[() => player.state?.runtime.voice.channel_id, () => player.channels],
 	([channelId], previous) => {
 		const active = activeChannel.value;
 		if (active && (!selectedGuild.value || channelId !== previous?.[0])) {
@@ -53,12 +51,14 @@ const channelOptions = computed(() =>
 			disabled: !channel.can_connect || !channel.can_speak,
 		})),
 );
-const connected = computed(() => player.snapshot?.voice_state === "connected");
-const switching = computed(() => connected.value && selected.value !== player.snapshot?.channel_id);
+const connected = computed(() => player.state?.runtime.voice.phase === "connected");
+const switching = computed(
+	() => connected.value && selected.value !== player.state?.runtime.voice.channel_id,
+);
 const channelName = computed(
 	() =>
-		player.channels.find((channel) => channel.id === player.snapshot?.channel_id)?.name ??
-		"Discord",
+		player.channels.find((channel) => channel.id === player.state?.runtime.voice.channel_id)
+			?.name ?? "Discord",
 );
 const guildName = computed(
 	() =>
@@ -69,7 +69,7 @@ const guildName = computed(
 const status = computed(() => {
 	if (player.connection !== "live")
 		return player.connection === "connecting" ? "Connecting…" : "Offline";
-	if (player.snapshot?.voice_state === "connecting") return "Joining…";
+	if (player.state?.runtime.voice.phase === "connecting") return "Joining…";
 	return connected.value ? "Connected" : "Not connected";
 });
 </script>
@@ -156,7 +156,7 @@ const status = computed(() => {
 						item: 'min-h-11 items-center',
 						itemLabel: 'whitespace-normal',
 					}"
-					:disabled="!player.enabled || player.channelsLoading || !guildOptions.length"
+					:disabled="!player.canControl || player.channelsLoading || !guildOptions.length"
 					@update:model-value="chooseGuild"
 				/>
 				<label :for="`${id}-channel`" class="block text-xs text-muted">Voice channel</label>
@@ -173,7 +173,7 @@ const status = computed(() => {
 						item: 'min-h-11 items-center',
 						itemLabel: 'whitespace-normal',
 					}"
-					:disabled="!player.enabled || player.channelsLoading || !selectedGuild"
+					:disabled="!player.canControl || player.channelsLoading || !selectedGuild"
 				/>
 				<p v-if="player.channelError" role="status" class="text-error text-sm">
 					Couldn't load channels. Try refreshing.
@@ -200,27 +200,27 @@ const status = computed(() => {
 						color="neutral"
 						variant="outline"
 						:loading="
-							player.isPending('connection.join') ||
-							player.snapshot?.voice_state === 'connecting'
+							player.isPending('voice.join') ||
+							player.state?.runtime.voice.phase === 'connecting'
 						"
 						:aria-busy="
-							player.isPending('connection.join') ||
-							player.snapshot?.voice_state === 'connecting'
+							player.isPending('voice.join') ||
+							player.state?.runtime.voice.phase === 'connecting'
 						"
 						:disabled="
-							!player.enabled || !available?.can_connect || !available?.can_speak
+							!player.canControl || !available?.can_connect || !available?.can_speak
 						"
 						@click="player.join(selected)"
 					/>
 					<UButton
 						v-if="connected"
 						label="Leave"
-						:loading="player.isControlPending('leave')"
-						:aria-busy="player.isControlPending('leave')"
+						:loading="player.isPending('leave')"
+						:aria-busy="player.isPending('leave')"
 						:icon="icons.logOut"
 						color="neutral"
 						variant="ghost"
-						:disabled="!player.enabled"
+						:disabled="!player.canControl"
 						@click="player.leave()"
 					/>
 				</div>

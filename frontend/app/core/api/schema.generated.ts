@@ -809,15 +809,30 @@ export interface components {
             /** Expected Queue Revision */
             expected_queue_revision: number;
             /**
-             * Only Mine
-             * @default false
-             */
-            only_mine: boolean;
-            /**
              * Operation Id
              * Format: uuid
              */
             operation_id: string;
+            /** Requested By */
+            requested_by?: string | null;
+        };
+        /** ContributorView */
+        ContributorView: {
+            /** Discord Avatar Hash */
+            discord_avatar_hash: string | null;
+            /** Discord Id */
+            discord_id: string;
+            /** Discord Username */
+            discord_username: string | null;
+            /** Display Name */
+            display_name: string;
+            /** Pixabot */
+            pixabot: string | null;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
         };
         /** CoverageView */
         CoverageView: {
@@ -885,6 +900,10 @@ export interface components {
         DiscordView: {
             /** Avatar Hash */
             avatar_hash: string | null;
+            /** Avatar Url */
+            avatar_url: string | null;
+            /** Display Name */
+            display_name: string | null;
             /** Id */
             id: string;
             /** Synced At */
@@ -1213,6 +1232,7 @@ export interface components {
              * Format: uuid
              */
             initiated_by: string;
+            initiator: components["schemas"]["ContributorView"] | null;
             /** Seed Discovery Snapshot Id */
             seed_discovery_snapshot_id: string | null;
             /** Seed Kind */
@@ -1243,6 +1263,10 @@ export interface components {
         };
         /** RankedListenerView */
         RankedListenerView: {
+            /** Discord Avatar Url */
+            discord_avatar_url: string | null;
+            /** Discord Display Name */
+            discord_display_name: string | null;
             /** Discord Username */
             discord_username: string | null;
             /** Display Name */
@@ -1275,6 +1299,24 @@ export interface components {
              */
             track_id: string;
         };
+        /** RecentContributorView */
+        RecentContributorView: {
+            /** Discord Avatar Hash */
+            discord_avatar_hash: string | null;
+            /** Discord Id */
+            discord_id: string;
+            /** Discord Username */
+            discord_username: string | null;
+            /** Display Name */
+            display_name: string;
+            /** Pixabot */
+            pixabot: string | null;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+        };
         /** RecentPlaybackView */
         RecentPlaybackView: {
             /** Artist Names */
@@ -1283,19 +1325,19 @@ export interface components {
             artwork_url: string | null;
             /** Audio Seconds */
             audio_seconds: number;
+            contributor: components["schemas"]["RecentContributorView"] | null;
             /** Duration Seconds */
             duration_seconds: number | null;
             /** End Reason */
-            end_reason: string;
-            /**
-             * Ended At
-             * Format: date-time
-             */
-            ended_at: string;
+            end_reason: string | null;
+            /** Ended At */
+            ended_at: string | null;
             /** Group Audio Seconds */
             group_audio_seconds: number;
             /** Origin */
             origin: string;
+            /** Play Count */
+            play_count: number;
             /**
              * Playback Id
              * Format: uuid
@@ -1308,6 +1350,12 @@ export interface components {
             request_id: string;
             /** Requested By */
             requested_by: string | null;
+            /** Source Id */
+            source_id: string | null;
+            /** Source Provider */
+            source_provider: string | null;
+            /** Source Url */
+            source_url: string | null;
             /**
              * Started At
              * Format: date-time
@@ -1357,6 +1405,7 @@ export interface components {
         };
         /** RequestView */
         RequestView: {
+            contributor: components["schemas"]["ContributorView"] | null;
             /**
              * Id
              * Format: uuid

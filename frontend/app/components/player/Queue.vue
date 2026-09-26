@@ -1,67 +1,70 @@
 <script setup lang="ts">
-import Sortable, { type SortableEvent } from "sortablejs";
 import type { DropdownMenuItem } from "@nuxt/ui";
-import type { ListenerProfile } from "#shared/profile";
-import {
-	formatTime,
-	formatWait,
-	queueMoveTarget,
-	queueWaits,
-	trackTitle,
-	type QueueEntry,
-} from "#shared/player";
-import { usePlayerStore } from "~/stores/player";
-import { useProfileStore } from "~/stores/profile";
+import Sortable, { type SortableEvent } from "sortablejs";
+import { formatTime, trackSource, type Contributor, type QueueEntry } from "~/core/models/player";
 
-const player = usePlayerStore();
-const radio = useRadioPreviewStore();
-const profile = useProfileStore();
+const core = useNuxtApp().$backendCore;
+const player = core.stores.usePlayerStore();
+const session = core.stores.useSessionStore();
 const { icons } = useTheme();
+const { position } = usePlaybackPosition();
 const toast = useToast();
-const clearing = ref<{
-	revision: number;
-	contributor: ListenerProfile | null;
-	mine: boolean;
-	count: number;
-} | null>(null);
-const mine = computed(
-	() =>
-		player.snapshot?.upcoming.filter(
-			(entry) => !!profile.profile && entry.added_by?.id === profile.profile.id,
-		) ?? [],
+const queue = computed(() => player.state?.queue ?? []);
+const mine = computed(() =>
+	queue.value.filter(({ request }) => request.requested_by === session.account?.user_id),
 );
-const contributors = computed(() => {
-	const people = new Map<string, { profile: ListenerProfile; count: number }>();
-	for (const entry of player.snapshot?.upcoming ?? []) {
-		const person = entry.added_by;
-		if (!person || person.id === profile.profile?.id) continue;
-		const existing = people.get(person.id);
-		if (existing) existing.count++;
-		else people.set(person.id, { profile: person, count: 1 });
+type ClearTarget = {
+	requestedBy: string | null;
+	name: string | null;
+	count: number;
+	mine: boolean;
+};
+const clearing = ref<ClearTarget | null>(null);
+const placing = ref<{ id: string; position: number; ids: string[] } | null>(null);
+const radioEntry = ref<QueueEntry | null>(null);
+const list = ref<HTMLElement | null>(null);
+let sortable: Sortable | null = null;
+let drag: { id: string; revision: number; ids: string[] } | null = null;
+
+const otherContributors = computed(() => {
+	const contributors = new Map<string, { contributor: Contributor; count: number }>();
+	for (const { request } of queue.value) {
+		const contributor = request.contributor;
+		const userId = request.requested_by;
+		if (!contributor || !userId || userId === session.account?.user_id) continue;
+		const existing = contributors.get(userId);
+		if (existing) existing.count += 1;
+		else contributors.set(userId, { contributor, count: 1 });
 	}
-	return [...people.values()].sort((a, b) => a.profile.name.localeCompare(b.profile.name));
+	return [...contributors.values()].sort((left, right) =>
+		left.contributor.display_name.localeCompare(right.contributor.display_name),
+	);
 });
+function confirmClear(requestedBy: string | null, name: string | null, mine = false) {
+	const count = requestedBy
+		? queue.value.filter(({ request }) => request.requested_by === requestedBy).length
+		: queue.value.length;
+	if (count) clearing.value = { requestedBy, name, count, mine };
+}
 const removalItems = computed<DropdownMenuItem[][]>(() => {
 	const groups: DropdownMenuItem[][] = [
 		[
 			{
 				label: `Remove my tracks (${mine.value.length})`,
 				icon: icons.value.user,
-				disabled: !player.enabled || !mine.value.length,
-				onSelect: () => {
-					if (profile.profile) confirmClear(profile.profile);
-				},
+				disabled: !player.canControl || !mine.value.length,
+				onSelect: () => confirmClear(session.account?.user_id ?? null, null, true),
 			},
 		],
 	];
-	if (contributors.value.length)
+	if (otherContributors.value.length)
 		groups.push([
 			{ type: "label", label: "Remove by person" },
-			...contributors.value.map(({ profile: person, count }) => ({
-				label: `${person.name} (${count})`,
-				avatar: { src: `/avatars/${person.avatar}.png`, alt: "" },
-				disabled: !player.enabled,
-				onSelect: () => confirmClear(person),
+			...otherContributors.value.map(({ contributor, count }) => ({
+				label: `${contributor.display_name} (${count})`,
+				icon: icons.value.user,
+				disabled: !player.canControl,
+				onSelect: () => confirmClear(contributor.user_id, contributor.display_name),
 			})),
 		]);
 	groups.push([
@@ -69,8 +72,8 @@ const removalItems = computed<DropdownMenuItem[][]>(() => {
 			label: `Clear entire queue (${queue.value.length})`,
 			icon: icons.value.trash,
 			color: "error",
-			disabled: !player.enabled || !queue.value.length,
-			onSelect: () => confirmClear(null),
+			disabled: !player.canControl || !queue.value.length,
+			onSelect: () => confirmClear(null, null),
 		},
 	]);
 	return groups;
@@ -80,35 +83,59 @@ const clearTitle = computed(() => {
 	if (!target) return "";
 	const tracks = `${target.count} ${target.count === 1 ? "track" : "tracks"}`;
 	if (target.mine) return `Remove your ${tracks}?`;
-	return target.contributor
-		? `Remove ${tracks} added by ${target.contributor.name}?`
-		: `Clear all ${tracks}?`;
+	return target.name ? `Remove ${tracks} added by ${target.name}?` : `Clear all ${tracks}?`;
 });
 const clearDescription = computed(() => {
 	const target = clearing.value;
 	const scope = target?.mine
 		? "Only your upcoming tracks will be removed."
-		: target?.contributor
-			? `Only upcoming tracks added by ${target.contributor.name} will be removed.`
+		: target?.name
+			? `Only upcoming tracks added by ${target.name} will be removed.`
 			: "This removes everyone’s upcoming tracks.";
-	return `${scope} The current track keeps playing.`;
+	return `${scope} The current track keeps playing. You can undo the removal from the notification.`;
 });
-const dragging = shallowRef<{ id: string; revision: number; entries: QueueEntry[] } | null>(null);
-const list = ref<HTMLElement | null>(null);
-const queue = shallowRef<QueueEntry[]>([]);
-const placing = ref<{ id: string; position: number; revision: number; ids: string[] } | null>(null);
-let sortable: Sortable | null = null;
-const { now } = usePlaybackPosition();
-const waits = computed(() =>
-	player.connection === "live" ? queueWaits(player.snapshot, now.value) : [],
-);
-watch(
-	() => player.snapshot?.upcoming,
-	(entries) => {
-		if (!dragging.value) queue.value = [...(entries ?? [])];
-	},
-	{ immediate: true },
-);
+const clearAction = computed(() => {
+	if (clearing.value?.mine) return "Remove my tracks";
+	return clearing.value?.name ? "Remove tracks" : "Clear entire queue";
+});
+
+function moveTarget(ids: string[], entryId: string, position: number): string | null | undefined {
+	const remaining = ids.filter((id) => id !== entryId);
+	const index = Math.max(0, Math.min(remaining.length, position - 1));
+	const before = remaining[index] ?? null;
+	const original = ids.indexOf(entryId);
+	const currentBefore = ids[original + 1] ?? null;
+	return before === currentBefore ? undefined : before;
+}
+
+async function move(index: number, direction: -1 | 1) {
+	const entry = queue.value[index];
+	if (!entry) return;
+	const before = queue.value[index + (direction === -1 ? -1 : 2)]?.id ?? null;
+	await player.move(entry.id, before);
+}
+
+async function finishDrag(event: SortableEvent) {
+	const moving = drag;
+	if (!moving) return;
+	sortable?.sort(moving.ids);
+	drag = null;
+	if (
+		event.newDraggableIndex === undefined ||
+		event.newDraggableIndex === event.oldDraggableIndex
+	)
+		return;
+	if (player.state?.queue_revision !== moving.revision) {
+		toast.add({
+			title: "The queue changed while you were dragging",
+			description: "Try moving the track again.",
+			color: "warning",
+		});
+		return;
+	}
+	const before = moveTarget(moving.ids, moving.id, event.newDraggableIndex + 1);
+	if (before !== undefined) await player.move(moving.id, before);
+}
 
 onMounted(() => {
 	watch(
@@ -125,25 +152,22 @@ onMounted(() => {
 							: 160,
 						ghostClass: "queue-placeholder",
 						chosenClass: "queue-chosen",
-						fallbackClass: "queue-floating",
 						forceFallback: true,
 						fallbackTolerance: 5,
 						delay: 150,
 						delayOnTouchOnly: true,
 						touchStartThreshold: 4,
-						disabled: !player.enabled,
+						disabled: !player.canControl,
 						onStart: ({ item }) => {
-							if (!player.snapshot || !item.dataset.entryId) return;
-							placing.value = null;
-							dragging.value = {
-								id: item.dataset.entryId,
-								revision: player.snapshot.queue_revision,
-								entries: [...queue.value],
+							const id = item.dataset.entryId;
+							if (!id || !player.state) return;
+							drag = {
+								id,
+								revision: player.state.queue_revision,
+								ids: queue.value.map((entry) => entry.id),
 							};
 						},
-						onEnd: (event) => {
-							void finishDrag(event);
-						},
+						onEnd: (event) => void finishDrag(event),
 					})
 				: null;
 		},
@@ -151,106 +175,63 @@ onMounted(() => {
 	);
 });
 watch(
-	() => player.enabled,
+	() => player.canControl,
 	(enabled) => sortable?.option("disabled", !enabled),
 );
 onBeforeUnmount(() => sortable?.destroy());
 
-async function move(index: number, direction: -1 | 1) {
-	const entry = queue.value[index];
-	if (!entry || !player.snapshot) return;
-	const before = queue.value[index + (direction === -1 ? -1 : 2)]?.id ?? null;
-	await player.move(entry.id, before, player.snapshot.queue_revision);
-}
-
-async function finishDrag(event: SortableEvent) {
-	const moving = dragging.value;
-	if (!moving) return;
-	const ids = moving.entries.map((entry) => entry.id);
-	// Restore Vue's DOM order before applying the new reactive order.
-	sortable?.sort(ids);
-	try {
-		if (
-			event.newDraggableIndex === undefined ||
-			event.newDraggableIndex === event.oldDraggableIndex
-		)
-			return;
-		if (player.snapshot?.queue_revision !== moving.revision) {
-			toast.add({
-				title: "The queue changed while you were dragging",
-				description: "Try moving the track again.",
-				color: "warning",
-			});
-			return;
-		}
-		const before = queueMoveTarget(ids, moving.id, event.newDraggableIndex + 1);
-		if (before === undefined) return;
-		const reordered = moving.entries.filter((entry) => entry.id !== moving.id);
-		const entry = moving.entries.find((entry) => entry.id === moving.id)!;
-		reordered.splice(event.newDraggableIndex, 0, entry);
-		queue.value = reordered;
-		await player.move(moving.id, before, moving.revision);
-	} finally {
-		dragging.value = null;
-		queue.value = [...(player.snapshot?.upcoming ?? [])];
-	}
-}
-
-function choosePosition(id: string, index: number) {
-	if (!player.snapshot) return;
+function choosePosition(entry: QueueEntry, index: number) {
 	placing.value = {
-		id,
+		id: entry.id,
 		position: index + 1,
-		revision: player.snapshot.queue_revision,
-		ids: queue.value.map((entry) => entry.id),
+		ids: queue.value.map(({ id }) => id),
 	};
 }
-
-function focusPosition(event: Event) {
-	if (!placing.value) return;
-	event.preventDefault();
-	void nextTick(() =>
-		list.value?.querySelector<HTMLInputElement>(".queue-position-input")?.focus(),
-	);
-}
-
 async function submitPosition() {
 	const target = placing.value;
 	if (!target) return;
-	if (player.snapshot?.queue_revision !== target.revision) {
-		placing.value = null;
-		toast.add({
-			title: "The queue changed",
-			description: "Choose the position again.",
-			color: "warning",
-		});
-		return;
-	}
-	const before = queueMoveTarget(target.ids, target.id, Number(target.position));
-	if (before === undefined) return;
-	if (await player.move(target.id, before, target.revision)) {
-		placing.value = null;
-	}
+	const before = moveTarget(target.ids, target.id, target.position);
+	if (before !== undefined) await player.move(target.id, before);
+	placing.value = null;
 }
-
-function confirmClear(contributor: ListenerProfile | null) {
-	if (!player.snapshot || !player.enabled) return;
-	const count = contributor
-		? player.snapshot.upcoming.filter((entry) => entry.added_by?.id === contributor.id).length
-		: player.snapshot.upcoming.length;
-	if (!count) return;
-	clearing.value = {
-		revision: player.snapshot.queue_revision,
-		contributor,
-		mine: !!contributor && contributor.id === profile.profile?.id,
-		count,
-	};
-}
-
 async function clearQueue() {
 	const target = clearing.value;
 	clearing.value = null;
-	if (target) await player.clearQueue(target.revision, target.contributor?.id);
+	if (target) await player.clear(target.requestedBy);
+}
+async function startRadio(entry: QueueEntry) {
+	const sourceId = entry.request.source_id ?? entry.request.track.sources[0]?.id;
+	if (!sourceId) return null;
+	return player.startRadio({
+		kind: "track",
+		track_source_id: sourceId,
+		discovery_snapshot_id: null,
+	});
+}
+function requestRadio(entry: QueueEntry) {
+	if (player.state?.radio) radioEntry.value = entry;
+	else void startRadio(entry);
+}
+async function confirmRadio() {
+	const entry = radioEntry.value;
+	if (entry && (await startRadio(entry))) radioEntry.value = null;
+}
+function waitUntil(index: number) {
+	const runtime = player.state?.runtime;
+	const currentRemaining = runtime?.duration_seconds
+		? Math.max(0, runtime.duration_seconds - position.value)
+		: 0;
+	return queue.value
+		.slice(0, index)
+		.reduce(
+			(total, entry) => total + (entry.request.track.duration_seconds ?? 0),
+			currentRemaining,
+		);
+}
+function formatWait(seconds: number) {
+	if (seconds < 60) return "<1 min";
+	const minutes = Math.round(seconds / 60);
+	return minutes < 60 ? `~${minutes} min` : `~${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 </script>
 
@@ -266,9 +247,9 @@ async function clearQueue() {
 				>
 					Up next
 				</h2>
-				<span class="text-sm tabular-nums text-muted"
-					>{{ queue.length }} {{ queue.length === 1 ? "track" : "tracks" }}</span
-				>
+				<span class="text-sm tabular-nums text-muted">
+					{{ queue.length }} {{ queue.length === 1 ? "track" : "tracks" }}
+				</span>
 			</div>
 			<UDropdownMenu
 				:items="removalItems"
@@ -277,20 +258,21 @@ async function clearQueue() {
 			>
 				<UButton
 					label="Remove"
-					:loading="player.isPending('queue.cleared')"
-					:aria-busy="player.isPending('queue.cleared')"
+					:loading="player.isPending('queue.clear')"
+					:aria-busy="player.isPending('queue.clear')"
 					:icon="icons.trash"
 					:trailing-icon="icons.chevronDown"
 					color="neutral"
 					variant="ghost"
 					class="min-h-11"
-					:disabled="!player.enabled || !queue.length"
+					:disabled="!player.canControl || !queue.length"
 					aria-label="Remove tracks from the queue"
 				/>
 			</UDropdownMenu>
 		</div>
+
 		<div
-			v-if="!player.snapshot && player.connection === 'connecting'"
+			v-if="!player.state && player.connection === 'connecting'"
 			class="space-y-3"
 			aria-label="Loading queue"
 			aria-busy="true"
@@ -299,7 +281,8 @@ async function clearQueue() {
 		</div>
 		<template v-else-if="queue.length">
 			<div class="queue-columns queue-grid text-xs text-muted" aria-hidden="true">
-				<span /><span /><span>Track</span><span>Added by</span><span>Duration</span><span />
+				<span /><span /><span>Track</span><span>Requested by</span><span>Duration</span
+				><span />
 			</div>
 			<ol ref="list" aria-label="Upcoming tracks" class="queue-list">
 				<li
@@ -310,47 +293,47 @@ async function clearQueue() {
 				>
 					<button
 						type="button"
-						:disabled="!player.enabled"
-						:aria-label="'Drag ' + trackTitle(entry) + ' to reorder'"
+						:disabled="!player.canControl"
+						:aria-label="`Drag ${entry.request.track.title} to reorder`"
 						class="queue-handle relative size-11 cursor-grab items-center justify-center text-muted"
 						tabindex="-1"
 					>
-						<span class="queue-number text-xs tabular-nums">{{
-							String(index + 1).padStart(2, "0")
-						}}</span>
+						<span class="queue-number text-xs tabular-nums">
+							{{ String(index + 1).padStart(2, "0") }}
+						</span>
 						<UIcon :name="icons.drag" class="queue-grip absolute size-4" />
 					</button>
-					<PlayerTrackArtwork :entry="entry" class="queue-cover" />
+					<PlayerTrackArtwork :entry="entry.request.track" class="queue-cover" />
 					<div class="queue-title min-w-0">
-						<UTooltip :text="`Open ${trackTitle(entry)} in a new tab`">
+						<UTooltip :text="`Open ${entry.request.track.title} in a new tab`">
 							<a
-								:href="entry.source_url"
+								:href="trackSource(entry.request)?.source_url"
 								target="_blank"
 								rel="noopener noreferrer"
 								class="block truncate text-sm font-medium text-highlighted hover:underline"
-								>{{ trackTitle(entry) }}</a
 							>
+								{{ entry.request.track.title }}
+							</a>
 						</UTooltip>
 						<p class="mt-1 truncate text-xs text-muted">
-							<PlayerArtistLink :entry="entry" />
+							<PlayerArtistLink :entry="entry.request.track" />
 						</p>
 					</div>
 					<div class="queue-details">
 						<PlayerContributor
-							:contributor="entry.added_by"
-							:origin="entry.origin"
+							:contributor="entry.request.contributor"
+							:origin="entry.request.origin"
 							compact
 							class="queue-person"
 						/>
 						<div class="queue-timing text-xs text-muted">
 							<span class="tabular-nums">{{
-								formatTime(entry.duration_seconds)
+								formatTime(entry.request.track.duration_seconds)
 							}}</span>
 							<UTooltip
-								v-if="!dragging && waits[index] != null"
 								text="Estimated start, assuming the queue stays in this order"
 							>
-								<span class="queue-wait">{{ formatWait(waits[index]!) }}</span>
+								<span class="queue-wait">{{ formatWait(waitUntil(index)) }}</span>
 							</UTooltip>
 						</div>
 					</div>
@@ -359,50 +342,45 @@ async function clearQueue() {
 							{
 								label: 'Start a radio from this track',
 								icon: icons.radio,
-								disabled: !player.enabled,
-								onSelect: () =>
-									radio.open({
-										kind: 'track',
-										source_url: entry.source_url,
-										title: trackTitle(entry),
-									}),
+								disabled: !player.canControl,
+								onSelect: () => requestRadio(entry),
 							},
 							{
 								label: 'Move to position…',
 								icon: icons.drag,
-								disabled: !player.enabled || queue.length < 2,
-								onSelect: () => choosePosition(entry.id, index),
+								disabled: !player.canControl || queue.length < 2,
+								onSelect: () => choosePosition(entry, index),
 							},
 							{
 								label: 'Move up',
 								icon: icons.arrowUp,
-								disabled: !player.enabled || index === 0,
+								disabled: !player.canControl || index === 0,
 								onSelect: () => move(index, -1),
 							},
 							{
 								label: 'Move down',
 								icon: icons.arrowDown,
-								disabled: !player.enabled || index === queue.length - 1,
+								disabled: !player.canControl || index === queue.length - 1,
 								onSelect: () => move(index, 1),
 							},
 							{
 								label: 'Remove',
 								icon: icons.trash,
 								color: 'error',
-								disabled: !player.enabled,
-								onSelect: () => player.removeTrack(entry.id),
+								disabled: !player.canControl,
+								onSelect: () => player.remove(entry.id),
 							},
 						]"
-						:content="{ align: 'end', onCloseAutoFocus: focusPosition }"
+						:content="{ align: 'end' }"
 					>
-						<UTooltip :text="'Options for ' + trackTitle(entry)">
+						<UTooltip :text="`Options for ${entry.request.track.title}`">
 							<UButton
 								:icon="icons.ellipsis"
 								:loading="
-									player.isPending('queue.removed', entry.id) ||
-									player.isPending('queue.reordered', entry.id)
+									player.isPending('queue.remove') ||
+									player.isPending('queue.move')
 								"
-								:aria-label="'Options for ' + trackTitle(entry)"
+								:aria-label="`Options for ${entry.request.track.title}`"
 								color="neutral"
 								variant="ghost"
 								class="queue-menu size-11 justify-center"
@@ -415,11 +393,11 @@ async function clearQueue() {
 						@submit.prevent="submitPosition"
 						@keydown.esc="placing = null"
 					>
-						<label :for="'position-' + entry.id" class="text-xs text-muted"
+						<label :for="`position-${entry.id}`" class="text-xs text-muted"
 							>Position</label
 						>
 						<input
-							:id="'position-' + entry.id"
+							:id="`position-${entry.id}`"
 							v-model.number="placing.position"
 							class="queue-position-input"
 							type="number"
@@ -427,14 +405,14 @@ async function clearQueue() {
 							:max="placing.ids.length"
 							step="1"
 							required
-							:disabled="!player.enabled"
+							:disabled="!player.canControl"
 						/>
 						<UButton
 							type="submit"
 							label="Move"
-							:loading="player.isPending('queue.reordered', entry.id)"
+							:loading="player.isPending('queue.move')"
 							color="neutral"
-							:disabled="!player.enabled"
+							:disabled="!player.canControl"
 						/>
 						<UButton
 							label="Cancel"
@@ -465,6 +443,7 @@ async function clearQueue() {
 				</p>
 			</div>
 		</div>
+
 		<UModal
 			:open="clearing !== null"
 			:ui="{ footer: 'justify-end' }"
@@ -480,19 +459,20 @@ async function clearQueue() {
 					@click="clearing = null"
 				/>
 				<UButton
-					:label="
-						clearing?.mine
-							? 'Remove my tracks'
-							: clearing?.contributor
-								? 'Remove tracks'
-								: 'Clear entire queue'
-					"
+					:label="clearAction"
 					color="error"
-					:disabled="!player.enabled"
+					:disabled="!player.canControl"
+					:loading="player.isPending('queue.clear')"
 					@click="clearQueue"
 				/>
 			</template>
 		</UModal>
+		<PlayerRadioReplaceConfirmation
+			:open="radioEntry !== null"
+			:busy="player.isPending('radio.start')"
+			@update:open="!$event && (radioEntry = null)"
+			@confirm="confirmRadio"
+		/>
 	</section>
 </template>
 

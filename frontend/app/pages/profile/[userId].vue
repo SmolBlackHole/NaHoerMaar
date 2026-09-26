@@ -39,7 +39,7 @@ onScopeDispose(profile.dispose);
 				</UDashboardNavbar>
 			</template>
 			<template #body>
-				<div class="mx-auto w-full max-w-6xl pb-4 sm:pb-6">
+				<div class="w-full pb-4 sm:pb-6">
 					<div
 						v-if="profile.profile.loading.value && !details"
 						aria-label="Loading listener profile"

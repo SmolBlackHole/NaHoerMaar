@@ -40,7 +40,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 USER nahormaar
 EXPOSE 8000
-CMD ["python", "-m", "nahormaar_backend"]
+CMD ["python", "-m", "nahoermaar"]
 
 FROM python-node AS frontend-build
 

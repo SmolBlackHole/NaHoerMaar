@@ -1,25 +1,21 @@
-import { computed, reactive, ref, watch, onScopeDispose } from "vue";
+import { computed, onScopeDispose, reactive, ref, watch } from "vue";
 import { defineStore } from "pinia";
+import { defaultAppearance, type Appearance } from "../core/models/account";
 import { iconMaps } from "../config/icons";
-import { useProfileStore } from "./profile";
-import { useRepositories } from "../repositories";
-import { defaultAppearance, type Appearance } from "../../shared/appearance";
 
 export type ColorModePreference = Appearance["mode"];
-export type TextSize = Appearance["textSize"];
+export type TextSize = Appearance["text_size"];
 
 export const useSettingsStore = defineStore("settings", () => {
 	const settings = reactive<Appearance>({ ...defaultAppearance });
-	const profile = useProfileStore();
-	const repository = useRepositories().account;
+	const profile = useNuxtApp().$backendCore.stores.useProfileStore();
 	const error = ref("");
 	let account: string | null = null;
-	let generation = 0;
 	let applying = false;
 	let dirty = false;
 	let remote = "";
 	let timer: ReturnType<typeof setTimeout> | undefined;
-	let active: AbortController | undefined;
+	let saving = false;
 
 	function apply(value: Appearance) {
 		applying = true;
@@ -29,41 +25,32 @@ export const useSettingsStore = defineStore("settings", () => {
 	function bind(id: string | null, value: Appearance | null) {
 		const next = JSON.stringify(value ?? defaultAppearance);
 		if (id !== account) {
-			generation++;
 			clearTimeout(timer);
-			active?.abort();
-			active = undefined;
 			dirty = false;
 			error.value = "";
 			account = id;
 			apply(value ?? defaultAppearance);
-		} else if (next !== remote && !dirty && !active) {
+		} else if (next !== remote && !dirty && !saving) {
 			apply(value ?? defaultAppearance);
 		}
 		remote = next;
 	}
 	async function save() {
 		clearTimeout(timer);
-		if (!account || active || !dirty) return;
-		const version = generation;
-		const body = JSON.stringify(settings);
-		const controller = new AbortController();
-		active = controller;
+		if (!account || saving || !dirty) return;
+		const body = { ...settings };
+		saving = true;
 		error.value = "";
-		try {
-			await repository.saveAppearance(JSON.parse(body) as Appearance, controller.signal);
-			if (version !== generation) return;
-			dirty = JSON.stringify(settings) !== body;
-		} catch {
-			if (version === generation && !controller.signal.aborted)
-				error.value =
-					"Couldn't save your appearance. Your changes only apply here until you retry.";
-		} finally {
-			if (version === generation) {
-				active = undefined;
-				if (dirty && !error.value) void save();
-			}
+		const updated = await profile.updateAppearance(body);
+		saving = false;
+		if (!updated) {
+			error.value =
+				"Couldn't save your appearance. Your changes only apply here until you retry.";
+			return;
 		}
+		remote = JSON.stringify(updated.appearance);
+		dirty = JSON.stringify(settings) !== JSON.stringify(body);
+		if (dirty) void save();
 	}
 	const stop = watch(
 		settings,
@@ -76,18 +63,16 @@ export const useSettingsStore = defineStore("settings", () => {
 		{ deep: true, flush: "sync" },
 	);
 	function dispose() {
-		generation++;
 		clearTimeout(timer);
-		active?.abort();
 		stop();
 	}
 
 	watch(
-		() => [profile.profile?.id ?? null, profile.appearance] as const,
+		() => [profile.profile?.id ?? null, profile.profile?.appearance ?? null] as const,
 		([id, appearance]) => bind(id, appearance),
 		{ immediate: true, flush: "sync" },
 	);
 	onScopeDispose(dispose);
-	const icons = computed(() => iconMaps[settings.iconSet]);
+	const icons = computed(() => iconMaps[settings.icon_set]);
 	return { settings, icons, error, retry: save };
 });

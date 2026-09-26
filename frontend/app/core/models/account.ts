@@ -11,3 +11,13 @@ export type Appearance = Schema["AppearanceView"];
 export type ProfileUpdate = Schema["ProfileUpdate"];
 export type AppearanceUpdate = Schema["AppearanceUpdate"];
 export type StatisticsPeriod = Schema["StatisticsPeriod"];
+
+export const defaultAppearance: Readonly<Appearance> = {
+	mode: "dark",
+	artwork_colors: true,
+	primary_color: "teal",
+	neutral_color: "zinc",
+	font_family: "Geist",
+	icon_set: "lucide",
+	text_size: "md",
+};
