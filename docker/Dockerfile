@@ -35,7 +35,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     python -m venv /opt/venv \
     && pip install . \
     && useradd --create-home --uid 10001 nahormaar \
-    && mkdir -p /app/config /app/data/logs \
+    && mkdir -p /app/config /app/data/avatars /app/data/logs \
     && chown -R nahormaar:nahormaar /app/config /app/data
 
 USER nahormaar

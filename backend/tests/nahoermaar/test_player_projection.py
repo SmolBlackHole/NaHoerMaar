@@ -5,6 +5,7 @@
 import asyncio
 from dataclasses import replace
 from datetime import UTC, datetime
+from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 from uuid import uuid4
@@ -12,6 +13,7 @@ from uuid import uuid4
 from nahoermaar.api.player import player_view
 from nahoermaar.bootstrap import Application
 from nahoermaar.catalog.domain import Track, TrackId
+from nahoermaar.integrations.avatars import DiscordAvatarStore
 from nahoermaar.player.domain import (
     ListeningSessionId,
     PlayerState,
@@ -143,7 +145,7 @@ def test_radio_queue_request_keeps_its_requester_without_an_active_radio() -> No
         DiscordIdentity("1377708476259897478", "andrey", None, NOW),
         NOW,
         NOW,
-        profile=UserProfile("Andrey", "0001"),
+        profile=UserProfile("Andrey"),
     )
     application = cast(
         Application,
@@ -151,6 +153,7 @@ def test_radio_queue_request_keeps_its_requester_without_an_active_radio() -> No
             playback=None,
             catalog=Catalog(track),
             access=Access((actor,)),
+            avatars=DiscordAvatarStore(Path("data/avatars")),
         ),
     )
 

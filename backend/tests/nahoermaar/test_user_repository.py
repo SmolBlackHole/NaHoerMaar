@@ -107,7 +107,7 @@ def test_repository_round_trips_and_updates_the_complete_aggregate() -> None:
             "a_operator",
             NOW,
         ),
-        profile=UserProfile("Operator", "021a"),
+        profile=UserProfile("Operator"),
         appearance=Appearance(
             mode=AppearanceMode.SYSTEM,
             artwork_colors=False,
@@ -150,7 +150,7 @@ def test_repository_round_trips_and_updates_the_complete_aggregate() -> None:
                     None,
                     NOW + timedelta(minutes=1),
                 ),
-                profile=UserProfile("Local listener", "123b"),
+                profile=UserProfile("Local listener"),
                 appearance=Appearance(
                     mode=AppearanceMode.TIME,
                     primary_color=PrimaryColor.AMBER,

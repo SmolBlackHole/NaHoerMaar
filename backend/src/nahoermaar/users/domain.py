@@ -14,7 +14,6 @@ from uuid import UUID
 UserId = NewType("UserId", UUID)
 
 _DISCORD_ID = re.compile(r"[1-9][0-9]{0,19}")
-_PIXABOT = re.compile(r"[0-9a-f]{4}")
 
 
 class AccessRole(StrEnum):
@@ -189,7 +188,6 @@ class UserProfile:
     """NaHörMaar-owned values that never overwrite the Discord identity."""
 
     display_name: str | None = None
-    pixabot: str | None = None
 
     def __post_init__(self) -> None:
         if self.display_name is not None and (
@@ -197,13 +195,11 @@ class UserProfile:
             or self.display_name != self.display_name.strip()
         ):
             raise ValueError("Display name must be trimmed and 1 to 32 characters.")
-        if self.pixabot is not None and _PIXABOT.fullmatch(self.pixabot) is None:
-            raise ValueError("Pixabot must be a four-character lowercase hex ID.")
 
     @property
     def complete(self) -> bool:
         """Return whether the local profile can be shown as configured."""
-        return self.display_name is not None and self.pixabot is not None
+        return self.display_name is not None
 
 
 @dataclass(frozen=True, slots=True)

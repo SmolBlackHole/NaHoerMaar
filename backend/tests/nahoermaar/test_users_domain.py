@@ -73,7 +73,7 @@ def test_discord_and_local_profiles_remain_independent() -> None:
             avatar_hash="a_012345",
             synced_at=NOW,
         ),
-        profile=UserProfile("Local name", "021a"),
+        profile=UserProfile("Local name"),
         created_at=NOW,
         updated_at=NOW,
     )
@@ -98,21 +98,12 @@ def test_unsynchronized_discord_identity_rejects_partial_metadata() -> None:
         DiscordIdentity("1377708476259897478", avatar_hash="avatar")
 
 
-@pytest.mark.parametrize(
-    ("display_name", "pixabot"),
-    [
-        (" padded", None),
-        ("", None),
-        (None, "XYZ1"),
-        (None, "123"),
-    ],
-)
+@pytest.mark.parametrize("display_name", [" padded", "", "trailing "])
 def test_local_profile_rejects_values_that_cannot_be_persisted(
     display_name: str | None,
-    pixabot: str | None,
 ) -> None:
     with pytest.raises(ValueError):
-        UserProfile(display_name, pixabot)
+        UserProfile(display_name)
 
 
 @pytest.mark.parametrize(

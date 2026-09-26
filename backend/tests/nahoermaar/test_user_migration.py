@@ -64,7 +64,7 @@ def test_initial_migration_upgrades_and_downgrades_fresh_postgresql() -> None:
                 lambda value: MigrationContext.configure(value).get_current_revision()
             )
             assert APPLICATION_TABLES <= tables
-            assert revision == "0003_radio_request_attribution"
+            assert revision == "0004_discord_avatar_cache"
 
     try:
         asyncio.run(inspect_upgrade())

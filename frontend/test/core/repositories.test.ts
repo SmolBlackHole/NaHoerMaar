@@ -22,12 +22,11 @@ describe("new backend repositories", () => {
 	it("sends profile changes to users/me, not a session or Discord-ID resource", async () => {
 		const { client, fetcher } = fixture();
 		fetcher.mockImplementation(async () => Response.json({}));
-		await client.account.updateProfile({ display_name: "Listener", pixabot: "12ab" });
+		await client.account.updateProfile({ display_name: "Listener" });
 		expect(fetcher.mock.calls[0]![0]).toBe("/api/users/me/profile");
 		expect(fetcher.mock.calls[0]![1]?.method).toBe("PUT");
 		expect(JSON.parse(fetcher.mock.calls[0]![1]!.body as string)).toEqual({
 			display_name: "Listener",
-			pixabot: "12ab",
 		});
 	});
 

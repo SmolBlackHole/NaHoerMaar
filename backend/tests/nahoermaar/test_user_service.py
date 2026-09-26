@@ -99,9 +99,7 @@ def test_operators_grant_login_profile_and_revocation_share_internal_users() -> 
         assert completed.user.discord.username == "Discord name"
         assert not completed.user.profile_complete
 
-        saved = await auth.save_profile(
-            completed.user.id, UserProfile("Local name", "12ab")
-        )
+        saved = await auth.save_profile(completed.user.id, UserProfile("Local name"))
         assert saved.profile.display_name == "Local name"
         assert saved.discord.username == "Discord name"
         assert (await auth.authenticate(completed.session_token)).user == saved

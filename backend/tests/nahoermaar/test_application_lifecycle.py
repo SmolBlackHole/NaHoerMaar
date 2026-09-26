@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import asyncio
+from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 from uuid import uuid4
@@ -25,6 +26,7 @@ from nahoermaar.views.profile import ProfileView
 from nahoermaar.views.recent import RecentListeningView
 from nahoermaar.users.service import AccessService, AuthService
 from nahoermaar.integrations.discord import DiscordGateway
+from nahoermaar.integrations.avatars import DiscordAvatarStore
 
 
 class _Bus(MessageBus):
@@ -134,6 +136,7 @@ def _application(calls: list[str], *, fail_gateway: bool = False) -> Application
         cast(ProfileView, object()),
         cast(RecentListeningView, object()),
         RecentLogBuffer(),
+        DiscordAvatarStore(Path("data/avatars")),
         cast(DiscordGateway, gateway),
         cast(PlaybackCoordinator, playback),
     )

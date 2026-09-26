@@ -163,7 +163,6 @@ class ProfileView:
                         self._discord.c.avatar_hash,
                         self._discord.c.synced_at,
                         self._profiles.c.display_name,
-                        self._profiles.c.pixabot,
                         self._preferences.c.mode,
                         self._preferences.c.artwork_colors,
                         self._preferences.c.primary_color,
@@ -192,7 +191,7 @@ class ProfileView:
                 row["avatar_hash"],
                 row["synced_at"],
             ),
-            UserProfile(row["display_name"], row["pixabot"]),
+            UserProfile(row["display_name"]),
             Appearance(
                 AppearanceMode(row["mode"]),
                 bool(row["artwork_colors"]),

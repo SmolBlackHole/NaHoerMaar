@@ -286,15 +286,8 @@ onScopeDispose(() => {
 								:to="`/profile/${listener.user_id}`"
 								class="flex items-center gap-3 rounded-xl border border-default p-4 hover:bg-elevated/50"
 							>
-								<img
-									v-if="listener.pixabot"
-									:src="`/avatars/${listener.pixabot}.png`"
-									alt=""
-									class="size-10 rounded-lg [image-rendering:pixelated]"
-								/>
 								<UAvatar
-									v-else
-									:src="listener.discord_avatar_url ?? undefined"
+									:src="listener.avatar_url"
 									:alt="
 										listener.discord_display_name ??
 										listener.discord_username ??

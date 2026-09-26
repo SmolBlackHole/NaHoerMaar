@@ -11,8 +11,9 @@ from uuid import UUID
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, ConfigDict
 
+from nahoermaar.bootstrap import Application
 from nahoermaar.listening.domain import PlaybackRecordId
-from nahoermaar.views.recent import RecentListeningView, RecentPlayback
+from nahoermaar.views.recent import RecentPlayback
 
 
 class RecentContributorView(BaseModel):
@@ -20,10 +21,9 @@ class RecentContributorView(BaseModel):
 
     user_id: UUID
     display_name: str
-    pixabot: str | None
     discord_id: str
     discord_username: str | None
-    discord_avatar_hash: str | None
+    avatar_url: str
 
 
 class RecentPlaybackView(BaseModel):
@@ -57,7 +57,7 @@ class RecentPlaybackPageView(BaseModel):
     next_cursor: UUID | None
 
 
-def router(recent: RecentListeningView) -> APIRouter:
+def router(application: Application) -> APIRouter:
     routes = APIRouter(prefix="/api/listening", tags=["listening"])
 
     @routes.get("/recent")
@@ -65,19 +65,24 @@ def router(recent: RecentListeningView) -> APIRouter:
         limit: Annotated[int, Query(ge=1, le=100)] = 20,
         cursor: UUID | None = None,
     ) -> RecentPlaybackPageView:
-        page = await recent.get(
+        page = await application.recent.get(
             limit=limit,
             cursor=PlaybackRecordId(cursor) if cursor is not None else None,
         )
         return RecentPlaybackPageView(
-            entries=tuple(_recent_playback_view(item) for item in page.entries),
+            entries=tuple(
+                _recent_playback_view(item, application) for item in page.entries
+            ),
             next_cursor=page.next_cursor,
         )
 
     return routes
 
 
-def _recent_playback_view(item: RecentPlayback) -> RecentPlaybackView:
+def _recent_playback_view(
+    item: RecentPlayback,
+    application: Application,
+) -> RecentPlaybackView:
     return RecentPlaybackView(
         playback_id=item.playback_id,
         request_id=item.request_id,
@@ -97,10 +102,12 @@ def _recent_playback_view(item: RecentPlayback) -> RecentPlaybackView:
             RecentContributorView(
                 user_id=item.contributor_id,
                 display_name=item.contributor_display_name,
-                pixabot=item.contributor_pixabot,
                 discord_id=item.contributor_discord_id,
                 discord_username=item.contributor_discord_username,
-                discord_avatar_hash=item.contributor_discord_avatar_hash,
+                avatar_url=application.avatars.public_url(
+                    item.contributor_discord_id,
+                    avatar_hash=item.contributor_discord_avatar_hash,
+                ),
             )
             if item.contributor_id is not None
             and item.contributor_display_name is not None

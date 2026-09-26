@@ -63,7 +63,7 @@ async def _seed(database: Database) -> tuple[UserId, UserId]:
                 DiscordIdentity("100", "Owner", None, NOW),
                 NOW,
                 NOW,
-                profile=UserProfile("Owner", "0001"),
+                profile=UserProfile("Owner"),
                 role=AccessRole.OWNER,
             )
         )
@@ -73,7 +73,7 @@ async def _seed(database: Database) -> tuple[UserId, UserId]:
                 DiscordIdentity("200", "Listener", None, NOW),
                 NOW,
                 NOW,
-                profile=UserProfile("Listener", "0002"),
+                profile=UserProfile("Listener"),
                 role=AccessRole.USER,
                 access_granted_by=owner_id,
                 access_granted_at=NOW,
@@ -85,7 +85,7 @@ async def _seed(database: Database) -> tuple[UserId, UserId]:
                 DiscordIdentity("300", "Blocked", None, NOW),
                 NOW,
                 NOW,
-                profile=UserProfile("Blocked", "0003"),
+                profile=UserProfile("Blocked"),
             )
         )
         await work.session.flush()

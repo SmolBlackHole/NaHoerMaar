@@ -38,7 +38,6 @@ class RecentPlayback:
     source_provider: ProviderName | None
     contributor_id: UserId | None
     contributor_display_name: str | None
-    contributor_pixabot: str | None
     contributor_discord_id: str | None
     contributor_discord_username: str | None
     contributor_discord_avatar_hash: str | None
@@ -149,7 +148,6 @@ class RecentListeningView:
                             self._sources.c.provider.label("source_provider"),
                             contributor_id.label("contributor_id"),
                             self._profiles.c.display_name,
-                            self._profiles.c.pixabot,
                             self._discord.c.discord_id,
                             self._discord.c.username.label("discord_username"),
                             self._discord.c.avatar_hash.label("discord_avatar_hash"),
@@ -214,7 +212,6 @@ class RecentListeningView:
                 display_name
                 or username
                 or (f"Listener {str(contributor)[:8]}" if contributor else None),
-                row["pixabot"],
                 row["discord_id"],
                 username,
                 row["discord_avatar_hash"],

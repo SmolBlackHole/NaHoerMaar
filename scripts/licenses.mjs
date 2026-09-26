@@ -89,12 +89,6 @@ await localNotice(
 	"https://github.com/nuxt-ui-templates/dashboard",
 	"Project",
 );
-await localNotice(
-	"Pixabots by Pablo Stanley",
-	"frontend/public/licenses/pixabots.txt",
-	"Pixabots Free Pack license",
-	"https://pixabots.com",
-);
 for (const [name, file] of Object.entries({
 	"DM Sans": "dmsans",
 	Geist: "geist",

@@ -64,7 +64,7 @@ class RankedListener:
     discord_id: str
     display_name: str | None
     discord_username: str | None
-    pixabot: str | None
+    discord_avatar_hash: str | None
     plays: int
     listening_seconds: float
 
@@ -447,8 +447,8 @@ class StatisticsRepository:
                         self._users.c.id,
                         self._discord.c.discord_id,
                         self._profiles.c.display_name,
-                        self._profiles.c.pixabot,
                         self._discord.c.username,
+                        self._discord.c.avatar_hash,
                         plays,
                         listening,
                     )
@@ -462,8 +462,8 @@ class StatisticsRepository:
                         self._users.c.id,
                         self._discord.c.discord_id,
                         self._profiles.c.display_name,
-                        self._profiles.c.pixabot,
                         self._discord.c.username,
+                        self._discord.c.avatar_hash,
                     )
                     .order_by(listening.desc(), plays.desc(), self._users.c.id)
                     .limit(limit)
@@ -478,7 +478,7 @@ class StatisticsRepository:
                 discord_id=row["discord_id"],
                 display_name=row["display_name"],
                 discord_username=row["username"],
-                pixabot=row["pixabot"],
+                discord_avatar_hash=row["avatar_hash"],
                 plays=int(row["plays"]),
                 listening_seconds=float(row["listening_seconds"]),
             )

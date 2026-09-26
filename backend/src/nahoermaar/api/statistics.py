@@ -12,6 +12,7 @@ from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, ConfigDict
 
 from nahoermaar.bootstrap import Application
+from nahoermaar.integrations.avatars import DiscordAvatarStore
 from nahoermaar.statistics.repository import RankedListener
 from nahoermaar.statistics.service import (
     StatisticsPeriod,
@@ -86,8 +87,7 @@ class RankedListenerView(BaseModel):
     display_name: str | None
     discord_username: str | None
     discord_display_name: str | None
-    discord_avatar_url: str | None
-    pixabot: str | None
+    avatar_url: str
     plays: int
     listening_seconds: float
 
@@ -115,6 +115,7 @@ def router(application: Application) -> APIRouter:
         authenticated(request)
         return statistics_view(
             await application.statistics.overview(period),
+            application.avatars,
             _discord_members(application),
         )
 
@@ -127,6 +128,7 @@ def router(application: Application) -> APIRouter:
         authenticated(request)
         return statistics_view(
             await application.statistics.user(UserId(user_id), period),
+            application.avatars,
             _discord_members(application),
         )
 
@@ -135,6 +137,7 @@ def router(application: Application) -> APIRouter:
 
 def statistics_view(
     report: StatisticsReport,
+    avatars: DiscordAvatarStore,
     discord_members: tuple[DiscordMember, ...] = (),
 ) -> StatisticsView:
     members_by_id: dict[str, DiscordMember] = {}
@@ -195,7 +198,7 @@ def statistics_view(
             for item in report.top_artists
         ),
         top_listeners=tuple(
-            _ranked_listener_view(item, members_by_id.get(item.discord_id))
+            _ranked_listener_view(item, members_by_id.get(item.discord_id), avatars)
             for item in report.top_listeners
         ),
     )
@@ -208,6 +211,7 @@ def _discord_members(application: Application) -> tuple[DiscordMember, ...]:
 def _ranked_listener_view(
     listener: RankedListener,
     member: DiscordMember | None,
+    avatars: DiscordAvatarStore,
 ) -> RankedListenerView:
     return RankedListenerView(
         user_id=listener.user_id,
@@ -215,8 +219,11 @@ def _ranked_listener_view(
         discord_username=listener.discord_username
         or (member.username if member else None),
         discord_display_name=member.display_name if member else None,
-        discord_avatar_url=member.avatar_url if member else None,
-        pixabot=listener.pixabot,
+        avatar_url=avatars.public_url(
+            listener.discord_id,
+            avatar_hash=listener.discord_avatar_hash,
+            source_url=member.avatar_url if member else None,
+        ),
         plays=listener.plays,
         listening_seconds=listener.listening_seconds,
     )

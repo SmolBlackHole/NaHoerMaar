@@ -10,12 +10,7 @@ const { icons } = useTheme();
 const toast = useToast();
 const consent = useConsentStore();
 
-const discordAvatar = computed(() => {
-	const discord = details.value?.discord;
-	if (!discord?.avatar_hash) return undefined;
-	const extension = discord.avatar_hash.startsWith("a_") ? "gif" : "png";
-	return `https://cdn.discordapp.com/avatars/${discord.id}/${discord.avatar_hash}.${extension}?size=128`;
-});
+const discordAvatar = computed(() => details.value?.discord.avatar_url ?? undefined);
 
 async function load() {
 	await profile.refresh();
@@ -24,7 +19,7 @@ async function save(value: ProfileUpdate) {
 	if (!(await profile.updateProfile(value))) return;
 	toast.add({
 		title: "Profile saved",
-		description: "Your updated name and Pixabot are visible to the group.",
+		description: "Your updated name is visible to the group.",
 		icon: "i-lucide-circle-check",
 		color: "success",
 	});
@@ -100,8 +95,8 @@ onMounted(load);
 										How friends see you
 									</h2>
 									<p class="mt-1 text-sm text-muted">
-										Your name and Pixabot appear beside requests and radio
-										sessions.
+										Your name and Discord profile picture appear beside requests
+										and radio sessions.
 									</p>
 									<div
 										class="mt-5 rounded-2xl border border-default bg-elevated/30 p-6 sm:p-8"

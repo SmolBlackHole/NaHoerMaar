@@ -57,10 +57,12 @@ services:
             DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-nahormaar}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@database:5432/${POSTGRES_DB:-nahormaar}
             FFMPEG_PATH: /usr/bin/ffmpeg
             NAHORMAAR_BIND_HOST: 0.0.0.0
+            NAHORMAAR_AVATAR_DIR: /app/data/avatars
             NAHORMAAR_LOG_DIR: /app/data/logs
             NODE_PATH: /usr/local/bin/node
         volumes:
             - ./config/access.toml:/app/config/access.toml:ro
+            - nahormaar-avatars:/app/data/avatars
             - nahormaar-logs:/app/data/logs
         expose:
             - "8000"
@@ -122,7 +124,7 @@ services:
             PGDATABASE: ${POSTGRES_DB:-nahormaar}
             PGUSER: ${POSTGRES_USER:-nahormaar}
             PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
-            EXPECTED_SCHEMA_REVISION: 0003_radio_request_attribution
+            EXPECTED_SCHEMA_REVISION: 0004_discord_avatar_cache
             BACKUP_KEEP: ${BACKUP_KEEP:-14}
         volumes:
             - ./data/backups:/backups
@@ -137,4 +139,5 @@ services:
 
 volumes:
     nahormaar-postgres:
+    nahormaar-avatars:
     nahormaar-logs:

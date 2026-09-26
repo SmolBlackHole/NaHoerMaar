@@ -142,10 +142,9 @@ class VoiceChannelView(View):
 class ContributorView(View):
     user_id: UUID
     display_name: str
-    pixabot: str | None
     discord_id: str
     discord_username: str | None
-    discord_avatar_hash: str | None
+    avatar_url: str
 
 
 class RequestView(View):
@@ -579,7 +578,7 @@ async def player_view(
         QueueEntryView(
             id=entry.id,
             position=entry.position,
-            request=_request_view(entry.request, tracks, contributors),
+            request=_request_view(entry.request, tracks, contributors, application),
         )
         for entry in state.queue.entries
     )
@@ -633,7 +632,10 @@ async def player_view(
                 ),
                 continuation=run.continuation,
                 error=run.error,
-                initiator=_contributor_view(contributors.get(run.initiated_by)),
+                initiator=_contributor_view(
+                    contributors.get(run.initiated_by),
+                    application,
+                ),
             )
             if run is not None
             else None
@@ -641,7 +643,7 @@ async def player_view(
         runtime=PlaybackRuntimeView(
             phase=runtime_phase.value,
             current=(
-                _request_view(current_request, tracks, contributors)
+                _request_view(current_request, tracks, contributors, application)
                 if current_request is not None
                 else None
             ),
@@ -677,6 +679,7 @@ def _request_view(
     request: TrackRequest,
     tracks: dict[TrackId, Track],
     contributors: dict[UserId, User],
+    application: Application,
 ) -> RequestView:
     track = tracks.get(request.track_id)
     if track is None:
@@ -690,12 +693,18 @@ def _request_view(
         requested_by=request.requested_by,
         radio_run_id=request.radio_run_id,
         source_id=request.source_id,
-        contributor=_contributor_view(contributors.get(request.requested_by)),
+        contributor=_contributor_view(
+            contributors.get(request.requested_by),
+            application,
+        ),
         track=track_view(track),
     )
 
 
-def _contributor_view(user: User | None) -> ContributorView | None:
+def _contributor_view(
+    user: User | None,
+    application: Application,
+) -> ContributorView | None:
     if user is None:
         return None
     return ContributorView(
@@ -705,8 +714,10 @@ def _contributor_view(user: User | None) -> ContributorView | None:
             or user.discord.username
             or f"Listener {str(user.id)[:8]}"
         ),
-        pixabot=user.profile.pixabot,
         discord_id=user.discord.discord_id,
         discord_username=user.discord.username,
-        discord_avatar_hash=user.discord.avatar_hash,
+        avatar_url=application.avatars.public_url(
+            user.discord.discord_id,
+            avatar_hash=user.discord.avatar_hash,
+        ),
     )

@@ -12,14 +12,6 @@ const props = defineProps<{
 	context?: "request" | "radio-status";
 }>();
 const { icons } = useTheme();
-const avatar = computed(() => {
-	if (!props.contributor) return undefined;
-	if (props.contributor.pixabot) return `/avatars/${props.contributor.pixabot}.png`;
-	const hash = props.contributor.discord_avatar_hash;
-	if (!hash) return undefined;
-	const extension = hash.startsWith("a_") ? "gif" : "png";
-	return `https://cdn.discordapp.com/avatars/${props.contributor.discord_id}/${hash}.${extension}?size=64`;
-});
 const label = computed(() =>
 	props.contributor
 		? props.context === "radio-status"
@@ -41,10 +33,9 @@ const label = computed(() =>
 		>
 			<UAvatar
 				v-if="contributor"
-				:src="avatar"
+				:src="contributor.avatar_url"
 				:alt="contributor.display_name"
 				class="size-6 shrink-0 bg-elevated"
-				:class="contributor.pixabot && '[&>img]:[image-rendering:pixelated]'"
 			/>
 			<span class="truncate">
 				<span v-if="origin === 'radio' && context !== 'radio-status'">Radio · </span>

@@ -19,13 +19,7 @@ const role = computed(() => {
 	if (props.value.role === "admin") return "Admin";
 	return "Listener";
 });
-const discordAvatar = computed(() => {
-	const discord = props.value.discord;
-	if (discord.avatar_url) return discord.avatar_url;
-	if (!discord.avatar_hash) return undefined;
-	const extension = discord.avatar_hash.startsWith("a_") ? "gif" : "png";
-	return `https://cdn.discordapp.com/avatars/${discord.id}/${discord.avatar_hash}.${extension}?size=128`;
-});
+const discordAvatar = computed(() => props.value.discord.avatar_url ?? undefined);
 const metrics = computed(() => {
 	const totals = props.value.statistics.totals;
 	return [
@@ -67,16 +61,7 @@ function formatDate(value: string) {
 			class="flex flex-wrap items-center justify-between gap-5 border-b border-default pb-7"
 		>
 			<div class="flex min-w-0 items-center gap-5">
-				<img
-					v-if="value.profile.pixabot"
-					:src="`/avatars/${value.profile.pixabot}.png`"
-					alt=""
-					width="80"
-					height="80"
-					class="size-20 shrink-0 rounded-2xl [image-rendering:pixelated]"
-				/>
 				<UAvatar
-					v-else
 					:src="discordAvatar"
 					:alt="value.discord.display_name ?? value.discord.username ?? 'Discord account'"
 					size="3xl"

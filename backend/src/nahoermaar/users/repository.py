@@ -234,10 +234,6 @@ class _UserProfileRow(Base):
             "AND display_name = btrim(display_name))",
             name="display_name_valid",
         ),
-        CheckConstraint(
-            "pixabot IS NULL OR pixabot ~ '^[0-9a-f]{4}$'",
-            name="pixabot_valid",
-        ),
     )
 
     user_id: Mapped[UUID] = mapped_column(
@@ -245,7 +241,6 @@ class _UserProfileRow(Base):
         primary_key=True,
     )
     display_name: Mapped[str | None] = mapped_column(String(32))
-    pixabot: Mapped[str | None] = mapped_column(String(4))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
     user: Mapped[_UserRow] = relationship(back_populates="profile")
@@ -463,7 +458,6 @@ class UserRepository:
                 profile=_UserProfileRow(
                     user_id=user.id,
                     display_name=user.profile.display_name,
-                    pixabot=user.profile.pixabot,
                     updated_at=user.updated_at,
                 ),
                 preferences=_UserPreferencesRow(
@@ -498,7 +492,6 @@ class UserRepository:
         row.discord_identity.synced_at = user.discord.synced_at
 
         row.profile.display_name = user.profile.display_name
-        row.profile.pixabot = user.profile.pixabot
         row.profile.updated_at = user.updated_at
 
         row.preferences.mode = user.appearance.mode
@@ -537,7 +530,7 @@ def _to_domain(row: _UserRow) -> User:
             identity.avatar_hash,
             identity.synced_at,
         ),
-        profile=UserProfile(profile.display_name, profile.pixabot),
+        profile=UserProfile(profile.display_name),
         appearance=Appearance(
             mode=preferences.mode,
             artwork_colors=preferences.artwork_colors,

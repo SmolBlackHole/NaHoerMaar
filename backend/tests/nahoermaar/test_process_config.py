@@ -18,6 +18,7 @@ def test_settings_load_explicit_environment() -> None:
             "DISCORD_CLIENT_SECRET": "local-secret",
             "PUBLIC_ORIGIN": "https://music.example.test",
             "ACCESS_PATH": "config/access.toml",
+            "NAHORMAAR_AVATAR_DIR": "var/avatars",
             "NAHORMAAR_LOG_DIR": "var/logs",
             "LOG_RETENTION_DAYS": "21",
             "STATISTICS_TIMEZONE": "Europe/Berlin",
@@ -31,6 +32,7 @@ def test_settings_load_explicit_environment() -> None:
         "https://music.example.test/api/auth/discord/callback"
     )
     assert settings.auth.secure
+    assert settings.avatar_directory == (Path.cwd() / "var/avatars").resolve()
     assert settings.log_directory == (Path.cwd() / "var/logs").resolve()
     assert settings.log_retention_days == 21
     assert settings.statistics_timezone == "Europe/Berlin"

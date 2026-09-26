@@ -2,12 +2,7 @@
 defineProps<{ collapsed?: boolean }>();
 const profile = useNuxtApp().$backendCore.stores.useProfileStore();
 const details = computed(() => profile.profile);
-const discordAvatar = computed(() => {
-	const discord = details.value?.discord;
-	if (!discord?.avatar_hash) return undefined;
-	const extension = discord.avatar_hash.startsWith("a_") ? "gif" : "png";
-	return `https://cdn.discordapp.com/avatars/${discord.id}/${discord.avatar_hash}.${extension}?size=64`;
-});
+const discordAvatar = computed(() => details.value?.discord.avatar_url ?? undefined);
 </script>
 
 <template>
@@ -20,16 +15,7 @@ const discordAvatar = computed(() => {
 			:class="collapsed && 'justify-center px-0'"
 			aria-label="Edit your profile"
 		>
-			<img
-				v-if="details.profile.pixabot"
-				:src="`/avatars/${details.profile.pixabot}.png`"
-				alt=""
-				width="32"
-				height="32"
-				class="size-8 shrink-0 rounded-lg [image-rendering:pixelated]"
-			/>
 			<UAvatar
-				v-else
 				:src="discordAvatar"
 				:alt="details.discord.username ?? 'Profile'"
 				size="sm"

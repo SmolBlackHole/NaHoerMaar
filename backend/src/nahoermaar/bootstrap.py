@@ -22,6 +22,7 @@ from .database.schema import migrate
 from .database.uow import UnitOfWork
 from .integrations.discord import DiscordGateway
 from .integrations.discord_oauth import DiscordOAuth
+from .integrations.avatars import DiscordAvatarStore
 from .integrations.youtube import YouTubeMusicProvider, YouTubeProvider
 from .listening.service import (
     AdvancePlayback,
@@ -121,6 +122,7 @@ class Application:
     profiles: ProfileView
     recent: RecentListeningView
     logs: RecentLogBuffer
+    avatars: DiscordAvatarStore
     gateway: DiscordGateway | None = None
     playback: PlaybackCoordinator | None = None
     _lifecycle: ApplicationLifecycle = field(
@@ -234,6 +236,7 @@ def bootstrap(
         settings.log_retention_days,
     )
     database = Database(settings.database_url)
+    avatars = DiscordAvatarStore(settings.avatar_directory)
 
     def units() -> UnitOfWork:
         return UnitOfWork(database.sessions)
@@ -315,6 +318,7 @@ def bootstrap(
         profiles,
         recent,
         logs,
+        avatars,
         gateway,
         playback,
     )

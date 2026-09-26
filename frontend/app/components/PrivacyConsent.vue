@@ -55,8 +55,9 @@ const details = ref(false);
 				<div>
 					<dt class="font-medium text-highlighted">Your account</dt>
 					<dd>
-						Name, avatar and appearance are saved with your Discord account, including
-						your colours, font and text size.
+						Name and appearance are saved with your Discord account. Your Discord
+						profile picture is cached by NaHörMaar instead of being loaded from Discord
+						in your browser.
 					</dd>
 				</div>
 				<div>

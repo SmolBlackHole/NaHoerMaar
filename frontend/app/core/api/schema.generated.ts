@@ -915,16 +915,14 @@ export interface components {
         };
         /** ContributorView */
         ContributorView: {
-            /** Discord Avatar Hash */
-            discord_avatar_hash: string | null;
+            /** Avatar Url */
+            avatar_url: string;
             /** Discord Id */
             discord_id: string;
             /** Discord Username */
             discord_username: string | null;
             /** Display Name */
             display_name: string;
-            /** Pixabot */
-            pixabot: string | null;
             /**
              * User Id
              * Format: uuid
@@ -995,8 +993,6 @@ export interface components {
         };
         /** DiscordView */
         DiscordView: {
-            /** Avatar Hash */
-            avatar_hash: string | null;
             /** Avatar Url */
             avatar_url: string | null;
             /** Display Name */
@@ -1264,8 +1260,6 @@ export interface components {
         ProfileUpdate: {
             /** Display Name */
             display_name: string;
-            /** Pixabot */
-            pixabot: string;
         };
         /** ProfileView */
         ProfileView: {
@@ -1273,8 +1267,6 @@ export interface components {
             complete: boolean;
             /** Display Name */
             display_name: string | null;
-            /** Pixabot */
-            pixabot: string | null;
         };
         /** QueueEntryView */
         QueueEntryView: {
@@ -1363,8 +1355,8 @@ export interface components {
         };
         /** RankedListenerView */
         RankedListenerView: {
-            /** Discord Avatar Url */
-            discord_avatar_url: string | null;
+            /** Avatar Url */
+            avatar_url: string;
             /** Discord Display Name */
             discord_display_name: string | null;
             /** Discord Username */
@@ -1373,8 +1365,6 @@ export interface components {
             display_name: string | null;
             /** Listening Seconds */
             listening_seconds: number;
-            /** Pixabot */
-            pixabot: string | null;
             /** Plays */
             plays: number;
             /**
@@ -1401,16 +1391,14 @@ export interface components {
         };
         /** RecentContributorView */
         RecentContributorView: {
-            /** Discord Avatar Hash */
-            discord_avatar_hash: string | null;
+            /** Avatar Url */
+            avatar_url: string;
             /** Discord Id */
             discord_id: string;
             /** Discord Username */
             discord_username: string | null;
             /** Display Name */
             display_name: string;
-            /** Pixabot */
-            pixabot: string | null;
             /**
              * User Id
              * Format: uuid

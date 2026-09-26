@@ -20,15 +20,6 @@ const consent = useConsentStore();
 			<NuxtLink to="/licenses" class="hover:text-highlighted hover:underline"
 				>Licenses</NuxtLink
 			>
-			<UTooltip text="Avatars by Pixabots">
-				<a
-					href="https://pixabots.com"
-					target="_blank"
-					rel="noopener noreferrer"
-					class="hover:text-highlighted hover:underline"
-					>{{ compact ? "Pixabots" : "Avatars by Pixabots" }}</a
-				>
-			</UTooltip>
 			<button
 				type="button"
 				class="hover:text-highlighted hover:underline"

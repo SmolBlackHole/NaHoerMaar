@@ -122,11 +122,11 @@ function displayUserId(userId: string | null) {
 	return user ? displayUser(user) : `User ${userId.slice(0, 8)}`;
 }
 function avatar(user: AccessUser) {
-	const directoryAvatar = memberByDiscordId.value.get(user.discord.id)?.avatar_url;
-	if (directoryAvatar) return directoryAvatar;
-	if (!user.discord.avatar_hash) return undefined;
-	const extension = user.discord.avatar_hash.startsWith("a_") ? "gif" : "png";
-	return `https://cdn.discordapp.com/avatars/${user.discord.id}/${user.discord.avatar_hash}.${extension}?size=64`;
+	return (
+		memberByDiscordId.value.get(user.discord.id)?.avatar_url ??
+		user.discord.avatar_url ??
+		undefined
+	);
 }
 function profileLink(user: AccessUser) {
 	return user.id === session.account?.user_id ? "/profile" : `/profile/${user.id}`;

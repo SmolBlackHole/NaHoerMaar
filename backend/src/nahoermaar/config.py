@@ -140,6 +140,7 @@ class Settings:
     log_level: LogLevel = LogLevel.INFO
     node_path: Path = Path("node")
     log_directory: Path = Path("data/logs")
+    avatar_directory: Path = Path("data/avatars")
     log_retention_days: int = 14
     statistics_timezone: str = "UTC"
 
@@ -206,6 +207,9 @@ class Settings:
             node_path=Path(values.get("NODE_PATH") or "node"),
             log_directory=Path(
                 values.get("NAHORMAAR_LOG_DIR") or "data/logs"
+            ).resolve(),
+            avatar_directory=Path(
+                values.get("NAHORMAAR_AVATAR_DIR") or "data/avatars"
             ).resolve(),
             log_retention_days=log_retention_days,
             statistics_timezone=statistics_timezone,

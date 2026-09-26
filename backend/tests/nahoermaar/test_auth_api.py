@@ -29,6 +29,7 @@ from nahoermaar.database.core import Database
 from nahoermaar.database.schema import Base
 from nahoermaar.database.uow import UnitOfWork
 from nahoermaar.integrations.discord import DiscordGateway
+from nahoermaar.integrations.avatars import DiscordAvatarStore
 from nahoermaar.messaging import MessageBus
 from nahoermaar.listening.service import ListeningService
 from nahoermaar.observability import ContextFilter
@@ -74,7 +75,7 @@ class Gateway:
                 "9",
                 "owner",
                 "Andrey",
-                "https://cdn.discordapp.test/owner.png",
+                "https://cdn.discordapp.com/avatars/9/test.png",
                 "1",
                 "Spoon's server",
             ),
@@ -138,6 +139,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
         profiles,
         recent,
         logs,
+        DiscordAvatarStore(Path("data/avatars")),
         gateway=cast(DiscordGateway, Gateway()),
     )
     app = create_app(application)
@@ -205,7 +207,10 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             assert own_profile.json()["id"] == str(current.user.id)
             assert own_profile.json()["discord"]["display_name"] == "Andrey"
             assert own_profile.json()["discord"]["avatar_url"] == (
-                "https://cdn.discordapp.test/owner.png"
+                application.avatars.public_url(
+                    "9",
+                    source_url="https://cdn.discordapp.com/avatars/9/test.png",
+                )
             )
             assert own_profile.json()["statistics"]["user_id"] == str(current.user.id)
             assert own_profile.json()["recent_tracks"] == []
@@ -251,7 +256,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
 
             rejected = await client.put(
                 "/api/users/me/profile",
-                json={"display_name": "Owner", "pixabot": "12ab"},
+                json={"display_name": "Owner"},
             )
             assert rejected.status_code == 403
             assert rejected.json() == {"error": "csrf_failed"}
@@ -305,10 +310,9 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             assert contributor == {
                 "user_id": str(current.user.id),
                 "display_name": "Owner",
-                "pixabot": None,
                 "discord_id": "9",
                 "discord_username": "Owner",
-                "discord_avatar_hash": None,
+                "avatar_url": application.avatars.public_url("9"),
             }
             request_id = queued.json()["player"]["queue"][0]["request"]["id"]
             playback_id = uuid4()
@@ -353,8 +357,9 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             top_listener = enriched_overview.json()["top_listeners"][0]
             assert top_listener["discord_username"] == "Owner"
             assert top_listener["discord_display_name"] == "Andrey"
-            assert top_listener["discord_avatar_url"] == (
-                "https://cdn.discordapp.test/owner.png"
+            assert top_listener["avatar_url"] == application.avatars.public_url(
+                "9",
+                source_url="https://cdn.discordapp.com/avatars/9/test.png",
             )
             recent = await client.get("/api/listening/recent", params={"limit": 1})
             assert recent.status_code == 200
@@ -376,10 +381,9 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
                         "contributor": {
                             "user_id": str(current.user.id),
                             "display_name": "Owner",
-                            "pixabot": None,
                             "discord_id": "9",
                             "discord_username": "Owner",
-                            "discord_avatar_hash": None,
+                            "avatar_url": application.avatars.public_url("9"),
                         },
                         "started_at": NOW.isoformat().replace("+00:00", "Z"),
                         "ended_at": (NOW + timedelta(seconds=42))
@@ -455,7 +459,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             profile = await client.put(
                 "/api/users/me/profile",
                 headers=headers,
-                json={"display_name": "Local owner", "pixabot": "12ab"},
+                json={"display_name": "Local owner"},
             )
             assert profile.status_code == 200
             assert profile.json()["profile"]["display_name"] == "Local owner"
@@ -473,7 +477,9 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             assert runtime["current"]["id"] == request_id
             assert runtime["current"]["track"]["title"] == "API track"
             assert runtime["current"]["contributor"]["display_name"] == "Local owner"
-            assert runtime["current"]["contributor"]["pixabot"] == "12ab"
+            assert runtime["current"]["contributor"]["avatar_url"] == (
+                application.avatars.public_url("9")
+            )
 
             operator = await client.put("/api/access/9", headers=headers)
             assert operator.status_code == 409

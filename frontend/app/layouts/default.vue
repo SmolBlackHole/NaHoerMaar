@@ -31,6 +31,7 @@ watch(
 );
 
 const { icons } = useTheme();
+const route = useRoute();
 const open = ref(false);
 const collapsed = ref(false);
 const consent = useConsentStore();
@@ -63,31 +64,37 @@ const links = computed(() => [
 	...(["owner", "admin"].includes(session.account?.role ?? "")
 		? [
 				{
-					label: "Access",
-					"aria-label": "Manage listener access",
-					icon: icons.value.user,
-					to: "/access",
-					onSelect: () => {
-						open.value = false;
-					},
-				},
-				{
-					label: "Background Jobs",
-					"aria-label": "Manage background jobs",
-					icon: icons.value.reload,
-					to: "/jobs",
-					onSelect: () => {
-						open.value = false;
-					},
-				},
-				{
-					label: "Logs",
-					"aria-label": "Bot logs",
-					icon: icons.value.file,
-					to: "/logs",
-					onSelect: () => {
-						open.value = false;
-					},
+					label: "Administration",
+					"aria-label": "Administration",
+					icon: icons.value.settings,
+					type: "trigger" as const,
+					defaultOpen: ["/access", "/jobs", "/logs"].includes(route.path),
+					children: [
+						{
+							label: "Access",
+							"aria-label": "Manage listener access",
+							to: "/access",
+							onSelect: () => {
+								open.value = false;
+							},
+						},
+						{
+							label: "Background Jobs",
+							"aria-label": "Manage background jobs",
+							to: "/jobs",
+							onSelect: () => {
+								open.value = false;
+							},
+						},
+						{
+							label: "Logs",
+							"aria-label": "Bot logs",
+							to: "/logs",
+							onSelect: () => {
+								open.value = false;
+							},
+						},
+					],
 				},
 			]
 		: []),
@@ -128,6 +135,7 @@ const links = computed(() => [
 						orientation="vertical"
 						highlight
 						tooltip
+						popover
 						:ui="{ link: 'min-h-11 gap-3 px-2.5 py-2.5' }"
 					/>
 				</template>

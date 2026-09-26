@@ -8,10 +8,12 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from nahoermaar.bootstrap import Application
+from nahoermaar.integrations.avatars import AvatarUnavailableError
 from nahoermaar.listening.domain import PlaybackEndReason
 from nahoermaar.statistics.service import StatisticsPeriod
 from nahoermaar.users.domain import (
@@ -48,7 +50,6 @@ class DiscordView(BaseModel):
     id: str
     username: str | None
     display_name: str | None
-    avatar_hash: str | None
     avatar_url: str | None
     synced_at: datetime | None
 
@@ -57,7 +58,6 @@ class ProfileView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     display_name: str | None
-    pixabot: str | None
     complete: bool
 
 
@@ -110,7 +110,6 @@ class ProfileUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     display_name: str = Field(min_length=1, max_length=32)
-    pixabot: str = Field(pattern=r"^[0-9a-f]{4}$")
 
 
 class AppearanceUpdate(BaseModel):
@@ -193,7 +192,7 @@ def router(application: Application) -> APIRouter:
         await application.bus.execute(
             SaveProfile(
                 current.user.id,
-                UserProfile(body.display_name.strip(), body.pixabot),
+                UserProfile(body.display_name.strip()),
             )
         )
         return _profile_page_view(
@@ -246,10 +245,12 @@ def router(application: Application) -> APIRouter:
         await application.access.require_admin(authenticated(request).user.id)
         return AccessView(
             operators=tuple(
-                _user_view(user) for user in await application.access.operator_users()
+                _user_view(user, application)
+                for user in await application.access.operator_users()
             ),
             grants=tuple(
-                _grant_view(user) for user in await application.access.grants()
+                _grant_view(user, application)
+                for user in await application.access.grants()
             ),
             history=tuple(
                 _event_view(event)
@@ -262,8 +263,23 @@ def router(application: Application) -> APIRouter:
         await application.access.require_admin(authenticated(request).user.id)
         members = application.gateway.members() if application.gateway else ()
         return DiscordMembersView(
-            members=tuple(_member_view(member) for member in members)
+            members=tuple(_member_view(member, application) for member in members)
         )
+
+    @routes.get("/avatars/discord/{discord_id}", include_in_schema=False)
+    async def discord_avatar(
+        request: Request,
+        discord_id: str,
+        v: Annotated[str, Query(pattern=r"^[0-9a-f]{16}$")],
+    ) -> FileResponse:
+        authenticated(request)
+        try:
+            asset = await application.avatars.get(discord_id, v)
+        except AvatarUnavailableError as error:
+            raise HTTPException(
+                status_code=404, detail="Avatar unavailable."
+            ) from error
+        return FileResponse(asset.path, media_type=asset.media_type)
 
     @routes.put("/access/{discord_id}")
     async def grant_access(request: Request, discord_id: str) -> AccessEventView | None:
@@ -284,20 +300,21 @@ def router(application: Application) -> APIRouter:
     return routes
 
 
-def _user_view(user: User) -> UserView:
+def _user_view(user: User, application: Application) -> UserView:
     return UserView(
         id=user.id,
         discord=DiscordView(
             id=user.discord.discord_id,
             username=user.discord.username,
             display_name=None,
-            avatar_hash=user.discord.avatar_hash,
-            avatar_url=None,
+            avatar_url=application.avatars.public_url(
+                user.discord.discord_id,
+                avatar_hash=user.discord.avatar_hash,
+            ),
             synced_at=user.discord.synced_at,
         ),
         profile=ProfileView(
             display_name=user.profile.display_name,
-            pixabot=user.profile.pixabot,
             complete=user.profile_complete,
         ),
         appearance=AppearanceView(
@@ -316,11 +333,11 @@ def _user_view(user: User) -> UserView:
     )
 
 
-def _grant_view(user: User) -> AccessGrantView:
+def _grant_view(user: User, application: Application) -> AccessGrantView:
     if user.access_granted_by is None or user.access_granted_at is None:
         raise ValueError("Ordinary access grant is missing its actor or timestamp.")
     return AccessGrantView(
-        user=_user_view(user),
+        user=_user_view(user, application),
         granted_by_user_id=user.access_granted_by,
         granted_at=user.access_granted_at,
     )
@@ -346,13 +363,15 @@ def _profile_page_view(
             id=identity.discord.discord_id,
             username=identity.discord.username or (member.username if member else None),
             display_name=member.display_name if member else None,
-            avatar_hash=identity.discord.avatar_hash,
-            avatar_url=member.avatar_url if member else None,
+            avatar_url=application.avatars.public_url(
+                identity.discord.discord_id,
+                avatar_hash=identity.discord.avatar_hash,
+                source_url=member.avatar_url if member else None,
+            ),
             synced_at=identity.discord.synced_at,
         ),
         profile=ProfileView(
             display_name=identity.profile.display_name,
-            pixabot=identity.profile.pixabot,
             complete=identity.profile.complete,
         ),
         appearance=AppearanceView(
@@ -370,6 +389,7 @@ def _profile_page_view(
         last_login_at=identity.last_login_at,
         statistics=statistics_view(
             report.statistics,
+            application.avatars,
             members,
         ),
         recent_tracks=tuple(
@@ -402,12 +422,18 @@ def _event_view(event: AccessEvent) -> AccessEventView:
     )
 
 
-def _member_view(member: DiscordMember) -> DiscordMemberView:
+def _member_view(
+    member: DiscordMember,
+    application: Application,
+) -> DiscordMemberView:
     return DiscordMemberView(
         discord_id=member.discord_id,
         username=member.username,
         display_name=member.display_name,
-        avatar_url=member.avatar_url,
+        avatar_url=application.avatars.public_url(
+            member.discord_id,
+            source_url=member.avatar_url,
+        ),
         guild_id=member.guild_id,
         guild_name=member.guild_name,
     )
