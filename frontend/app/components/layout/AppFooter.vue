@@ -61,8 +61,9 @@ const consent = useConsentStore();
 }
 .is-compact .footer-links {
 	display: grid;
-	grid-template-columns: repeat(2, minmax(0, 1fr));
-	gap: 0.375rem 0.75rem;
+	grid-template-columns: repeat(2, max-content);
+	justify-content: start;
+	gap: 0.375rem 1.5rem;
 	width: 100%;
 }
 </style>
