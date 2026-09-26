@@ -96,11 +96,11 @@ this page remains the overview.
 
 ## Composition and lifetime
 
-`backend/src/nahormaar_backend/engine/bootstrap.py` reads configuration and
-composes the production providers, Discord transport, account services and
-engine. `engine/runtime.py` owns the injected resources and creates metadata,
-catalog and Session services. The domain modules do not read environment values
-or log a Discord client in.
+`backend/src/nahoermaar/bootstrap.py` is the composition root. It reads settings,
+creates the database, repositories, services, message bus, player Session,
+Discord adapters and FastAPI application, then registers their shutdown order.
+Feature modules receive their dependencies explicitly. Domain modules do not
+read environment values or log a Discord client in.
 
 The application uses the host event loop. A Session waits on its bounded inbox
 instead of polling. One backend worker owns one bot and one player; starting

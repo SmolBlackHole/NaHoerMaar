@@ -12,7 +12,7 @@ from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from sqlalchemy import Connection
 
-from engine.database import database_url
+from database import database_url
 from nahoermaar.database.core import Database
 from nahoermaar.database import schema
 

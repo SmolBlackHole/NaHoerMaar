@@ -35,10 +35,10 @@ the relationship to current metadata.
 
 ## Queue mutations
 
-`engine/domain/queue.py` owns pure edits: add, remove, reorder, clear and restore.
-`engine/session.py` applies them inside the serialized Session transaction. A
-mutation never waits for provider lookup or Discord output while holding that
-transaction.
+`player/fsm.py` owns pure edits: add, remove, reorder, clear and restore.
+`player/session.py` applies them inside the serialized Session mailbox and a
+short unit of work. A mutation never waits for provider lookup or Discord output
+while holding that transaction.
 
 Removing one entry affects only that occurrence. Bulk removal may target the
 current contributor, a selected contributor or all upcoming entries. It leaves

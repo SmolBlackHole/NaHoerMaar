@@ -64,7 +64,7 @@ Six full engine recordings are opt-in. In an agreed resource window:
 
 ```powershell
 $env:NAHORMAAR_ENGINE_AUDIO_TESTS = "1"
-.venv\Scripts\python.exe -m pytest backend/tests/engine/test_playback_pipeline.py -p no:cacheprovider
+.venv\Scripts\python.exe -m pytest backend/tests/nahoermaar/test_playback_coordinator.py -p no:cacheprovider
 Remove-Item Env:NAHORMAAR_ENGINE_AUDIO_TESTS
 ```
 
@@ -169,6 +169,14 @@ screen even though the session was valid. The frontend now retains a known
 session on a transient transport failure; its focused regression test and type
 check pass. This correction was not retested with another live restart. The
 remaining pending and partial cases keep overall live acceptance open.
+
+Cutover check on 2026-09-26: the backend, frontend and PostgreSQL services were
+rebuilt and recreated from the final `nahoermaar` package. All services became
+healthy, every readiness check reported `ready`, Discord Voice reconnected and
+the existing users, queue entries, Radio runs and discovery snapshots remained
+in PostgreSQL. Playback then recorded another request and playback occurrence.
+This proves the runtime cutover and data retention, but it does not replace the
+pending audible checks in the table above.
 
 For each case, note what was audible separately from the UI snapshot and backend
 logs. A test passes only when both the listener and the state/history evidence

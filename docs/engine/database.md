@@ -18,7 +18,7 @@ schema. Operational backups and restores belong in
   - [Schema ownership](#schema-ownership)
   - [Develop a migration](#develop-a-migration)
   - [Test database changes](#test-database-changes)
-  - [Caches are not persistence](#caches-are-not-persistence)
+  - [Caches and temporary data](#caches-and-temporary-data)
 
 ## One database, separate units of work
 
@@ -26,14 +26,11 @@ schema. Operational backups and restores belong in
 from `POSTGRES_DB`, `POSTGRES_USER` and `POSTGRES_PASSWORD`; a locally started
 backend reads the complete URL from `.env`.
 
-The database contains the shared listening session and the Discord accounts
-that may use the dashboard. Sharing one database gives deployment and recovery
-one durable unit. Account updates still use their own short transactions and do
-not join long playback operations.
-
-The Session owns atomic engine changes. Account login, profile and appearance
-operations use separate units of work. Provider calls, FFmpeg work, Discord I/O
-and event delivery happen outside database transactions.
+The database contains users, catalog data, discovery snapshots, the shared
+listening session and listening facts. Sharing one database gives deployment and
+recovery one durable unit. Each command still uses its own short unit of work.
+Provider calls, FFmpeg work, Discord I/O and event delivery happen outside
+database transactions.
 
 ## Stored engine state
 
@@ -41,9 +38,9 @@ The engine stores:
 
 - the stable listening-session identity and settings;
 - persistent tracks, media identities, artists and merged metadata;
-- ordered queue entries with origin and contributor snapshots;
+- ordered queue entries with request origin and a user reference;
 - the current playback checkpoint and confirmed playback records;
-- the active Manual or Radio strategy and Radio candidates;
+- the active Radio run, candidates and exclusions;
 - mutation receipts, outcomes and revision evidence used for idempotency.
 
 Tracks are the shared reference point. Queue entries and playback records refer
@@ -52,25 +49,25 @@ confirmed play remain separate records with their own IDs and attribution. Their
 domain meaning lives in [Queue and history](queue.md), [Radio](radio.md) and
 [Playback](playback.md).
 
-Account tables store OAuth accounts, browser sessions and pending login
-attempts. Only hashes of browser-session tokens are stored. Each account also
-stores its effective role and, for normal listeners, who granted access and
-when. The immutable grant/revoke history lives beside those accounts in
+User tables store Discord identities, profiles, preferences, browser sessions
+and pending login attempts. Only hashes of browser-session tokens are stored.
+Each user also stores the effective role and, for normal listeners, who granted
+access and when. The immutable grant/revoke history lives beside those users in
 PostgreSQL. Owner and admin IDs remain in `config/access.toml` as the operator
 bootstrap boundary.
 
 ## Repositories and transactions
 
-`engine/persistence.py` contains the engine mappings and repositories.
-`persistence/models.py` and `persistence/accounts.py` own account, role and
-session storage. `engine/schema.py` combines those mappings with the engine
-metadata for startup and migrations.
+`database/core.py` owns the SQLAlchemy engine and session factory.
+`database/uow.py` gives a command one explicit transaction. Feature repositories
+own their private mappings under `users/`, `catalog/`, `player/` and
+`listening/`; `statistics/` reads the same normalized facts without owning a
+second write model.
 
-Engine repositories run in caller-owned transactions and flush without choosing
-when to commit. `write_transaction()` commits state, history, receipts and
-revision changes together or rolls all of them back. PostgreSQL enforces foreign
-keys and isolates concurrent transactions; the application does not emulate a
-global writer lock.
+Repositories flush inside the caller-owned unit of work and do not choose when
+to commit. Player state, queue requests, receipts and revision changes therefore
+commit together or roll back together. PostgreSQL enforces foreign keys and
+transaction isolation; the application does not emulate a global writer lock.
 
 Keep transactions short. Do not wait for a provider, audio source or Discord
 while a transaction is open. Complete that work first, then return a correlated
@@ -78,18 +75,15 @@ result through the Session inbox.
 
 ## Schema ownership
 
-The Alembic chain lives under `engine/migrations/versions/`. The supported head
-is `engine_0004`, also named by `engine/schema.py`. Startup initializes an empty
-database and its one listening session atomically. It upgrades the supported
-`engine_0001`, `engine_0002` and `engine_0003` revisions in place, and rejects an
-unknown or foreign schema without replacing it.
+The Alembic chain lives under `database/migrations/versions/`. The supported
+head is `0003_radio_request_attribution`. Startup upgrades the configured
+database before it starts the player or Discord gateway.
 
-`engine_0002` added durable Radio source state. `engine_0003` widened Discord
-channel IDs to PostgreSQL `BIGINT`, which is required for Discord snowflakes.
-`engine_0004` added account roles, listener grant attribution and the durable
-administration history.
-Applied migrations are immutable history. Add a new revision instead of editing
-an applied one.
+`0001_initial` creates the normalized user, catalog, player and listening
+schema. `0002_catalog_search_indexes` adds catalog lookup indexes.
+`0003_radio_request_attribution` records the initiating user on Radio-created
+requests. Applied migrations are immutable history. Add a new revision instead
+of editing an applied one.
 
 The runtime currently supports one shared listening session. Independent queues
 per Discord server require an explicit schema and runtime change; the existing
@@ -133,13 +127,14 @@ PostgreSQL 17 service.
 Rehearse operational recovery with a PostgreSQL dump before relying on it. The
 exact commands are in [Back up and restore NaHörMaar](../recovery.md).
 
-## Caches are not persistence
+## Caches and temporary data
 
-Discovery snapshots and refresh work live in bounded in-memory caches. They may
-disappear on restart without losing queued tracks or metadata already merged
-into PostgreSQL. The separate Logs buffer is described by the
-[diagnostics API](../engine-api.md#diagnostics).
+Discovery snapshots are persisted so a restart does not discard a pinned search
+or playlist version. The catalog bounds their retention and may refresh stale
+snapshots in the background. Playable media URLs, provider headers, FFmpeg
+buffers, running tasks and the recent Logs buffer stay in memory because they
+are valid only for the current process.
 
 [Catalog and metadata](catalog.md#cache-and-refresh-behavior) owns discovery
-cache semantics. Durable playback and Radio restoration use database state, not
-those caches.
+retention and refresh behavior. Durable playback and Radio restoration come from
+normalized database state rather than temporary media material.

@@ -4,7 +4,7 @@ Parent: [Engine documentation](README.md)
 
 The catalog turns provider-specific searches, links and playlists into stable
 NaHörMaar tracks. This page owns provider selection, discovery snapshots,
-metadata merging and the in-memory discovery cache. Queue behavior belongs in
+metadata merging and the persistent discovery cache. Queue behavior belongs in
 [Queue and history](queue.md); resolving playable audio belongs in
 [Playback](playback.md).
 

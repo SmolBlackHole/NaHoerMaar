@@ -66,7 +66,7 @@ docker compose up -d --wait database
 Then start the backend from the repository root in one terminal:
 
 ```powershell
-.venv\Scripts\python.exe -m nahormaar_backend
+.venv\Scripts\python.exe -m nahoermaar
 ```
 
 The server binds to `127.0.0.1:8000`. Its

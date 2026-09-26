@@ -114,10 +114,12 @@ related music. It adds a few upcoming tracks as the queue runs down. Requests
 added by people take priority, so Radio fills gaps instead of taking over their
 choices.
 
-You can end Radio without stopping the current song. Tracks it already added
-stay in the queue; ending Radio stops only future additions. Pausing playback
-suspends new refills. [Radio](engine/radio.md) owns the strategy, provider seed,
-refill and restart rules.
+You can end Radio without stopping the current song. NaHörMaar removes upcoming
+tracks added by that Radio run and stops future refills. The current track keeps
+playing, and its request attribution remains available in playback history.
+Replacing Radio removes the old run's upcoming tracks before the new run fills
+the queue. [Radio](engine/radio.md) owns the strategy, provider seed, refill and
+restart rules.
 
 ## When the bot disconnects or restarts
 

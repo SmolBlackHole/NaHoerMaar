@@ -2,8 +2,8 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+"""PostgreSQL schema isolation shared by the new backend tests."""
+
 from hashlib import sha256
 import os
 from pathlib import Path
@@ -11,9 +11,6 @@ from pathlib import Path
 import psycopg
 from psycopg import sql
 from sqlalchemy import make_url
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
-from nahormaar_backend.engine.persistence import Base, database_engine
 
 DEFAULT_TEST_DATABASE_URL = (
     "postgresql+psycopg://nahormaar:nahormaar-test-only@127.0.0.1:55432/nahormaar_test"
@@ -58,16 +55,3 @@ def drop_test_schemas(prefix: str) -> None:
             connection.execute(
                 sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(schema))
             )
-
-
-@asynccontextmanager
-async def isolated_database(
-    path: Path,
-) -> AsyncGenerator[async_sessionmaker[AsyncSession], None]:
-    engine = database_engine(database_url(path))
-    try:
-        async with engine.begin() as connection:
-            await connection.run_sync(Base.metadata.create_all)
-        yield async_sessionmaker(engine, expire_on_commit=False, autobegin=False)
-    finally:
-        await engine.dispose()

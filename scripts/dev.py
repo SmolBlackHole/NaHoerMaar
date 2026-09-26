@@ -59,7 +59,7 @@ def setup() -> None:
     if not _venv_python().is_file():
         _run((sys.executable, "-m", "venv", str(VENV)))
     _run((str(_venv_python()), "-m", "pip", "install", "-e", ".[dev]"))
-    _run((str(_venv_python()), "-m", "nahormaar_backend.config"))
+    _run((str(_venv_python()), "-m", "nahoermaar.config"))
     _run((npm, "ci"))
 
 

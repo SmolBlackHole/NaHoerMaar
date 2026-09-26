@@ -19,15 +19,15 @@ second queue or replace manual requests.
 
 ## Strategies
 
-The Session always has one queue-filling strategy. Manual mode adds nothing on
-its own. Radio mode carries the seed, initiator, generation and unused
-recommendation candidates. The strategies live in
-`engine/domain/radio.py`; neither one plays audio.
+An active `RadioRun` carries the seed, initiator, generation and unused
+recommendation candidates. Without an active run, only explicit requests add
+tracks. The state lives with the player domain in `player/domain.py`; it never
+plays audio itself.
 
-Radio aims for three upcoming tracks. Existing manual entries count towards that
-target, so Radio fills gaps instead of moving ahead of requests from listeners.
-Tracks that are current, recent, already queued or explicitly excluded are
-filtered before a candidate is added.
+Radio keeps at most three Radio requests in the upcoming queue. Manual requests
+remain in the same queue and keep their established order. Tracks that are
+current, recent, already queued or explicitly excluded are filtered before a
+candidate is added.
 
 ## Starting from a seed
 
@@ -44,11 +44,11 @@ queue. See [Catalog and metadata](catalog.md).
 
 ## Refill loop
 
-Radio observes committed Session changes through the post-commit event bus. When
-the queue falls below its target, it requests more candidates outside the Session
-inbox. The completed result re-enters the inbox and becomes one queue commit.
-Listeners therefore see the same attribution, revisions and events as they do
-for other queue changes.
+Radio observes committed player changes through the post-commit message bus.
+When fewer than three Radio requests remain, it asks for more candidates outside
+the Session mailbox. The completed result re-enters the mailbox and becomes one
+queue commit. Listeners therefore see the same request attribution, revisions
+and events as they do for other queue changes.
 
 Playing one Radio entry reduces the upcoming count. The next committed state
 triggers another refill when needed. This is the whole playback relationship:
@@ -68,13 +68,14 @@ holds the Session transaction open.
 
 ## Pause, stop and restart
 
-Pausing playback suspends new refills. An unexpected voice disconnect suspends
-playback but retains Radio. Ending Radio stops future additions and leaves tracks
-it already queued in place. Explicit Stop, Leave or a full queue clear ends the
-active Radio strategy as part of the same committed Session change.
+An unexpected voice disconnect suspends playback but retains Radio. Ending
+Radio stops future additions and removes its upcoming queue entries. A Radio
+track that is already playing continues, and its request and history attribution
+remain intact. Replacing Radio removes upcoming entries from the old run before
+the new run requests candidates.
 
 Radio state is durable. After a process restart, it restores the seed, initiator,
 generation, exclusions and unused candidates, then fills any open places without
-duplicating queued or recent tracks. The one-time `engine_0001` upgrade caveat
-is documented in [Database](database.md#schema-ownership), and the listener-facing controls are in
-[Listening together](../listening.md#let-radio-find-the-next-few-tracks).
+duplicating queued or recent tracks. Schema ownership is documented in
+[Database](database.md#schema-ownership), and the listener-facing controls are
+in [Listening together](../listening.md#let-radio-find-the-next-few-tracks).

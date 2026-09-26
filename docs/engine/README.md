@@ -32,29 +32,21 @@ pages describe the implementation boundaries behind that contract.
 
 ## Code map
 
-| Path under `backend/src/nahormaar_backend/` | Guide |
+| Path under `backend/src/nahoermaar/` | Guide |
 | --- | --- |
-| `engine/session.py` | [Architecture](../architecture.md#command-and-event-flow) |
-| `engine/events.py` | [Architecture](../architecture.md#command-and-event-flow) |
-| `engine/runtime.py` | [Architecture](../architecture.md#command-and-event-flow) |
-| `engine/catalog.py` | [Catalog](catalog.md) |
-| `engine/providers.py` | [Catalog](catalog.md) |
-| `engine/youtube.py` | [Catalog](catalog.md) |
-| `engine/metadata.py` | [Catalog](catalog.md) |
-| `engine/domain/queue.py` | [Queue](queue.md) |
-| Queue work in `engine/session.py` | [Queue](queue.md) |
-| `engine/domain/radio.py` | [Radio](radio.md) |
-| Radio work in `engine/session.py` | [Radio](radio.md) |
-| `engine/domain/playback.py` | [Playback](playback.md) |
-| `engine/playback.py` | [Playback](playback.md) |
-| `engine/discord.py` and audio integrations | [Playback](playback.md) |
-| `engine/persistence.py` | [Database](database.md) |
-| `engine/schema.py` and `engine/migrations/` | [Database](database.md) |
-| `persistence/` | [Database](database.md) |
-| `engine/api.py` and `engine/api_models.py` | [Engine API](../engine-api.md) |
-| `engine/http_auth.py` | [Engine API](../engine-api.md) |
-| `engine/bootstrap.py` | [Composition](../architecture.md#composition-and-lifetime) |
-| `engine/gateway.py` and `engine/commands.py` | [Discord setup](../discord-setup.md) |
+| `bootstrap.py` and `messaging.py` | [Architecture](../architecture.md#command-and-event-flow) |
+| `catalog/domain.py` | [Catalog](catalog.md) |
+| `catalog/repository.py` and `catalog/service.py` | [Catalog](catalog.md) |
+| `catalog/providers.py` and `integrations/youtube.py` | [Catalog](catalog.md) |
+| `player/domain.py` and `player/fsm.py` | [Queue](queue.md) and [Radio](radio.md) |
+| `player/session.py` and `player/events.py` | [Architecture](../architecture.md#command-and-event-flow) |
+| `player/playback.py` | [Playback](playback.md) |
+| `integrations/discord.py` and `integrations/audio.py` | [Playback](playback.md) |
+| `database/core.py`, `database/uow.py` and `database/schema.py` | [Database](database.md) |
+| `database/migrations/` | [Database](database.md) |
+| `users/` | [Discord setup](../discord-setup.md) |
+| `listening/` and `statistics/` | [Architecture](../architecture.md) |
+| `api/` | [Engine API](../engine-api.md) |
 
 ## Reading order
 

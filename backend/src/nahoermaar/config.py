@@ -210,3 +210,12 @@ class Settings:
             log_retention_days=log_retention_days,
             statistics_timezone=statistics_timezone,
         )
+
+
+def main() -> None:
+    """Verify and report the FFmpeg binary installed for local development."""
+    print(f"FFmpeg: {ffmpeg_executable(os.environ.get('FFMPEG_PATH'))}")
+
+
+if __name__ == "__main__":
+    main()

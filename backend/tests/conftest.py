@@ -14,7 +14,7 @@ from typing import Any, TypeVar, cast
 import discord
 import pytest
 
-from engine.database import database_url, drop_test_schemas
+from database import database_url, drop_test_schemas
 
 
 T = TypeVar("T")

@@ -47,16 +47,11 @@ dev = [
 where = ["backend/src"]
 
 [tool.setuptools.package-data]
-"nahormaar_backend" = [
-    "py.typed",
-    "avatars.json",
-    "engine/migrations/script.py.mako",
-]
 "nahoermaar" = ["py.typed", "database/migrations/script.py.mako"]
 
 [tool.pytest.ini_options]
-testpaths = ["backend/tests"]
-pythonpath = ["backend/src"]
+testpaths = ["backend/tests/nahoermaar"]
+pythonpath = ["backend/src", "backend/tests"]
 
 [tool.ruff]
 target-version = "py312"
@@ -76,10 +71,20 @@ quote-style = "double"
 python_version = "3.12"
 strict = true
 mypy_path = ["backend/src", "backend/tests"]
-files = ["backend/src/nahormaar_backend", "backend/src/nahoermaar", "backend/tests"]
+files = [
+    "backend/src/nahoermaar",
+    "backend/tests/conftest.py",
+    "backend/tests/database.py",
+    "backend/tests/nahoermaar",
+]
 
 [tool.pyright]
-include = ["backend/src", "backend/tests"]
+include = [
+    "backend/src/nahoermaar",
+    "backend/tests/conftest.py",
+    "backend/tests/database.py",
+    "backend/tests/nahoermaar",
+]
 extraPaths = ["backend/src", "backend/tests"]
 venvPath = "."
 venv = ".venv"
