@@ -141,6 +141,7 @@ async function commitSeek() {
 const action = computed(() =>
 	["playing", "transitioning"].includes(player.state?.runtime.phase ?? "idle") ? "pause" : "play",
 );
+const actionIcon = computed(() => (action.value === "pause" ? icons.value.pause : icons.value.play));
 const label = computed(
 	() =>
 		({
@@ -243,7 +244,8 @@ const confirmationDescription = computed(() =>
 			</UTooltip>
 			<UTooltip :text="label">
 				<UButton
-					:icon="action === 'pause' ? icons.pause : icons.play"
+					:key="action"
+					:icon="actionIcon"
 					:aria-label="label"
 					size="xl"
 					class="dock-play size-10 justify-center rounded-full"
