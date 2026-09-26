@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from nahoermaar.bootstrap import Application
 from nahoermaar.integrations.avatars import AvatarUnavailableError
 from nahoermaar.listening.domain import PlaybackEndReason
-from nahoermaar.statistics.service import StatisticsPeriod
+from nahoermaar.statistics.models import StatisticsPeriod
 from nahoermaar.users.domain import (
     AccessAction,
     AccessEvent,
@@ -174,39 +174,30 @@ def router(application: Application) -> APIRouter:
     routes = APIRouter(prefix="/api", tags=["users"])
 
     @routes.get("/users/me")
-    async def own_profile(
-        request: Request,
-        period: Annotated[StatisticsPeriod, Query()] = StatisticsPeriod.DAYS_30,
-    ) -> ProfilePageView:
-        return _profile_page_view(
-            await application.profiles.get(authenticated(request).user.id, period),
-            application,
-        )
+    async def own_account(request: Request) -> UserView:
+        return _user_view(authenticated(request).user, application)
 
     @routes.put("/users/me/profile")
     async def update_profile(
         request: Request,
         body: ProfileUpdate,
-    ) -> ProfilePageView:
+    ) -> UserView:
         current = authenticated(request)
-        await application.bus.execute(
+        user = await application.bus.execute(
             SaveProfile(
                 current.user.id,
                 UserProfile(body.display_name.strip()),
             )
         )
-        return _profile_page_view(
-            await application.profiles.get(current.user.id),
-            application,
-        )
+        return _user_view(user, application)
 
     @routes.put("/users/me/appearance")
     async def update_appearance(
         request: Request,
         body: AppearanceUpdate,
-    ) -> ProfilePageView:
+    ) -> UserView:
         current = authenticated(request)
-        await application.bus.execute(
+        user = await application.bus.execute(
             SaveAppearance(
                 current.user.id,
                 Appearance(
@@ -220,12 +211,19 @@ def router(application: Application) -> APIRouter:
                 ),
             )
         )
+        return _user_view(user, application)
+
+    @routes.get("/profiles/me")
+    async def own_profile(
+        request: Request,
+        period: Annotated[StatisticsPeriod, Query()] = StatisticsPeriod.DAYS_30,
+    ) -> ProfilePageView:
         return _profile_page_view(
-            await application.profiles.get(current.user.id),
+            await application.profiles.get(authenticated(request).user.id, period),
             application,
         )
 
-    @routes.get("/users/{user_id}")
+    @routes.get("/profiles/{user_id}")
     async def profile(
         request: Request,
         user_id: UUID,
@@ -301,15 +299,25 @@ def router(application: Application) -> APIRouter:
 
 
 def _user_view(user: User, application: Application) -> UserView:
+    members = application.gateway.members() if application.gateway else ()
+    member = next(
+        (
+            candidate
+            for candidate in members
+            if candidate.discord_id == user.discord.discord_id
+        ),
+        None,
+    )
     return UserView(
         id=user.id,
         discord=DiscordView(
             id=user.discord.discord_id,
-            username=user.discord.username,
-            display_name=None,
+            username=user.discord.username or (member.username if member else None),
+            display_name=member.display_name if member else None,
             avatar_url=application.avatars.public_url(
                 user.discord.discord_id,
                 avatar_hash=user.discord.avatar_hash,
+                source_url=member.avatar_url if member else None,
             ),
             synced_at=user.discord.synced_at,
         ),

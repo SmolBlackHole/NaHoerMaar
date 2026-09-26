@@ -17,7 +17,8 @@ from sqlalchemy import insert
 from nahoermaar.database.core import Database
 from nahoermaar.database.schema import Base
 from nahoermaar.database.uow import UnitOfWork
-from nahoermaar.statistics.service import StatisticsPeriod, StatisticsService
+from nahoermaar.statistics.models import ActivityGranularity, StatisticsPeriod
+from nahoermaar.statistics.service import StatisticsService
 from nahoermaar.users.domain import (
     AccessRole,
     AuthError,
@@ -50,10 +51,14 @@ async def _seed(database: Database) -> tuple[UserId, UserId]:
     artist_id = uuid4()
     first_track_id = uuid4()
     second_track_id = uuid4()
+    first_source_id = uuid4()
+    radio_run_id = uuid4()
     first_request_id = uuid4()
     second_request_id = uuid4()
     first_playback_id = uuid4()
     second_playback_id = uuid4()
+    listener_presence_id = uuid4()
+    owner_presence_id = uuid4()
 
     async with UnitOfWork(database.sessions) as work:
         users = UserRepository(work.session)
@@ -132,6 +137,28 @@ async def _seed(database: Database) -> tuple[UserId, UserId]:
             ),
         )
         await work.session.execute(
+            insert(Base.metadata.tables["track_sources"]).values(
+                id=first_source_id,
+                track_id=first_track_id,
+                provider="youtube_music",
+                external_id="first-source",
+                source_url="https://music.youtube.test/watch?v=first-source",
+                observed_title="First track",
+                observed_artist="Shared artist",
+                observed_duration_seconds=180.0,
+                observed_artwork_url="https://example.test/first.jpg",
+                observed_album_title=None,
+                observed_release_date=None,
+                observed_isrc=None,
+                uploader_name=None,
+                uploader_url=None,
+                quality="detail",
+                availability="available",
+                first_seen_at=NOW,
+                checked_at=NOW,
+            )
+        )
+        await work.session.execute(
             insert(Base.metadata.tables["listening_sessions"]).values(
                 id=session_id,
                 session_key="default",
@@ -145,6 +172,23 @@ async def _seed(database: Database) -> tuple[UserId, UserId]:
             )
         )
         await work.session.execute(
+            insert(Base.metadata.tables["radio_runs"]).values(
+                id=radio_run_id,
+                session_id=session_id,
+                seed_kind="track",
+                seed_track_source_id=first_source_id,
+                seed_discovery_snapshot_id=None,
+                initiated_by=listener_id,
+                started_at=NOW - timedelta(hours=2),
+                ended_at=NOW,
+                generation=uuid4(),
+                state="active",
+                continuation=None,
+                request_id=None,
+                error=None,
+            )
+        )
+        await work.session.execute(
             insert(Base.metadata.tables["track_requests"]),
             (
                 {
@@ -153,9 +197,9 @@ async def _seed(database: Database) -> tuple[UserId, UserId]:
                     "track_id": first_track_id,
                     "source_id": None,
                     "requested_at": NOW - timedelta(hours=2),
-                    "origin": "manual",
+                    "origin": "radio",
                     "requested_by": listener_id,
-                    "radio_run_id": None,
+                    "radio_run_id": radio_run_id,
                 },
                 {
                     "id": second_request_id,
@@ -227,6 +271,29 @@ async def _seed(database: Database) -> tuple[UserId, UserId]:
                 },
             ),
         )
+        await work.session.execute(
+            insert(Base.metadata.tables["listener_presence"]),
+            (
+                {
+                    "id": listener_presence_id,
+                    "session_id": session_id,
+                    "user_id": listener_id,
+                    "joined_at": NOW - timedelta(minutes=90),
+                    "confirmed_at": NOW - timedelta(minutes=5),
+                    "deafened": False,
+                    "left_at": NOW,
+                },
+                {
+                    "id": owner_presence_id,
+                    "session_id": session_id,
+                    "user_id": owner_id,
+                    "joined_at": NOW - timedelta(minutes=30),
+                    "confirmed_at": NOW - timedelta(minutes=10),
+                    "deafened": True,
+                    "left_at": None,
+                },
+            ),
+        )
         await work.commit()
     return listener_id, blocked_id
 
@@ -252,34 +319,48 @@ def test_statistics_project_shared_and_personal_facts_without_double_counting() 
 
         assert overview.coverage.partial
         assert overview.coverage.timezone == "Europe/Berlin"
-        assert overview.totals.requests == 2
-        assert overview.totals.manual_requests == 2
-        assert overview.totals.radio_requests == 0
-        assert overview.totals.plays == 2
-        assert overview.totals.completed == 1
-        assert overview.totals.skipped == 1
+        assert overview.coverage.granularity is ActivityGranularity.DAY
+        assert overview.totals.requests.total == 2
+        assert overview.totals.requests.manual == 1
+        assert overview.totals.requests.radio == 1
+        assert overview.totals.playback.overall.started == 2
+        assert overview.totals.playback.overall.completed == 1
+        assert overview.totals.playback.overall.skipped == 1
+        assert overview.totals.playback.manual.skipped == 1
+        assert overview.totals.playback.radio.completed == 1
         assert overview.totals.listening_seconds == 170.0
+        assert overview.totals.presence_seconds == 6600.0
         assert overview.totals.unique_tracks == 2
         assert overview.totals.unique_artists == 1
         assert overview.totals.average_wait_seconds == 60.0
-        assert overview.completion_rate == 0.5
-        assert overview.skip_rate == 0.5
+        assert overview.totals.playback.overall.completion_rate == 0.5
+        assert overview.totals.playback.overall.skip_rate == 0.5
         assert [track.title for track in overview.top_tracks] == [
             "First track",
             "Second track",
         ]
+        assert overview.top_tracks[0].artist_names == ("Shared artist",)
         assert overview.top_artists[0].name == "Shared artist"
         assert overview.top_listeners[0].user_id == listener_id
         assert overview.top_listeners[0].discord_id == "200"
-        assert len(overview.daily_activity) == 7
-        assert sum(day.listening_seconds for day in overview.daily_activity) == 170.0
+        assert overview.top_listeners[0].manual_requests == 1
+        assert overview.top_listeners[0].presence_seconds == 5400.0
+        assert len(overview.activity) == 7
+        assert sum(day.listening_seconds for day in overview.activity) == 170.0
+        assert sum(day.presence_seconds for day in overview.activity) == 6600.0
 
         assert personal.user_id == listener_id
         assert personal.totals.requests == overview.totals.requests
-        assert personal.totals.plays == overview.totals.plays
+        assert personal.totals.playback == overview.totals.playback
         assert personal.totals.listening_seconds == 140.0
+        assert personal.totals.presence_seconds == 5400.0
         assert personal.top_listeners == ()
-        assert sum(day.listening_seconds for day in personal.daily_activity) == 140.0
+        assert sum(day.listening_seconds for day in personal.activity) == 140.0
+
+        yearly = await service.overview(StatisticsPeriod.YEAR)
+        assert yearly.coverage.granularity is ActivityGranularity.MONTH
+        assert len(yearly.activity) == 9
+        assert yearly.activity[0].started_on.isoformat() == "2026-01-01"
 
         profile = await profiles.get(listener_id, StatisticsPeriod.DAYS_7)
         assert profile.identity.user_id == listener_id

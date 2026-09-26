@@ -18,11 +18,11 @@ from nahoermaar.catalog.domain import TrackId
 from nahoermaar.database.schema import Base
 from nahoermaar.database.uow import UnitOfWork
 from nahoermaar.listening.domain import PlaybackEndReason, PlaybackRecordId
-from nahoermaar.statistics.service import (
+from nahoermaar.statistics.models import (
     StatisticsPeriod,
     StatisticsReport,
-    StatisticsService,
 )
+from nahoermaar.statistics.service import StatisticsService
 from nahoermaar.users.domain import (
     AccessRole,
     Appearance,

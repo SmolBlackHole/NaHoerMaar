@@ -7,8 +7,8 @@ controls and live updates. This page owns the HTTP/SSE contract. Runtime
 ownership is documented in [architecture](architecture.md). The engine pages own
 [catalog](engine/catalog.md), [queue](engine/queue.md), [Radio](engine/radio.md),
 [playback](engine/playback.md) and [database](engine/database.md) behavior behind
-that contract. A real Discord listening check remains
-[open](testing.md#live-acceptance).
+that contract. The live Discord check is documented under
+[testing](testing.md#live-acceptance).
 
 ## Table of contents
 
@@ -32,7 +32,13 @@ Authentication routes are:
 - `GET /api/auth/discord` and `GET /api/auth/discord/callback`
 - `GET /api/auth/session`, `POST /api/auth/logout`
 - `GET /api/users/me`, `PUT /api/users/me/profile`
-- `PUT /api/users/me/appearance`, `GET /api/users/{user_id}`
+- `PUT /api/users/me/appearance`
+- `GET /api/profiles/me`, `GET /api/profiles/{user_id}`
+
+The user routes return account state only. Profile routes combine that identity
+with recent listening and statistics for the selected period. Overview and
+profile statistics use `7d`, `30d`, `year` or `all` and return display-ready
+daily or monthly activity buckets.
 
 All other `/api/` requests need a valid session cookie. Mutations also require
 the configured `Origin` and `X-CSRF-Token`. Replies are private and `no-store`.

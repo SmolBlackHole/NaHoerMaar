@@ -5,15 +5,17 @@ import { describe, expect, it } from "vitest";
 import { fixture } from "./fixture";
 
 describe("new backend repositories", () => {
-	it("reads session, profile and history independently, using the new routes", async () => {
+	it("reads session, account, profile and history independently", async () => {
 		const { client, fetcher } = fixture();
 		fetcher.mockImplementation(async () => Response.json({}));
 		await client.account.session();
+		await client.account.account();
 		await client.account.profile("7d");
 		await client.listening.recent(10);
 		expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
 			"/api/auth/session",
-			"/api/users/me?period=7d",
+			"/api/users/me",
+			"/api/profiles/me?period=7d",
 			"/api/listening/recent?limit=10",
 		]);
 		expect(client.account.loginUrl).toBe("/api/auth/discord");

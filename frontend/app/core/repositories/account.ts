@@ -4,10 +4,11 @@
 import type { Transport } from "../api/transport";
 import type {
 	AccountSession,
+	Account,
 	AppearanceUpdate,
+	ListenerProfile,
 	ProfileUpdate,
 	StatisticsPeriod,
-	UserProfile,
 } from "../models/account";
 
 export function createAccountRepository(request: Transport) {
@@ -15,20 +16,24 @@ export function createAccountRepository(request: Transport) {
 		loginUrl: "/api/auth/discord",
 		session: (signal?: AbortSignal) =>
 			request<AccountSession>("/api/auth/session", { allowSignedOut: true, signal }),
+		account: (signal?: AbortSignal) => request<Account>("/api/users/me", { signal }),
 		profile: (period: StatisticsPeriod = "30d", signal?: AbortSignal) =>
-			request<UserProfile>(`/api/users/me?period=${period}`, { signal }),
+			request<ListenerProfile>(`/api/profiles/me?period=${period}`, { signal }),
 		userProfile: (userId: string, period: StatisticsPeriod = "30d", signal?: AbortSignal) =>
-			request<UserProfile>(`/api/users/${encodeURIComponent(userId)}?period=${period}`, {
-				signal,
-			}),
+			request<ListenerProfile>(
+				`/api/profiles/${encodeURIComponent(userId)}?period=${period}`,
+				{
+					signal,
+				},
+			),
 		updateProfile: (body: ProfileUpdate) =>
-			request<UserProfile>("/api/users/me/profile", {
+			request<Account>("/api/users/me/profile", {
 				method: "PUT",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify(body),
 			}),
 		updateAppearance: (body: AppearanceUpdate) =>
-			request<UserProfile>("/api/users/me/appearance", {
+			request<Account>("/api/users/me/appearance", {
 				method: "PUT",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify(body),

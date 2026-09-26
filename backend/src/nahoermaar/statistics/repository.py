@@ -5,68 +5,35 @@
 """Direct PostgreSQL projections over requests, plays and listener facts."""
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import datetime
 from typing import cast
-from uuid import UUID
 
-from sqlalchemy import Date, Table, and_, cast as sql_cast, func, select, union_all
+from sqlalchemy import Date, Table, and_, cast as sql_cast, func, or_, select, union_all
+from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.sql import FromClause
+from sqlalchemy.sql import ColumnElement, FromClause
 from sqlalchemy.sql.selectable import Subquery
 
 from nahoermaar.database.schema import Base
 from nahoermaar.users.domain import UserId
 
-
-@dataclass(frozen=True, slots=True)
-class Totals:
-    requests: int
-    manual_requests: int
-    radio_requests: int
-    plays: int
-    completed: int
-    skipped: int
-    stopped: int
-    failed: int
-    listening_seconds: float
-    unique_tracks: int
-    unique_artists: int
-    average_wait_seconds: float | None
+from .models import (
+    ActivityBucket,
+    ActivityGranularity,
+    PlaybackBreakdown,
+    PlaybackOutcomes,
+    RankedArtist,
+    RankedListener,
+    RankedTrack,
+    RequestTotals,
+    StatisticsTotals,
+)
 
 
 @dataclass(frozen=True, slots=True)
-class DailyActivity:
-    day: date
-    plays: int
-    listening_seconds: float
-
-
-@dataclass(frozen=True, slots=True)
-class RankedTrack:
-    track_id: UUID
-    title: str
-    artwork_url: str | None
-    plays: int
-    listening_seconds: float
-
-
-@dataclass(frozen=True, slots=True)
-class RankedArtist:
-    artist_id: UUID
-    name: str
-    plays: int
-    listening_seconds: float
-
-
-@dataclass(frozen=True, slots=True)
-class RankedListener:
-    user_id: UserId
-    discord_id: str
-    display_name: str | None
-    discord_username: str | None
-    discord_avatar_hash: str | None
-    plays: int
-    listening_seconds: float
+class PresenceInterval:
+    started_at: datetime
+    ended_at: datetime
 
 
 class StatisticsRepository:
@@ -77,6 +44,7 @@ class StatisticsRepository:
         "_discord",
         "_listeners",
         "_playbacks",
+        "_presence",
         "_profiles",
         "_requests",
         "_session",
@@ -90,6 +58,7 @@ class StatisticsRepository:
         self._requests = _table("track_requests")
         self._playbacks = _table("playback_records")
         self._listeners = _table("playback_listeners")
+        self._presence = _table("listener_presence")
         self._tracks = _table("tracks")
         self._track_artists = _table("track_artists")
         self._artists = _table("artists")
@@ -101,6 +70,7 @@ class StatisticsRepository:
         events = union_all(
             select(self._requests.c.requested_at.label("occurred_at")),
             select(self._playbacks.c.started_at.label("occurred_at")),
+            select(self._presence.c.joined_at.label("occurred_at")),
         ).subquery()
         value = await self._session.scalar(select(func.min(events.c.occurred_at)))
         return cast(datetime | None, value)
@@ -111,155 +81,62 @@ class StatisticsRepository:
         ended_at: datetime,
         *,
         user_id: UserId | None = None,
-    ) -> Totals:
-        request_conditions = [
-            self._requests.c.requested_at >= started_at,
-            self._requests.c.requested_at < ended_at,
-        ]
-        if user_id is not None:
-            request_conditions.append(self._requests.c.requested_by == user_id)
-        request_row = (
-            (
-                await self._session.execute(
-                    select(
-                        func.count().label("requests"),
-                        func.count()
-                        .filter(self._requests.c.origin == "manual")
-                        .label("manual_requests"),
-                        func.count()
-                        .filter(self._requests.c.origin == "radio")
-                        .label("radio_requests"),
-                    ).where(and_(*request_conditions))
-                )
+    ) -> StatisticsTotals:
+        requests = await self._request_totals(started_at, ended_at, user_id=user_id)
+        playback = await self._playback_breakdown(
+            started_at,
+            ended_at,
+            user_id=user_id,
+        )
+        listening_seconds, unique_tracks, unique_artists = await self._listening_totals(
+            started_at,
+            ended_at,
+            user_id=user_id,
+        )
+        presence = sum(
+            (interval.ended_at - interval.started_at).total_seconds()
+            for interval in await self.presence_intervals(
+                started_at,
+                ended_at,
+                user_id=user_id,
             )
-            .mappings()
-            .one()
+        )
+        average_wait = await self._average_manual_wait(
+            started_at,
+            ended_at,
+            user_id=user_id,
+        )
+        return StatisticsTotals(
+            requests=requests,
+            playback=playback,
+            listening_seconds=listening_seconds,
+            presence_seconds=presence,
+            unique_tracks=unique_tracks,
+            unique_artists=unique_artists,
+            average_wait_seconds=average_wait,
         )
 
-        relation = self._playbacks.join(
-            self._requests,
-            self._requests.c.id == self._playbacks.c.request_id,
-        )
-        listener_audio = self._listener_audio(user_id)
-        relation = relation.outerjoin(
-            listener_audio,
-            listener_audio.c.playback_id == self._playbacks.c.id,
-        )
-        play_conditions = [
-            self._playbacks.c.started_at >= started_at,
-            self._playbacks.c.started_at < ended_at,
-        ]
-        audio_seconds = func.coalesce(listener_audio.c.audio_seconds, 0.0)
-        if user_id is not None:
-            play_conditions.append(listener_audio.c.playback_id.is_not(None))
-
-        play_row = (
-            (
-                await self._session.execute(
-                    select(
-                        func.count(func.distinct(self._playbacks.c.id)).label("plays"),
-                        func.count()
-                        .filter(self._playbacks.c.end_reason == "completed")
-                        .label("completed"),
-                        func.count()
-                        .filter(self._playbacks.c.end_reason == "skipped")
-                        .label("skipped"),
-                        func.count()
-                        .filter(self._playbacks.c.end_reason == "stopped")
-                        .label("stopped"),
-                        func.count()
-                        .filter(self._playbacks.c.end_reason == "failed")
-                        .label("failed"),
-                        func.coalesce(func.sum(audio_seconds), 0.0).label(
-                            "listening_seconds"
-                        ),
-                        func.count(func.distinct(self._requests.c.track_id)).label(
-                            "unique_tracks"
-                        ),
-                    )
-                    .select_from(relation)
-                    .where(and_(*play_conditions))
-                )
-            )
-            .mappings()
-            .one()
-        )
-
-        artist_relation = relation.join(
-            self._track_artists,
-            self._track_artists.c.track_id == self._requests.c.track_id,
-        )
-        unique_artists = await self._session.scalar(
-            select(func.count(func.distinct(self._track_artists.c.artist_id)))
-            .select_from(artist_relation)
-            .where(and_(*play_conditions))
-        )
-
-        wait_conditions = [
-            self._playbacks.c.started_at >= started_at,
-            self._playbacks.c.started_at < ended_at,
-        ]
-        if user_id is not None:
-            wait_conditions.append(self._requests.c.requested_by == user_id)
-        average_wait = await self._session.scalar(
-            select(
-                func.avg(
-                    func.extract(
-                        "epoch",
-                        self._playbacks.c.started_at - self._requests.c.requested_at,
-                    )
-                )
-            )
-            .select_from(
-                self._playbacks.join(
-                    self._requests,
-                    self._requests.c.id == self._playbacks.c.request_id,
-                )
-            )
-            .where(and_(*wait_conditions))
-        )
-
-        return Totals(
-            requests=int(request_row["requests"] or 0),
-            manual_requests=int(request_row["manual_requests"] or 0),
-            radio_requests=int(request_row["radio_requests"] or 0),
-            plays=int(play_row["plays"] or 0),
-            completed=int(play_row["completed"] or 0),
-            skipped=int(play_row["skipped"] or 0),
-            stopped=int(play_row["stopped"] or 0),
-            failed=int(play_row["failed"] or 0),
-            listening_seconds=float(play_row["listening_seconds"] or 0.0),
-            unique_tracks=int(play_row["unique_tracks"] or 0),
-            unique_artists=int(unique_artists or 0),
-            average_wait_seconds=(
-                float(average_wait) if average_wait is not None else None
-            ),
-        )
-
-    async def daily_activity(
+    async def activity(
         self,
         started_at: datetime,
         ended_at: datetime,
         timezone: str,
+        granularity: ActivityGranularity,
         *,
         user_id: UserId | None = None,
-    ) -> tuple[DailyActivity, ...]:
-        listener_audio = self._listener_audio(user_id)
-        relation: FromClause = self._playbacks.outerjoin(
-            listener_audio,
-            listener_audio.c.playback_id == self._playbacks.c.id,
+    ) -> tuple[ActivityBucket, ...]:
+        relation, conditions, audio_seconds = self._listening_scope(
+            started_at,
+            ended_at,
+            user_id,
         )
-        conditions = [
-            self._playbacks.c.started_at >= started_at,
-            self._playbacks.c.started_at < ended_at,
-        ]
-        audio_seconds = func.coalesce(listener_audio.c.audio_seconds, 0.0)
-        if user_id is not None:
-            conditions.append(listener_audio.c.playback_id.is_not(None))
-        local_day = sql_cast(
-            func.timezone(timezone, self._playbacks.c.started_at),
+        bucket = sql_cast(
+            func.date_trunc(
+                granularity.value,
+                func.timezone(timezone, self._playbacks.c.started_at),
+            ),
             Date,
-        ).label("day")
+        ).label("started_on")
         plays = func.count(func.distinct(self._playbacks.c.id)).label("plays")
         listening = func.coalesce(func.sum(audio_seconds), 0.0).label(
             "listening_seconds"
@@ -267,23 +144,61 @@ class StatisticsRepository:
         rows = (
             (
                 await self._session.execute(
-                    select(local_day, plays, listening)
+                    select(bucket, plays, listening)
                     .select_from(relation)
                     .where(and_(*conditions))
-                    .group_by(local_day)
-                    .order_by(local_day)
+                    .group_by(bucket)
+                    .order_by(bucket)
                 )
             )
             .mappings()
             .all()
         )
         return tuple(
-            DailyActivity(
-                day=row["day"],
+            ActivityBucket(
+                started_on=row["started_on"],
+                granularity=granularity,
                 plays=int(row["plays"]),
                 listening_seconds=float(row["listening_seconds"]),
+                presence_seconds=0.0,
             )
             for row in rows
+        )
+
+    async def presence_intervals(
+        self,
+        started_at: datetime,
+        ended_at: datetime,
+        *,
+        user_id: UserId | None = None,
+    ) -> tuple[PresenceInterval, ...]:
+        known_end = func.coalesce(
+            self._presence.c.left_at, self._presence.c.confirmed_at
+        )
+        conditions = [
+            self._presence.c.joined_at < ended_at,
+            known_end > started_at,
+        ]
+        if user_id is not None:
+            conditions.append(self._presence.c.user_id == user_id)
+        rows = (
+            (
+                await self._session.execute(
+                    select(
+                        func.greatest(self._presence.c.joined_at, started_at).label(
+                            "started_at"
+                        ),
+                        func.least(known_end, ended_at).label("ended_at"),
+                    )
+                    .where(and_(*conditions))
+                    .order_by(self._presence.c.joined_at, self._presence.c.id)
+                )
+            )
+            .mappings()
+            .all()
+        )
+        return tuple(
+            PresenceInterval(row["started_at"], row["ended_at"]) for row in rows
         )
 
     async def top_tracks(
@@ -294,25 +209,36 @@ class StatisticsRepository:
         user_id: UserId | None = None,
         limit: int = 5,
     ) -> tuple[RankedTrack, ...]:
-        relation = self._playbacks.join(
-            self._requests,
-            self._requests.c.id == self._playbacks.c.request_id,
-        ).join(self._tracks, self._tracks.c.id == self._requests.c.track_id)
-        listener_audio = self._listener_audio(user_id)
-        relation = relation.outerjoin(
-            listener_audio,
-            listener_audio.c.playback_id == self._playbacks.c.id,
+        relation, conditions, audio_seconds = self._listening_scope(
+            started_at,
+            ended_at,
+            user_id,
         )
-        conditions = [
-            self._playbacks.c.started_at >= started_at,
-            self._playbacks.c.started_at < ended_at,
-        ]
-        audio_seconds = func.coalesce(listener_audio.c.audio_seconds, 0.0)
-        if user_id is not None:
-            conditions.append(listener_audio.c.playback_id.is_not(None))
+        relation = relation.join(
+            self._tracks,
+            self._tracks.c.id == self._requests.c.track_id,
+        )
         plays = func.count(func.distinct(self._playbacks.c.id)).label("plays")
         listening = func.coalesce(func.sum(audio_seconds), 0.0).label(
             "listening_seconds"
+        )
+        artists = (
+            select(
+                func.array_agg(
+                    aggregate_order_by(
+                        self._artists.c.name,
+                        self._track_artists.c.position,
+                    )
+                )
+            )
+            .select_from(
+                self._track_artists.join(
+                    self._artists,
+                    self._artists.c.id == self._track_artists.c.artist_id,
+                )
+            )
+            .where(self._track_artists.c.track_id == self._tracks.c.id)
+            .scalar_subquery()
         )
         rows = (
             (
@@ -321,6 +247,7 @@ class StatisticsRepository:
                         self._tracks.c.id,
                         self._tracks.c.title,
                         self._tracks.c.artwork_url,
+                        artists.label("artist_names"),
                         plays,
                         listening,
                     )
@@ -342,6 +269,7 @@ class StatisticsRepository:
             RankedTrack(
                 track_id=row["id"],
                 title=row["title"],
+                artist_names=tuple(cast(list[str] | None, row["artist_names"]) or ()),
                 artwork_url=row["artwork_url"],
                 plays=int(row["plays"]),
                 listening_seconds=float(row["listening_seconds"]),
@@ -357,32 +285,18 @@ class StatisticsRepository:
         user_id: UserId | None = None,
         limit: int = 5,
     ) -> tuple[RankedArtist, ...]:
-        relation = (
-            self._playbacks.join(
-                self._requests,
-                self._requests.c.id == self._playbacks.c.request_id,
-            )
-            .join(
-                self._track_artists,
-                self._track_artists.c.track_id == self._requests.c.track_id,
-            )
-            .join(
-                self._artists,
-                self._artists.c.id == self._track_artists.c.artist_id,
-            )
+        relation, conditions, audio_seconds = self._listening_scope(
+            started_at,
+            ended_at,
+            user_id,
         )
-        listener_audio = self._listener_audio(user_id)
-        relation = relation.outerjoin(
-            listener_audio,
-            listener_audio.c.playback_id == self._playbacks.c.id,
+        relation = relation.join(
+            self._track_artists,
+            self._track_artists.c.track_id == self._requests.c.track_id,
+        ).join(
+            self._artists,
+            self._artists.c.id == self._track_artists.c.artist_id,
         )
-        conditions = [
-            self._playbacks.c.started_at >= started_at,
-            self._playbacks.c.started_at < ended_at,
-        ]
-        audio_seconds = func.coalesce(listener_audio.c.audio_seconds, 0.0)
-        if user_id is not None:
-            conditions.append(listener_audio.c.playback_id.is_not(None))
         plays = func.count(func.distinct(self._playbacks.c.id)).label("plays")
         listening = func.coalesce(func.sum(audio_seconds), 0.0).label(
             "listening_seconds"
@@ -421,25 +335,76 @@ class StatisticsRepository:
         started_at: datetime,
         ended_at: datetime,
         *,
-        limit: int = 5,
+        limit: int = 8,
     ) -> tuple[RankedListener, ...]:
-        relation = (
-            self._listeners.join(
+        manual_requests = (
+            select(
+                self._requests.c.requested_by.label("user_id"),
+                func.count().label("manual_requests"),
+            )
+            .where(
+                self._requests.c.requested_at >= started_at,
+                self._requests.c.requested_at < ended_at,
+                self._requests.c.origin == "manual",
+            )
+            .group_by(self._requests.c.requested_by)
+            .subquery()
+        )
+        listening = (
+            select(
+                self._listeners.c.user_id,
+                func.count(func.distinct(self._listeners.c.playback_id)).label("plays"),
+                func.sum(self._listeners.c.audio_seconds).label("listening_seconds"),
+            )
+            .join(
                 self._playbacks,
                 self._playbacks.c.id == self._listeners.c.playback_id,
             )
-            .join(self._users, self._users.c.id == self._listeners.c.user_id)
-            .join(
+            .where(
+                self._playbacks.c.started_at >= started_at,
+                self._playbacks.c.started_at < ended_at,
+            )
+            .group_by(self._listeners.c.user_id)
+            .subquery()
+        )
+        known_end = func.coalesce(
+            self._presence.c.left_at, self._presence.c.confirmed_at
+        )
+        presence = (
+            select(
+                self._presence.c.user_id,
+                func.sum(
+                    func.extract(
+                        "epoch",
+                        func.least(known_end, ended_at)
+                        - func.greatest(self._presence.c.joined_at, started_at),
+                    )
+                ).label("presence_seconds"),
+            )
+            .where(
+                self._presence.c.joined_at < ended_at,
+                known_end > started_at,
+            )
+            .group_by(self._presence.c.user_id)
+            .subquery()
+        )
+        relation = (
+            self._users.join(
                 self._profiles,
-                self._profiles.c.user_id == self._listeners.c.user_id,
+                self._profiles.c.user_id == self._users.c.id,
             )
             .join(
                 self._discord,
-                self._discord.c.user_id == self._listeners.c.user_id,
+                self._discord.c.user_id == self._users.c.id,
             )
+            .outerjoin(manual_requests, manual_requests.c.user_id == self._users.c.id)
+            .outerjoin(listening, listening.c.user_id == self._users.c.id)
+            .outerjoin(presence, presence.c.user_id == self._users.c.id)
         )
-        plays = func.count(func.distinct(self._playbacks.c.id)).label("plays")
-        listening = func.sum(self._listeners.c.audio_seconds).label("listening_seconds")
+        request_count = func.coalesce(manual_requests.c.manual_requests, 0)
+        play_count = func.coalesce(listening.c.plays, 0)
+        heard = func.coalesce(listening.c.listening_seconds, 0.0)
+        present = func.coalesce(presence.c.presence_seconds, 0.0)
         rows = (
             (
                 await self._session.execute(
@@ -449,23 +414,27 @@ class StatisticsRepository:
                         self._profiles.c.display_name,
                         self._discord.c.username,
                         self._discord.c.avatar_hash,
-                        plays,
-                        listening,
+                        request_count.label("manual_requests"),
+                        play_count.label("plays"),
+                        present.label("presence_seconds"),
+                        heard.label("listening_seconds"),
                     )
                     .select_from(relation)
                     .where(
-                        self._playbacks.c.started_at >= started_at,
-                        self._playbacks.c.started_at < ended_at,
                         self._users.c.role.is_not(None),
+                        or_(
+                            request_count > 0,
+                            play_count > 0,
+                            present > 0,
+                            heard > 0,
+                        ),
                     )
-                    .group_by(
+                    .order_by(
+                        heard.desc(),
+                        play_count.desc(),
+                        request_count.desc(),
                         self._users.c.id,
-                        self._discord.c.discord_id,
-                        self._profiles.c.display_name,
-                        self._discord.c.username,
-                        self._discord.c.avatar_hash,
                     )
-                    .order_by(listening.desc(), plays.desc(), self._users.c.id)
                     .limit(limit)
                 )
             )
@@ -479,11 +448,223 @@ class StatisticsRepository:
                 display_name=row["display_name"],
                 discord_username=row["username"],
                 discord_avatar_hash=row["avatar_hash"],
+                manual_requests=int(row["manual_requests"]),
                 plays=int(row["plays"]),
+                presence_seconds=float(row["presence_seconds"]),
                 listening_seconds=float(row["listening_seconds"]),
             )
             for row in rows
         )
+
+    async def _request_totals(
+        self,
+        started_at: datetime,
+        ended_at: datetime,
+        *,
+        user_id: UserId | None,
+    ) -> RequestTotals:
+        conditions = [
+            self._requests.c.requested_at >= started_at,
+            self._requests.c.requested_at < ended_at,
+        ]
+        if user_id is not None:
+            conditions.append(self._requests.c.requested_by == user_id)
+        row = (
+            (
+                await self._session.execute(
+                    select(
+                        func.count()
+                        .filter(self._requests.c.origin == "manual")
+                        .label("manual"),
+                        func.count()
+                        .filter(self._requests.c.origin == "radio")
+                        .label("radio"),
+                    ).where(and_(*conditions))
+                )
+            )
+            .mappings()
+            .one()
+        )
+        return RequestTotals(int(row["manual"] or 0), int(row["radio"] or 0))
+
+    async def _playback_breakdown(
+        self,
+        started_at: datetime,
+        ended_at: datetime,
+        *,
+        user_id: UserId | None,
+    ) -> PlaybackBreakdown:
+        relation: FromClause = self._playbacks.join(
+            self._requests,
+            self._requests.c.id == self._playbacks.c.request_id,
+        )
+        conditions = [
+            self._playbacks.c.started_at >= started_at,
+            self._playbacks.c.started_at < ended_at,
+        ]
+        if user_id is not None:
+            relation = relation.join(
+                self._listeners,
+                and_(
+                    self._listeners.c.playback_id == self._playbacks.c.id,
+                    self._listeners.c.user_id == user_id,
+                ),
+            )
+        rows = (
+            (
+                await self._session.execute(
+                    select(
+                        self._requests.c.origin,
+                        func.count(func.distinct(self._playbacks.c.id)).label(
+                            "started"
+                        ),
+                        func.count(func.distinct(self._playbacks.c.id))
+                        .filter(self._playbacks.c.end_reason == "completed")
+                        .label("completed"),
+                        func.count(func.distinct(self._playbacks.c.id))
+                        .filter(self._playbacks.c.end_reason == "skipped")
+                        .label("skipped"),
+                        func.count(func.distinct(self._playbacks.c.id))
+                        .filter(self._playbacks.c.end_reason == "stopped")
+                        .label("stopped"),
+                        func.count(func.distinct(self._playbacks.c.id))
+                        .filter(self._playbacks.c.end_reason == "failed")
+                        .label("failed"),
+                    )
+                    .select_from(relation)
+                    .where(and_(*conditions))
+                    .group_by(self._requests.c.origin)
+                )
+            )
+            .mappings()
+            .all()
+        )
+        by_origin = {
+            row["origin"]: PlaybackOutcomes(
+                started=int(row["started"]),
+                completed=int(row["completed"]),
+                skipped=int(row["skipped"]),
+                stopped=int(row["stopped"]),
+                failed=int(row["failed"]),
+            )
+            for row in rows
+        }
+        empty = PlaybackOutcomes(0, 0, 0, 0, 0)
+        manual = by_origin.get("manual", empty)
+        radio = by_origin.get("radio", empty)
+        overall = PlaybackOutcomes(
+            started=manual.started + radio.started,
+            completed=manual.completed + radio.completed,
+            skipped=manual.skipped + radio.skipped,
+            stopped=manual.stopped + radio.stopped,
+            failed=manual.failed + radio.failed,
+        )
+        return PlaybackBreakdown(overall, manual, radio)
+
+    async def _listening_totals(
+        self,
+        started_at: datetime,
+        ended_at: datetime,
+        *,
+        user_id: UserId | None,
+    ) -> tuple[float, int, int]:
+        relation, conditions, audio_seconds = self._listening_scope(
+            started_at,
+            ended_at,
+            user_id,
+        )
+        row = (
+            (
+                await self._session.execute(
+                    select(
+                        func.coalesce(func.sum(audio_seconds), 0.0).label(
+                            "listening_seconds"
+                        ),
+                        func.count(func.distinct(self._requests.c.track_id)).label(
+                            "unique_tracks"
+                        ),
+                    )
+                    .select_from(relation)
+                    .where(and_(*conditions))
+                )
+            )
+            .mappings()
+            .one()
+        )
+        artist_relation = relation.join(
+            self._track_artists,
+            self._track_artists.c.track_id == self._requests.c.track_id,
+        )
+        unique_artists = await self._session.scalar(
+            select(func.count(func.distinct(self._track_artists.c.artist_id)))
+            .select_from(artist_relation)
+            .where(and_(*conditions))
+        )
+        return (
+            float(row["listening_seconds"] or 0.0),
+            int(row["unique_tracks"] or 0),
+            int(unique_artists or 0),
+        )
+
+    async def _average_manual_wait(
+        self,
+        started_at: datetime,
+        ended_at: datetime,
+        *,
+        user_id: UserId | None,
+    ) -> float | None:
+        conditions = [
+            self._playbacks.c.started_at >= started_at,
+            self._playbacks.c.started_at < ended_at,
+            self._requests.c.origin == "manual",
+        ]
+        if user_id is not None:
+            conditions.append(self._requests.c.requested_by == user_id)
+        value = await self._session.scalar(
+            select(
+                func.avg(
+                    func.extract(
+                        "epoch",
+                        self._playbacks.c.started_at - self._requests.c.requested_at,
+                    )
+                )
+            )
+            .select_from(
+                self._playbacks.join(
+                    self._requests,
+                    self._requests.c.id == self._playbacks.c.request_id,
+                )
+            )
+            .where(and_(*conditions))
+        )
+        return float(value) if value is not None else None
+
+    def _listening_scope(
+        self,
+        started_at: datetime,
+        ended_at: datetime,
+        user_id: UserId | None,
+    ) -> tuple[
+        FromClause,
+        list[ColumnElement[bool]],
+        ColumnElement[float],
+    ]:
+        relation: FromClause = self._playbacks.join(
+            self._requests,
+            self._requests.c.id == self._playbacks.c.request_id,
+        )
+        listener_audio = self._listener_audio(user_id)
+        relation = relation.outerjoin(
+            listener_audio,
+            listener_audio.c.playback_id == self._playbacks.c.id,
+        )
+        conditions: list[ColumnElement[bool]] = [
+            self._playbacks.c.started_at >= started_at,
+            self._playbacks.c.started_at < ended_at,
+        ]
+        if user_id is not None:
+            conditions.append(listener_audio.c.playback_id.is_not(None))
+        return relation, conditions, func.coalesce(listener_audio.c.audio_seconds, 0.0)
 
     def _listener_audio(self, user_id: UserId | None) -> Subquery:
         statement = select(

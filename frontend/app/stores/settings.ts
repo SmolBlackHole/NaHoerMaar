@@ -8,7 +8,7 @@ export type TextSize = Appearance["text_size"];
 
 export const useSettingsStore = defineStore("settings", () => {
 	const settings = reactive<Appearance>({ ...defaultAppearance });
-	const profile = useNuxtApp().$backendCore.stores.useProfileStore();
+	const accountStore = useNuxtApp().$backendCore.stores.useAccountStore();
 	const error = ref("");
 	let account: string | null = null;
 	let applying = false;
@@ -41,7 +41,7 @@ export const useSettingsStore = defineStore("settings", () => {
 		const body = { ...settings };
 		saving = true;
 		error.value = "";
-		const updated = await profile.updateAppearance(body);
+		const updated = await accountStore.updateAppearance(body);
 		saving = false;
 		if (!updated) {
 			error.value =
@@ -68,7 +68,7 @@ export const useSettingsStore = defineStore("settings", () => {
 	}
 
 	watch(
-		() => [profile.profile?.id ?? null, profile.profile?.appearance ?? null] as const,
+		() => [accountStore.account?.id ?? null, accountStore.account?.appearance ?? null] as const,
 		([id, appearance]) => bind(id, appearance),
 		{ immediate: true, flush: "sync" },
 	);

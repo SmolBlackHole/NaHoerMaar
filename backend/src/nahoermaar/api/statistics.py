@@ -13,8 +13,10 @@ from pydantic import BaseModel, ConfigDict
 
 from nahoermaar.bootstrap import Application
 from nahoermaar.integrations.avatars import DiscordAvatarStore
-from nahoermaar.statistics.repository import RankedListener
-from nahoermaar.statistics.service import (
+from nahoermaar.statistics.models import (
+    ActivityGranularity,
+    PlaybackOutcomes,
+    RankedListener,
     StatisticsPeriod,
     StatisticsReport,
 )
@@ -27,6 +29,7 @@ class CoverageView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     period: StatisticsPeriod
+    granularity: ActivityGranularity
     timezone: str
     started_at: datetime
     ended_at: datetime
@@ -34,31 +37,54 @@ class CoverageView(BaseModel):
     partial: bool
 
 
-class TotalsView(BaseModel):
+class RequestTotalsView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    requests: int
-    manual_requests: int
-    radio_requests: int
-    plays: int
+    total: int
+    manual: int
+    radio: int
+
+
+class PlaybackOutcomesView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    started: int
     completed: int
     skipped: int
     stopped: int
     failed: int
-    listening_seconds: float
-    unique_tracks: int
-    unique_artists: int
-    average_wait_seconds: float | None
     completion_rate: float | None
     skip_rate: float | None
 
 
-class DailyActivityView(BaseModel):
+class PlaybackBreakdownView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    day: date
+    overall: PlaybackOutcomesView
+    manual: PlaybackOutcomesView
+    radio: PlaybackOutcomesView
+
+
+class TotalsView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    requests: RequestTotalsView
+    playback: PlaybackBreakdownView
+    listening_seconds: float
+    presence_seconds: float
+    unique_tracks: int
+    unique_artists: int
+    average_wait_seconds: float | None
+
+
+class ActivityBucketView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    started_on: date
+    granularity: ActivityGranularity
     plays: int
     listening_seconds: float
+    presence_seconds: float
 
 
 class RankedTrackView(BaseModel):
@@ -66,6 +92,7 @@ class RankedTrackView(BaseModel):
 
     track_id: UUID
     title: str
+    artist_names: tuple[str, ...]
     artwork_url: str | None
     plays: int
     listening_seconds: float
@@ -88,7 +115,9 @@ class RankedListenerView(BaseModel):
     discord_username: str | None
     discord_display_name: str | None
     avatar_url: str
+    manual_requests: int
     plays: int
+    presence_seconds: float
     listening_seconds: float
 
 
@@ -98,7 +127,7 @@ class StatisticsView(BaseModel):
     user_id: UUID | None
     coverage: CoverageView
     totals: TotalsView
-    daily_activity: tuple[DailyActivityView, ...]
+    activity: tuple[ActivityBucketView, ...]
     top_tracks: tuple[RankedTrackView, ...]
     top_artists: tuple[RankedArtistView, ...]
     top_listeners: tuple[RankedListenerView, ...]
@@ -148,6 +177,7 @@ def statistics_view(
         user_id=report.user_id,
         coverage=CoverageView(
             period=report.coverage.period,
+            granularity=report.coverage.granularity,
             timezone=report.coverage.timezone,
             started_at=report.coverage.started_at,
             ended_at=report.coverage.ended_at,
@@ -155,33 +185,37 @@ def statistics_view(
             partial=report.coverage.partial,
         ),
         totals=TotalsView(
-            requests=totals.requests,
-            manual_requests=totals.manual_requests,
-            radio_requests=totals.radio_requests,
-            plays=totals.plays,
-            completed=totals.completed,
-            skipped=totals.skipped,
-            stopped=totals.stopped,
-            failed=totals.failed,
+            requests=RequestTotalsView(
+                total=totals.requests.total,
+                manual=totals.requests.manual,
+                radio=totals.requests.radio,
+            ),
+            playback=PlaybackBreakdownView(
+                overall=_playback_outcomes_view(totals.playback.overall),
+                manual=_playback_outcomes_view(totals.playback.manual),
+                radio=_playback_outcomes_view(totals.playback.radio),
+            ),
             listening_seconds=totals.listening_seconds,
+            presence_seconds=totals.presence_seconds,
             unique_tracks=totals.unique_tracks,
             unique_artists=totals.unique_artists,
             average_wait_seconds=totals.average_wait_seconds,
-            completion_rate=report.completion_rate,
-            skip_rate=report.skip_rate,
         ),
-        daily_activity=tuple(
-            DailyActivityView(
-                day=item.day,
+        activity=tuple(
+            ActivityBucketView(
+                started_on=item.started_on,
+                granularity=item.granularity,
                 plays=item.plays,
                 listening_seconds=item.listening_seconds,
+                presence_seconds=item.presence_seconds,
             )
-            for item in report.daily_activity
+            for item in report.activity
         ),
         top_tracks=tuple(
             RankedTrackView(
                 track_id=item.track_id,
                 title=item.title,
+                artist_names=item.artist_names,
                 artwork_url=item.artwork_url,
                 plays=item.plays,
                 listening_seconds=item.listening_seconds,
@@ -201,6 +235,18 @@ def statistics_view(
             _ranked_listener_view(item, members_by_id.get(item.discord_id), avatars)
             for item in report.top_listeners
         ),
+    )
+
+
+def _playback_outcomes_view(outcomes: PlaybackOutcomes) -> PlaybackOutcomesView:
+    return PlaybackOutcomesView(
+        started=outcomes.started,
+        completed=outcomes.completed,
+        skipped=outcomes.skipped,
+        stopped=outcomes.stopped,
+        failed=outcomes.failed,
+        completion_rate=outcomes.completion_rate,
+        skip_rate=outcomes.skip_rate,
     )
 
 
@@ -224,6 +270,8 @@ def _ranked_listener_view(
             avatar_hash=listener.discord_avatar_hash,
             source_url=member.avatar_url if member else None,
         ),
+        manual_requests=listener.manual_requests,
         plays=listener.plays,
+        presence_seconds=listener.presence_seconds,
         listening_seconds=listener.listening_seconds,
     )

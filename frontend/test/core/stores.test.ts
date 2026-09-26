@@ -5,7 +5,7 @@ import { createPinia, disposePinia, setActivePinia, type Pinia } from "pinia";
 import { nextTick } from "vue";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createBackendCore } from "../../app/core/bootstrap";
-import { defaultAppearance, type UserProfile } from "../../app/core/models/account";
+import { defaultAppearance, type Account } from "../../app/core/models/account";
 import type { MutationResult, QueueEntry } from "../../app/core/models/player";
 import { FakeEvents, player } from "./fixture";
 
@@ -127,7 +127,7 @@ function queueEntry(id: string, position: number, title: string): QueueEntry {
 	};
 }
 
-function userProfile(userId: string): UserProfile {
+function account(userId: string): Account {
 	return {
 		id: userId,
 		role: "user",
@@ -143,38 +143,6 @@ function userProfile(userId: string): UserProfile {
 		},
 		profile: { complete: true, display_name: userId },
 		appearance: { ...defaultAppearance },
-		recent_tracks: [],
-		statistics: {
-			user_id: userId,
-			coverage: {
-				period: "30d",
-				started_at: "2026-08-28T00:00:00Z",
-				ended_at: "2026-09-26T00:00:00Z",
-				recorded_since: null,
-				timezone: "Europe/Berlin",
-				partial: false,
-			},
-			totals: {
-				average_wait_seconds: null,
-				completed: 0,
-				completion_rate: null,
-				failed: 0,
-				listening_seconds: 0,
-				manual_requests: 0,
-				plays: 0,
-				radio_requests: 0,
-				requests: 0,
-				skip_rate: null,
-				skipped: 0,
-				stopped: 0,
-				unique_artists: 0,
-				unique_tracks: 0,
-			},
-			daily_activity: [],
-			top_artists: [],
-			top_listeners: [],
-			top_tracks: [],
-		},
 	};
 }
 
@@ -406,7 +374,7 @@ describe("new backend Pinia stores", () => {
 		});
 	});
 
-	it("reloads the shared profile for a new account and clears it when authority is lost", async () => {
+	it("reloads the shared account and clears it when authority is lost", async () => {
 		const pinia = createPinia();
 		setActivePinia(pinia);
 		piniaInstances.push(pinia);
@@ -421,23 +389,22 @@ describe("new backend Pinia stores", () => {
 					role: "user",
 					user_id: currentUser,
 				});
-			if (String(input) === "/api/users/me?period=30d")
-				return Response.json(userProfile(currentUser));
+			if (String(input) === "/api/users/me") return Response.json(account(currentUser));
 			throw new Error(`Unexpected request: ${String(input)}`);
 		});
 		const core = createBackendCore({ fetch: fetcher });
 		const session = core.stores.useSessionStore();
-		const profile = core.stores.useProfileStore();
+		const accountStore = core.stores.useAccountStore();
 
 		expect(await session.restore()).toBe(true);
-		await vi.waitFor(() => expect(profile.profile?.id).toBe("user-one"));
+		await vi.waitFor(() => expect(accountStore.account?.id).toBe("user-one"));
 		currentUser = "user-two";
 		expect(await session.refresh()).toBe(true);
-		await vi.waitFor(() => expect(profile.profile?.id).toBe("user-two"));
+		await vi.waitFor(() => expect(accountStore.account?.id).toBe("user-two"));
 
 		core.authority.lost("signed_out");
 		await nextTick();
-		expect(profile.profile).toBeNull();
+		expect(accountStore.account).toBeNull();
 	});
 
 	it("refreshes the current session after profile setup changes completeness", async () => {

@@ -130,7 +130,8 @@ for commit `a36e598`: Windows and Linux jobs each passed 527 backend tests
 (6 skipped), 121 frontend tests, API type generation, type checks and build.
 The six skipped cases are the optional real FFmpeg/Opus recordings above. CI
 checks and earlier listening reports do not establish that the current engine
-sounds correct in Discord. The following acceptance is still **open**.
+sounds correct in Discord. The following acceptance was completed with a
+listener on 2026-09-26.
 
 Agree with a listener on the specific server and voice channel, two or three
 test tracks, whether the bot may be moved or restarted, and a time when music
@@ -143,14 +144,14 @@ place and add only identifiable test entries.
 
 | Check | Confirm | Status |
 | --- | --- | --- |
-| Transition, crossfade off | One start; no cut or duplicate history | Pending |
-| Natural crossfade | Audible overlap; title and clock switch at fade start | Heard; UI timing open |
-| Pause, resume and seek | Controls match sound and position; no second play count | Heard and state checked |
-| Skip during overlap | One successor; late callback cannot skip again | Pending |
-| Radio | Three upcoming; manual entries first; End radio stops refill | Pending |
-| Voice reconnect | Track and position survive; `/pspsps` preserves pause intent | Pending |
-| Restart | Rejoin with saved playback state | Abrupt restart checked; clean shutdown open |
-| Two tabs | Shared state; local navigation; one SSE stream each | State checked; concurrency open |
+| Transition, crossfade off | One start; no cut or duplicate history | Passed |
+| Natural crossfade | Audible overlap; title and clock switch at fade start | Passed |
+| Pause, resume and seek | Controls match sound and position; no second play count | Passed |
+| Skip during overlap | One successor; late callback cannot skip again | Passed |
+| Radio | Three upcoming; manual entries first; End radio stops refill | Passed |
+| Voice reconnect | Track and position survive; `/pspsps` preserves pause intent | Passed |
+| Restart | Rejoin with saved playback state | Passed |
+| Two tabs | Shared state; local navigation; one SSE stream each | Passed |
 
 Partial run on 2026-09-22: the listener heard the seven-second transition from
 "Get Lucky" to "We Are Young" and confirmed that playback resumed at the saved
@@ -167,16 +168,16 @@ needs a coordinated live check.
 During both restarts, the dashboard temporarily showed an unavailable login
 screen even though the session was valid. The frontend now retains a known
 session on a transient transport failure; its focused regression test and type
-check pass. This correction was not retested with another live restart. The
-remaining pending and partial cases keep overall live acceptance open.
+check pass. The completed live acceptance also covered the corrected restart
+flow.
 
 Cutover check on 2026-09-26: the backend, frontend and PostgreSQL services were
 rebuilt and recreated from the final `nahoermaar` package. All services became
 healthy, every readiness check reported `ready`, Discord Voice reconnected and
 the existing users, queue entries, Radio runs and discovery snapshots remained
 in PostgreSQL. Playback then recorded another request and playback occurrence.
-This proves the runtime cutover and data retention, but it does not replace the
-pending audible checks in the table above.
+This proves the runtime cutover and data retention. The later listener
+confirmation completed the audible checks in the table above.
 
 For each case, note what was audible separately from the UI snapshot and backend
 logs. A test passes only when both the listener and the state/history evidence

@@ -17,6 +17,7 @@ def test_settings_load_explicit_environment() -> None:
             "DISCORD_CLIENT_ID": "1550894913980465212",
             "DISCORD_CLIENT_SECRET": "local-secret",
             "PUBLIC_ORIGIN": "https://music.example.test",
+            "ALLOWED_ORIGINS": "http://localhost:3000, http://localhost:3001/",
             "ACCESS_PATH": "config/access.toml",
             "NAHORMAAR_AVATAR_DIR": "var/avatars",
             "NAHORMAAR_LOG_DIR": "var/logs",
@@ -31,6 +32,11 @@ def test_settings_load_explicit_environment() -> None:
     assert settings.auth.redirect_uri == (
         "https://music.example.test/api/auth/discord/callback"
     )
+    assert settings.auth.browser_origins == {
+        "https://music.example.test",
+        "http://localhost:3000",
+        "http://localhost:3001",
+    }
     assert settings.auth.secure
     assert settings.avatar_directory == (Path.cwd() / "var/avatars").resolve()
     assert settings.log_directory == (Path.cwd() / "var/logs").resolve()
@@ -78,6 +84,13 @@ def test_process_environment_overrides_dotenv(
                 "PUBLIC_ORIGIN": "http://music.example.test",
             },
             "PUBLIC_ORIGIN",
+        ),
+        (
+            {
+                "DATABASE_URL": "postgres",
+                "ALLOWED_ORIGINS": "http://music.example.test",
+            },
+            "ALLOWED_ORIGINS",
         ),
         (
             {

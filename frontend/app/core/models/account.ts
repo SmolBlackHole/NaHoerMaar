@@ -6,7 +6,8 @@ import type { components } from "../api/schema.generated";
 type Schema = components["schemas"];
 
 export type AccountSession = Schema["SessionView"];
-export type UserProfile = Schema["ProfilePageView"];
+export type Account = Schema["UserView"];
+export type ListenerProfile = Schema["ProfilePageView"];
 export type Appearance = Schema["AppearanceView"];
 export type ProfileUpdate = Schema["ProfileUpdate"];
 export type AppearanceUpdate = Schema["AppearanceUpdate"];

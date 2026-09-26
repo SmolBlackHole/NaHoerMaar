@@ -74,11 +74,13 @@ The server binds to `127.0.0.1:8000`. Its
 worker: every backend process would otherwise start its own bot and player.
 Keep FastAPI internal and route dashboard requests through Nuxt.
 
-`PUBLIC_ORIGIN` fixes the browser origin and Discord OAuth redirect. Forwarded
-host headers do not override it. The development command reads the root `.env`.
-A deployed Nuxt server needs the same value in its environment, with HTTPS for
-secure cookies. See [Hosting considerations](hosting.md) before exposing the
-dashboard outside a local network.
+`PUBLIC_ORIGIN` fixes the Discord OAuth redirect and the canonical deployed
+dashboard address. `ALLOWED_ORIGINS` adds browser origins that may send
+authenticated API writes. The example configuration allows the local Nuxt
+server on port 3001 while the Compose dashboard stays on port 3000. Forwarded
+host headers do not change the OAuth redirect. See
+[Hosting considerations](hosting.md) before exposing the dashboard outside a
+local network.
 
 Start the dashboard in another terminal:
 
@@ -86,10 +88,10 @@ Start the dashboard in another terminal:
 npm run dev
 ```
 
-Open `http://localhost:3000`. On PowerShell systems that block `npm.ps1`, use
+Open `http://localhost:3001`. On PowerShell systems that block `npm.ps1`, use
 `npm.cmd run dev`. The Nuxt server forwards API requests to
 `http://127.0.0.1:8000`; set `NUXT_BACKEND_URL` when the backend uses another
-address.
+address. The container dashboard remains available on `http://localhost:3000`.
 
 Ctrl+C performs a clean backend shutdown: it drains accepted work, records the
 latest checkpoint, stops audio and disconnects the bot. Coordinate restarts with

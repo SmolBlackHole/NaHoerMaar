@@ -1,7 +1,7 @@
 <script setup lang="ts">
 defineProps<{ collapsed?: boolean }>();
-const profile = useNuxtApp().$backendCore.stores.useProfileStore();
-const details = computed(() => profile.profile);
+const account = useNuxtApp().$backendCore.stores.useAccountStore();
+const details = computed(() => account.account);
 const discordAvatar = computed(() => details.value?.discord.avatar_url ?? undefined);
 </script>
 

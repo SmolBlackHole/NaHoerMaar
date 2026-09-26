@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import type { ProfileUpdate } from "~/core/models/account";
+import type { ProfileUpdate, StatisticsPeriod } from "~/core/models/account";
 
 useSeoMeta({ title: "Your profile | NaHörMaar" });
 const core = useNuxtApp().$backendCore;
 const session = core.stores.useSessionStore();
-const profile = core.stores.useProfileStore();
-const details = computed(() => profile.profile);
+const account = core.stores.useAccountStore();
+const profile = core.workflows.profile();
+const period = ref<StatisticsPeriod>("30d");
+const details = computed(() => profile.profile.data.value);
 const { icons } = useTheme();
 const toast = useToast();
 const consent = useConsentStore();
@@ -13,10 +15,12 @@ const consent = useConsentStore();
 const discordAvatar = computed(() => details.value?.discord.avatar_url ?? undefined);
 
 async function load() {
-	await profile.refresh();
+	await profile.loadMine(period.value);
 }
 async function save(value: ProfileUpdate) {
-	if (!(await profile.updateProfile(value))) return;
+	const updated = await account.updateProfile(value);
+	if (!updated) return;
+	profile.mergeAccount(updated);
 	toast.add({
 		title: "Profile saved",
 		description: "Your updated name is visible to the group.",
@@ -25,7 +29,9 @@ async function save(value: ProfileUpdate) {
 	});
 }
 
+watch(period, load);
 onMounted(load);
+onScopeDispose(profile.dispose);
 </script>
 
 <template>
@@ -38,29 +44,11 @@ onMounted(load);
 			</template>
 			<template #body>
 				<div class="w-full pb-4 sm:pb-6">
-					<div v-if="profile.loading && !details" aria-label="Loading your profile">
-						<div class="flex flex-wrap items-center gap-5 border-b border-default pb-7">
-							<USkeleton class="size-20 rounded-2xl" />
-							<div class="min-w-64 space-y-3">
-								<USkeleton class="h-7 w-52" />
-								<USkeleton class="h-4 w-36" />
-							</div>
-						</div>
-						<div
-							class="mt-7 grid overflow-hidden rounded-2xl border border-default sm:grid-cols-2 xl:grid-cols-4"
-						>
-							<div v-for="index in 4" :key="index" class="space-y-3 p-5">
-								<USkeleton class="h-4 w-28" />
-								<USkeleton class="h-8 w-20" />
-							</div>
-						</div>
-						<div
-							class="mt-7 grid gap-7 lg:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.65fr)]"
-						>
-							<USkeleton class="h-96 rounded-2xl" />
-							<USkeleton class="h-72 rounded-2xl" />
-						</div>
-					</div>
+					<ProfileSkeleton
+						v-if="profile.profile.loading.value && !details"
+						aria-label="Loading your profile"
+						editable
+					/>
 
 					<div v-else-if="!details" class="grid min-h-80 place-items-center">
 						<div class="max-w-sm text-center">
@@ -69,7 +57,10 @@ onMounted(load);
 								Your profile is unavailable
 							</h1>
 							<p class="mt-2 text-sm leading-relaxed text-muted" role="alert">
-								{{ profile.error ?? "The profile could not be loaded." }}
+								{{
+									profile.profile.error.value ??
+									"The profile could not be loaded."
+								}}
 							</p>
 							<UButton
 								class="mt-5"
@@ -82,7 +73,7 @@ onMounted(load);
 						</div>
 					</div>
 
-					<ProfileOverview v-else :value="details">
+					<ProfileOverview v-else v-model:period="period" :value="details">
 						<template #details>
 							<div
 								class="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.65fr)] lg:items-start"
@@ -104,8 +95,8 @@ onMounted(load);
 										<ProfileForm
 											:profile="details.profile"
 											:complete="true"
-											:busy="profile.saving"
-											:error="profile.error"
+											:busy="account.saving"
+											:error="account.error"
 											@save="save"
 										/>
 									</div>

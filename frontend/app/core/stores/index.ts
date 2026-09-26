@@ -5,12 +5,7 @@ import { defineStore } from "pinia";
 import { computed, onScopeDispose, ref, shallowRef, watch } from "vue";
 import { ApiFailure, SessionLost, type SessionAuthority } from "../api/transport";
 import type { BackendClient } from "../client";
-import type {
-	AccountSession,
-	AppearanceUpdate,
-	ProfileUpdate,
-	UserProfile,
-} from "../models/account";
+import type { Account, AccountSession, AppearanceUpdate, ProfileUpdate } from "../models/account";
 import type {
 	MutationResult,
 	PlayerChange,
@@ -145,17 +140,17 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 		};
 	});
 
-	const useProfileStore = defineStore("backendProfile", () => {
+	const useAccountStore = defineStore("backendAccount", () => {
 		const session = useSessionStore();
-		const profile = shallowRef<UserProfile | null>(null);
+		const account = shallowRef<Account | null>(null);
 		const loading = ref(false);
 		const saving = ref(false);
 		const error = ref<string | null>(null);
 		let loadController: AbortController | undefined;
 
-		async function load(force = false): Promise<UserProfile | null> {
+		async function load(force = false): Promise<Account | null> {
 			if (session.status !== "authenticated") return null;
-			if (!force && profile.value) return profile.value;
+			if (!force && account.value) return account.value;
 			loadController?.abort();
 			const controller = new AbortController();
 			const generation = session.generation;
@@ -163,9 +158,9 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 			loading.value = true;
 			error.value = null;
 			try {
-				const value = await client.account.profile("30d", controller.signal);
+				const value = await client.account.account(controller.signal);
 				if (controller.signal.aborted || generation !== session.generation) return null;
-				profile.value = value;
+				account.value = value;
 				return value;
 			} catch (failure) {
 				if (!controller.signal.aborted && !(failure instanceof SessionLost))
@@ -179,7 +174,7 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 			}
 		}
 
-		async function save(write: () => Promise<UserProfile>): Promise<UserProfile | null> {
+		async function save(write: () => Promise<Account>): Promise<Account | null> {
 			if (saving.value || session.status !== "authenticated") return null;
 			const generation = session.generation;
 			saving.value = true;
@@ -187,7 +182,7 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 			try {
 				const value = await write();
 				if (generation !== session.generation) return null;
-				profile.value = value;
+				account.value = value;
 				return value;
 			} catch (failure) {
 				if (!(failure instanceof SessionLost))
@@ -204,7 +199,7 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 				loadController?.abort();
 				if (status === "authenticated") void load(true);
 				else {
-					profile.value = null;
+					account.value = null;
 					loading.value = false;
 					saving.value = false;
 					error.value = null;
@@ -218,7 +213,7 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 			loadController?.abort();
 		});
 		return {
-			profile,
+			account,
 			loading,
 			saving,
 			error,
@@ -597,5 +592,5 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 		};
 	});
 
-	return { useSessionStore, useProfileStore, usePlayerStore };
+	return { useSessionStore, useAccountStore, usePlayerStore };
 }

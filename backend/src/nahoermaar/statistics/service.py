@@ -4,10 +4,8 @@
 
 """Period handling and access policy for statistics read projections."""
 
-from collections.abc import Callable
-from dataclasses import dataclass
-from datetime import UTC, datetime, time, timedelta
-from enum import StrEnum
+from collections.abc import Callable, Iterable
+from datetime import UTC, date, datetime, time, timedelta
 import logging
 from zoneinfo import ZoneInfo
 
@@ -15,14 +13,14 @@ from nahoermaar.database.uow import UnitOfWork
 from nahoermaar.users.domain import AuthError, AuthErrorCode, UserId
 from nahoermaar.users.service import AccessService
 
-from .repository import (
-    DailyActivity,
-    RankedArtist,
-    RankedListener,
-    RankedTrack,
-    StatisticsRepository,
-    Totals,
+from .models import (
+    ActivityBucket,
+    ActivityGranularity,
+    Coverage,
+    StatisticsPeriod,
+    StatisticsReport,
 )
+from .repository import PresenceInterval, StatisticsRepository
 
 type Clock = Callable[[], datetime]
 type UnitFactory = Callable[[], UnitOfWork]
@@ -32,53 +30,6 @@ _LOGGER = logging.getLogger(__name__)
 
 def _utc_now() -> datetime:
     return datetime.now(UTC)
-
-
-class StatisticsPeriod(StrEnum):
-    DAYS_7 = "7d"
-    DAYS_30 = "30d"
-    ALL = "all"
-
-
-@dataclass(frozen=True, slots=True)
-class Coverage:
-    period: StatisticsPeriod
-    timezone: str
-    started_at: datetime
-    ended_at: datetime
-    recorded_since: datetime | None
-    partial: bool
-
-
-@dataclass(frozen=True, slots=True)
-class StatisticsReport:
-    user_id: UserId | None
-    coverage: Coverage
-    totals: Totals
-    daily_activity: tuple[DailyActivity, ...]
-    top_tracks: tuple[RankedTrack, ...]
-    top_artists: tuple[RankedArtist, ...]
-    top_listeners: tuple[RankedListener, ...]
-
-    @property
-    def completion_rate(self) -> float | None:
-        ended = (
-            self.totals.completed
-            + self.totals.skipped
-            + self.totals.stopped
-            + self.totals.failed
-        )
-        return self.totals.completed / ended if ended else None
-
-    @property
-    def skip_rate(self) -> float | None:
-        ended = (
-            self.totals.completed
-            + self.totals.skipped
-            + self.totals.stopped
-            + self.totals.failed
-        )
-        return self.totals.skipped / ended if ended else None
 
 
 class StatisticsService:
@@ -120,6 +71,7 @@ class StatisticsService:
         if ended_at.utcoffset() is None:
             raise ValueError("Statistics clock must return a timezone-aware value.")
         ended_at = ended_at.astimezone(UTC)
+        granularity = self._granularity(period)
         async with self._units() as work:
             repository = StatisticsRepository(work.session)
             recorded_since = await repository.recorded_since()
@@ -129,16 +81,24 @@ class StatisticsService:
                 ended_at,
                 user_id=user_id,
             )
-            daily_activity = await repository.daily_activity(
+            activity = await repository.activity(
                 started_at,
                 ended_at,
                 self._timezone.key,
+                granularity,
                 user_id=user_id,
             )
-            daily_activity = self._fill_bounded_days(
-                period,
+            presence = await repository.presence_intervals(
                 started_at,
-                daily_activity,
+                ended_at,
+                user_id=user_id,
+            )
+            activity = self._complete_activity(
+                started_at,
+                ended_at,
+                granularity,
+                activity,
+                presence,
             )
             top_tracks = await repository.top_tracks(
                 started_at,
@@ -156,18 +116,21 @@ class StatisticsService:
                 else ()
             )
         _LOGGER.info(
-            "statistics.projected scope=%s period=%s requests=%d plays=%d listening_seconds=%.3f partial=%s",
+            "statistics.projected scope=%s period=%s requests=%d plays=%d "
+            "listening_seconds=%.3f presence_seconds=%.3f partial=%s",
             user_id or "overview",
             period.value,
-            totals.requests,
-            totals.plays,
+            totals.requests.total,
+            totals.playback.overall.started,
             totals.listening_seconds,
+            totals.presence_seconds,
             partial,
         )
         return StatisticsReport(
             user_id,
             Coverage(
                 period,
+                granularity,
                 self._timezone.key,
                 started_at,
                 ended_at,
@@ -175,7 +138,7 @@ class StatisticsService:
                 partial,
             ),
             totals,
-            daily_activity,
+            activity,
             top_tracks,
             top_artists,
             top_listeners,
@@ -189,9 +152,12 @@ class StatisticsService:
     ) -> tuple[datetime, bool]:
         if period is StatisticsPeriod.ALL:
             return recorded_since or ended_at, False
-        days = 7 if period is StatisticsPeriod.DAYS_7 else 30
         local_end = ended_at.astimezone(self._timezone)
-        first_day = local_end.date() - timedelta(days=days - 1)
+        if period is StatisticsPeriod.YEAR:
+            first_day = date(local_end.year, 1, 1)
+        else:
+            days = 7 if period is StatisticsPeriod.DAYS_7 else 30
+            first_day = local_end.date() - timedelta(days=days - 1)
         started_at = datetime.combine(
             first_day,
             time.min,
@@ -199,19 +165,100 @@ class StatisticsService:
         ).astimezone(UTC)
         return started_at, recorded_since is None or recorded_since > started_at
 
-    def _fill_bounded_days(
+    @staticmethod
+    def _granularity(period: StatisticsPeriod) -> ActivityGranularity:
+        if period in (StatisticsPeriod.DAYS_7, StatisticsPeriod.DAYS_30):
+            return ActivityGranularity.DAY
+        return ActivityGranularity.MONTH
+
+    def _complete_activity(
         self,
-        period: StatisticsPeriod,
         started_at: datetime,
-        activity: tuple[DailyActivity, ...],
-    ) -> tuple[DailyActivity, ...]:
-        if period is StatisticsPeriod.ALL:
-            return activity
-        days = 7 if period is StatisticsPeriod.DAYS_7 else 30
-        first = started_at.astimezone(self._timezone).date()
-        recorded = {item.day: item for item in activity}
-        filled: list[DailyActivity] = []
-        for offset in range(days):
-            day = first + timedelta(days=offset)
-            filled.append(recorded.get(day, DailyActivity(day, 0, 0.0)))
-        return tuple(filled)
+        ended_at: datetime,
+        granularity: ActivityGranularity,
+        activity: tuple[ActivityBucket, ...],
+        presence: tuple[PresenceInterval, ...],
+    ) -> tuple[ActivityBucket, ...]:
+        recorded = {item.started_on: item for item in activity}
+        completed: list[ActivityBucket] = []
+        for started_on, bucket_start, bucket_end in self._bucket_ranges(
+            started_at,
+            ended_at,
+            granularity,
+        ):
+            item = recorded.get(started_on)
+            presence_seconds = sum(
+                _overlap_seconds(
+                    interval.started_at,
+                    interval.ended_at,
+                    bucket_start,
+                    bucket_end,
+                )
+                for interval in presence
+            )
+            completed.append(
+                ActivityBucket(
+                    started_on=started_on,
+                    granularity=granularity,
+                    plays=item.plays if item else 0,
+                    listening_seconds=item.listening_seconds if item else 0.0,
+                    presence_seconds=presence_seconds,
+                )
+            )
+        return tuple(completed)
+
+    def _bucket_ranges(
+        self,
+        started_at: datetime,
+        ended_at: datetime,
+        granularity: ActivityGranularity,
+    ) -> Iterable[tuple[date, datetime, datetime]]:
+        if started_at >= ended_at:
+            return
+        local_start = started_at.astimezone(self._timezone)
+        if granularity is ActivityGranularity.DAY:
+            cursor = datetime.combine(
+                local_start.date(),
+                time.min,
+                tzinfo=self._timezone,
+            )
+        else:
+            cursor = datetime(
+                local_start.year,
+                local_start.month,
+                1,
+                tzinfo=self._timezone,
+            )
+        while cursor.astimezone(UTC) < ended_at:
+            following = _next_local_bucket(cursor, granularity)
+            bucket_start = max(cursor.astimezone(UTC), started_at)
+            bucket_end = min(following.astimezone(UTC), ended_at)
+            if bucket_start < bucket_end:
+                yield cursor.date(), bucket_start, bucket_end
+            cursor = following
+
+
+def _next_local_bucket(
+    current: datetime,
+    granularity: ActivityGranularity,
+) -> datetime:
+    if granularity is ActivityGranularity.DAY:
+        return datetime.combine(
+            current.date() + timedelta(days=1),
+            time.min,
+            tzinfo=current.tzinfo,
+        )
+    year = current.year + (1 if current.month == 12 else 0)
+    month = 1 if current.month == 12 else current.month + 1
+    return datetime(year, month, 1, tzinfo=current.tzinfo)
+
+
+def _overlap_seconds(
+    interval_start: datetime,
+    interval_end: datetime,
+    bucket_start: datetime,
+    bucket_end: datetime,
+) -> float:
+    start = max(interval_start, bucket_start)
+    end = min(interval_end, bucket_end)
+    return max(0.0, (end - start).total_seconds())

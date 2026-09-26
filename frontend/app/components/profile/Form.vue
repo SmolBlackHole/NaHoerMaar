@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import type { ProfileUpdate, UserProfile } from "~/core/models/account";
+import type { Account, ProfileUpdate } from "~/core/models/account";
 
 const props = withDefaults(
 	defineProps<{
-		profile: UserProfile["profile"] | null;
+		profile: Account["profile"] | null;
 		complete?: boolean;
 		busy?: boolean;
 		error?: string | null;

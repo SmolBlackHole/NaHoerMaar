@@ -6,6 +6,31 @@ import { createBackendCore } from "../../app/core/bootstrap";
 import type { Discovery } from "../../app/core/models/catalog";
 
 describe("new backend page workflows", () => {
+	it("keeps the newest profile period when an older request finishes later", async () => {
+		const responses: ((response: Response) => void)[] = [];
+		const fetcher = vi.fn<typeof fetch>(
+			() => new Promise<Response>((resolve) => responses.push(resolve)),
+		);
+		const core = createBackendCore({ fetch: fetcher });
+		core.authority.replace("session-token", "restored");
+		const profile = core.workflows.profile();
+
+		const older = profile.loadMine("7d");
+		const oldSignal = fetcher.mock.calls[0]![1]?.signal;
+		const newer = profile.loadMine("30d");
+		expect(oldSignal?.aborted).toBe(true);
+		responses[1]!(Response.json({ id: "newer-period" }));
+		expect((await newer)?.id).toBe("newer-period");
+		responses[0]!(Response.json({ id: "older-period" }));
+		expect(await older).toBeNull();
+		expect(profile.profile.data.value?.id).toBe("newer-period");
+		expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+			"/api/profiles/me?period=7d",
+			"/api/profiles/me?period=30d",
+		]);
+		profile.dispose();
+	});
+
 	it("discards a response that finishes after the account changes", async () => {
 		let finishRead!: (response: Response) => void;
 		const fetcher = vi

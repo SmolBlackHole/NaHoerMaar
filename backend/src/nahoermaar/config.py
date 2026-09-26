@@ -71,27 +71,12 @@ class AuthSettings:
     client_id: str
     client_secret: str = field(repr=False)
     access_path: Path
+    allowed_origins: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
-        parsed = urlsplit(self.public_origin)
-        if (
-            parsed.scheme not in {"http", "https"}
-            or not parsed.hostname
-            or parsed.username
-            or parsed.password
-            or parsed.path
-            or parsed.query
-            or parsed.fragment
-            or self.public_origin != f"{parsed.scheme}://{parsed.netloc}"
-            or (
-                parsed.scheme == "http"
-                and parsed.hostname not in {"localhost", "127.0.0.1", "::1"}
-            )
-        ):
-            raise ConfigurationError(
-                "PUBLIC_ORIGIN must be an HTTPS origin "
-                "(HTTP is allowed on loopback only)."
-            )
+        _validate_origin(self.public_origin, "PUBLIC_ORIGIN")
+        for origin in self.allowed_origins:
+            _validate_origin(origin, "ALLOWED_ORIGINS")
         if self.client_id and (
             _DISCORD_ID.fullmatch(self.client_id) is None
             or int(self.client_id) >= 2**64
@@ -99,6 +84,11 @@ class AuthSettings:
             raise ConfigurationError(
                 "DISCORD_CLIENT_ID must be a Discord application ID."
             )
+
+    @property
+    def browser_origins(self) -> frozenset[str]:
+        """Return every browser origin trusted for same-origin API writes."""
+        return self.allowed_origins | {self.public_origin}
 
     @property
     def secure(self) -> bool:
@@ -109,6 +99,28 @@ class AuthSettings:
     def redirect_uri(self) -> str:
         """Return the fixed Discord callback registered for this deployment."""
         return self.public_origin + CALLBACK_PATH
+
+
+def _validate_origin(origin: str, setting: str) -> None:
+    parsed = urlsplit(origin)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.path
+        or parsed.query
+        or parsed.fragment
+        or origin != f"{parsed.scheme}://{parsed.netloc}"
+        or (
+            parsed.scheme == "http"
+            and parsed.hostname not in {"localhost", "127.0.0.1", "::1"}
+        )
+    ):
+        raise ConfigurationError(
+            f"{setting} must contain only HTTPS origins "
+            "(HTTP is allowed on loopback only)."
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,6 +192,11 @@ class Settings:
         origin = values.get("PUBLIC_ORIGIN", "http://localhost:3000").strip()
         if origin.endswith("/"):
             origin = origin[:-1]
+        allowed_origins = frozenset(
+            candidate[:-1] if candidate.endswith("/") else candidate
+            for raw_origin in values.get("ALLOWED_ORIGINS", "").split(",")
+            if (candidate := raw_origin.strip())
+        )
         auth = AuthSettings(
             public_origin=origin,
             client_id=values.get("DISCORD_CLIENT_ID", "").strip(),
@@ -187,6 +204,7 @@ class Settings:
             access_path=Path(
                 values.get("ACCESS_PATH") or "config/access.toml"
             ).resolve(),
+            allowed_origins=allowed_origins,
         )
         token = values.get("DISCORD_TOKEN", "").strip()
         configured_ffmpeg = values.get("FFMPEG_PATH", "").strip()

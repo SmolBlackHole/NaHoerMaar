@@ -601,6 +601,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/profiles/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Profile */
+        get: operations["profile_api_profiles__user_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/profiles/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Own Profile */
+        get: operations["own_profile_api_profiles_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/statistics/overview": {
         parameters: {
             query?: never;
@@ -635,23 +669,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/users/{user_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Profile */
-        get: operations["profile_api_users__user_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/users/me": {
         parameters: {
             query?: never;
@@ -659,8 +676,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Own Profile */
-        get: operations["own_profile_api_users_me_get"];
+        /** Own Account */
+        get: operations["own_account_api_users_me_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -765,6 +782,26 @@ export interface components {
             /** Operators */
             operators: components["schemas"]["UserView"][];
         };
+        /** ActivityBucketView */
+        ActivityBucketView: {
+            granularity: components["schemas"]["ActivityGranularity"];
+            /** Listening Seconds */
+            listening_seconds: number;
+            /** Plays */
+            plays: number;
+            /** Presence Seconds */
+            presence_seconds: number;
+            /**
+             * Started On
+             * Format: date
+             */
+            started_on: string;
+        };
+        /**
+         * ActivityGranularity
+         * @enum {string}
+         */
+        ActivityGranularity: "day" | "month";
         /** AddQueueInput */
         AddQueueInput: {
             /**
@@ -936,6 +973,7 @@ export interface components {
              * Format: date-time
              */
             ended_at: string;
+            granularity: components["schemas"]["ActivityGranularity"];
             /** Partial */
             partial: boolean;
             period: components["schemas"]["StatisticsPeriod"];
@@ -958,18 +996,6 @@ export interface components {
             operation_id: string;
             /** Seconds */
             seconds: number;
-        };
-        /** DailyActivityView */
-        DailyActivityView: {
-            /**
-             * Day
-             * Format: date
-             */
-            day: string;
-            /** Listening Seconds */
-            listening_seconds: number;
-            /** Plays */
-            plays: number;
         };
         /** DiscordMembersView */
         DiscordMembersView: {
@@ -1177,11 +1203,34 @@ export interface components {
             /** Undo Id */
             undo_id: string | null;
         };
+        /** PlaybackBreakdownView */
+        PlaybackBreakdownView: {
+            manual: components["schemas"]["PlaybackOutcomesView"];
+            overall: components["schemas"]["PlaybackOutcomesView"];
+            radio: components["schemas"]["PlaybackOutcomesView"];
+        };
         /**
          * PlaybackEndReason
          * @enum {string}
          */
         PlaybackEndReason: "completed" | "skipped" | "stopped" | "failed";
+        /** PlaybackOutcomesView */
+        PlaybackOutcomesView: {
+            /** Completed */
+            completed: number;
+            /** Completion Rate */
+            completion_rate: number | null;
+            /** Failed */
+            failed: number;
+            /** Skip Rate */
+            skip_rate: number | null;
+            /** Skipped */
+            skipped: number;
+            /** Started */
+            started: number;
+            /** Stopped */
+            stopped: number;
+        };
         /** PlaybackRuntimeView */
         PlaybackRuntimeView: {
             /** Attempt Id */
@@ -1365,8 +1414,12 @@ export interface components {
             display_name: string | null;
             /** Listening Seconds */
             listening_seconds: number;
+            /** Manual Requests */
+            manual_requests: number;
             /** Plays */
             plays: number;
+            /** Presence Seconds */
+            presence_seconds: number;
             /**
              * User Id
              * Format: uuid
@@ -1375,6 +1428,8 @@ export interface components {
         };
         /** RankedTrackView */
         RankedTrackView: {
+            /** Artist Names */
+            artist_names: string[];
             /** Artwork Url */
             artwork_url: string | null;
             /** Listening Seconds */
@@ -1498,6 +1553,15 @@ export interface components {
              */
             track_id: string;
         };
+        /** RequestTotalsView */
+        RequestTotalsView: {
+            /** Manual */
+            manual: number;
+            /** Radio */
+            radio: number;
+            /** Total */
+            total: number;
+        };
         /** RequestView */
         RequestView: {
             contributor: components["schemas"]["ContributorView"] | null;
@@ -1587,12 +1651,12 @@ export interface components {
          * StatisticsPeriod
          * @enum {string}
          */
-        StatisticsPeriod: "7d" | "30d" | "all";
+        StatisticsPeriod: "7d" | "30d" | "year" | "all";
         /** StatisticsView */
         StatisticsView: {
+            /** Activity */
+            activity: components["schemas"]["ActivityBucketView"][];
             coverage: components["schemas"]["CoverageView"];
-            /** Daily Activity */
-            daily_activity: components["schemas"]["DailyActivityView"][];
             /** Top Artists */
             top_artists: components["schemas"]["RankedArtistView"][];
             /** Top Listeners */
@@ -1612,28 +1676,12 @@ export interface components {
         TotalsView: {
             /** Average Wait Seconds */
             average_wait_seconds: number | null;
-            /** Completed */
-            completed: number;
-            /** Completion Rate */
-            completion_rate: number | null;
-            /** Failed */
-            failed: number;
             /** Listening Seconds */
             listening_seconds: number;
-            /** Manual Requests */
-            manual_requests: number;
-            /** Plays */
-            plays: number;
-            /** Radio Requests */
-            radio_requests: number;
-            /** Requests */
-            requests: number;
-            /** Skip Rate */
-            skip_rate: number | null;
-            /** Skipped */
-            skipped: number;
-            /** Stopped */
-            stopped: number;
+            playback: components["schemas"]["PlaybackBreakdownView"];
+            /** Presence Seconds */
+            presence_seconds: number;
+            requests: components["schemas"]["RequestTotalsView"];
             /** Unique Artists */
             unique_artists: number;
             /** Unique Tracks */
@@ -4958,6 +5006,178 @@ export interface operations {
             };
         };
     };
+    profile_api_profiles__user_id__get: {
+        parameters: {
+            query?: {
+                period?: components["schemas"]["StatisticsPeriod"];
+            };
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfilePageView"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Request not allowed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description State conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Dependency unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+        };
+    };
+    own_profile_api_profiles_me_get: {
+        parameters: {
+            query?: {
+                period?: components["schemas"]["StatisticsPeriod"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfilePageView"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Request not allowed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description State conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Dependency unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+        };
+    };
     overview_api_statistics_overview_get: {
         parameters: {
             query?: {
@@ -5130,98 +5350,9 @@ export interface operations {
             };
         };
     };
-    profile_api_users__user_id__get: {
+    own_account_api_users_me_get: {
         parameters: {
-            query?: {
-                period?: components["schemas"]["StatisticsPeriod"];
-            };
-            header?: never;
-            path: {
-                user_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProfilePageView"];
-                };
-            };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Request not allowed */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Validation failed */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Dependency unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-        };
-    };
-    own_profile_api_users_me_get: {
-        parameters: {
-            query?: {
-                period?: components["schemas"]["StatisticsPeriod"];
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
@@ -5234,7 +5365,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ProfilePageView"];
+                    "application/json": components["schemas"]["UserView"];
                 };
             };
             /** @description Invalid request */
@@ -5321,7 +5452,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ProfilePageView"];
+                    "application/json": components["schemas"]["UserView"];
                 };
             };
             /** @description Invalid request */
@@ -5408,7 +5539,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ProfilePageView"];
+                    "application/json": components["schemas"]["UserView"];
                 };
             };
             /** @description Invalid request */

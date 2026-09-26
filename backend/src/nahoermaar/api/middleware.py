@@ -55,7 +55,7 @@ def install_auth_middleware(
                     return response
 
                 origin = request.headers.get("origin")
-                if origin is not None and origin != settings.public_origin:
+                if origin is not None and origin not in settings.browser_origins:
                     response = _error(AuthErrorCode.ORIGIN_FORBIDDEN, 403, request_id)
                     _log_rejected(
                         request,
@@ -79,7 +79,7 @@ def install_auth_middleware(
                     actor_id = current.user.id
                     request.state.authenticated = current
                     if request.method not in _SAFE_METHODS and (
-                        origin != settings.public_origin
+                        origin not in settings.browser_origins
                         or not secrets.compare_digest(
                             request.headers.get("x-csrf-token", ""),
                             current.csrf,

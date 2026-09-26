@@ -124,7 +124,13 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
     _register_handlers(bus, auth, access, player, listening)
     settings = Settings(
         os.environ["DATABASE_URL"],
-        AuthSettings(ORIGIN, "123", "secret", Path("access.toml")),
+        AuthSettings(
+            ORIGIN,
+            "123",
+            "secret",
+            Path("access.toml"),
+            frozenset({"http://localhost:3001"}),
+        ),
     )
     application = Application(
         settings,
@@ -196,13 +202,13 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
 
             overview = await client.get("/api/statistics/overview")
             assert overview.status_code == 200
-            assert overview.json()["totals"]["plays"] == 0
+            assert overview.json()["totals"]["playback"]["overall"]["started"] == 0
             own_statistics = await client.get(
                 f"/api/statistics/users/{current.user.id}"
             )
             assert own_statistics.status_code == 200
             assert own_statistics.json()["user_id"] == str(current.user.id)
-            own_profile = await client.get(f"/api/users/{current.user.id}")
+            own_profile = await client.get(f"/api/profiles/{current.user.id}")
             assert own_profile.status_code == 200
             assert own_profile.json()["id"] == str(current.user.id)
             assert own_profile.json()["discord"]["display_name"] == "Andrey"
@@ -214,9 +220,24 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             )
             assert own_profile.json()["statistics"]["user_id"] == str(current.user.id)
             assert own_profile.json()["recent_tracks"] == []
-            current_profile = await client.get("/api/users/me")
+            current_profile = await client.get("/api/profiles/me")
             assert current_profile.status_code == 200
             assert current_profile.json() == own_profile.json()
+            own_account = await client.get("/api/users/me")
+            assert own_account.status_code == 200
+            assert own_account.json() == {
+                key: own_profile.json()[key]
+                for key in (
+                    "id",
+                    "discord",
+                    "profile",
+                    "appearance",
+                    "role",
+                    "created_at",
+                    "updated_at",
+                    "last_login_at",
+                )
+            }
 
             player_state = await client.get("/api/player")
             assert player_state.status_code == 200
@@ -464,7 +485,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             assert profile.status_code == 200
             assert profile.json()["profile"]["display_name"] == "Local owner"
             assert profile.json()["discord"]["username"] == "Owner"
-            assert profile.json()["statistics"]["user_id"] == str(current.user.id)
+            assert "statistics" not in profile.json()
 
             played = await client.post(
                 "/api/player/play",
@@ -497,12 +518,12 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             assert members.status_code == 200
             assert members.json()["members"][0]["display_name"] == "Andrey"
             granted_user_id = access_state.json()["grants"][0]["user"]["id"]
-            granted_profile = await client.get(f"/api/users/{granted_user_id}")
+            granted_profile = await client.get(f"/api/profiles/{granted_user_id}")
             assert granted_profile.status_code == 200
 
             revoked = await client.delete("/api/access/7", headers=headers)
             assert revoked.status_code == 200
-            hidden_profile = await client.get(f"/api/users/{granted_user_id}")
+            hidden_profile = await client.get(f"/api/profiles/{granted_user_id}")
             assert hidden_profile.status_code == 404
             assert hidden_profile.json() == {"error": "profile_not_found"}
 
@@ -519,6 +540,16 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             )
             assert wrong_origin.status_code == 403
             assert wrong_origin.json() == {"error": "origin_forbidden"}
+
+            development_origin = await client.put(
+                "/api/users/me/profile",
+                headers={
+                    "origin": "http://localhost:3001",
+                    "x-csrf-token": current.csrf,
+                },
+                json={"display_name": "Local owner"},
+            )
+            assert development_origin.status_code == 200
 
             waiting = asyncio.create_task(anext(events))
             await asyncio.sleep(0)

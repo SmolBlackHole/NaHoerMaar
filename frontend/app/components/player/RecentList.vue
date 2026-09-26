@@ -2,7 +2,7 @@
 import { formatTime } from "~/core/models/player";
 import type { RecentPlayback } from "~/core/models/listening";
 
-defineProps<{ entries: RecentPlayback[] }>();
+withDefaults(defineProps<{ entries: RecentPlayback[]; loading?: boolean }>(), { loading: false });
 const player = useNuxtApp().$backendCore.stores.usePlayerStore();
 const { icons } = useTheme();
 function playedAt(value: string) {
@@ -24,7 +24,28 @@ function requeue(item: RecentPlayback) {
 
 <template>
 	<div>
-		<ol v-if="entries.length" aria-label="Recently played tracks" class="space-y-1">
+		<ol v-if="loading" aria-label="Loading recently played tracks" class="space-y-1">
+			<li
+				v-for="index in 5"
+				:key="index"
+				class="recent-row flex flex-wrap items-center gap-3 py-4"
+				aria-hidden="true"
+			>
+				<USkeleton class="recent-cover size-12 shrink-0 rounded-lg" />
+				<div class="recent-track min-w-0 flex-1 basis-32 space-y-2">
+					<USkeleton class="h-4 w-full max-w-72" />
+					<USkeleton class="h-3 w-32" />
+				</div>
+				<USkeleton class="recent-radio h-5 w-28" />
+				<USkeleton class="recent-duration h-3 w-10" />
+				<USkeleton class="hidden h-3 w-28 lg:block lg:w-36" />
+				<div class="recent-actions ml-auto flex items-center gap-1">
+					<USkeleton class="size-11 rounded-lg" />
+					<USkeleton class="size-11 rounded-lg" />
+				</div>
+			</li>
+		</ol>
+		<ol v-else-if="entries.length" aria-label="Recently played tracks" class="space-y-1">
 			<li
 				v-for="item in entries"
 				:key="item.playback_id"
