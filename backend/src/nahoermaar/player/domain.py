@@ -162,16 +162,16 @@ class TrackRequest:
     source_id: TrackSourceId | None
     requested_at: datetime
     origin: RequestOrigin
-    requested_by: UserId | None = None
+    requested_by: UserId
     radio_run_id: RadioRunId | None = None
 
     def __post_init__(self) -> None:
         _aware(self.requested_at, "Track request time")
         if self.origin is RequestOrigin.MANUAL:
-            if self.requested_by is None or self.radio_run_id is not None:
+            if self.radio_run_id is not None:
                 raise ValueError("Manual requests need one user and no radio run.")
-        elif self.requested_by is not None or self.radio_run_id is None:
-            raise ValueError("Radio requests need one radio run and no user.")
+        elif self.radio_run_id is None:
+            raise ValueError("Radio requests need one user and one radio run.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -412,7 +412,7 @@ def new_request(
     source_id: TrackSourceId | None,
     requested_at: datetime,
     *,
-    actor_id: UserId | None = None,
+    actor_id: UserId,
     radio_run_id: RadioRunId | None = None,
 ) -> TrackRequest:
     origin = RequestOrigin.RADIO if radio_run_id is not None else RequestOrigin.MANUAL

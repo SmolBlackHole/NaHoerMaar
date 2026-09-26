@@ -33,6 +33,7 @@ from nahoermaar.messaging import MessageBus
 from nahoermaar.listening.service import ListeningService
 from nahoermaar.observability import ContextFilter
 from nahoermaar.operations.logs import RecentLogBuffer
+from nahoermaar.player.events import PlaybackRuntimeChanged
 from nahoermaar.player.session import CatalogRadioResolver, PlayerSessionManager
 from nahoermaar.statistics.service import StatisticsService
 from nahoermaar.users.service import (
@@ -144,6 +145,8 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
     assert "/api/events" in contract["paths"]
     assert "/api/listening/recent" in contract["paths"]
     assert "/api/logs" in contract["paths"]
+    assert "/api/jobs" in contract["paths"]
+    assert "/api/jobs/catalog-maintenance" in contract["paths"]
     assert "/api/statistics/overview" in contract["paths"]
     assert "/api/statistics/users/{user_id}" in contract["paths"]
     assert "ErrorView" in contract["components"]["schemas"]
@@ -230,7 +233,10 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
                 },
                 "last_error": None,
             }
-            assert (await client.get("/api/listening/recent")).json() == []
+            assert (await client.get("/api/listening/recent")).json() == {
+                "entries": [],
+                "next_cursor": None,
+            }
             invalid_recent = await client.get(
                 "/api/listening/recent", params={"limit": 0}
             )
@@ -254,6 +260,18 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
                 "origin": ORIGIN,
                 "x-csrf-token": current.csrf,
             }
+            jobs = await client.get("/api/jobs")
+            assert jobs.status_code == 200
+            assert jobs.json()["jobs"][0]["id"] == "catalog-maintenance"
+            assert jobs.json()["jobs"][0]["default_batch_size"] == 10
+            started_job = await client.post(
+                "/api/jobs/catalog-maintenance",
+                headers=headers,
+                json={"batch_size": 3},
+            )
+            assert started_job.status_code == 202
+            assert started_job.json()["running"] is True
+            assert started_job.json()["active_batch_size"] == 3
             track_id = uuid4()
             async with units() as work:
                 await work.session.execute(
@@ -340,38 +358,41 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             )
             recent = await client.get("/api/listening/recent", params={"limit": 1})
             assert recent.status_code == 200
-            assert recent.json() == [
-                {
-                    "playback_id": str(playback_id),
-                    "request_id": request_id,
-                    "track_id": str(track_id),
-                    "title": "API track",
-                    "artist_names": [],
-                    "artwork_url": None,
-                    "duration_seconds": 180.0,
-                    "origin": "manual",
-                    "requested_by": str(current.user.id),
-                    "source_id": None,
-                    "source_url": None,
-                    "source_provider": None,
-                    "contributor": {
-                        "user_id": str(current.user.id),
-                        "display_name": "Owner",
-                        "pixabot": None,
-                        "discord_id": "9",
-                        "discord_username": "Owner",
-                        "discord_avatar_hash": None,
-                    },
-                    "started_at": NOW.isoformat().replace("+00:00", "Z"),
-                    "ended_at": (NOW + timedelta(seconds=42))
-                    .isoformat()
-                    .replace("+00:00", "Z"),
-                    "end_reason": "completed",
-                    "audio_seconds": 42.0,
-                    "group_audio_seconds": 40.0,
-                    "play_count": 2,
-                }
-            ]
+            assert recent.json() == {
+                "entries": [
+                    {
+                        "playback_id": str(playback_id),
+                        "request_id": request_id,
+                        "track_id": str(track_id),
+                        "title": "API track",
+                        "artist_names": [],
+                        "artwork_url": None,
+                        "duration_seconds": 180.0,
+                        "origin": "manual",
+                        "requested_by": str(current.user.id),
+                        "source_id": None,
+                        "source_url": None,
+                        "source_provider": None,
+                        "contributor": {
+                            "user_id": str(current.user.id),
+                            "display_name": "Owner",
+                            "pixabot": None,
+                            "discord_id": "9",
+                            "discord_username": "Owner",
+                            "discord_avatar_hash": None,
+                        },
+                        "started_at": NOW.isoformat().replace("+00:00", "Z"),
+                        "ended_at": (NOW + timedelta(seconds=42))
+                        .isoformat()
+                        .replace("+00:00", "Z"),
+                        "end_reason": "completed",
+                        "audio_seconds": 42.0,
+                        "group_audio_seconds": 40.0,
+                        "play_count": 2,
+                    }
+                ],
+                "next_cursor": None,
+            }
             change = await anext(events)
             assert change.event == "change"
             assert change.id == "1"
@@ -384,6 +405,14 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             assert (
                 change.data.state.queue[0].request.contributor.display_name == "Owner"
             )
+            await bus.publish(
+                PlaybackRuntimeChanged(application.player.state.session.id)
+            )
+            runtime = await anext(events)
+            assert runtime.event == "state"
+            assert runtime.id == "1"
+            assert isinstance(runtime.data, PlayerView)
+            assert runtime.data.revision == 1
             replayed = await client.post(
                 "/api/player/queue",
                 headers=headers,

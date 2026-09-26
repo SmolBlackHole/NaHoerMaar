@@ -215,8 +215,8 @@ const status = computed(() => {
 					<UButton
 						v-if="connected"
 						label="Leave"
-						:loading="player.isPending('leave')"
-						:aria-busy="player.isPending('leave')"
+						:loading="player.isPending('voice.leave')"
+						:aria-busy="player.isPending('voice.leave')"
 						:icon="icons.logOut"
 						color="neutral"
 						variant="ghost"

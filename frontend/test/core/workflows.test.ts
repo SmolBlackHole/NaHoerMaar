@@ -20,11 +20,44 @@ describe("new backend page workflows", () => {
 
 		core.authority.lost("signed_out");
 		expect(signal?.aborted).toBe(true);
-		finishRead(Response.json([]));
+		finishRead(Response.json({ entries: [], next_cursor: null }));
 		expect(await pending).toBeNull();
 		expect(recent.recent.data.value).toBeNull();
 		expect(recent.recent.loading.value).toBe(false);
 		recent.dispose();
+	});
+
+	it("appends recent pages without replacing entries that are already visible", async () => {
+		const fetcher = vi.fn<typeof fetch>();
+		const core = createBackendCore({ fetch: fetcher });
+		core.authority.replace("session-token", "restored");
+		fetcher
+			.mockResolvedValueOnce(
+				Response.json({
+					entries: [{ playback_id: "first" }],
+					next_cursor: "cursor-one",
+				}),
+			)
+			.mockResolvedValueOnce(
+				Response.json({
+					entries: [{ playback_id: "second" }],
+					next_cursor: null,
+				}),
+			);
+		const workflow = core.workflows.recent();
+
+		await workflow.load(1);
+		await workflow.more(1);
+
+		expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+			"/api/listening/recent?limit=1",
+			"/api/listening/recent?limit=1&cursor=cursor-one",
+		]);
+		expect(workflow.recent.data.value?.entries.map(({ playback_id }) => playback_id)).toEqual([
+			"first",
+			"second",
+		]);
+		workflow.dispose();
 	});
 
 	it("merges discovery pages by source position and keeps the latest duplicate", async () => {
@@ -49,9 +82,75 @@ describe("new backend page workflows", () => {
 		expect(workflow.results.data.value?.entries[1]?.track.title).toBe("page-two-1");
 		workflow.dispose();
 	});
+
+	it("continues the provider after every persisted snapshot entry is visible", async () => {
+		const fetcher = vi.fn<typeof fetch>();
+		const core = createBackendCore({ fetch: fetcher });
+		core.authority.replace("session-token", "restored");
+		fetcher
+			.mockResolvedValueOnce(Response.json({ ...discovery([0, 1], null, true), total: 2 }))
+			.mockResolvedValueOnce(
+				Response.json({
+					...discovery([2], null),
+					version: "continued-version",
+					offset: 2,
+					total: 3,
+				}),
+			);
+		const workflow = core.workflows.discovery();
+
+		await workflow.search("ambient");
+		await workflow.more();
+
+		expect(fetcher.mock.calls.map(([url, options]) => [url, options?.method])).toEqual([
+			["/api/catalog/search?q=ambient", undefined],
+			["/api/catalog/search/version-id/continue?offset=2&limit=20", "POST"],
+		]);
+		expect(workflow.results.data.value?.version).toBe("continued-version");
+		expect(workflow.results.data.value?.entries.map(({ position }) => position)).toEqual([
+			0, 1, 2,
+		]);
+		expect(workflow.results.data.value?.source_has_more).toBe(false);
+		workflow.dispose();
+	});
+
+	it("replaces the catalog job with the accepted manual run", async () => {
+		const fetcher = vi.fn<typeof fetch>();
+		const core = createBackendCore({ fetch: fetcher });
+		core.authority.replace("session-token", "restored");
+		const idle = {
+			id: "catalog-maintenance",
+			label: "Catalog maintenance",
+			running: false,
+		};
+		fetcher
+			.mockResolvedValueOnce(Response.json({ jobs: [idle] }))
+			.mockResolvedValueOnce(
+				Response.json({ ...idle, running: true, active_batch_size: 25 }),
+			);
+		const workflow = core.workflows.jobs();
+
+		await workflow.load();
+		await workflow.runCatalogMaintenance(25);
+
+		expect(workflow.jobs.data.value?.jobs[0]).toMatchObject({
+			id: "catalog-maintenance",
+			running: true,
+			active_batch_size: 25,
+		});
+		expect(fetcher.mock.calls.map(([url, options]) => [url, options?.method])).toEqual([
+			["/api/jobs", undefined],
+			["/api/jobs/catalog-maintenance", "POST"],
+		]);
+		workflow.dispose();
+	});
 });
 
-function discovery(positions: number[], nextOffset: number | null): Discovery {
+function discovery(
+	positions: number[],
+	nextOffset: number | null,
+	sourceHasMore = nextOffset !== null,
+): Discovery {
 	return {
 		kind: "search",
 		version: "version-id",
@@ -71,7 +170,7 @@ function discovery(positions: number[], nextOffset: number | null): Discovery {
 		provider: "youtube_music",
 		query: "ambient",
 		refreshing: false,
-		source_has_more: nextOffset !== null,
+		source_has_more: sourceHasMore,
 		source_url: null,
 		stale: false,
 		total: 3,

@@ -2,12 +2,15 @@
 // SPDX-License-Identifier: MPL-2.0
 
 import type { Transport } from "../api/transport";
-import type { RecentPlayback } from "../models/listening";
+import type { RecentPlaybackPage } from "../models/listening";
 
 export function createListeningRepository(request: Transport) {
 	return {
-		recent: (limit = 20, signal?: AbortSignal) =>
-			request<RecentPlayback[]>(`/api/listening/recent?limit=${limit}`, { signal }),
+		recent: (limit = 20, cursor?: string, signal?: AbortSignal) => {
+			const params = new URLSearchParams({ limit: String(limit) });
+			if (cursor) params.set("cursor", cursor);
+			return request<RecentPlaybackPage>(`/api/listening/recent?${params}`, { signal });
+		},
 	};
 }
 

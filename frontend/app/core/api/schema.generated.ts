@@ -141,6 +141,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/catalog/{kind}/{version}/continue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Continue Snapshot */
+        post: operations["continue_snapshot_api_catalog__kind___version__continue_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/catalog/link": {
         parameters: {
             query?: never;
@@ -203,6 +220,40 @@ export interface paths {
         get: operations["events_api_events_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Background Jobs */
+        get: operations["background_jobs_api_jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/catalog-maintenance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run Catalog Maintenance */
+        post: operations["run_catalog_maintenance_api_jobs_catalog_maintenance_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -771,6 +822,52 @@ export interface components {
             /** Error */
             error: string;
         };
+        /** BackgroundJobsView */
+        BackgroundJobsView: {
+            /** Jobs */
+            jobs: components["schemas"]["BackgroundJobView"][];
+        };
+        /** BackgroundJobView */
+        BackgroundJobView: {
+            /** Active Batch Size */
+            active_batch_size: number | null;
+            /** Active Candidates */
+            active_candidates: number;
+            /** Active Processed */
+            active_processed: number;
+            /** Active Trigger */
+            active_trigger: string | null;
+            /** Default Batch Size */
+            default_batch_size: number;
+            /** Id */
+            id: string;
+            /** Interval Seconds */
+            interval_seconds: number;
+            /** Label */
+            label: string;
+            /** Last Discovery Candidates */
+            last_discovery_candidates: number;
+            /** Last Discovery Refreshed */
+            last_discovery_refreshed: number;
+            /** Last Error */
+            last_error: string | null;
+            /** Last Finished At */
+            last_finished_at: string | null;
+            /** Last Metadata Candidates */
+            last_metadata_candidates: number;
+            /** Last Metadata Repaired */
+            last_metadata_repaired: number;
+            /** Last Started At */
+            last_started_at: string | null;
+            /** Last Trigger */
+            last_trigger: string | null;
+            /** Next Run At */
+            next_run_at: string | null;
+            /** Parallel Requests */
+            parallel_requests: number;
+            /** Running */
+            running: boolean;
+        };
         /** ChangeView */
         ChangeView: {
             /** Action */
@@ -1237,6 +1334,9 @@ export interface components {
             seed_discovery_snapshot_id: string | null;
             /** Seed Kind */
             seed_kind: string;
+            /** Seed Title */
+            seed_title: string | null;
+            seed_track: components["schemas"]["TrackView"] | null;
             /** Seed Track Source Id */
             seed_track_source_id: string | null;
             /**
@@ -1316,6 +1416,13 @@ export interface components {
              * Format: uuid
              */
             user_id: string;
+        };
+        /** RecentPlaybackPageView */
+        RecentPlaybackPageView: {
+            /** Entries */
+            entries: components["schemas"]["RecentPlaybackView"][];
+            /** Next Cursor */
+            next_cursor: string | null;
         };
         /** RecentPlaybackView */
         RecentPlaybackView: {
@@ -1420,8 +1527,11 @@ export interface components {
              * Format: date-time
              */
             requested_at: string;
-            /** Requested By */
-            requested_by: string | null;
+            /**
+             * Requested By
+             * Format: uuid
+             */
+            requested_by: string;
             /** Source Id */
             source_id: string | null;
             track: components["schemas"]["TrackView"];
@@ -1435,6 +1545,14 @@ export interface components {
              * Format: uuid
              */
             operation_id: string;
+        };
+        /** RunCatalogMaintenance */
+        RunCatalogMaintenance: {
+            /**
+             * Batch Size
+             * @default 10
+             */
+            batch_size: number;
         };
         /** SeekInput */
         SeekInput: {
@@ -2427,6 +2545,95 @@ export interface operations {
             };
         };
     };
+    continue_snapshot_api_catalog__kind___version__continue_post: {
+        parameters: {
+            query: {
+                limit?: number;
+                offset: number;
+            };
+            header?: never;
+            path: {
+                kind: components["schemas"]["DiscoveryKind"];
+                version: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscoveryView"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Request not allowed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description State conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Dependency unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+        };
+    };
     link_api_catalog_link_get: {
         parameters: {
             query: {
@@ -2772,9 +2979,180 @@ export interface operations {
             };
         };
     };
+    background_jobs_api_jobs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackgroundJobsView"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Request not allowed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description State conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Dependency unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+        };
+    };
+    run_catalog_maintenance_api_jobs_catalog_maintenance_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunCatalogMaintenance"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackgroundJobView"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Request not allowed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description State conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Dependency unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+        };
+    };
     recent_playback_api_listening_recent_get: {
         parameters: {
             query?: {
+                cursor?: string | null;
                 limit?: number;
             };
             header?: never;
@@ -2789,7 +3167,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RecentPlaybackView"][];
+                    "application/json": components["schemas"]["RecentPlaybackPageView"];
                 };
             };
             /** @description Invalid request */

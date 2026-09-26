@@ -64,12 +64,23 @@ _PERMANENT_ERRORS = (
     "sign in",
     "video unavailable",
 )
+_YOUTUBE_OUTPUT_LIMIT_BYTES = 16 * 1024 * 1024
 
 
 class ProcessRunner(Protocol):
     async def __call__(
         self, args: tuple[str, ...], *, timeout: float
     ) -> ProcessResult: ...
+
+
+async def _run_youtube_process(
+    args: tuple[str, ...], *, timeout: float
+) -> ProcessResult:
+    return await run_process(
+        args,
+        timeout=timeout,
+        max_output_bytes=_YOUTUBE_OUTPUT_LIMIT_BYTES,
+    )
 
 
 def _text(value: object) -> str | None:
@@ -136,6 +147,18 @@ def _payload(result: ProcessResult, *, partial: bool = False) -> dict[str, objec
     return cast(dict[str, object], decoded)
 
 
+def _continuation_offset(continuation: str | None) -> int:
+    if continuation is None:
+        return 0
+    try:
+        offset = int(continuation)
+    except ValueError as error:
+        raise ProviderError("YouTube returned an invalid continuation.") from error
+    if offset < 0:
+        raise ProviderError("YouTube returned an invalid continuation.")
+    return offset
+
+
 def _music_track(raw: object) -> ProviderTrack | None:
     value = cast(dict[str, object], raw) if isinstance(raw, dict) else {}
     external_id = _text(value.get("videoId"))
@@ -153,7 +176,7 @@ def _music_track(raw: object) -> ProviderTrack | None:
                 else {}
             )
             name = _text(artist.get("name"))
-            identity = _text(artist.get("id"))
+            identity = _text(artist.get("id")) or _text(artist.get("browseId"))
             if name is not None:
                 names.append(name)
             if name is not None and identity is not None:
@@ -197,8 +220,14 @@ def _video_track(raw: object, *, quality: ObservationQuality) -> ProviderTrack |
         "was_live",
     }:
         return None
-    artist = _text(value.get("artist"))
-    artist_identity = _text(value.get("channel_id")) or _text(value.get("uploader_id"))
+    uploader_name = _text(value.get("uploader")) or _text(value.get("channel"))
+    uploader_url = _text(value.get("channel_url")) or _text(value.get("uploader_url"))
+    artist = _text(value.get("artist")) or uploader_name
+    artist_identity = (
+        _text(value.get("channel_id"))
+        or _text(value.get("uploader_id"))
+        or uploader_url
+    )
     artists = (
         (ProviderArtist(ProviderName.YOUTUBE, artist_identity, artist),)
         if artist is not None and artist_identity is not None
@@ -213,8 +242,8 @@ def _video_track(raw: object, *, quality: ObservationQuality) -> ProviderTrack |
         artists,
         _duration(value.get("duration")),
         _thumbnail(value.get("thumbnail") or value.get("thumbnails")),
-        _text(value.get("uploader")) or _text(value.get("channel")),
-        _text(value.get("channel_url")) or _text(value.get("uploader_url")),
+        uploader_name,
+        uploader_url,
         _text(value.get("album")),
         _release_date(value.get("release_date") or value.get("upload_date")),
         _text(value.get("isrc")),
@@ -256,7 +285,7 @@ class YouTubeProvider:
         node_path: Path,
         *,
         timeout: float = 30.0,
-        runner: ProcessRunner = run_process,
+        runner: ProcessRunner = _run_youtube_process,
     ) -> None:
         if not math.isfinite(timeout) or timeout <= 0:
             raise ValueError("YouTube timeout must be positive and finite.")
@@ -319,13 +348,20 @@ class YouTubeProvider:
             )
         return None
 
-    async def search(self, query: str, *, limit: int) -> ProviderPage:
+    async def search(
+        self,
+        query: str,
+        *,
+        limit: int,
+        continuation: str | None = None,
+    ) -> ProviderPage:
+        offset = _continuation_offset(continuation)
         started_at = perf_counter()
-        _LOGGER.debug("youtube.search_started limit=%d", limit)
+        _LOGGER.debug("youtube.search_started limit=%d offset=%d", limit, offset)
         result = await self._execute(
             _ytdlp(
                 self._node_path,
-                f"ytsearch{limit}:{query}",
+                f"ytsearch{offset + limit + 1}:{query}",
                 ("--flat-playlist", "--dump-single-json"),
             ),
             operation="search",
@@ -333,18 +369,20 @@ class YouTubeProvider:
         entries = _payload(result).get("entries")
         if not isinstance(entries, list):
             raise ProviderError("YouTube returned invalid search results.")
-        page = ProviderPage(
-            tuple(
-                track
-                for entry in cast(list[object], entries)
-                if (
-                    track := _video_track(
-                        entry,
-                        quality=ObservationQuality.DISCOVERY,
-                    )
+        converted = tuple(
+            track
+            for entry in cast(list[object], entries)
+            if (
+                track := _video_track(
+                    entry,
+                    quality=ObservationQuality.DISCOVERY,
                 )
-                is not None
-            )[:limit]
+            )
+            is not None
+        )
+        end = offset + limit
+        page = ProviderPage(
+            converted[offset:end], str(end) if len(converted) > end else None
         )
         _LOGGER.info(
             "youtube.search_completed entries=%d duration_ms=%.1f",
@@ -354,18 +392,24 @@ class YouTubeProvider:
         return page
 
     async def playlist(
-        self, reference: MediaReference, *, limit: int
+        self,
+        reference: MediaReference,
+        *,
+        limit: int,
+        continuation: str | None = None,
     ) -> ProviderPlaylist:
         if (
             reference.provider is not ProviderName.YOUTUBE
             or reference.kind is not MediaKind.PLAYLIST
         ):
             raise ProviderError("YouTube cannot load this playlist identity.")
+        offset = _continuation_offset(continuation)
         started_at = perf_counter()
         _LOGGER.debug(
-            "youtube.playlist_started external_id=%s limit=%d",
+            "youtube.playlist_started external_id=%s limit=%d offset=%d",
             reference.external_id,
             limit,
+            offset,
         )
         result = await self._execute(
             _ytdlp(
@@ -377,7 +421,7 @@ class YouTubeProvider:
                     "--ignore-errors",
                     "--dump-single-json",
                     "--playlist-items",
-                    f"1:{limit + 1}",
+                    f"{offset + 1}:{offset + limit + 1}",
                 ),
             ),
             operation="playlist",
@@ -393,7 +437,8 @@ class YouTubeProvider:
             is not None
         )
         page = ProviderPage(
-            converted[:limit], str(limit) if len(converted) > limit else None
+            converted[:limit],
+            str(offset + limit) if len(converted) > limit else None,
         )
         playlist = ProviderPlaylist(reference, _text(payload.get("title")), page)
         _LOGGER.info(
@@ -607,9 +652,16 @@ class YouTubeMusicProvider(YouTubeProvider):
 
     key = "youtube_music"
 
-    async def search(self, query: str, *, limit: int) -> ProviderPage:
+    async def search(
+        self,
+        query: str,
+        *,
+        limit: int,
+        continuation: str | None = None,
+    ) -> ProviderPage:
+        offset = _continuation_offset(continuation)
         started_at = perf_counter()
-        _LOGGER.debug("youtube_music.search_started limit=%d", limit)
+        _LOGGER.debug("youtube_music.search_started limit=%d offset=%d", limit, offset)
         result = await self._execute(
             (
                 sys.executable,
@@ -617,19 +669,21 @@ class YouTubeMusicProvider(YouTubeProvider):
                 "nahoermaar.integrations.youtube",
                 "search",
                 query,
-                str(limit),
+                str(offset + limit + 1),
             ),
             operation="search",
         )
         entries = _payload(result).get("entries")
         if not isinstance(entries, list):
             raise ProviderError("YouTube Music returned invalid search results.")
+        converted = tuple(
+            track
+            for entry in cast(list[object], entries)
+            if (track := _music_track(entry)) is not None
+        )
+        end = offset + limit
         page = ProviderPage(
-            tuple(
-                track
-                for entry in cast(list[object], entries)
-                if (track := _music_track(entry)) is not None
-            )[:limit]
+            converted[offset:end], str(end) if len(converted) > end else None
         )
         _LOGGER.info(
             "youtube_music.search_completed entries=%d duration_ms=%.1f",

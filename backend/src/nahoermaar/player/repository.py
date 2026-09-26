@@ -201,7 +201,8 @@ class _TrackRequestRow(Base):
     __table_args__ = (
         CheckConstraint(
             "(origin = 'manual' AND requested_by IS NOT NULL AND radio_run_id IS NULL) "
-            "OR (origin = 'radio' AND requested_by IS NULL AND radio_run_id IS NOT NULL)",
+            "OR (origin = 'radio' AND requested_by IS NOT NULL "
+            "AND radio_run_id IS NOT NULL)",
             name="origin_owner",
         ),
         Index("ix_track_requests_session_requested", "session_id", "requested_at"),
@@ -221,7 +222,7 @@ class _TrackRequestRow(Base):
     )
     requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     origin: Mapped[RequestOrigin] = mapped_column(_REQUEST_ORIGIN)
-    requested_by: Mapped[UUID | None] = mapped_column(
+    requested_by: Mapped[UUID] = mapped_column(
         ForeignKey("users.id", ondelete="RESTRICT"), index=True
     )
     radio_run_id: Mapped[UUID | None] = mapped_column(
@@ -429,7 +430,7 @@ class SessionRepository:
                 TrackSourceId(row.source_id) if row.source_id is not None else None,
                 row.requested_at,
                 row.origin,
-                UserId(row.requested_by) if row.requested_by is not None else None,
+                UserId(row.requested_by),
                 RadioRunId(row.radio_run_id) if row.radio_run_id is not None else None,
             )
             for row in rows

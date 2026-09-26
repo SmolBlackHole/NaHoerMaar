@@ -12,9 +12,11 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 from tempfile import TemporaryDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
+BACKEND_SRC = ROOT / "backend" / "src"
 TARGET = ROOT / "frontend/app/core/api/schema.generated.ts"
 
 
@@ -26,6 +28,7 @@ def main() -> None:
     if args.schema:
         import asyncio
 
+        sys.path.insert(0, str(BACKEND_SRC))
         from nahoermaar.api.app import create_app
         from nahoermaar.bootstrap import bootstrap
         from nahoermaar.observability import close_logging

@@ -43,17 +43,27 @@ export function createDiscoveryWorkflow(client: BackendClient, authority: Sessio
 
 	async function more(limit = 20) {
 		const previous = results.data.value;
-		if (!previous || previous.next_offset === null) return null;
+		if (!previous || (previous.next_offset === null && !previous.source_has_more)) return null;
+		const extendsProviderSnapshot = previous.next_offset === null;
 		const page = await results.load((signal) =>
-			client.catalog.snapshot(
-				previous.kind as DiscoveryKind,
-				previous.version,
-				previous.next_offset!,
-				limit,
-				signal,
-			),
+			extendsProviderSnapshot
+				? client.catalog.continueSnapshot(
+						previous.kind as DiscoveryKind,
+						previous.version,
+						previous.total,
+						limit,
+						signal,
+					)
+				: client.catalog.snapshot(
+						previous.kind as DiscoveryKind,
+						previous.version,
+						previous.next_offset!,
+						limit,
+						signal,
+					),
 		);
-		if (!page || page.version !== previous.version) return page;
+		if (!page) return page;
+		if (!extendsProviderSnapshot && page.version !== previous.version) return page;
 		const entries = new Map(
 			[...previous.entries, ...page.entries].map((entry) => [entry.position, entry]),
 		);

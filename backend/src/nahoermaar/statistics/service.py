@@ -135,6 +135,11 @@ class StatisticsService:
                 self._timezone.key,
                 user_id=user_id,
             )
+            daily_activity = self._fill_bounded_days(
+                period,
+                started_at,
+                daily_activity,
+            )
             top_tracks = await repository.top_tracks(
                 started_at,
                 ended_at,
@@ -193,3 +198,20 @@ class StatisticsService:
             tzinfo=self._timezone,
         ).astimezone(UTC)
         return started_at, recorded_since is None or recorded_since > started_at
+
+    def _fill_bounded_days(
+        self,
+        period: StatisticsPeriod,
+        started_at: datetime,
+        activity: tuple[DailyActivity, ...],
+    ) -> tuple[DailyActivity, ...]:
+        if period is StatisticsPeriod.ALL:
+            return activity
+        days = 7 if period is StatisticsPeriod.DAYS_7 else 30
+        first = started_at.astimezone(self._timezone).date()
+        recorded = {item.day: item for item in activity}
+        filled: list[DailyActivity] = []
+        for offset in range(days):
+            day = first + timedelta(days=offset)
+            filled.append(recorded.get(day, DailyActivity(day, 0, 0.0)))
+        return tuple(filled)

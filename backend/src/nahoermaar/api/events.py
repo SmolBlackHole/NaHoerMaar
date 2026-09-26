@@ -13,7 +13,7 @@ from fastapi import APIRouter, Request
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 
 from nahoermaar.bootstrap import Application
-from nahoermaar.player.events import Reauthenticate
+from nahoermaar.player.events import PlayerRuntimeChange, Reauthenticate
 from nahoermaar.users.domain import AuthError
 from nahoermaar.users.service import SESSION_COOKIE
 
@@ -106,6 +106,24 @@ async def event_stream(
                     return
                 if isinstance(update, Reauthenticate):
                     _LOGGER.debug("sse.reauthentication_requested")
+                    continue
+                if isinstance(update, PlayerRuntimeChange):
+                    document = await player_view(application, update.state)
+                    await application.auth.authenticate(token)
+                    last_revision = max(last_revision, update.state.session.revision)
+                    _LOGGER.debug(
+                        "sse.runtime_state_sent session=%s revision=%d phase=%s "
+                        "voice_phase=%s",
+                        update.state.session.id,
+                        update.state.session.revision,
+                        document.runtime.phase,
+                        document.runtime.voice.phase,
+                    )
+                    yield ServerSentEvent(
+                        event="state",
+                        id=str(last_revision),
+                        data=document,
+                    )
                     continue
                 if update.event.revision <= last_revision:
                     _LOGGER.debug(

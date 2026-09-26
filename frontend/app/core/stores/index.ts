@@ -518,7 +518,7 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 				client.player.undo({ operation_id: operationId, undo_id: undoId }),
 			);
 		const operation = (
-			action: "play" | "pause" | "skip" | "stop" | "leave",
+			action: "play" | "pause" | "skip" | "stop" | "voice.leave",
 			write: (body: { operation_id: string }) => Promise<MutationResult>,
 		) => run(action, (operationId) => write({ operation_id: operationId }));
 		const seek = (seconds: number) =>
@@ -587,7 +587,7 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 			setVolume,
 			setCrossfade,
 			join,
-			leave: () => operation("leave", client.player.leave),
+			leave: () => operation("voice.leave", client.player.leave),
 			startRadio,
 			stopRadio: () => radioOperation("radio.stop", client.player.stopRadio),
 			retryRadio: () => radioOperation("radio.retry", client.player.retryRadio),

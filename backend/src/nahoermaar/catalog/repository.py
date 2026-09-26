@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
@@ -19,13 +20,18 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    Index,
     String,
     Select,
     Text,
     UniqueConstraint,
     Uuid,
+    and_,
+    case,
     delete,
     exists,
+    func,
+    or_,
     select,
 )
 from sqlalchemy.dialects.postgresql import insert
@@ -52,6 +58,15 @@ from .domain import (
     TrackSourceId,
 )
 from .providers import ProviderArtist, ProviderTrack
+
+
+@dataclass(frozen=True, slots=True)
+class DiscoveryRefreshCandidate:
+    kind: DiscoveryKind
+    provider_key: str
+    locator: str
+    limit: int
+    source_url: str | None
 
 
 def _enum_values[EnumValue: StrEnum](members: type[EnumValue]) -> list[str]:
@@ -320,6 +335,10 @@ class _DiscoveryResultRow(Base):
     )
 
 
+Index("ix_artists_name_lower", func.lower(_ArtistRow.name))
+Index("ix_tracks_title_lower", func.lower(_TrackRow.title))
+
+
 class CatalogConflictError(RuntimeError):
     """A provider identity was explicitly assigned to another canonical track."""
 
@@ -350,6 +369,46 @@ class CatalogRepository:
         row = await self._session.get(_TrackSourceRow, source_id)
         return _to_source(row) if row is not None else None
 
+    async def incomplete_sources(
+        self,
+        *,
+        checked_before: datetime,
+        limit: int,
+    ) -> tuple[TrackSource, ...]:
+        """Return old source observations that still need one detail lookup."""
+        missing_artists = ~exists().where(
+            _TrackSourceArtistRow.track_source_id == _TrackSourceRow.id
+        )
+        rows = await self._session.scalars(
+            select(_TrackSourceRow)
+            .where(
+                _TrackSourceRow.availability == SourceAvailability.AVAILABLE,
+                _TrackSourceRow.checked_at <= checked_before,
+                or_(
+                    missing_artists,
+                    and_(
+                        _TrackSourceRow.quality == ObservationQuality.DISCOVERY,
+                        or_(
+                            _TrackSourceRow.observed_duration_seconds.is_(None),
+                            _TrackSourceRow.observed_artwork_url.is_(None),
+                            _TrackSourceRow.observed_album_title.is_(None),
+                        ),
+                    ),
+                ),
+            )
+            .order_by(
+                case((missing_artists, 0), else_=1),
+                case(
+                    (_TrackSourceRow.quality == ObservationQuality.DETAIL, 0),
+                    else_=1,
+                ),
+                _TrackSourceRow.checked_at,
+                _TrackSourceRow.id,
+            )
+            .limit(limit)
+        )
+        return tuple(_to_source(row) for row in rows)
+
     async def by_source(self, provider: ProviderName, external_id: str) -> Track | None:
         row = await self._session.scalar(
             _track_select()
@@ -360,6 +419,50 @@ class CatalogRepository:
             )
         )
         return _to_track(row) if row is not None else None
+
+    async def search(self, query: str, *, limit: int) -> tuple[Track, ...]:
+        """Return canonical tracks matching a known title or credited artist."""
+        needle = query.casefold()
+        title = func.lower(_TrackRow.title)
+        artist = func.lower(_ArtistRow.name)
+        rank = func.min(
+            case(
+                (title == needle, 0),
+                (artist == needle, 1),
+                (title.startswith(needle), 2),
+                (artist.startswith(needle), 3),
+                else_=4,
+            )
+        )
+        identities = tuple(
+            await self._session.scalars(
+                select(_TrackRow.id)
+                .outerjoin(
+                    _TrackArtistRow,
+                    _TrackArtistRow.track_id == _TrackRow.id,
+                )
+                .outerjoin(
+                    _ArtistRow,
+                    _ArtistRow.id == _TrackArtistRow.artist_id,
+                )
+                .where(
+                    or_(
+                        title.contains(needle),
+                        artist.contains(needle),
+                    )
+                )
+                .group_by(_TrackRow.id)
+                .order_by(rank, _TrackRow.updated_at.desc(), _TrackRow.id)
+                .limit(limit)
+            )
+        )
+        if not identities:
+            return ()
+        rows = await self._session.scalars(
+            _track_select().where(_TrackRow.id.in_(identities))
+        )
+        tracks = {row.id: _to_track(row) for row in rows.unique()}
+        return tuple(tracks[identity] for identity in identities)
 
     async def upsert(
         self,
@@ -709,6 +812,41 @@ class DiscoveryRepository:
             .limit(1)
         )
         return await self._snapshot(key, snapshot) if snapshot is not None else None
+
+    async def refresh_candidates(
+        self,
+        *,
+        now: datetime,
+        requested_after: datetime,
+        limit: int,
+    ) -> tuple[DiscoveryRefreshCandidate, ...]:
+        """Return recently used keys whose newest persisted snapshot is stale."""
+        latest_expiration = (
+            select(func.max(_DiscoverySnapshotRow.expires_at))
+            .where(_DiscoverySnapshotRow.key_id == _DiscoveryKeyRow.id)
+            .correlate(_DiscoveryKeyRow)
+            .scalar_subquery()
+        )
+        rows = await self._session.execute(
+            select(
+                _DiscoveryKeyRow.kind,
+                _DiscoveryKeyRow.provider_key,
+                _DiscoveryKeyRow.locator,
+                _DiscoveryKeyRow.result_limit,
+                _DiscoveryKeyRow.source_url,
+            )
+            .where(
+                _DiscoveryKeyRow.last_requested_at >= requested_after,
+                latest_expiration.is_not(None),
+                latest_expiration <= now,
+            )
+            .order_by(_DiscoveryKeyRow.last_requested_at.desc(), _DiscoveryKeyRow.id)
+            .limit(limit)
+        )
+        return tuple(
+            DiscoveryRefreshCandidate(kind, provider, locator, result_limit, source_url)
+            for kind, provider, locator, result_limit, source_url in rows
+        )
 
     async def publish(
         self,

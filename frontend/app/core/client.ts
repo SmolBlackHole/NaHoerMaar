@@ -8,6 +8,7 @@ import { createAccessRepository } from "./repositories/access";
 import { createCatalogRepository } from "./repositories/catalog";
 import { createListeningRepository } from "./repositories/listening";
 import { createLogsRepository } from "./repositories/logs";
+import { createJobsRepository } from "./repositories/jobs";
 import { createPlayerRepository } from "./repositories/player";
 import { createStatisticsRepository } from "./repositories/statistics";
 
@@ -26,6 +27,7 @@ export function createBackendClient(dependencies: BackendDependencies) {
 		catalog: createCatalogRepository(request),
 		listening: createListeningRepository(request),
 		logs: createLogsRepository(request),
+		jobs: createJobsRepository(request),
 		player: createPlayerRepository(
 			request,
 			createPlayerEvents(dependencies.auth, dependencies.openEvents),

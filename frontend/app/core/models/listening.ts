@@ -4,3 +4,4 @@
 import type { components } from "../api/schema.generated";
 
 export type RecentPlayback = components["schemas"]["RecentPlaybackView"];
+export type RecentPlaybackPage = components["schemas"]["RecentPlaybackPageView"];

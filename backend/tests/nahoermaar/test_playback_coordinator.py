@@ -46,6 +46,7 @@ from nahoermaar.player.domain import (
 from nahoermaar.player.events import (
     CompletePlayback,
     FailPlayback,
+    PlaybackRuntimeChanged,
     PlayerChanged,
     VoiceConnectionChanged,
 )
@@ -57,6 +58,7 @@ from nahoermaar.player.playback import (
     AudioSourceNotReady,
     AudioStarted,
     CrossfadeCompleted,
+    CrossfadeDue,
     NowPlaying,
     PlayableSource,
     PlaybackCoordinator,
@@ -108,12 +110,14 @@ class StaticPlayer:
 class StaticCatalog:
     def __init__(self, tracks: tuple[Track, ...]) -> None:
         self._tracks = {track.id: track for track in tracks}
+        self.resolve_calls = 0
 
     async def resolve_audio(
         self,
         track_id: TrackId,
         source_id: TrackSourceId | None,
     ) -> ResolvedAudio:
+        self.resolve_calls += 1
         track = self._tracks[track_id]
         source = next(
             source
@@ -456,15 +460,36 @@ async def _wait_for_voice_phase(
     return await asyncio.wait_for(wait(), timeout=1)
 
 
+async def _wait_for_runtime_change(bus: RecordingBus) -> PlaybackRuntimeChanged:
+    async def wait() -> PlaybackRuntimeChanged:
+        while True:
+            for event in bus.events:
+                if isinstance(event, PlaybackRuntimeChanged):
+                    return event
+            await asyncio.sleep(0)
+
+    return await asyncio.wait_for(wait(), timeout=1)
+
+
 def test_audio_facts_start_on_first_frame_and_next_track_is_preloaded() -> None:
     async def scenario() -> None:
         tracks = (_track(1), _track(2))
         state, current_request = _playing_state(tracks)
+        next_request = state.queue.entries[0].request
+        player = StaticPlayer(state)
         transport = FakeTransport()
-        coordinator, bus = _coordinator(state, tracks, transport)
+        bus = RecordingBus()
+        coordinator = PlaybackCoordinator(
+            player,
+            StaticCatalog(tracks),
+            StaticListening(),
+            bus,
+            transport,
+        )
         try:
             await coordinator.start()
             await asyncio.wait_for(transport.play_ready.wait(), timeout=1)
+            await _wait_for_runtime_change(bus)
             assert transport.connection is not None
             assert transport.connection.channel_id == 42
             assert transport.volume == 0.6
@@ -488,6 +513,10 @@ def test_audio_facts_start_on_first_frame_and_next_track_is_preloaded() -> None:
             assert isinstance(begin, BeginPlayback)
             assert begin.request_id == current_request.id
             assert coordinator.status.playback_id == begin.playback_id
+            assert (
+                sum(isinstance(event, PlaybackRuntimeChanged) for event in bus.events)
+                >= 2
+            )
 
             await asyncio.wait_for(transport.prepare_ready.wait(), timeout=1)
             assert transport.prepared[0][0].track_id == tracks[1].id
@@ -506,9 +535,89 @@ def test_audio_facts_start_on_first_frame_and_next_track_is_preloaded() -> None:
             assert any(isinstance(command, AdvancePlayback) for command in bus.commands)
             assert any(isinstance(command, FinishPlayback) for command in bus.commands)
             assert transport.presences[-1].title == tracks[0].title
+
+            queue_revision = state.queue.revision + 1
+            advanced = replace(
+                state,
+                session=replace(
+                    state.session,
+                    revision=state.session.revision + 1,
+                    queue_revision=queue_revision,
+                ),
+                queue=Queue(state.session.id, queue_revision, ()),
+                checkpoint=PlaybackCheckpoint(
+                    state.session.id,
+                    PlaybackIntent.PLAYING,
+                    next_request,
+                    0.0,
+                ),
+            )
+            player.state = advanced
+            transport.play_ready.clear()
+            await coordinator.player_changed(
+                PlayerChanged(
+                    advanced.session.id,
+                    advanced.session.revision,
+                    OperationId(uuid4()),
+                    MutationOutcome(PlayerAction.PLAYBACK_COMPLETED),
+                ),
+                MessageContext(),
+            )
+            await asyncio.wait_for(transport.play_ready.wait(), timeout=1)
+            assert transport.play_attempts == 2
+            assert coordinator.status.request == next_request
         finally:
             await coordinator.close()
         assert transport.closed
+
+    asyncio.run(scenario())
+
+
+def test_seek_reuses_the_current_resolved_source() -> None:
+    async def scenario() -> None:
+        tracks = (_track(1),)
+        state, current_request = _playing_state(tracks)
+        player = StaticPlayer(state)
+        catalog = StaticCatalog(tracks)
+        transport = FakeTransport()
+        bus = RecordingBus()
+        coordinator = PlaybackCoordinator(
+            player,
+            catalog,
+            StaticListening(),
+            bus,
+            transport,
+        )
+        try:
+            await coordinator.start()
+            await asyncio.wait_for(transport.play_ready.wait(), timeout=1)
+            assert catalog.resolve_calls == 1
+
+            seeked = replace(
+                state,
+                session=replace(state.session, revision=state.session.revision + 1),
+                checkpoint=replace(state.checkpoint, position_seconds=90.0),
+            )
+            player.state = seeked
+            transport.play_ready.clear()
+            await coordinator.player_changed(
+                PlayerChanged(
+                    seeked.session.id,
+                    seeked.session.revision,
+                    OperationId(uuid4()),
+                    MutationOutcome(PlayerAction.PLAYBACK_SEEKED),
+                ),
+                MessageContext(),
+            )
+            await asyncio.wait_for(transport.play_ready.wait(), timeout=1)
+
+            assert catalog.resolve_calls == 1
+            assert transport.play_attempts == 2
+            assert transport.progress is not None
+            assert transport.progress.position_seconds == 90.0
+            assert coordinator.status.request == current_request
+        finally:
+            await coordinator.close()
 
     asyncio.run(scenario())
 
@@ -572,6 +681,103 @@ def test_skip_activates_the_preloaded_track_without_restarting_output() -> None:
             assert transport.play_attempts == 1
             assert coordinator.status.request == next_request
             assert coordinator.status.request != current_request
+        finally:
+            await coordinator.close()
+
+    asyncio.run(scenario())
+
+
+def test_crossfade_owns_completed_change_and_preloads_following_track() -> None:
+    async def scenario() -> None:
+        tracks = (_track(1), _track(2), _track(3))
+        state, _current_request = _playing_state(tracks)
+        next_request = state.queue.entries[0].request
+        following_entry = state.queue.entries[1]
+        player = StaticPlayer(state)
+
+        class AdvancingBus(RecordingBus):
+            coordinator: PlaybackCoordinator | None = None
+
+            async def execute[ResultT](
+                self,
+                command: Command[ResultT],
+                context: MessageContext | None = None,
+            ) -> ResultT:
+                result = await super().execute(command, context)
+                if isinstance(command, CompletePlayback):
+                    queue_revision = player.state.queue.revision + 1
+                    advanced = replace(
+                        player.state,
+                        session=replace(
+                            player.state.session,
+                            revision=player.state.session.revision + 1,
+                            queue_revision=queue_revision,
+                        ),
+                        queue=Queue(
+                            player.state.session.id,
+                            queue_revision,
+                            (replace(following_entry, position=0),),
+                        ),
+                        checkpoint=PlaybackCheckpoint(
+                            player.state.session.id,
+                            PlaybackIntent.PLAYING,
+                            next_request,
+                            0.0,
+                        ),
+                    )
+                    player.state = advanced
+                    assert self.coordinator is not None
+                    await self.coordinator.player_changed(
+                        PlayerChanged(
+                            advanced.session.id,
+                            advanced.session.revision,
+                            command.operation_id,
+                            MutationOutcome(PlayerAction.PLAYBACK_COMPLETED),
+                        ),
+                        context or MessageContext(),
+                    )
+                    # Match the production ordering: the committed change may reach
+                    # the coordinator before the crossfade command resumes.
+                    await asyncio.sleep(0)
+                return result
+
+        transport = FakeTransport(accept_transitions=True)
+        bus = AdvancingBus()
+        coordinator = PlaybackCoordinator(
+            player,
+            StaticCatalog(tracks),
+            StaticListening(),
+            bus,
+            transport,
+        )
+        bus.coordinator = coordinator
+        try:
+            await coordinator.start()
+            await asyncio.wait_for(transport.play_ready.wait(), timeout=1)
+            assert transport.notify is not None
+            assert transport.attempt_id is not None
+            transport.notify(AudioStarted(transport.attempt_id, 0.0))
+            await _wait_for_command(bus, BeginPlayback)
+            await asyncio.wait_for(transport.prepare_ready.wait(), timeout=1)
+            assert transport.preparation_id is not None
+
+            transport.notify(
+                CrossfadeDue(
+                    transport.attempt_id,
+                    transport.preparation_id,
+                    tracks[1].duration_seconds,
+                )
+            )
+            await asyncio.wait_for(transport.transition_ready.wait(), timeout=1)
+
+            async def following_track_prepared() -> None:
+                while len(transport.prepared) < 2:
+                    await asyncio.sleep(0)
+
+            await asyncio.wait_for(following_track_prepared(), timeout=1)
+            assert transport.play_attempts == 1
+            assert coordinator.status.request == next_request
+            assert transport.prepared[1][0].track_id == tracks[2].id
         finally:
             await coordinator.close()
 

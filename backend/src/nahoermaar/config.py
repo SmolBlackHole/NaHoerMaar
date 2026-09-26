@@ -35,6 +35,18 @@ class LogLevel(StrEnum):
     CRITICAL = "CRITICAL"
 
 
+def ffmpeg_executable(configured: str | None = None) -> Path:
+    """Resolve the configured or bundled FFmpeg executable."""
+    try:
+        candidate = configured or imageio_ffmpeg.get_ffmpeg_exe()
+    except RuntimeError as error:
+        raise ConfigurationError("No FFmpeg binary is available.") from error
+    executable = shutil.which(candidate)
+    if executable is None:
+        raise ConfigurationError("FFMPEG_PATH does not point to an executable.")
+    return Path(executable).resolve()
+
+
 def environment_values(
     environ: Mapping[str, str] | None = None,
     *,
@@ -178,14 +190,7 @@ class Settings:
         token = values.get("DISCORD_TOKEN", "").strip()
         configured_ffmpeg = values.get("FFMPEG_PATH", "").strip()
         if token:
-            try:
-                candidate = configured_ffmpeg or imageio_ffmpeg.get_ffmpeg_exe()
-            except RuntimeError as error:
-                raise ConfigurationError("No FFmpeg binary is available.") from error
-            executable = shutil.which(candidate)
-            if executable is None:
-                raise ConfigurationError("FFMPEG_PATH does not point to an executable.")
-            ffmpeg_path = Path(executable).resolve()
+            ffmpeg_path = ffmpeg_executable(configured_ffmpeg)
         else:
             ffmpeg_path = Path(configured_ffmpeg or "ffmpeg")
         discord = DiscordSettings(

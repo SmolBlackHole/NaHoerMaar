@@ -45,6 +45,19 @@ export function createCatalogRepository(request: Transport) {
 				{ signal },
 			);
 		},
+		continueSnapshot: (
+			kind: DiscoveryKind,
+			version: string,
+			offset: number,
+			limit = 20,
+			signal?: AbortSignal,
+		) => {
+			const params = new URLSearchParams({ offset: String(offset), limit: String(limit) });
+			return request<Discovery>(
+				`/api/catalog/${kind}/${encodeURIComponent(version)}/continue?${params}`,
+				{ method: "POST", signal },
+			);
+		},
 	};
 }
 

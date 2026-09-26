@@ -50,7 +50,9 @@ from .player.events import (
     Play,
     PlayerCommand,
     PlayerChanged,
+    PlaybackRuntimeChanged,
     RadioRefillRequested,
+    VoiceConnectionChanged,
     RemoveQueueEntry,
     Seek,
     SetCrossfade,
@@ -156,6 +158,7 @@ class Application:
             try:
                 await migrate(self.database.engine)
                 await self.bus.execute(ReconcileOperators())
+                await self.catalog.start()
                 self._runtime_closers.append(("player", self.player.close))
                 await self.player.start()
                 self._runtime_closers.append(("listening", self.listening.close))
@@ -465,6 +468,8 @@ def _register_handlers(
     bus.register_command(ObserveAudience, listening.observe)
     bus.register_command(DisconnectAudience, listening.disconnect)
     bus.subscribe(PlayerChanged, player.broadcast)
+    bus.subscribe(PlaybackRuntimeChanged, player.broadcast_runtime)
+    bus.subscribe(VoiceConnectionChanged, player.broadcast_runtime)
     if playback is not None:
         bus.subscribe(PlayerChanged, playback.player_changed)
     bus.subscribe(RadioRefillRequested, player.refill)

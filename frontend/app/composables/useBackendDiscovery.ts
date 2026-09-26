@@ -113,7 +113,12 @@ export function useBackendDiscovery() {
 	}
 
 	async function more() {
-		if (loadingMore.value || page.value?.next_offset === null) return;
+		if (
+			loadingMore.value ||
+			!page.value ||
+			(page.value.next_offset === null && !page.value.source_has_more)
+		)
+			return;
 		loadingMore.value = true;
 		try {
 			await catalog.more();

@@ -222,7 +222,7 @@ function restoreScroll() {
 									{{ entries.length }} of {{ page?.total ?? entries.length }}
 								</p>
 								<UButton
-									v-if="page?.next_offset !== null"
+									v-if="page?.next_offset !== null || page?.source_has_more"
 									label="Load more"
 									:icon="icons.arrowDown"
 									:loading="loadingMore"
@@ -273,7 +273,28 @@ function restoreScroll() {
 								selectable
 								@toggle="toggle"
 							/>
-							<p v-else class="py-6 text-sm text-muted">
+							<div
+								v-if="
+									entries.length &&
+									(page.next_offset !== null || page.source_has_more)
+								"
+								class="discovery-footer"
+							>
+								<p role="status" class="text-xs text-muted tabular-nums">
+									{{ entries.length }} loaded
+								</p>
+								<UButton
+									label="Load more"
+									:icon="icons.arrowDown"
+									:loading="loadingMore"
+									:disabled="loadingMore || !canSearch"
+									color="neutral"
+									variant="ghost"
+									class="min-h-11"
+									@click="more"
+								/>
+							</div>
+							<p v-if="!entries.length && !loading" class="py-6 text-sm text-muted">
 								This playlist has no available tracks.
 							</p>
 						</div>
@@ -292,7 +313,7 @@ function restoreScroll() {
 					<p class="text-xs text-muted">
 						{{
 							player.state?.radio
-								? "This replaces the active radio. Queued requests stay."
+								? "This replaces tracks queued by the active radio. Manual requests stay."
 								: "Keeps similar tracks ready as the queue gets shorter."
 						}}
 					</p>

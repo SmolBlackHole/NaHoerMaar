@@ -211,6 +211,20 @@ async def _seed(database: Database) -> tuple[UserId, UserId]:
                     "first_heard_at": NOW - timedelta(hours=1) + timedelta(seconds=60),
                     "last_heard_at": NOW - timedelta(hours=1) + timedelta(seconds=100),
                 },
+                {
+                    "playback_id": first_playback_id,
+                    "user_id": owner_id,
+                    "audio_seconds": 20.0,
+                    "first_heard_at": NOW - timedelta(hours=2) + timedelta(seconds=60),
+                    "last_heard_at": NOW - timedelta(hours=2) + timedelta(seconds=80),
+                },
+                {
+                    "playback_id": second_playback_id,
+                    "user_id": owner_id,
+                    "audio_seconds": 10.0,
+                    "first_heard_at": NOW - timedelta(hours=1) + timedelta(seconds=60),
+                    "last_heard_at": NOW - timedelta(hours=1) + timedelta(seconds=70),
+                },
             ),
         )
         await work.commit()
@@ -244,7 +258,7 @@ def test_statistics_project_shared_and_personal_facts_without_double_counting() 
         assert overview.totals.plays == 2
         assert overview.totals.completed == 1
         assert overview.totals.skipped == 1
-        assert overview.totals.listening_seconds == 180.0
+        assert overview.totals.listening_seconds == 170.0
         assert overview.totals.unique_tracks == 2
         assert overview.totals.unique_artists == 1
         assert overview.totals.average_wait_seconds == 60.0
@@ -257,14 +271,15 @@ def test_statistics_project_shared_and_personal_facts_without_double_counting() 
         assert overview.top_artists[0].name == "Shared artist"
         assert overview.top_listeners[0].user_id == listener_id
         assert overview.top_listeners[0].discord_id == "200"
-        assert overview.daily_activity[0].listening_seconds == 180.0
+        assert len(overview.daily_activity) == 7
+        assert sum(day.listening_seconds for day in overview.daily_activity) == 170.0
 
         assert personal.user_id == listener_id
         assert personal.totals.requests == overview.totals.requests
         assert personal.totals.plays == overview.totals.plays
         assert personal.totals.listening_seconds == 140.0
         assert personal.top_listeners == ()
-        assert personal.daily_activity[0].listening_seconds == 140.0
+        assert sum(day.listening_seconds for day in personal.daily_activity) == 140.0
 
         profile = await profiles.get(listener_id, StatisticsPeriod.DAYS_7)
         assert profile.identity.user_id == listener_id

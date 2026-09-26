@@ -34,6 +34,20 @@ someone returns. Add a sleep timer with visible remaining time and a cancel
 action. Both behaviors must use the existing playback FSM rather than a second
 timer-owned state machine.
 
+## Next: catalog maintenance
+
+Keep persistent catalog data useful without requiring somebody to search for a
+track again. A bounded background job should revisit tracks with missing or
+low-confidence artist, duration, album or artwork data and merge better provider
+observations through the normal catalog service. It must respect provider rate
+limits, back off after failures and never hold up playback.
+
+Refresh stale discovery snapshots in the background when they are still useful,
+while continuing to serve the last successful result. Scheduling belongs to the
+existing application lifecycle, with one active run per job and clean shutdown;
+it does not justify another service or container. Expose the last successful run,
+work count and failures through the existing logs and health diagnostics.
+
 ## Later: reactions
 
 Let each user like or dislike a persistent track, change the reaction or remove

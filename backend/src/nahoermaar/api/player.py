@@ -12,19 +12,20 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from nahoermaar.bootstrap import Application
 from nahoermaar.catalog.domain import (
+    DiscoveryKind,
     DiscoverySnapshotId,
     MediaKind,
     Track,
     TrackId,
     TrackSourceId,
 )
+from nahoermaar.catalog.service import CatalogError
 from nahoermaar.messaging import MessageContext
 from nahoermaar.player.domain import (
     ListeningSessionId,
     OperationId,
     PlayerState,
     QueueEntryId,
-    RadioRun,
     RadioSeed,
     TrackRequest,
     UndoId,
@@ -151,7 +152,7 @@ class RequestView(View):
     id: UUID
     origin: str
     requested_at: datetime
-    requested_by: UUID | None
+    requested_by: UUID
     radio_run_id: UUID | None
     source_id: UUID | None
     contributor: ContributorView | None
@@ -179,6 +180,8 @@ class RadioView(View):
     seed_kind: str
     seed_track_source_id: UUID | None
     seed_discovery_snapshot_id: UUID | None
+    seed_title: str | None
+    seed_track: TrackView | None
     continuation: str | None
     error: str | None
     initiator: ContributorView | None
@@ -544,14 +547,30 @@ async def player_view(
     current_request = checkpoint_request or runtime.request
     if current_request is not None:
         track_ids.add(current_request.track_id)
-    tracks = await application.catalog.tracks(track_ids)
     radio_run = state.radio
-    contributor_ids = {
-        entry.request.requested_by
-        for entry in state.queue.entries
-        if entry.request.requested_by is not None
-    }
-    if current_request is not None and current_request.requested_by is not None:
+    radio_seed_track: Track | None = None
+    radio_seed_title: str | None = None
+    if radio_run is not None and radio_run.active:
+        if radio_run.seed.track_source_id is not None:
+            radio_seed_track = await application.catalog.track_for_source(
+                radio_run.seed.track_source_id
+            )
+            if radio_seed_track is not None:
+                track_ids.add(radio_seed_track.id)
+                radio_seed_title = radio_seed_track.title
+        elif radio_run.seed.discovery_snapshot_id is not None:
+            try:
+                seed_snapshot = await application.catalog.snapshot(
+                    radio_run.seed.discovery_snapshot_id,
+                    DiscoveryKind.PLAYLIST,
+                )
+            except CatalogError:
+                pass
+            else:
+                radio_seed_title = seed_snapshot.snapshot.playlist_title
+    tracks = await application.catalog.tracks(track_ids)
+    contributor_ids = {entry.request.requested_by for entry in state.queue.entries}
+    if current_request is not None:
         contributor_ids.add(current_request.requested_by)
     if radio_run is not None:
         contributor_ids.add(radio_run.initiated_by)
@@ -560,7 +579,7 @@ async def player_view(
         QueueEntryView(
             id=entry.id,
             position=entry.position,
-            request=_request_view(entry.request, tracks, contributors, radio_run),
+            request=_request_view(entry.request, tracks, contributors),
         )
         for entry in state.queue.entries
     )
@@ -606,6 +625,12 @@ async def player_view(
                 seed_kind=run.seed.kind.value,
                 seed_track_source_id=run.seed.track_source_id,
                 seed_discovery_snapshot_id=run.seed.discovery_snapshot_id,
+                seed_title=radio_seed_title,
+                seed_track=(
+                    track_view(radio_seed_track)
+                    if radio_seed_track is not None
+                    else None
+                ),
                 continuation=run.continuation,
                 error=run.error,
                 initiator=_contributor_view(contributors.get(run.initiated_by)),
@@ -616,7 +641,7 @@ async def player_view(
         runtime=PlaybackRuntimeView(
             phase=runtime_phase.value,
             current=(
-                _request_view(current_request, tracks, contributors, radio_run)
+                _request_view(current_request, tracks, contributors)
                 if current_request is not None
                 else None
             ),
@@ -652,20 +677,12 @@ def _request_view(
     request: TrackRequest,
     tracks: dict[TrackId, Track],
     contributors: dict[UserId, User],
-    radio_run: RadioRun | None,
 ) -> RequestView:
     track = tracks.get(request.track_id)
     if track is None:
         raise RuntimeError(
             f"Track is missing from player projection: {request.track_id}"
         )
-    contributor_id = request.requested_by
-    if (
-        contributor_id is None
-        and radio_run is not None
-        and request.radio_run_id == radio_run.id
-    ):
-        contributor_id = radio_run.initiated_by
     return RequestView(
         id=request.id,
         origin=request.origin.value,
@@ -673,9 +690,7 @@ def _request_view(
         requested_by=request.requested_by,
         radio_run_id=request.radio_run_id,
         source_id=request.source_id,
-        contributor=_contributor_view(
-            contributors.get(contributor_id) if contributor_id is not None else None
-        ),
+        contributor=_contributor_view(contributors.get(request.requested_by)),
         track=track_view(track),
     )
 

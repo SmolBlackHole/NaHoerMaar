@@ -253,8 +253,21 @@ class VoiceConnectionChanged(Event):
 
 
 @dataclass(frozen=True, slots=True)
+class PlaybackRuntimeChanged(Event):
+    """Transient output state changed without mutating persisted player state."""
+
+    session_id: ListeningSessionId
+
+
+@dataclass(frozen=True, slots=True)
 class PlayerStateChange:
     event: PlayerChanged
+    context: MessageContext
+    state: PlayerState
+
+
+@dataclass(frozen=True, slots=True)
+class PlayerRuntimeChange:
     context: MessageContext
     state: PlayerState
 
@@ -264,7 +277,7 @@ class Reauthenticate:
     pass
 
 
-type LivePlayerEvent = PlayerStateChange | Reauthenticate
+type LivePlayerEvent = PlayerStateChange | PlayerRuntimeChange | Reauthenticate
 type PlayerEvent = QueueChanged | RadioRefillRequested | PlayerChanged
 
 _LOGGER = logging.getLogger(__name__)
@@ -314,6 +327,15 @@ class PlayerEventStream:
             len(self._subscribers),
         )
         self._send(PlayerStateChange(event, context, state))
+
+    def refresh(self, context: MessageContext, state: PlayerState) -> None:
+        _LOGGER.debug(
+            "player.events.runtime_publish session=%s revision=%d subscribers=%d",
+            state.session.id,
+            state.session.revision,
+            len(self._subscribers),
+        )
+        self._send(PlayerRuntimeChange(context, state))
 
     def reauthenticate(self) -> None:
         _LOGGER.debug(

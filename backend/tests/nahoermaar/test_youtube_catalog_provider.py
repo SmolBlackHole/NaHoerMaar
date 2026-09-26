@@ -61,6 +61,16 @@ class Runner:
                 "title": "Playlist",
                 "entries": [{"id": "abcdefghijk", "title": "Playlist title"}],
             }
+        elif any("skeler00001" in argument for argument in args):
+            payload = {
+                "id": "skeler00001",
+                "title": "For You Pt. 1 & 2",
+                "duration": 435,
+                "thumbnail": "https://img/skeler",
+                "uploader": "skeler.",
+                "channel_id": "UCpoKdKVhH-jcr3Pu0auKjmw",
+                "channel_url": "https://www.youtube.com/channel/UCpoKdKVhH-jcr3Pu0auKjmw",
+            }
         else:
             payload = {
                 "id": "abcdefghijk",
@@ -115,6 +125,16 @@ def test_youtube_provider_translates_search_playlist_and_details() -> None:
         assert detail.artists[0].name == "Detail artist"
         assert detail.quality is ObservationQuality.DETAIL
         assert detail.release_date is not None
+
+        uploader_reference = provider.identify(
+            "https://www.youtube.com/watch?v=skeler00001",
+            kind=MediaKind.TRACK,
+        )
+        assert uploader_reference is not None
+        uploader_detail = await provider.track(uploader_reference)
+        assert uploader_detail.artist_text == "skeler."
+        assert uploader_detail.artists[0].name == "skeler."
+        assert uploader_detail.artists[0].external_id == "UCpoKdKVhH-jcr3Pu0auKjmw"
         await provider.close()
         await video_provider.close()
 

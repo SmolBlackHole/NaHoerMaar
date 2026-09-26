@@ -238,6 +238,36 @@ describe("new backend Pinia stores", () => {
 		expect(fixture.playerStore.pendingOperationIds).toEqual([]);
 	});
 
+	it("accepts a runtime-only SSE snapshot at the current persisted revision", async () => {
+		const fixture = playerFixture();
+		await authenticate(fixture);
+		fixture.events.send("state", player(10));
+		await nextTick();
+
+		const current = queueEntry("playing", 0, "Playing now").request;
+		fixture.events.send("state", {
+			...player(10),
+			checkpoint: {
+				intent: "playing",
+				request_id: current.id,
+				position_seconds: 12,
+			},
+			runtime: {
+				...player(10).runtime,
+				phase: "playing",
+				current,
+				playback_id: "playback-id",
+				attempt_id: "attempt-id",
+				position_seconds: 12,
+				duration_seconds: 180,
+			},
+		});
+		await nextTick();
+
+		expect(fixture.playerStore.currentTrack?.track.title).toBe("Playing now");
+		expect(fixture.playerStore.state?.runtime.phase).toBe("playing");
+	});
+
 	it("keeps a newer shared queue when an older command response arrives later", async () => {
 		const fixture = playerFixture();
 		await authenticate(fixture);

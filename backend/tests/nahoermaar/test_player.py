@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import asyncio
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 import os
 from pathlib import Path
@@ -32,11 +33,16 @@ from nahoermaar.player.domain import (
 from nahoermaar.player.events import (
     AddTracks,
     ApplyRadioCandidates,
+    CompletePlayback,
     MutationReply,
+    Play,
     PlayerChanged,
+    PlayerEventStream,
+    PlayerRuntimeChange,
     RadioRefillRequested,
     RemoveQueueEntry,
     StartRadio,
+    StopRadio,
     TrackSelection,
 )
 from nahoermaar.player.fsm import transition
@@ -207,11 +213,174 @@ def test_fsm_keeps_manual_requests_distinct_and_radio_at_target() -> None:
         RequestOrigin.RADIO,
     ]
     assert all(
-        entry.request.requested_by is None and entry.request.radio_run_id == run.id
+        entry.request.requested_by == actor and entry.request.radio_run_id == run.id
         for entry in applied.state.queue.entries[2:]
     )
     assert applied.state.radio is not None
     assert len(applied.state.radio.candidates) == 1
+
+    playing = transition(
+        applied.state,
+        Play(session_id, OperationId(uuid4())),
+        actor,
+        NOW + timedelta(seconds=3),
+    )
+    assert playing.state.checkpoint.request is not None
+    second_manual = transition(
+        playing.state,
+        CompletePlayback(
+            session_id,
+            OperationId(uuid4()),
+            playing.state.checkpoint.request.id,
+        ),
+        None,
+        NOW + timedelta(seconds=4),
+    )
+    assert second_manual.state.checkpoint.request is not None
+    first_radio = transition(
+        second_manual.state,
+        CompletePlayback(
+            session_id,
+            OperationId(uuid4()),
+            second_manual.state.checkpoint.request.id,
+        ),
+        None,
+        NOW + timedelta(seconds=5),
+    )
+    assert first_radio.state.checkpoint.request is not None
+    assert first_radio.state.checkpoint.request.origin is RequestOrigin.RADIO
+    assert (
+        sum(
+            entry.request.origin is RequestOrigin.RADIO
+            for entry in first_radio.state.queue.entries
+        )
+        == 3
+    )
+
+    next_radio = transition(
+        first_radio.state,
+        CompletePlayback(
+            session_id,
+            OperationId(uuid4()),
+            first_radio.state.checkpoint.request.id,
+        ),
+        None,
+        NOW + timedelta(seconds=6),
+    )
+    assert next_radio.state.checkpoint.request is not None
+    assert next_radio.state.checkpoint.request.origin is RequestOrigin.RADIO
+    assert (
+        sum(
+            entry.request.origin is RequestOrigin.RADIO
+            for entry in next_radio.state.queue.entries
+        )
+        == 2
+    )
+    assert any(isinstance(event, RadioRefillRequested) for event in next_radio.events)
+
+    stopped = transition(
+        applied.state,
+        StopRadio(
+            session_id,
+            OperationId(uuid4()),
+            run.generation,
+        ),
+        actor,
+        NOW + timedelta(seconds=7),
+    )
+    assert [entry.request.origin for entry in stopped.state.queue.entries] == [
+        RequestOrigin.MANUAL,
+        RequestOrigin.MANUAL,
+    ]
+    assert stopped.state.session.queue_revision == applied.state.session.queue_revision + 1
+    assert stopped.outcome.action is PlayerAction.RADIO_STOPPED
+    assert stopped.outcome.removed_count == 3
+    assert stopped.outcome.entry_ids == tuple(
+        entry.id for entry in applied.state.queue.entries[2:]
+    )
+    assert stopped.state.radio is not None
+    assert stopped.state.radio.ended_at == NOW + timedelta(seconds=7)
+
+    stopped_while_playing = transition(
+        next_radio.state,
+        StopRadio(
+            session_id,
+            OperationId(uuid4()),
+            run.generation,
+        ),
+        actor,
+        NOW + timedelta(seconds=7),
+    )
+    assert stopped_while_playing.state.checkpoint == next_radio.state.checkpoint
+    assert stopped_while_playing.state.queue.entries == ()
+    assert stopped_while_playing.outcome.removed_count == 2
+
+    legacy_stopped_state = replace(stopped.state, queue=applied.state.queue)
+    restarted = transition(
+        legacy_stopped_state,
+        StartRadio(
+            session_id,
+            OperationId(uuid4()),
+            RadioSeed(MediaKind.TRACK, track_source_id=sources[1]),
+        ),
+        actor,
+        NOW + timedelta(seconds=8),
+    )
+    assert restarted.outcome.removed_count == 3
+    assert [entry.request.origin for entry in restarted.state.queue.entries] == [
+        RequestOrigin.MANUAL,
+        RequestOrigin.MANUAL,
+    ]
+
+    replaced = transition(
+        applied.state,
+        StartRadio(
+            session_id,
+            OperationId(uuid4()),
+            RadioSeed(MediaKind.TRACK, track_source_id=sources[1]),
+            expected_generation=run.generation,
+        ),
+        actor,
+        NOW + timedelta(seconds=8),
+    )
+    replacement = replaced.state.radio
+    assert replacement is not None
+    assert replacement.request_id is not None
+    assert replacement.id != run.id
+    assert replaced.outcome.removed_count == 3
+    assert replaced.state.session.queue_revision == applied.state.session.queue_revision + 1
+    assert [entry.request.origin for entry in replaced.state.queue.entries] == [
+        RequestOrigin.MANUAL,
+        RequestOrigin.MANUAL,
+    ]
+
+    replacement_filled = transition(
+        replaced.state,
+        ApplyRadioCandidates(
+            session_id,
+            OperationId(uuid4()),
+            replacement.id,
+            replacement.generation,
+            replacement.request_id,
+            tuple(
+                TrackSelection(track, source)
+                for track, source in zip(tracks[2:5], sources[2:5], strict=True)
+            ),
+        ),
+        None,
+        NOW + timedelta(seconds=9),
+    )
+    assert [entry.request.origin for entry in replacement_filled.state.queue.entries] == [
+        RequestOrigin.MANUAL,
+        RequestOrigin.MANUAL,
+        RequestOrigin.RADIO,
+        RequestOrigin.RADIO,
+        RequestOrigin.RADIO,
+    ]
+    assert all(
+        entry.request.radio_run_id == replacement.id
+        for entry in replacement_filled.state.queue.entries[2:]
+    )
 
 
 def test_repository_restores_relational_queue_radio_and_prunes_ephemera() -> None:
@@ -385,6 +554,21 @@ def test_mailbox_serializes_commands_and_replays_operation_receipts() -> None:
         asyncio.run(database.close())
 
 
+def test_runtime_refresh_reuses_the_committed_state_without_a_fake_revision() -> None:
+    async def scenario() -> None:
+        stream = PlayerEventStream()
+        state = PlayerState.empty(ListeningSessionId(uuid4()), NOW)
+        context = MessageContext()
+        async with stream.subscribe() as changes:
+            stream.refresh(context, state)
+            update = await changes.get()
+        assert isinstance(update, PlayerRuntimeChange)
+        assert update.context is context
+        assert update.state is state
+
+    asyncio.run(scenario())
+
+
 class StaticRadio:
     def __init__(self, selections: tuple[TrackSelection, ...]) -> None:
         self.selections = selections
@@ -457,7 +641,7 @@ def test_bus_commits_radio_then_refills_through_the_session_mailbox() -> None:
         assert len(manager.state.queue.entries) == 3
         assert all(
             entry.request.origin is RequestOrigin.RADIO
-            and entry.request.requested_by is None
+            and entry.request.requested_by == user_id
             for entry in manager.state.queue.entries
         )
         await manager.close()

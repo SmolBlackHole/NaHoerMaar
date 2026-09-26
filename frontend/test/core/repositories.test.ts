@@ -88,6 +88,7 @@ describe("new backend repositories", () => {
 		});
 		await client.catalog.link("https://video.example/watch?v=1");
 		await client.catalog.snapshot("search", "snapshot/one", 20, 10);
+		await client.catalog.continueSnapshot("search", "snapshot/one", 30, 10);
 		await client.statistics.overview("30d");
 		await client.statistics.user("user/one", "7d");
 		await client.access.state(50);
@@ -107,6 +108,7 @@ describe("new backend repositories", () => {
 			],
 			["/api/catalog/link?url=https%3A%2F%2Fvideo.example%2Fwatch%3Fv%3D1", undefined],
 			["/api/catalog/search/snapshot%2Fone?offset=20&limit=10", undefined],
+			["/api/catalog/search/snapshot%2Fone/continue?offset=30&limit=10", "POST"],
 			["/api/statistics/overview?period=30d", undefined],
 			["/api/statistics/users/user%2Fone?period=7d", undefined],
 			["/api/access?history_limit=50", undefined],
@@ -115,5 +117,21 @@ describe("new backend repositories", () => {
 			["/api/access/discord%2Fone", "DELETE"],
 			["/api/logs?limit=100&after=42", undefined],
 		]);
+	});
+
+	it("reads and triggers catalog maintenance through the jobs repository", async () => {
+		const { client, fetcher } = fixture();
+		fetcher.mockImplementation(async () => Response.json({ jobs: [] }));
+
+		await client.jobs.status();
+		await client.jobs.runCatalogMaintenance({ batch_size: 25 });
+
+		expect(fetcher.mock.calls.map(([url, options]) => [url, options?.method])).toEqual([
+			["/api/jobs", undefined],
+			["/api/jobs/catalog-maintenance", "POST"],
+		]);
+		expect(JSON.parse(fetcher.mock.calls[1]![1]!.body as string)).toEqual({
+			batch_size: 25,
+		});
 	});
 });

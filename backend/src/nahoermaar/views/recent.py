@@ -50,6 +50,12 @@ class RecentPlayback:
     play_count: int
 
 
+@dataclass(frozen=True, slots=True)
+class RecentPlaybackPage:
+    entries: tuple[RecentPlayback, ...]
+    next_cursor: PlaybackRecordId | None
+
+
 class RecentListeningView:
     """Read the latest 100 starts and collapse repeated tracks for display."""
 
@@ -58,7 +64,6 @@ class RecentListeningView:
         "_discord",
         "_playbacks",
         "_profiles",
-        "_radio_runs",
         "_requests",
         "_sources",
         "_track_artists",
@@ -74,17 +79,18 @@ class RecentListeningView:
         self._sources = _table("track_sources")
         self._track_artists = _table("track_artists")
         self._artists = _table("artists")
-        self._radio_runs = _table("radio_runs")
         self._profiles = _table("user_profiles")
         self._discord = _table("discord_identities")
 
-    async def get(self, *, limit: int = 20) -> tuple[RecentPlayback, ...]:
+    async def get(
+        self,
+        *,
+        limit: int = 20,
+        cursor: PlaybackRecordId | None = None,
+    ) -> RecentPlaybackPage:
         if not 1 <= limit <= 100:
             raise ValueError("Recent playback limit must be between 1 and 100.")
-        contributor_id = func.coalesce(
-            self._requests.c.requested_by,
-            self._radio_runs.c.initiated_by,
-        )
+        contributor_id = self._requests.c.requested_by
         relation = (
             self._playbacks.join(
                 self._requests,
@@ -97,10 +103,6 @@ class RecentListeningView:
             .outerjoin(
                 self._sources,
                 self._sources.c.id == self._requests.c.source_id,
-            )
-            .outerjoin(
-                self._radio_runs,
-                self._radio_runs.c.id == self._requests.c.radio_run_id,
             )
             .outerjoin(
                 self._profiles,
@@ -225,7 +227,20 @@ class RecentListeningView:
                 float(row["group_audio_seconds"]),
                 1,
             )
-        return tuple(grouped[track_id] for track_id in ordered[:limit])
+        entries = tuple(grouped[track_id] for track_id in ordered)
+        start = 0
+        if cursor is not None:
+            start = next(
+                (
+                    index + 1
+                    for index, entry in enumerate(entries)
+                    if entry.playback_id == cursor
+                ),
+                len(entries),
+            )
+        page = entries[start : start + limit]
+        next_cursor = page[-1].playback_id if start + len(page) < len(entries) else None
+        return RecentPlaybackPage(page, next_cursor)
 
 
 def _table(name: str) -> Table:

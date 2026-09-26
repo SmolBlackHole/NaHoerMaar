@@ -72,6 +72,15 @@ const links = computed(() => [
 					},
 				},
 				{
+					label: "Background Jobs",
+					"aria-label": "Manage background jobs",
+					icon: icons.value.reload,
+					to: "/jobs",
+					onSelect: () => {
+						open.value = false;
+					},
+				},
+				{
 					label: "Logs",
 					"aria-label": "Bot logs",
 					icon: icons.value.file,
@@ -148,6 +157,7 @@ const links = computed(() => [
 .music-shell :deep(.navigation-sidebar) {
 	background: var(--room-sidebar);
 	overflow: hidden;
+	transition: width 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .music-shell :deep(.navigation-sidebar[data-dragging="true"]) {
 	transition: none;

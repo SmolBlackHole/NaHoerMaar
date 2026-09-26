@@ -25,6 +25,7 @@ from .errors import ERROR_RESPONSES, ErrorView
 from .events import router as events_router
 from .listening import router as listening_router
 from .logs import router as logs_router
+from .jobs import router as jobs_router
 from .middleware import install_auth_middleware
 from .player import router as player_router
 from .statistics import router as statistics_router
@@ -60,6 +61,7 @@ def create_app(application: Application | None = None) -> FastAPI:
     app.include_router(statistics_router(container))
     app.include_router(events_router(container))
     app.include_router(logs_router(container))
+    app.include_router(jobs_router(container))
 
     @app.exception_handler(AuthError)
     async def auth_error(request: Request, error: AuthError) -> JSONResponse:

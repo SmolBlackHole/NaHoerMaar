@@ -10,10 +10,15 @@ const recent = core.workflows.recent();
 const { icons } = useTheme();
 const period = ref<StatisticsPeriod>("7d");
 const report = computed(() => statistics.report.data.value);
-const recentTracks = computed(() => (recent.recent.data.value ?? []).slice(0, 5));
+const recentTracks = computed(() => (recent.recent.data.value?.entries ?? []).slice(0, 5));
 const maxPlays = computed(() =>
 	Math.max(1, ...(report.value?.daily_activity.map(({ plays }) => plays) ?? [1])),
 );
+const yTicks = computed(() => {
+	const step = Math.max(1, Math.ceil(maxPlays.value / 3));
+	const ceiling = step * 3;
+	return [ceiling, step * 2, step, 0];
+});
 const periodItems = [
 	{ label: "Last 7 days", value: "7d" },
 	{ label: "Last 30 days", value: "30d" },
@@ -24,7 +29,7 @@ const metrics = computed(() => {
 	return [
 		{ label: "Tracks played", value: totals?.plays ?? 0, icon: icons.value.play },
 		{
-			label: "Listening time",
+			label: "Total listening time",
 			value: duration(totals?.listening_seconds ?? 0),
 			icon: icons.value.headphones,
 		},
@@ -159,23 +164,39 @@ onScopeDispose(() => {
 								Playback starts recorded by the new backend.
 							</p>
 							<figure class="mt-8">
-								<div
-									class="flex h-44 items-end gap-1 border-b border-default sm:gap-2"
-								>
-									<UTooltip
-										v-for="day in report.daily_activity"
-										:key="day.day"
-										:text="`${dayLabel(day.day)}: ${day.plays} plays, ${duration(day.listening_seconds)} listened`"
+								<div class="grid grid-cols-[2.5rem_minmax(0,1fr)] gap-2">
+									<div
+										class="flex h-44 flex-col justify-between pb-px text-right text-[0.6875rem] tabular-nums text-muted"
+										aria-label="Plays"
 									>
-										<div class="flex h-full min-w-0 flex-1 items-end">
+										<span v-for="tick in yTicks" :key="tick">{{ tick }}</span>
+									</div>
+									<div
+										class="relative flex h-44 items-end gap-1 border-b border-default sm:gap-2"
+									>
+										<div
+											v-for="line in 3"
+											:key="`grid-${line}`"
+											class="pointer-events-none absolute inset-x-0 border-t border-default/60"
+											:style="{ top: `${((line - 1) / 3) * 100}%` }"
+										/>
+										<UTooltip
+											v-for="day in report.daily_activity"
+											:key="day.day"
+											:text="`${dayLabel(day.day)}: ${day.plays} plays, ${duration(day.listening_seconds)} listened`"
+										>
 											<div
-												class="w-full rounded-t-sm bg-primary/75"
-												:style="{
-													height: `${Math.max(day.plays ? 5 : 0, (day.plays / maxPlays) * 100)}%`,
-												}"
-											/>
-										</div>
-									</UTooltip>
+												class="relative flex h-full min-w-0 flex-1 items-end"
+											>
+												<div
+													class="w-full rounded-t-sm bg-primary/75"
+													:style="{
+														height: `${Math.max(day.plays ? 5 : 0, (day.plays / yTicks[0]!) * 100)}%`,
+													}"
+												/>
+											</div>
+										</UTooltip>
+									</div>
 								</div>
 								<figcaption
 									v-if="report.daily_activity.length"

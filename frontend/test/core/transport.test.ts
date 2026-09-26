@@ -100,7 +100,9 @@ describe("new backend HTTP boundary", () => {
 			options?.signal?.throwIfAborted();
 			return Response.json([]);
 		});
-		await expect(client.listening.recent(5, controller.signal)).rejects.toMatchObject({
+		await expect(
+			client.listening.recent(5, undefined, controller.signal),
+		).rejects.toMatchObject({
 			name: "AbortError",
 		});
 	});

@@ -114,6 +114,93 @@ def test_catalog_upserts_provider_identity_and_recomputes_preferred_metadata() -
         asyncio.run(database.close())
 
 
+def test_catalog_searches_canonical_titles_and_artist_names() -> None:
+    database = _database()
+
+    async def scenario() -> None:
+        async with UnitOfWork(database.sessions) as work:
+            repository = CatalogRepository(work.session)
+            hazy = await repository.upsert(
+                _track(title="Hazy Mercer", external_id="hazymercer1"),
+                NOW,
+            )
+            other = await repository.upsert(
+                _track(
+                    title="Another track",
+                    external_id="anothertrk1",
+                    isrc="DEABC2600002",
+                    artists=(
+                        ProviderArtist(
+                            ProviderName.YOUTUBE_MUSIC,
+                            "UC5l33p",
+                            "5l33p",
+                        ),
+                    ),
+                    artist_text="5l33p",
+                ),
+                NOW,
+            )
+            await work.commit()
+
+        async with UnitOfWork(database.sessions) as work:
+            repository = CatalogRepository(work.session)
+            by_title = await repository.search("hazy", limit=10)
+            by_artist = await repository.search("5L33P", limit=10)
+
+        assert [track.id for track in by_title] == [hazy.id]
+        assert [track.id for track in by_artist] == [other.id]
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        asyncio.run(database.close())
+
+
+def test_incomplete_sources_prioritize_detail_rows_without_artists() -> None:
+    database = _database()
+
+    async def scenario() -> None:
+        async with UnitOfWork(database.sessions) as work:
+            repository = CatalogRepository(work.session)
+            detail = await repository.upsert(
+                _track(
+                    external_id="detailmiss1",
+                    artist_text=None,
+                    artists=(),
+                    quality=ObservationQuality.DETAIL,
+                ),
+                NOW,
+            )
+            discovery = await repository.upsert(
+                _track(
+                    external_id="discover001",
+                    album_title=None,
+                    isrc="DEABC2600002",
+                    quality=ObservationQuality.DISCOVERY,
+                ),
+                NOW - timedelta(minutes=1),
+            )
+            await work.commit()
+
+        async with UnitOfWork(database.sessions) as work:
+            candidates = await CatalogRepository(work.session).incomplete_sources(
+                checked_before=NOW + timedelta(minutes=1),
+                limit=100,
+            )
+
+        candidate_ids = [source.id for source in candidates]
+        assert detail.sources[0].id in candidate_ids
+        assert discovery.sources[0].id in candidate_ids
+        assert candidate_ids.index(detail.sources[0].id) < candidate_ids.index(
+            discovery.sources[0].id
+        )
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        asyncio.run(database.close())
+
+
 def test_discovery_snapshots_reference_sources_and_keep_three_versions() -> None:
     database = _database()
 

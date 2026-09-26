@@ -17,7 +17,7 @@ from nahoermaar.database.core import Database
 from nahoermaar.database import schema
 
 
-def test_alembic_uses_new_schema_with_single_initial_revision() -> None:
+def test_alembic_uses_packaged_schema_revisions() -> None:
     root = Path(__file__).parents[3]
     configuration = Config(root / "alembic.ini")
     scripts = ScriptDirectory.from_config(configuration)
@@ -26,7 +26,7 @@ def test_alembic_uses_new_schema_with_single_initial_revision() -> None:
         Path(scripts.dir).resolve()
         == (root / "backend/src/nahoermaar/database/migrations").resolve()
     )
-    assert scripts.get_heads() == ["0001_initial"]
+    assert scripts.get_heads() == ["0003_radio_request_attribution"]
 
 
 def test_runtime_migration_uses_packaged_scripts() -> None:
@@ -42,7 +42,7 @@ def test_runtime_migration_uses_packaged_scripts() -> None:
     finally:
         asyncio.run(database.close())
 
-    assert revision == "0001_initial"
+    assert revision == "0003_radio_request_attribution"
 
 
 def _current_revision(connection: Connection) -> str | None:

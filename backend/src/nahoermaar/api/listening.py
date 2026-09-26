@@ -11,7 +11,8 @@ from uuid import UUID
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, ConfigDict
 
-from nahoermaar.views.recent import RecentListeningView
+from nahoermaar.listening.domain import PlaybackRecordId
+from nahoermaar.views.recent import RecentListeningView, RecentPlayback
 
 
 class RecentContributorView(BaseModel):
@@ -49,55 +50,67 @@ class RecentPlaybackView(BaseModel):
     play_count: int
 
 
+class RecentPlaybackPageView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    entries: tuple[RecentPlaybackView, ...]
+    next_cursor: UUID | None
+
+
 def router(recent: RecentListeningView) -> APIRouter:
     routes = APIRouter(prefix="/api/listening", tags=["listening"])
 
     @routes.get("/recent")
     async def recent_playback(
         limit: Annotated[int, Query(ge=1, le=100)] = 20,
-    ) -> tuple[RecentPlaybackView, ...]:
-        return tuple(
-            RecentPlaybackView(
-                playback_id=item.playback_id,
-                request_id=item.request_id,
-                track_id=item.track_id,
-                title=item.title,
-                artist_names=item.artist_names,
-                artwork_url=item.artwork_url,
-                duration_seconds=item.duration_seconds,
-                origin=item.origin.value,
-                requested_by=item.requested_by,
-                source_id=item.source_id,
-                source_url=item.source_url,
-                source_provider=(
-                    item.source_provider.value
-                    if item.source_provider is not None
-                    else None
-                ),
-                contributor=(
-                    RecentContributorView(
-                        user_id=item.contributor_id,
-                        display_name=item.contributor_display_name,
-                        pixabot=item.contributor_pixabot,
-                        discord_id=item.contributor_discord_id,
-                        discord_username=item.contributor_discord_username,
-                        discord_avatar_hash=item.contributor_discord_avatar_hash,
-                    )
-                    if item.contributor_id is not None
-                    and item.contributor_display_name is not None
-                    and item.contributor_discord_id is not None
-                    else None
-                ),
-                started_at=item.started_at,
-                ended_at=item.ended_at,
-                end_reason=(
-                    item.end_reason.value if item.end_reason is not None else None
-                ),
-                audio_seconds=item.audio_seconds,
-                group_audio_seconds=item.group_audio_seconds,
-                play_count=item.play_count,
-            )
-            for item in await recent.get(limit=limit)
+        cursor: UUID | None = None,
+    ) -> RecentPlaybackPageView:
+        page = await recent.get(
+            limit=limit,
+            cursor=PlaybackRecordId(cursor) if cursor is not None else None,
+        )
+        return RecentPlaybackPageView(
+            entries=tuple(_recent_playback_view(item) for item in page.entries),
+            next_cursor=page.next_cursor,
         )
 
     return routes
+
+
+def _recent_playback_view(item: RecentPlayback) -> RecentPlaybackView:
+    return RecentPlaybackView(
+        playback_id=item.playback_id,
+        request_id=item.request_id,
+        track_id=item.track_id,
+        title=item.title,
+        artist_names=item.artist_names,
+        artwork_url=item.artwork_url,
+        duration_seconds=item.duration_seconds,
+        origin=item.origin.value,
+        requested_by=item.requested_by,
+        source_id=item.source_id,
+        source_url=item.source_url,
+        source_provider=(
+            item.source_provider.value if item.source_provider is not None else None
+        ),
+        contributor=(
+            RecentContributorView(
+                user_id=item.contributor_id,
+                display_name=item.contributor_display_name,
+                pixabot=item.contributor_pixabot,
+                discord_id=item.contributor_discord_id,
+                discord_username=item.contributor_discord_username,
+                discord_avatar_hash=item.contributor_discord_avatar_hash,
+            )
+            if item.contributor_id is not None
+            and item.contributor_display_name is not None
+            and item.contributor_discord_id is not None
+            else None
+        ),
+        started_at=item.started_at,
+        ended_at=item.ended_at,
+        end_reason=item.end_reason.value if item.end_reason is not None else None,
+        audio_seconds=item.audio_seconds,
+        group_audio_seconds=item.group_audio_seconds,
+        play_count=item.play_count,
+    )

@@ -3,7 +3,7 @@ export function usePlaybackPosition() {
 	const now = ref(Date.now());
 	useIntervalFn(() => {
 		if (player.connection === "live") now.value = Date.now();
-	}, 1000);
+	}, 250);
 	watch(
 		() => player.state,
 		() => {

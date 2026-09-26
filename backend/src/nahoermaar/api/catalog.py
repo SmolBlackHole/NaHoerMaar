@@ -85,7 +85,10 @@ def router(catalog: CatalogService) -> APIRouter:
         refresh: bool = False,
     ) -> DiscoveryView:
         return _discovery(
-            await catalog.search(q, limit=limit, provider_key=provider, refresh=refresh)
+            await catalog.search(
+                q, limit=limit, provider_key=provider, refresh=refresh
+            ),
+            limit=min(20, limit),
         )
 
     @api.get("/playlist", response_model=DiscoveryView)
@@ -120,6 +123,23 @@ def router(catalog: CatalogService) -> APIRouter:
     ) -> DiscoveryView:
         return _discovery(
             await catalog.snapshot(DiscoverySnapshotId(version), kind),
+            offset=offset,
+            limit=limit,
+        )
+
+    @api.post("/{kind}/{version}/continue", response_model=DiscoveryView)
+    async def continue_snapshot(
+        kind: DiscoveryKind,
+        version: UUID,
+        offset: int = Query(ge=0),
+        limit: int = Query(default=20, ge=1, le=100),
+    ) -> DiscoveryView:
+        return _discovery(
+            await catalog.continue_snapshot(
+                DiscoverySnapshotId(version),
+                kind,
+                limit=limit,
+            ),
             offset=offset,
             limit=limit,
         )

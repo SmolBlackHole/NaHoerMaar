@@ -56,6 +56,9 @@ class _Catalog:
     def __init__(self, calls: list[str]) -> None:
         self._calls = calls
 
+    async def start(self) -> None:
+        self._calls.append("catalog.start")
+
     async def close(self) -> None:
         self._calls.append("catalog.close")
 
@@ -154,6 +157,7 @@ def test_failed_start_closes_started_resources_in_reverse_order(
         assert calls == [
             "migrate",
             "operators",
+            "catalog.start",
             "player.start",
             "listening.start",
             "gateway.open",
@@ -189,6 +193,7 @@ def test_application_shutdown_is_reverse_ordered_and_idempotent(
     assert calls == [
         "migrate",
         "operators",
+        "catalog.start",
         "player.start",
         "listening.start",
         "gateway.open",

@@ -599,6 +599,19 @@ def _start_radio(
             or command.expected_generation != state.radio.generation
         ):
             raise PlayerError(PlayerErrorCode.RADIO_CONFLICT, 409)
+    removed = tuple(
+        entry
+        for entry in state.queue.entries
+        if entry.request.origin is RequestOrigin.RADIO
+    )
+    queue = (
+        _queue(
+            state.queue,
+            tuple(entry for entry in state.queue.entries if entry not in removed),
+        )
+        if removed
+        else state.queue
+    )
     generation = uuid4()
     request_id = uuid4()
     run = RadioRun(
@@ -620,8 +633,12 @@ def _start_radio(
         None,
     )
     return Transition(
-        replace(state, radio=run),
-        MutationOutcome(PlayerAction.RADIO_STARTED),
+        replace(state, queue=queue, radio=run),
+        MutationOutcome(
+            PlayerAction.RADIO_STARTED,
+            removed_count=len(removed),
+            entry_ids=tuple(entry.id for entry in removed),
+        ),
         (event,),
     )
 
@@ -632,6 +649,19 @@ def _stop_radio(
     now: datetime,
 ) -> Transition:
     run = _radio(state, command.expected_generation)
+    removed = tuple(
+        entry
+        for entry in state.queue.entries
+        if entry.request.origin is RequestOrigin.RADIO
+    )
+    queue = (
+        _queue(
+            state.queue,
+            tuple(entry for entry in state.queue.entries if entry not in removed),
+        )
+        if removed
+        else state.queue
+    )
     stopped = replace(
         run,
         state=RadioState.WAITING,
@@ -640,8 +670,12 @@ def _stop_radio(
         ended_at=now,
     )
     return Transition(
-        replace(state, radio=stopped),
-        MutationOutcome(PlayerAction.RADIO_STOPPED),
+        replace(state, queue=queue, radio=stopped),
+        MutationOutcome(
+            PlayerAction.RADIO_STOPPED,
+            removed_count=len(removed),
+            entry_ids=tuple(entry.id for entry in removed),
+        ),
     )
 
 
@@ -768,6 +802,7 @@ def _maintain_radio(
             candidate.track_id,
             candidate.source_id,
             now,
+            actor_id=run.initiated_by,
             radio_run_id=run.id,
         )
         entries.append(

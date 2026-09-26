@@ -9,6 +9,7 @@ const props = defineProps<{
 	contributor: Contributor | null;
 	compact?: boolean;
 	origin?: string;
+	context?: "request" | "radio-status";
 }>();
 const { icons } = useTheme();
 const avatar = computed(() => {
@@ -21,7 +22,11 @@ const avatar = computed(() => {
 });
 const label = computed(() =>
 	props.contributor
-		? `${props.origin === "radio" ? "Radio started" : "Requested"} by ${props.contributor.display_name}`
+		? props.context === "radio-status"
+			? `Radio started by ${props.contributor.display_name}`
+			: props.origin === "radio"
+				? `Requested by ${props.contributor.display_name} via radio`
+				: `Requested by ${props.contributor.display_name}`
 		: "No requester recorded",
 );
 </script>
@@ -42,9 +47,13 @@ const label = computed(() =>
 				:class="contributor.pixabot && '[&>img]:[image-rendering:pixelated]'"
 			/>
 			<span class="truncate">
-				<span v-if="origin === 'radio'">Radio · </span>
+				<span v-if="origin === 'radio' && context !== 'radio-status'">Radio · </span>
 				<span :class="compact ? 'sr-only' : ''">{{
-					origin === "radio" ? "started by " : "Requested by "
+					context === "radio-status"
+						? "started by "
+						: origin === "radio"
+							? ""
+							: "Requested by "
 				}}</span>
 				{{ contributor.display_name }}
 			</span>

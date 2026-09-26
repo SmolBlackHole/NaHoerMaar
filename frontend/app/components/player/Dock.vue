@@ -3,13 +3,19 @@ import { formatTime } from "~/core/models/player";
 
 const player = useNuxtApp().$backendCore.stores.usePlayerStore();
 const { icons } = useTheme();
-const { position } = usePlaybackPosition();
+const { now, position } = usePlaybackPosition();
 const current = computed(() => player.state?.runtime.current ?? null);
 const duration = computed(
 	() => player.state?.runtime.duration_seconds ?? current.value?.track.duration_seconds ?? null,
 );
 const seekTarget = ref<string | null>(null);
 const seekDraft = ref<{ position: number; playbackId: string } | null>(null);
+const optimisticSeek = useState<{
+	position: number;
+	playbackId: string;
+	attemptId: string;
+	startedAt: number;
+} | null>("player-optimistic-seek", () => null);
 const hoverPosition = ref<number | null>(null);
 const keyboardPreview = ref(false);
 const confirmation = ref<"skip" | "stop" | null>(null);
@@ -23,11 +29,18 @@ const seekEnabled = computed(
 		["playing", "paused"].includes(player.state.runtime.phase),
 );
 const seekMaximum = computed(() => Math.max(0, Math.ceil(duration.value ?? 0) - 1));
-const timelinePosition = computed(() =>
-	seekDraft.value && seekDraft.value.playbackId === player.state?.runtime.attempt_id
-		? seekDraft.value.position
-		: position.value,
-);
+const timelinePosition = computed(() => {
+	if (seekDraft.value && seekDraft.value.playbackId === player.state?.runtime.attempt_id)
+		return seekDraft.value.position;
+	const optimistic = optimisticSeek.value;
+	if (optimistic && optimistic.playbackId === player.state?.runtime.playback_id) {
+		const elapsed = ["playing", "transitioning"].includes(player.state?.runtime.phase ?? "idle")
+			? Math.max(0, (now.value - optimistic.startedAt) / 1000)
+			: 0;
+		return Math.min(seekMaximum.value, optimistic.position + elapsed);
+	}
+	return position.value;
+});
 const timelineFill = computed(
 	() => `${Math.min(100, (timelinePosition.value / (seekMaximum.value || 1)) * 100)}%`,
 );
@@ -52,6 +65,28 @@ function cancelSeek() {
 	keyboardPreview.value = false;
 }
 watch(() => player.state?.runtime.attempt_id, cancelSeek);
+watch(
+	() =>
+		[
+			player.state?.runtime.playback_id,
+			player.state?.runtime.attempt_id,
+			player.state?.runtime.position_seconds,
+		] as const,
+	([playbackId, attemptId, reportedPosition]) => {
+		const optimistic = optimisticSeek.value;
+		if (!optimistic) return;
+		if (!playbackId || playbackId !== optimistic.playbackId) {
+			optimisticSeek.value = null;
+			return;
+		}
+		if (
+			attemptId !== optimistic.attemptId &&
+			reportedPosition !== undefined &&
+			Math.abs(reportedPosition - optimistic.position) <= 2
+		)
+			optimisticSeek.value = null;
+	},
+);
 function beginSeek() {
 	seekTarget.value = seekEnabled.value ? (player.state?.runtime.attempt_id ?? null) : null;
 }
@@ -83,8 +118,23 @@ function seekKey(event: KeyboardEvent) {
 }
 async function commitSeek() {
 	const draft = seekDraft.value;
-	if (draft && draft.playbackId === player.state?.runtime.attempt_id && seekEnabled.value)
-		await player.seek(draft.position);
+	if (draft && draft.playbackId === player.state?.runtime.attempt_id && seekEnabled.value) {
+		const playbackId = player.state?.runtime.playback_id;
+		if (playbackId) {
+			optimisticSeek.value = {
+				position: draft.position,
+				playbackId,
+				attemptId: draft.playbackId,
+				startedAt: Date.now(),
+			};
+		}
+		try {
+			await player.seek(draft.position);
+		} catch (error) {
+			optimisticSeek.value = null;
+			throw error;
+		}
+	}
 	seekDraft.value = null;
 	seekTarget.value = null;
 }
@@ -166,7 +216,7 @@ const confirmationDescription = computed(() =>
 				<UTooltip :text="current ? `Open player: ${current.track.title}` : 'Open player'">
 					<NuxtLink
 						to="/"
-						class="block truncate text-sm font-semibold text-highlighted hover:underline"
+						class="inline-block max-w-full truncate text-sm font-semibold text-highlighted hover:underline"
 						>{{ current?.track.title ?? "Nothing playing" }}</NuxtLink
 					>
 				</UTooltip>

@@ -58,7 +58,7 @@ function presence(trackId: string): string | null {
 						:href="item.source.source_url"
 						target="_blank"
 						rel="noopener noreferrer"
-						class="catalog-title"
+						class="catalog-title inline-block max-w-full"
 					>
 						{{ item.track.title }}
 					</a>
@@ -152,7 +152,8 @@ function presence(trackId: string): string | null {
 	flex-shrink: 0;
 }
 .catalog-title {
-	display: block;
+	display: inline-block;
+	max-width: 100%;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;

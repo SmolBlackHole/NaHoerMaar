@@ -15,9 +15,10 @@ from pathlib import Path
 
 from dotenv import dotenv_values
 
-from nahormaar_backend.config import ffmpeg_executable
-
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "backend" / "src"))
+
+from nahoermaar.config import ffmpeg_executable  # noqa: E402
 
 
 def collect() -> list[dict[str, str]]:

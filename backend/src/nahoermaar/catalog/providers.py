@@ -118,13 +118,20 @@ class CatalogProvider(Protocol):
         kind: MediaKind | None = None,
     ) -> MediaReference | None: ...
 
-    async def search(self, query: str, *, limit: int) -> ProviderPage: ...
+    async def search(
+        self,
+        query: str,
+        *,
+        limit: int,
+        continuation: str | None = None,
+    ) -> ProviderPage: ...
 
     async def playlist(
         self,
         reference: MediaReference,
         *,
         limit: int,
+        continuation: str | None = None,
     ) -> ProviderPlaylist: ...
 
     async def track(self, reference: MediaReference) -> ProviderTrack: ...

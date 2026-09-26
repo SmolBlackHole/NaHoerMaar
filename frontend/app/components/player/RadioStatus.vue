@@ -11,13 +11,18 @@ function control(action: "retry" | "stop") {
 	<div v-if="radio" class="radio-status" aria-label="Active radio">
 		<UIcon :name="icons.radio" class="size-5 shrink-0 text-primary" />
 		<div class="min-w-0 flex-1">
-			<UTooltip text="Automatic queue">
-				<p class="truncate text-sm text-highlighted">Radio</p>
+			<UTooltip
+				:text="radio.seed_title ? `Radio from ${radio.seed_title}` : 'Automatic queue'"
+			>
+				<p class="w-fit max-w-full truncate text-sm text-highlighted">
+					Radio<span v-if="radio.seed_title"> · {{ radio.seed_title }}</span>
+				</p>
 			</UTooltip>
 			<PlayerContributor
 				v-if="radio.initiator"
 				:contributor="radio.initiator"
 				origin="radio"
+				context="radio-status"
 				class="mt-1"
 			/>
 			<p class="mt-1 text-xs text-muted" role="status">

@@ -12,6 +12,7 @@ from uuid import UUID
 from sqlalchemy import Date, Table, and_, cast as sql_cast, func, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import FromClause
+from sqlalchemy.sql.selectable import Subquery
 
 from nahoermaar.database.schema import Base
 from nahoermaar.users.domain import UserId
@@ -139,18 +140,18 @@ class StatisticsRepository:
             self._requests,
             self._requests.c.id == self._playbacks.c.request_id,
         )
+        listener_audio = self._listener_audio(user_id)
+        relation = relation.outerjoin(
+            listener_audio,
+            listener_audio.c.playback_id == self._playbacks.c.id,
+        )
         play_conditions = [
             self._playbacks.c.started_at >= started_at,
             self._playbacks.c.started_at < ended_at,
         ]
-        audio_seconds = self._playbacks.c.group_audio_seconds
+        audio_seconds = func.coalesce(listener_audio.c.audio_seconds, 0.0)
         if user_id is not None:
-            relation = relation.join(
-                self._listeners,
-                self._listeners.c.playback_id == self._playbacks.c.id,
-            )
-            play_conditions.append(self._listeners.c.user_id == user_id)
-            audio_seconds = self._listeners.c.audio_seconds
+            play_conditions.append(listener_audio.c.playback_id.is_not(None))
 
         play_row = (
             (
@@ -243,19 +244,18 @@ class StatisticsRepository:
         *,
         user_id: UserId | None = None,
     ) -> tuple[DailyActivity, ...]:
-        relation: FromClause = self._playbacks
+        listener_audio = self._listener_audio(user_id)
+        relation: FromClause = self._playbacks.outerjoin(
+            listener_audio,
+            listener_audio.c.playback_id == self._playbacks.c.id,
+        )
         conditions = [
             self._playbacks.c.started_at >= started_at,
             self._playbacks.c.started_at < ended_at,
         ]
-        audio_seconds = self._playbacks.c.group_audio_seconds
+        audio_seconds = func.coalesce(listener_audio.c.audio_seconds, 0.0)
         if user_id is not None:
-            relation = relation.join(
-                self._listeners,
-                self._listeners.c.playback_id == self._playbacks.c.id,
-            )
-            conditions.append(self._listeners.c.user_id == user_id)
-            audio_seconds = self._listeners.c.audio_seconds
+            conditions.append(listener_audio.c.playback_id.is_not(None))
         local_day = sql_cast(
             func.timezone(timezone, self._playbacks.c.started_at),
             Date,
@@ -298,18 +298,18 @@ class StatisticsRepository:
             self._requests,
             self._requests.c.id == self._playbacks.c.request_id,
         ).join(self._tracks, self._tracks.c.id == self._requests.c.track_id)
+        listener_audio = self._listener_audio(user_id)
+        relation = relation.outerjoin(
+            listener_audio,
+            listener_audio.c.playback_id == self._playbacks.c.id,
+        )
         conditions = [
             self._playbacks.c.started_at >= started_at,
             self._playbacks.c.started_at < ended_at,
         ]
-        audio_seconds = self._playbacks.c.group_audio_seconds
+        audio_seconds = func.coalesce(listener_audio.c.audio_seconds, 0.0)
         if user_id is not None:
-            relation = relation.join(
-                self._listeners,
-                self._listeners.c.playback_id == self._playbacks.c.id,
-            )
-            conditions.append(self._listeners.c.user_id == user_id)
-            audio_seconds = self._listeners.c.audio_seconds
+            conditions.append(listener_audio.c.playback_id.is_not(None))
         plays = func.count(func.distinct(self._playbacks.c.id)).label("plays")
         listening = func.coalesce(func.sum(audio_seconds), 0.0).label(
             "listening_seconds"
@@ -371,18 +371,18 @@ class StatisticsRepository:
                 self._artists.c.id == self._track_artists.c.artist_id,
             )
         )
+        listener_audio = self._listener_audio(user_id)
+        relation = relation.outerjoin(
+            listener_audio,
+            listener_audio.c.playback_id == self._playbacks.c.id,
+        )
         conditions = [
             self._playbacks.c.started_at >= started_at,
             self._playbacks.c.started_at < ended_at,
         ]
-        audio_seconds = self._playbacks.c.group_audio_seconds
+        audio_seconds = func.coalesce(listener_audio.c.audio_seconds, 0.0)
         if user_id is not None:
-            relation = relation.join(
-                self._listeners,
-                self._listeners.c.playback_id == self._playbacks.c.id,
-            )
-            conditions.append(self._listeners.c.user_id == user_id)
-            audio_seconds = self._listeners.c.audio_seconds
+            conditions.append(listener_audio.c.playback_id.is_not(None))
         plays = func.count(func.distinct(self._playbacks.c.id)).label("plays")
         listening = func.coalesce(func.sum(audio_seconds), 0.0).label(
             "listening_seconds"
@@ -484,6 +484,15 @@ class StatisticsRepository:
             )
             for row in rows
         )
+
+    def _listener_audio(self, user_id: UserId | None) -> Subquery:
+        statement = select(
+            self._listeners.c.playback_id,
+            func.sum(self._listeners.c.audio_seconds).label("audio_seconds"),
+        )
+        if user_id is not None:
+            statement = statement.where(self._listeners.c.user_id == user_id)
+        return statement.group_by(self._listeners.c.playback_id).subquery()
 
 
 def _table(name: str) -> Table:

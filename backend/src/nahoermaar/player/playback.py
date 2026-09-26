@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -49,6 +50,7 @@ from .events import (
     CheckpointPlayback,
     CompletePlayback,
     FailPlayback,
+    PlaybackRuntimeChanged,
     PlayerChanged,
     VoiceConnectionChanged,
 )
@@ -295,6 +297,7 @@ class _LogicalPlayback:
     last_position: float = 0.0
     retries: int = 0
     duration_seconds: float | None = None
+    source: PlayableSource | None = None
 
 
 @dataclass(slots=True)
@@ -545,6 +548,14 @@ class PlaybackCoordinator:
             self._current.context = context
             self._transport.pause(self._current.attempt_id)
         elif action is PlayerAction.PLAYBACK_SEEKED:
+            _LOGGER.info(
+                "playback.seek_received request_id=%s attempt_id=%s target_seconds=%.3f",
+                state.checkpoint.request.id
+                if state.checkpoint.request is not None
+                else None,
+                self._current.attempt_id if self._current is not None else None,
+                state.checkpoint.position_seconds,
+            )
             await self._sample(context=context)
             await self._restart_current(state.checkpoint, context)
         elif action is PlayerAction.PLAYBACK_SKIPPED:
@@ -568,17 +579,15 @@ class PlaybackCoordinator:
                 stop=True,
                 context=context,
             )
-        elif (
-            action is PlayerAction.PLAYBACK_COMPLETED
-            and self._transitioning is None
-            and self._current is not None
-        ):
-            await self._retire_current(
-                PlaybackEndReason.COMPLETED,
-                stop=False,
-                context=context,
-            )
-            await self._sync_output(state.checkpoint, context)
+        elif action is PlayerAction.PLAYBACK_COMPLETED:
+            if self._transitioning is None:
+                if self._current is not None:
+                    await self._retire_current(
+                        PlaybackEndReason.COMPLETED,
+                        stop=False,
+                        context=context,
+                    )
+                await self._sync_output(state.checkpoint, context)
         elif action is not PlayerAction.PLAYBACK_CHECKPOINTED:
             if action is PlayerAction.PLAYBACK_PLAYED and self._current is not None:
                 self._current.context = context
@@ -586,6 +595,8 @@ class PlaybackCoordinator:
 
         await self._publish_presence(state)
         await self._ensure_prepared(state)
+        if action is not PlayerAction.PLAYBACK_CHECKPOINTED:
+            await self._publish_runtime(context)
 
     async def _sync_connection(
         self,
@@ -691,12 +702,28 @@ class PlaybackCoordinator:
         if current is None or checkpoint.request is None:
             await self._sync_output(checkpoint, context)
             return
+        started_at = time.monotonic()
+        previous_attempt_id = current.attempt_id
         await self._stop_attempt(current.attempt_id)
+        _LOGGER.info(
+            "playback.seek_output_stopped request_id=%s attempt_id=%s elapsed_ms=%.1f",
+            current.request.id,
+            previous_attempt_id,
+            (time.monotonic() - started_at) * 1000,
+        )
         current.attempt_id = uuid4()
         current.context = context
         current.last_position = checkpoint.position_seconds
         await self._start_source(
             current, checkpoint.position_seconds, checkpoint.intent
+        )
+        _LOGGER.info(
+            "playback.seek_restart_dispatched request_id=%s attempt_id=%s "
+            "target_seconds=%.3f elapsed_ms=%.1f",
+            current.request.id,
+            current.attempt_id,
+            checkpoint.position_seconds,
+            (time.monotonic() - started_at) * 1000,
         )
 
     async def _start_request(
@@ -731,8 +758,30 @@ class PlaybackCoordinator:
         position_seconds: float,
         intent: PlaybackIntent,
     ) -> None:
+        started_at = time.monotonic()
         try:
-            source = await self._resolve(logical.request)
+            source = logical.source
+            if source is None:
+                source = await self._resolve(logical.request)
+                logical.source = source
+                _LOGGER.info(
+                    "playback.source_resolved request_id=%s attempt_id=%s provider=%s "
+                    "media_id=%s elapsed_ms=%.1f",
+                    logical.request.id,
+                    logical.attempt_id,
+                    source.provider,
+                    source.external_id,
+                    (time.monotonic() - started_at) * 1000,
+                )
+            else:
+                _LOGGER.info(
+                    "playback.source_reused request_id=%s attempt_id=%s provider=%s "
+                    "media_id=%s",
+                    logical.request.id,
+                    logical.attempt_id,
+                    source.provider,
+                    source.external_id,
+                )
             if self._current is not logical:
                 return
             logical.duration_seconds = source.duration_seconds
@@ -742,6 +791,15 @@ class PlaybackCoordinator:
                 self.notify_audio,
                 position_seconds=position_seconds,
                 paused=intent is PlaybackIntent.PAUSED,
+            )
+            _LOGGER.info(
+                "playback.output_ready request_id=%s attempt_id=%s position=%.3f "
+                "paused=%s elapsed_ms=%.1f",
+                logical.request.id,
+                logical.attempt_id,
+                position_seconds,
+                intent is PlaybackIntent.PAUSED,
+                (time.monotonic() - started_at) * 1000,
             )
         except asyncio.CancelledError:
             await self._stop_attempt(logical.attempt_id)
@@ -777,6 +835,7 @@ class PlaybackCoordinator:
         if retryable and logical.retries < 1:
             logical.retries += 1
             logical.attempt_id = uuid4()
+            logical.source = None
             checkpoint = self._player.state.checkpoint
             await self._start_source(
                 logical,
@@ -992,6 +1051,7 @@ class PlaybackCoordinator:
                     current.context.child(),
                 )
             await self._ensure_prepared(self._player.state)
+            await self._publish_runtime(current.context)
             return
 
         if isinstance(event, CrossfadeDue):
@@ -1056,6 +1116,7 @@ class PlaybackCoordinator:
             0.0,
             0.0,
             duration_seconds=prepared.source.duration_seconds,
+            source=prepared.source,
         )
         self._transitioning = replace(
             prepared,
@@ -1125,6 +1186,7 @@ class PlaybackCoordinator:
             0.0,
             0.0,
             duration_seconds=prepared.source.duration_seconds,
+            source=prepared.source,
         )
         self._outgoing = current
         self._current = incoming
@@ -1288,6 +1350,12 @@ class PlaybackCoordinator:
         await self._bus.publish(
             VoiceConnectionChanged(self._player.state.session.id, connection),
             context.child() if context is not None else None,
+        )
+
+    async def _publish_runtime(self, context: MessageContext) -> None:
+        await self._bus.publish(
+            PlaybackRuntimeChanged(self._player.state.session.id),
+            context.child(),
         )
 
     def _schedule_audience(self) -> None:

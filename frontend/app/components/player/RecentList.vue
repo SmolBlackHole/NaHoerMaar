@@ -40,7 +40,7 @@ function requeue(item: RecentPlayback) {
 							:href="item.source_url"
 							target="_blank"
 							rel="noopener noreferrer"
-							class="recent-title block truncate text-sm font-medium text-highlighted hover:underline"
+							class="recent-title inline-block max-w-full truncate text-sm font-medium text-highlighted hover:underline"
 						>
 							{{ item.title }}
 						</a>

@@ -34,10 +34,12 @@ from .domain import (
 from .events import (
     ApplyRadioCandidates,
     MutationReply,
+    PlaybackRuntimeChanged,
     PlayerChanged,
     PlayerCommand,
     PlayerEvent,
     PlayerEventStream,
+    VoiceConnectionChanged,
     RadioRefillRequested,
     TrackSelection,
     UndoQueue,
@@ -387,6 +389,14 @@ class PlayerSessionManager:
 
     async def broadcast(self, event: PlayerChanged, context: MessageContext) -> None:
         self._events.publish(event, context, self.state)
+
+    async def broadcast_runtime(
+        self,
+        event: PlaybackRuntimeChanged | VoiceConnectionChanged,
+        context: MessageContext,
+    ) -> None:
+        if event.session_id == self.state.session.id:
+            self._events.refresh(context, self.state)
 
     async def refill(
         self,

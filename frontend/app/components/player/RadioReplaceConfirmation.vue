@@ -13,7 +13,7 @@ const emit = defineEmits<{
 	<UModal
 		:open="open"
 		title="Replace the active radio?"
-		description="The current radio stops finding tracks. Existing queue entries stay in place."
+		description="Tracks queued by the current radio are replaced. Manual requests stay in place."
 		:ui="{ footer: 'justify-end' }"
 		@update:open="emit('update:open', $event)"
 	>
