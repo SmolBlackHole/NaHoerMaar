@@ -91,6 +91,7 @@ class Runner:
 class StuckRunner:
     def __init__(self) -> None:
         self.cancelled = False
+        self.release = asyncio.Event()
 
     async def __call__(self, args: tuple[str, ...], *, timeout: float) -> ProcessResult:
         del args, timeout
@@ -98,6 +99,7 @@ class StuckRunner:
             await asyncio.Event().wait()
         except asyncio.CancelledError:
             self.cancelled = True
+            await self.release.wait()
             raise
         raise AssertionError("The stuck runner unexpectedly resumed.")
 
@@ -173,10 +175,13 @@ def test_youtube_provider_watchdog_cancels_a_stuck_runner(
     assert reference is not None
 
     async def scenario() -> None:
-        with pytest.raises(ProviderError, match="too long") as caught:
-            await provider.track(reference)
+        async with asyncio.timeout(0.25):
+            with pytest.raises(ProviderError, match="too long") as caught:
+                await provider.track(reference)
         assert caught.value.retryable is True
+        await asyncio.sleep(0)
         assert runner.cancelled is True
+        runner.release.set()
         await provider.close()
 
     asyncio.run(scenario())

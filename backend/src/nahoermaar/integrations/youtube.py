@@ -296,6 +296,11 @@ class YouTubeProvider:
         self._requests: set[asyncio.Task[ProcessResult]] = set()
         self._closed = False
 
+    def _request_finished(self, task: asyncio.Task[ProcessResult]) -> None:
+        self._requests.discard(task)
+        if not task.cancelled():
+            task.exception()
+
     @staticmethod
     def identify(
         source_url: str, *, kind: MediaKind | None = None
@@ -606,7 +611,17 @@ class YouTubeProvider:
         _LOGGER.info("youtube.closing active_requests=%d", len(tasks))
         for task in tasks:
             task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
+        if tasks:
+            done, pending = await asyncio.wait(
+                tasks,
+                timeout=_PROCESS_TIMEOUT_GRACE_SECONDS,
+            )
+            await asyncio.gather(*done, return_exceptions=True)
+            if pending:
+                _LOGGER.warning(
+                    "youtube.close_incomplete active_requests=%d",
+                    len(pending),
+                )
         _LOGGER.info("youtube.closed")
 
     async def _execute(
@@ -620,9 +635,16 @@ class YouTubeProvider:
             raise ProviderError("YouTube provider is closed.")
         task = asyncio.create_task(self._runner(arguments, timeout=self._timeout))
         self._requests.add(task)
+        task.add_done_callback(self._request_finished)
         try:
-            async with asyncio.timeout(self._timeout + _PROCESS_TIMEOUT_GRACE_SECONDS):
-                return await task
+            done, _ = await asyncio.wait(
+                {task},
+                timeout=self._timeout + _PROCESS_TIMEOUT_GRACE_SECONDS,
+            )
+            if not done:
+                task.cancel()
+                raise TimeoutError
+            return task.result()
         except ProcessTimeoutError:
             _LOGGER.warning(
                 "youtube.request_failed operation=%s reason=timeout", operation
@@ -653,8 +675,9 @@ class YouTubeProvider:
                 "youtube.request_failed operation=%s reason=process_start", operation
             )
             raise ProviderError("YouTube resolver could not be started.") from None
-        finally:
-            self._requests.discard(task)
+        except asyncio.CancelledError:
+            task.cancel()
+            raise
 
 
 class YouTubeMusicProvider(YouTubeProvider):
