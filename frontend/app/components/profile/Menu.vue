@@ -11,8 +11,8 @@ const discordAvatar = computed(() => details.value?.discord.avatar_url ?? undefi
 			to="/profile"
 			color="neutral"
 			variant="ghost"
-			class="min-w-0 flex-1 gap-2.5 py-2"
-			:class="collapsed && 'justify-center px-0'"
+			class="min-w-0 gap-2.5"
+			:class="collapsed ? 'size-10 flex-none justify-center rounded-full p-0' : 'flex-1 py-2'"
 			aria-label="Edit your profile"
 		>
 			<UAvatar
@@ -20,6 +20,7 @@ const discordAvatar = computed(() => details.value?.discord.avatar_url ?? undefi
 				:alt="details.discord.username ?? 'Profile'"
 				size="sm"
 				class="shrink-0"
+				:class="collapsed && 'size-10'"
 			/>
 			<span v-if="!collapsed" class="min-w-0 flex-1 truncate text-left">{{
 				details.profile.display_name ?? details.discord.username ?? "Profile"
