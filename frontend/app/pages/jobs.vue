@@ -323,12 +323,12 @@ onBeforeUnmount(() => {
 								<article
 									v-for="job in jobs"
 									:key="job.id"
-									class="overflow-hidden rounded-2xl bg-linear-to-br from-primary/8 via-elevated/45 to-elevated/20"
+									class="overflow-hidden rounded-xl bg-elevated/35"
 								>
 									<div class="p-5 sm:p-6">
 										<div class="flex items-start gap-4">
 											<span
-												class="grid size-11 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"
+												class="mt-0.5 grid size-6 shrink-0 place-items-center text-primary"
 											>
 												<UIcon :name="jobIcon(job)" class="size-5" />
 											</span>
