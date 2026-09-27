@@ -3,6 +3,8 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import asyncio
+from datetime import UTC, datetime, timedelta
+import os
 from pathlib import Path
 
 import httpx
@@ -111,3 +113,34 @@ def test_avatar_store_rejects_non_discord_sources(tmp_path: Path) -> None:
             "1377708476259897478",
             source_url="https://example.com/avatar.png",
         )
+
+
+def test_avatar_prune_keeps_current_and_newest_versions(tmp_path: Path) -> None:
+    discord_id = "1377708476259897478"
+    store = DiscordAvatarStore(tmp_path)
+    active_url = store.public_url(
+        discord_id,
+        source_url=f"https://cdn.discordapp.com/avatars/{discord_id}/active.png",
+    )
+    active_version = active_url.rsplit("=", 1)[1]
+    active = tmp_path / f"{discord_id}-{active_version}.png"
+    superseded = tmp_path / f"{discord_id}-1111111111111111.png"
+    newest = tmp_path / f"{discord_id}-2222222222222222.png"
+    temporary = tmp_path / f".{discord_id}-stale.tmp"
+    for path in (active, superseded, newest, temporary):
+        path.write_bytes(b"avatar")
+
+    cutoff = datetime(2026, 9, 27, 12, tzinfo=UTC)
+    old = (cutoff - timedelta(days=2)).timestamp()
+    recent = (cutoff + timedelta(minutes=1)).timestamp()
+    for path in (active, superseded, temporary):
+        os.utime(path, (old, old))
+    os.utime(newest, (recent, recent))
+
+    removed = asyncio.run(store.prune(cutoff))
+
+    assert removed == 2
+    assert active.is_file()
+    assert newest.is_file()
+    assert not superseded.exists()
+    assert not temporary.exists()

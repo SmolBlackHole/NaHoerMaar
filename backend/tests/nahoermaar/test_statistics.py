@@ -576,12 +576,12 @@ def test_listener_badges_enforce_samples_and_stable_ties() -> None:
     )
     collector = _ranked_listener(
         6,
-        plays=30,
-        unique_tracks=25,
+        plays=60,
+        unique_tracks=40,
         radio_plays=20,
-        confirmed_manual_requests=10,
-        presence_seconds=3 * 60 * 60,
-        listening_seconds=2 * 60 * 60,
+        confirmed_manual_requests=25,
+        presence_seconds=7 * 60 * 60,
+        listening_seconds=6.5 * 60 * 60,
         night_listening_seconds=0,
     )
 
@@ -605,6 +605,9 @@ def test_listener_badges_enforce_samples_and_stable_ties() -> None:
         ListenerBadgeKind.QUEUE_CURATOR,
         ListenerBadgeKind.RADIO_RIDER,
         ListenerBadgeKind.WIDE_ROTATION,
+        ListenerBadgeKind.LONG_HAUL,
+        ListenerBadgeKind.QUEUE_ARCHITECT,
+        ListenerBadgeKind.LOCKED_IN,
     }
 
 

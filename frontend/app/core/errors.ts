@@ -57,6 +57,13 @@ const failures: Record<string, FailureCopy> = {
 		icon: "music",
 		retryable: true,
 	},
+	catalog_maintenance_partial: {
+		title: "A few tracks need another pass.",
+		description:
+			"The run finished, but at least one provider lookup failed. Open the run for the exact track and reason.",
+		icon: "warning",
+		retryable: true,
+	},
 	conflict: {
 		title: "Everyone touched the same thing at once.",
 		description: "The state changed while this request was catching up. Try again.",
@@ -91,6 +98,13 @@ const failures: Record<string, FailureCopy> = {
 		title: "That access grant is not yours to remove.",
 		description: "Only its owner or the server operator can change it.",
 		icon: "key",
+	},
+	housekeeping_partial: {
+		title: "Housekeeping left something behind.",
+		description:
+			"The run completed only part of its cleanup. Open the run to see which category needs attention.",
+		icon: "warning",
+		retryable: true,
 	},
 	idempotency_conflict: {
 		title: "We've already had this conversation.",

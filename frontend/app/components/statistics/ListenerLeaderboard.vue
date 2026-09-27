@@ -119,14 +119,14 @@ function share(listener: Listener) {
 					</div>
 					<StatisticsListenerBadges
 						v-if="listener.badges[0]"
-						class="hidden shrink-0 sm:block"
-						:badges="listener.badges.slice(0, 1)"
+						class="hidden max-w-120 shrink-0 lg:block"
+						:badges="listener.badges.slice(0, 3)"
 					/>
 					<span
-						v-if="listener.badges.length > 1"
-						class="hidden shrink-0 text-xs text-muted sm:inline"
+						v-if="listener.badges.length > 3"
+						class="hidden shrink-0 text-xs text-muted lg:inline"
 					>
-						+{{ listener.badges.length - 1 }}
+						+{{ listener.badges.length - 3 }}
 					</span>
 					<UIcon
 						:name="icons.arrowRight"

@@ -149,7 +149,9 @@ describe("new backend page workflows", () => {
 			running: false,
 		};
 		fetcher
-			.mockResolvedValueOnce(Response.json({ jobs: [idle] }))
+			.mockResolvedValueOnce(
+				Response.json({ jobs: [idle], recent_runs: [], history_retention_days: 30 }),
+			)
 			.mockResolvedValueOnce(
 				Response.json({ ...idle, running: true, active_batch_size: 25 }),
 			);
@@ -166,6 +168,45 @@ describe("new backend page workflows", () => {
 		expect(fetcher.mock.calls.map(([url, options]) => [url, options?.method])).toEqual([
 			["/api/jobs", undefined],
 			["/api/jobs/catalog-maintenance", "POST"],
+		]);
+		workflow.dispose();
+	});
+
+	it("starts housekeeping and keeps the persisted history projection", async () => {
+		const fetcher = vi.fn<typeof fetch>();
+		const core = createBackendCore({ fetch: fetcher });
+		core.authority.replace("session-token", "restored");
+		const idle = {
+			id: "housekeeping",
+			label: "Data housekeeping",
+			running: false,
+		};
+		const recentRun = { id: "run-one", job_id: "housekeeping", status: "succeeded" };
+		fetcher
+			.mockResolvedValueOnce(
+				Response.json({
+					jobs: [idle],
+					recent_runs: [recentRun],
+					history_retention_days: 30,
+				}),
+			)
+			.mockResolvedValueOnce(
+				Response.json({ ...idle, running: true, active_batch_size: 500 }),
+			);
+		const workflow = core.workflows.jobs();
+
+		await workflow.load();
+		await workflow.runHousekeeping(500);
+
+		expect(workflow.jobs.data.value?.jobs[0]).toMatchObject({
+			id: "housekeeping",
+			running: true,
+			active_batch_size: 500,
+		});
+		expect(workflow.jobs.data.value?.recent_runs).toEqual([recentRun]);
+		expect(fetcher.mock.calls.map(([url, options]) => [url, options?.method])).toEqual([
+			["/api/jobs", undefined],
+			["/api/jobs/housekeeping", "POST"],
 		]);
 		workflow.dispose();
 	});

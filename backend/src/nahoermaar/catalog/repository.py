@@ -859,6 +859,38 @@ class DiscoveryRepository:
             for kind, provider, locator, result_limit, source_url in rows
         )
 
+    async def prune_expired(self, now: datetime, *, limit: int = 1000) -> int:
+        """Delete expired snapshots that no persisted Radio run still references."""
+        if limit < 1:
+            raise ValueError("Discovery prune limit must be positive.")
+        referenced_by_radio = exists(
+            select(_RADIO_RUNS.c.seed_discovery_snapshot_id).where(
+                _RADIO_RUNS.c.seed_discovery_snapshot_id == _DiscoverySnapshotRow.id
+            )
+        )
+        identifiers = tuple(
+            await self._session.scalars(
+                select(_DiscoverySnapshotRow.id)
+                .where(
+                    _DiscoverySnapshotRow.expires_at <= now,
+                    ~referenced_by_radio,
+                )
+                .order_by(
+                    _DiscoverySnapshotRow.expires_at,
+                    _DiscoverySnapshotRow.id,
+                )
+                .limit(limit)
+            )
+        )
+        if not identifiers:
+            return 0
+        await self._session.execute(
+            delete(_DiscoverySnapshotRow).where(
+                _DiscoverySnapshotRow.id.in_(identifiers)
+            )
+        )
+        return len(identifiers)
+
     async def publish(
         self,
         *,

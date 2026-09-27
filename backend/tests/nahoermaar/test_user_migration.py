@@ -44,6 +44,7 @@ APPLICATION_TABLES = {
     "track_requests",
     "player_checkpoints",
     "queue_entries",
+    "background_job_runs",
 }
 
 
@@ -65,7 +66,7 @@ def test_initial_migration_upgrades_and_downgrades_fresh_postgresql() -> None:
                 lambda value: MigrationContext.configure(value).get_current_revision()
             )
             assert APPLICATION_TABLES <= tables
-            assert revision == "0006_unattended_playback"
+            assert revision == "0008_background_job_details"
 
     try:
         asyncio.run(inspect_upgrade())

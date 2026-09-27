@@ -277,6 +277,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/housekeeping": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run Housekeeping */
+        post: operations["run_housekeeping_api_jobs_housekeeping_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/listening/recent": {
         parameters: {
             query?: never;
@@ -917,10 +934,72 @@ export interface components {
             /** Error */
             error: string;
         };
+        /** BackgroundJobRunDetailView */
+        BackgroundJobRunDetailView: {
+            /** Affected Count */
+            affected_count: number;
+            /** Error Code */
+            error_code: string | null;
+            /** Kind */
+            kind: string;
+            /** Label */
+            label: string;
+            /** Outcome */
+            outcome: string;
+            /** Source */
+            source: string | null;
+            /** Subject Id */
+            subject_id: string | null;
+            /** Summary */
+            summary: string;
+        };
+        /** BackgroundJobRunView */
+        BackgroundJobRunView: {
+            /** Candidate Count */
+            candidate_count: number;
+            /** Changed Count */
+            changed_count: number;
+            /** Details */
+            details: components["schemas"]["BackgroundJobRunDetailView"][];
+            /** Duration Seconds */
+            duration_seconds: number | null;
+            /** Error Code */
+            error_code: string | null;
+            /** Failure Count */
+            failure_count: number;
+            /** Finished At */
+            finished_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Job Id */
+            job_id: string;
+            /** Processed Count */
+            processed_count: number;
+            /** Requested By */
+            requested_by: string | null;
+            /** Requested Count */
+            requested_count: number;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Status */
+            status: string;
+            /** Trigger */
+            trigger: string;
+        };
         /** BackgroundJobsView */
         BackgroundJobsView: {
+            /** History Retention Days */
+            history_retention_days: number;
             /** Jobs */
             jobs: components["schemas"]["BackgroundJobView"][];
+            /** Recent Runs */
+            recent_runs: components["schemas"]["BackgroundJobRunView"][];
         };
         /** BackgroundJobView */
         BackgroundJobView: {
@@ -934,28 +1013,32 @@ export interface components {
             active_trigger: string | null;
             /** Default Batch Size */
             default_batch_size: number;
+            /** Description */
+            description: string;
             /** Id */
             id: string;
             /** Interval Seconds */
             interval_seconds: number;
             /** Label */
             label: string;
-            /** Last Discovery Candidates */
-            last_discovery_candidates: number;
-            /** Last Discovery Refreshed */
-            last_discovery_refreshed: number;
+            /** Last Candidates */
+            last_candidates: number;
+            /** Last Changed */
+            last_changed: number;
             /** Last Error */
             last_error: string | null;
+            /** Last Failures */
+            last_failures: number;
             /** Last Finished At */
             last_finished_at: string | null;
-            /** Last Metadata Candidates */
-            last_metadata_candidates: number;
-            /** Last Metadata Repaired */
-            last_metadata_repaired: number;
+            /** Last Processed */
+            last_processed: number;
             /** Last Started At */
             last_started_at: string | null;
             /** Last Trigger */
             last_trigger: string | null;
+            /** Max Batch Size */
+            max_batch_size: number;
             /** Next Run At */
             next_run_at: string | null;
             /** Parallel Requests */
@@ -1375,7 +1458,7 @@ export interface components {
          * ListenerBadgeKind
          * @enum {string}
          */
-        ListenerBadgeKind: "night_owl" | "explorer" | "resident_dj" | "radio_regular" | "repeat_offender" | "always_around" | "all_ears" | "queue_curator" | "radio_rider" | "wide_rotation";
+        ListenerBadgeKind: "night_owl" | "explorer" | "resident_dj" | "radio_regular" | "repeat_offender" | "always_around" | "all_ears" | "queue_curator" | "radio_rider" | "wide_rotation" | "long_haul" | "queue_architect" | "locked_in";
         /** ListenerBadgeView */
         ListenerBadgeView: {
             kind: components["schemas"]["ListenerBadgeKind"];
@@ -2020,6 +2103,14 @@ export interface components {
             /**
              * Batch Size
              * @default 10
+             */
+            batch_size: number;
+        };
+        /** RunHousekeeping */
+        RunHousekeeping: {
+            /**
+             * Batch Size
+             * @default 10000
              */
             batch_size: number;
         };
@@ -4351,6 +4442,138 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["RunCatalogMaintenance"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackgroundJobView"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Request not allowed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description State conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Dependency unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+        };
+    };
+    run_housekeeping_api_jobs_housekeeping_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunHousekeeping"];
             };
         };
         responses: {

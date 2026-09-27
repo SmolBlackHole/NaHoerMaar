@@ -666,3 +666,37 @@ class AuthRepository:
         await self._session.execute(
             delete(_BrowserSessionRow).where(_BrowserSessionRow.user_id == user_id)
         )
+
+    async def prune(self, now: datetime, *, limit: int = 1000) -> tuple[int, int]:
+        """Delete a bounded batch of expired login attempts and sessions."""
+        if limit < 1:
+            raise ValueError("Auth prune limit must be positive.")
+        attempts = tuple(
+            await self._session.scalars(
+                select(_LoginAttemptRow.state_hash)
+                .where(_LoginAttemptRow.expires_at <= now)
+                .order_by(_LoginAttemptRow.expires_at, _LoginAttemptRow.state_hash)
+                .limit(limit)
+            )
+        )
+        sessions = tuple(
+            await self._session.scalars(
+                select(_BrowserSessionRow.token_hash)
+                .where(_BrowserSessionRow.expires_at <= now)
+                .order_by(_BrowserSessionRow.expires_at, _BrowserSessionRow.token_hash)
+                .limit(limit)
+            )
+        )
+        if attempts:
+            await self._session.execute(
+                delete(_LoginAttemptRow).where(
+                    _LoginAttemptRow.state_hash.in_(attempts)
+                )
+            )
+        if sessions:
+            await self._session.execute(
+                delete(_BrowserSessionRow).where(
+                    _BrowserSessionRow.token_hash.in_(sessions)
+                )
+            )
+        return len(attempts), len(sessions)

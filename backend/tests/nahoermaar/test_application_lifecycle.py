@@ -19,6 +19,8 @@ from nahoermaar.listening.service import ListeningService
 from nahoermaar.messaging import Command, MessageBus, MessageContext
 from nahoermaar.operations.logs import RecentLogBuffer
 from nahoermaar.operations.incidents import IncidentService
+from nahoermaar.operations.jobs import JobService
+from nahoermaar.operations.housekeeping import HousekeepingService
 from nahoermaar.player.automation import PlaybackAutomation
 from nahoermaar.player.domain import ListeningSessionId
 from nahoermaar.player.playback import PlaybackCoordinator
@@ -118,6 +120,25 @@ class _Automation:
         self._calls.append("automation.close")
 
 
+class _Jobs:
+    def __init__(self, calls: list[str]) -> None:
+        self._calls = calls
+
+    async def start(self) -> None:
+        self._calls.append("jobs.start")
+
+
+class _Housekeeping:
+    def __init__(self, calls: list[str]) -> None:
+        self._calls = calls
+
+    async def start(self) -> None:
+        self._calls.append("housekeeping.start")
+
+    async def close(self) -> None:
+        self._calls.append("housekeeping.close")
+
+
 class _Playback:
     def __init__(self, calls: list[str]) -> None:
         self._calls = calls
@@ -137,6 +158,8 @@ def _application(calls: list[str], *, fail_gateway: bool = False) -> Application
     gateway = _Gateway(calls, fail=fail_gateway)
     playback = _Playback(calls)
     automation = _Automation(calls)
+    jobs = _Jobs(calls)
+    housekeeping = _Housekeeping(calls)
     return Application(
         cast(Settings, object()),
         cast(Database, database),
@@ -151,6 +174,8 @@ def _application(calls: list[str], *, fail_gateway: bool = False) -> Application
         cast(RecentListeningView, object()),
         cast(IncidentService, object()),
         cast(PlaybackAutomation, automation),
+        cast(JobService, jobs),
+        cast(HousekeepingService, housekeeping),
         RecentLogBuffer(),
         DiscordAvatarStore(Path("data/avatars")),
         cast(DiscordGateway, gateway),
@@ -175,13 +200,16 @@ def test_failed_start_closes_started_resources_in_reverse_order(
         assert application.lifecycle is ApplicationLifecycle.CLOSED
         assert calls == [
             "migrate",
+            "jobs.start",
             "operators",
             "catalog.start",
             "player.start",
             "listening.start",
             "automation.start",
+            "housekeeping.start",
             "gateway.open",
             "gateway.close",
+            "housekeeping.close",
             "automation.close",
             "listening.close",
             "player.close",
@@ -213,15 +241,18 @@ def test_application_shutdown_is_reverse_ordered_and_idempotent(
     asyncio.run(scenario())
     assert calls == [
         "migrate",
+        "jobs.start",
         "operators",
         "catalog.start",
         "player.start",
         "listening.start",
         "automation.start",
+        "housekeeping.start",
         "gateway.open",
         "playback.start",
         "playback.close",
         "gateway.close",
+        "housekeeping.close",
         "automation.close",
         "listening.close",
         "player.close",

@@ -35,6 +35,9 @@ class ListenerBadgeKind(StrEnum):
     QUEUE_CURATOR = "queue_curator"
     RADIO_RIDER = "radio_rider"
     WIDE_ROTATION = "wide_rotation"
+    LONG_HAUL = "long_haul"
+    QUEUE_ARCHITECT = "queue_architect"
+    LOCKED_IN = "locked_in"
 
 
 @dataclass(frozen=True, slots=True)

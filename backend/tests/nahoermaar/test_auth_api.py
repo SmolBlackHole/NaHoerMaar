@@ -34,6 +34,8 @@ from nahoermaar.messaging import MessageBus
 from nahoermaar.listening.service import ListeningService
 from nahoermaar.observability import ContextFilter
 from nahoermaar.operations.incidents import IncidentService
+from nahoermaar.operations.jobs import JobService
+from nahoermaar.operations.housekeeping import HousekeepingService
 from nahoermaar.operations.logs import RecentLogBuffer
 from nahoermaar.player.automation import PlaybackAutomation
 from nahoermaar.player.events import PlaybackRuntimeChanged
@@ -109,8 +111,9 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
     access = AccessService(units, Operators("9", ()), clock=lambda: NOW)
     auth = AuthService(units, provider, clock=lambda: NOW)
     incidents = IncidentService(units, clock=lambda: NOW)
+    jobs = JobService(units, incidents, clock=lambda: NOW)
     bus = MessageBus(incidents)
-    catalog = CatalogService(units, ())
+    catalog = CatalogService(units, (), jobs=jobs)
     player = PlayerSessionManager(units, bus, CatalogRadioResolver(catalog))
     listening = ListeningService(
         units,
@@ -147,6 +150,8 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             frozenset({"http://localhost:3001"}),
         ),
     )
+    avatars = DiscordAvatarStore(Path("data/avatars"))
+    housekeeping = HousekeepingService(units, jobs, avatars, clock=lambda: NOW)
     application = Application(
         settings,
         database,
@@ -161,8 +166,10 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
         recent,
         incidents,
         automation,
+        jobs,
+        housekeeping,
         logs,
-        DiscordAvatarStore(Path("data/avatars")),
+        avatars,
         gateway=cast(DiscordGateway, Gateway()),
     )
     app = create_app(application)
@@ -172,6 +179,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
     assert "/api/logs" in contract["paths"]
     assert "/api/jobs" in contract["paths"]
     assert "/api/jobs/catalog-maintenance" in contract["paths"]
+    assert "/api/jobs/housekeeping" in contract["paths"]
     assert "/api/incidents" in contract["paths"]
     assert "/api/player/sleep-timer" in contract["paths"]
     assert "/api/statistics/overview" in contract["paths"]
@@ -352,8 +360,13 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             }
             jobs = await client.get("/api/jobs")
             assert jobs.status_code == 200
-            assert jobs.json()["jobs"][0]["id"] == "catalog-maintenance"
+            assert [item["id"] for item in jobs.json()["jobs"]] == [
+                "catalog-maintenance",
+                "housekeeping",
+            ]
             assert jobs.json()["jobs"][0]["default_batch_size"] == 10
+            assert jobs.json()["recent_runs"] == []
+            assert jobs.json()["history_retention_days"] == 30
             started_job = await client.post(
                 "/api/jobs/catalog-maintenance",
                 headers=headers,

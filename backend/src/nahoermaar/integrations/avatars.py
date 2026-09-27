@@ -5,6 +5,7 @@
 """Local cache for Discord profile images."""
 
 import asyncio
+from datetime import datetime
 import hashlib
 import os
 import re
@@ -17,6 +18,10 @@ import httpx
 
 _DISCORD_ID = re.compile(r"[1-9][0-9]{0,19}")
 _VERSION = re.compile(r"[0-9a-f]{16}")
+_CACHE_FILE = re.compile(
+    r"(?P<discord>[1-9][0-9]{0,19})-(?P<version>[0-9a-f]{16})\."
+    r"(?:gif|jpg|png|webp)"
+)
 _ALLOWED_HOSTS = {"cdn.discordapp.com", "media.discordapp.net"}
 _MEDIA_TYPES = {
     "image/gif": "gif",
@@ -115,12 +120,53 @@ class DiscordAvatarStore:
             temporary.unlink(missing_ok=True)
         return AvatarAsset(target, media_type)
 
+    async def prune(self, older_than: datetime) -> int:
+        """Remove old superseded avatar versions while keeping every current source."""
+        if older_than.tzinfo is None or older_than.utcoffset() is None:
+            raise ValueError("Avatar prune cutoff must be timezone-aware.")
+        return await asyncio.to_thread(self._prune, older_than.timestamp())
+
     def _cached(self, discord_id: str, version: str) -> AvatarAsset | None:
         for media_type, extension in _MEDIA_TYPES.items():
             candidate = self._directory / f"{discord_id}-{version}.{extension}"
             if candidate.is_file():
                 return AvatarAsset(candidate, media_type)
         return None
+
+    def _prune(self, cutoff_timestamp: float) -> int:
+        if not self._directory.is_dir():
+            return 0
+        active = set(self._sources)
+        grouped: dict[str, list[tuple[Path, str, float]]] = {}
+        temporary: list[tuple[Path, float]] = []
+        for candidate in self._directory.iterdir():
+            if not candidate.is_file():
+                continue
+            match = _CACHE_FILE.fullmatch(candidate.name)
+            modified = candidate.stat().st_mtime
+            if match is not None:
+                grouped.setdefault(match.group("discord"), []).append(
+                    (candidate, match.group("version"), modified)
+                )
+            elif candidate.name.startswith(".") and candidate.suffix == ".tmp":
+                temporary.append((candidate, modified))
+
+        removed = 0
+        for discord_id, versions in grouped.items():
+            newest = max(versions, key=lambda item: item[2])[0]
+            for path, version, modified in versions:
+                if (
+                    path != newest
+                    and (discord_id, version) not in active
+                    and modified < cutoff_timestamp
+                ):
+                    path.unlink(missing_ok=True)
+                    removed += 1
+        for path, modified in temporary:
+            if modified < cutoff_timestamp:
+                path.unlink(missing_ok=True)
+                removed += 1
+        return removed
 
 
 def _source_url(

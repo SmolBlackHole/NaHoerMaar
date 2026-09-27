@@ -13,6 +13,16 @@ from enum import StrEnum
 
 from nahoermaar.database.uow import UnitOfWork
 from nahoermaar.observability import error_code, safe_log_value
+from nahoermaar.operations.jobs import (
+    JobId,
+    JobRun,
+    JobRunDetail,
+    JobRunDetailKind,
+    JobRunDetailOutcome,
+    JobService,
+    JobTrigger,
+)
+from nahoermaar.users.domain import UserId
 
 from .domain import (
     DiscoveryKind,
@@ -109,6 +119,7 @@ class CatalogMaintenanceStatus:
     last_discovery_candidates: int
     last_metadata_repaired: int
     last_discovery_refreshed: int
+    last_failures: int
     last_error: str | None
 
 
@@ -118,6 +129,7 @@ class CatalogService:
     __slots__ = (
         "_clock",
         "_closed",
+        "_jobs",
         "_maintenance_active_candidates",
         "_maintenance_active_processed",
         "_maintenance_batch",
@@ -127,6 +139,7 @@ class CatalogService:
         "_maintenance_last_discovery_candidates",
         "_maintenance_last_discovery_refreshed",
         "_maintenance_last_error",
+        "_maintenance_last_failures",
         "_maintenance_last_finished_at",
         "_maintenance_last_metadata_candidates",
         "_maintenance_last_metadata_repaired",
@@ -158,6 +171,7 @@ class CatalogService:
         maintenance_batch: int = 10,
         maintenance_delay: float = 1.0,
         maintenance_parallel_requests: int = 4,
+        jobs: JobService | None = None,
     ) -> None:
         if len({provider.key for provider in providers}) != len(providers):
             raise ValueError("Catalog provider keys must be unique.")
@@ -182,6 +196,7 @@ class CatalogService:
         self._maintenance_batch = maintenance_batch
         self._maintenance_delay = maintenance_delay
         self._maintenance_parallel_requests = maintenance_parallel_requests
+        self._jobs = jobs
         self._maintenance_failures: dict[str, tuple[int, datetime]] = {}
         self._maintenance_lock = asyncio.Lock()
         self._maintenance_task: asyncio.Task[None] | None = None
@@ -198,6 +213,7 @@ class CatalogService:
         self._maintenance_last_discovery_candidates = 0
         self._maintenance_last_metadata_repaired = 0
         self._maintenance_last_discovery_refreshed = 0
+        self._maintenance_last_failures = 0
         self._maintenance_last_error: str | None = None
         self._closed = False
 
@@ -703,6 +719,7 @@ class CatalogService:
             last_discovery_candidates=self._maintenance_last_discovery_candidates,
             last_metadata_repaired=self._maintenance_last_metadata_repaired,
             last_discovery_refreshed=self._maintenance_last_discovery_refreshed,
+            last_failures=self._maintenance_last_failures,
             last_error=self._maintenance_last_error,
         )
 
@@ -710,6 +727,7 @@ class CatalogService:
         self,
         *,
         batch_size: int | None = None,
+        actor_id: UserId | None = None,
     ) -> CatalogMaintenanceStatus:
         """Schedule one manual maintenance run without overlapping another run."""
         self._ensure_open()
@@ -724,24 +742,38 @@ class CatalogService:
         self._maintenance_pending_batch = requested_batch
         self._maintenance_pending_trigger = "manual"
         task = asyncio.create_task(
-            self._run_maintenance(requested_batch, trigger="manual"),
+            self._run_maintenance(
+                requested_batch,
+                trigger=JobTrigger.MANUAL,
+                actor_id=actor_id,
+            ),
             name="catalog-maintenance-manual",
         )
         self._maintenance_manual_task = task
         task.add_done_callback(self._manual_maintenance_finished)
         return self.maintenance_status()
 
-    async def maintain(self, *, batch_size: int | None = None) -> tuple[int, int]:
+    async def maintain(
+        self,
+        *,
+        batch_size: int | None = None,
+        actor_id: UserId | None = None,
+    ) -> tuple[int, int]:
         """Repair a small metadata batch and refresh recently used stale discovery."""
         requested_batch = self._maintenance_batch if batch_size is None else batch_size
         self._validate_maintenance_batch(requested_batch)
-        return await self._run_maintenance(requested_batch, trigger="manual")
+        return await self._run_maintenance(
+            requested_batch,
+            trigger=JobTrigger.MANUAL,
+            actor_id=actor_id,
+        )
 
     async def _run_maintenance(
         self,
         batch_size: int,
         *,
-        trigger: str,
+        trigger: JobTrigger,
+        actor_id: UserId | None,
     ) -> tuple[int, int]:
         self._ensure_open()
         async with self._maintenance_lock:
@@ -755,6 +787,17 @@ class CatalogService:
             discoveries: tuple[DiscoveryRefreshCandidate, ...] = ()
             repaired = 0
             refreshed = 0
+            failed = 0
+            details: list[JobRunDetail] = []
+            run: JobRun | None = None
+            jobs = self._jobs
+            if jobs is not None:
+                run = await jobs.start_run(
+                    JobId.CATALOG_MAINTENANCE,
+                    trigger,
+                    batch_size,
+                    actor_id,
+                )
             _LOGGER.info(
                 "catalog.maintenance_run_started trigger=%s batch=%d",
                 trigger,
@@ -780,9 +823,19 @@ class CatalogService:
                 semaphore = asyncio.Semaphore(self._maintenance_parallel_requests)
 
                 async def repair_source(source: TrackSource) -> None:
-                    nonlocal repaired
+                    nonlocal failed, repaired
                     retry_key = f"source:{source.id}"
                     if not self._maintenance_ready(retry_key, now):
+                        details.append(
+                            JobRunDetail(
+                                kind=JobRunDetailKind.TRACK_METADATA,
+                                outcome=JobRunDetailOutcome.SKIPPED,
+                                label=source.observed_title,
+                                summary="Waiting for the provider retry window.",
+                                subject_id=str(source.track_id),
+                                source=source.provider.value,
+                            )
+                        )
                         self._maintenance_active_processed += 1
                         return
                     async with semaphore:
@@ -794,7 +847,20 @@ class CatalogService:
                         except asyncio.CancelledError:
                             raise
                         except Exception as error:
+                            failed += 1
                             self._maintenance_failed(retry_key, now)
+                            code = error_code(error)
+                            details.append(
+                                JobRunDetail(
+                                    kind=JobRunDetailKind.TRACK_METADATA,
+                                    outcome=JobRunDetailOutcome.FAILED,
+                                    label=source.observed_title,
+                                    summary="The provider could not resolve this track.",
+                                    subject_id=str(source.track_id),
+                                    source=source.provider.value,
+                                    error_code=code,
+                                )
+                            )
                             _LOGGER.warning(
                                 "catalog.maintenance_metadata_failed track_id=%s "
                                 "title=%r source_id=%s provider=%s error=%s",
@@ -802,7 +868,7 @@ class CatalogService:
                                 safe_log_value(source.observed_title),
                                 source.id,
                                 source.provider,
-                                error_code(error),
+                                code,
                             )
                         else:
                             self._maintenance_failures.pop(retry_key, None)
@@ -815,6 +881,19 @@ class CatalogService:
                                 None,
                             )
                             if stored_source is None:
+                                details.append(
+                                    JobRunDetail(
+                                        kind=JobRunDetailKind.TRACK_METADATA,
+                                        outcome=JobRunDetailOutcome.UNCHANGED,
+                                        label=track.title,
+                                        summary=(
+                                            "The refreshed track no longer contained the "
+                                            "selected source."
+                                        ),
+                                        subject_id=str(track.id),
+                                        source=source.provider.value,
+                                    )
+                                )
                                 _LOGGER.warning(
                                     "catalog.maintenance_metadata_incomplete "
                                     "track_id=%s title=%r source_id=%s provider=%s "
@@ -830,6 +909,21 @@ class CatalogService:
                                     source,
                                     stored_source,
                                 )
+                                details.append(
+                                    JobRunDetail(
+                                        kind=JobRunDetailKind.TRACK_METADATA,
+                                        outcome=JobRunDetailOutcome.CHANGED,
+                                        label=track.title,
+                                        summary=(
+                                            f"Added {', '.join(added)}."
+                                            if added
+                                            else "Confirmed complete metadata."
+                                        ),
+                                        affected_count=1,
+                                        subject_id=str(track.id),
+                                        source=source.provider.value,
+                                    )
+                                )
                                 _LOGGER.info(
                                     "catalog.maintenance_metadata_repaired "
                                     "track_id=%s title=%r source_id=%s provider=%s "
@@ -842,6 +936,17 @@ class CatalogService:
                                     "metadata_added" if added else "detail_confirmed",
                                 )
                             else:
+                                missing = _missing_detail_fields(track, stored_source)
+                                details.append(
+                                    JobRunDetail(
+                                        kind=JobRunDetailKind.TRACK_METADATA,
+                                        outcome=JobRunDetailOutcome.UNCHANGED,
+                                        label=track.title,
+                                        summary=f"Still missing {', '.join(missing)}.",
+                                        subject_id=str(track.id),
+                                        source=source.provider.value,
+                                    )
+                                )
                                 _LOGGER.info(
                                     "catalog.maintenance_metadata_incomplete "
                                     "track_id=%s title=%r source_id=%s provider=%s "
@@ -850,9 +955,7 @@ class CatalogService:
                                     safe_log_value(track.title),
                                     source.id,
                                     source.provider,
-                                    ",".join(
-                                        _missing_detail_fields(track, stored_source)
-                                    ),
+                                    ",".join(missing),
                                 )
                         finally:
                             self._maintenance_active_processed += 1
@@ -861,12 +964,22 @@ class CatalogService:
                 async def refresh_discovery(
                     candidate: DiscoveryRefreshCandidate,
                 ) -> None:
-                    nonlocal refreshed
+                    nonlocal failed, refreshed
                     retry_key = (
                         f"discovery:{candidate.kind.value}:{candidate.provider_key}:"
                         f"{candidate.locator}:{candidate.limit}"
                     )
                     if not self._maintenance_ready(retry_key, now):
+                        details.append(
+                            JobRunDetail(
+                                kind=JobRunDetailKind.DISCOVERY_REFRESH,
+                                outcome=JobRunDetailOutcome.SKIPPED,
+                                label=candidate.locator,
+                                summary="Waiting for the provider retry window.",
+                                subject_id=candidate.locator,
+                                source=candidate.provider_key,
+                            )
+                        )
                         self._maintenance_active_processed += 1
                         return
                     async with semaphore:
@@ -875,18 +988,47 @@ class CatalogService:
                         except asyncio.CancelledError:
                             raise
                         except Exception as error:
+                            failed += 1
                             self._maintenance_failed(retry_key, now)
+                            code = error_code(error)
+                            details.append(
+                                JobRunDetail(
+                                    kind=JobRunDetailKind.DISCOVERY_REFRESH,
+                                    outcome=JobRunDetailOutcome.FAILED,
+                                    label=candidate.locator,
+                                    summary=(
+                                        f"Could not refresh this {candidate.kind.value}."
+                                    ),
+                                    subject_id=candidate.locator,
+                                    source=candidate.provider_key,
+                                    error_code=code,
+                                )
+                            )
                             _LOGGER.warning(
                                 "catalog.maintenance_discovery_failed kind=%s "
                                 "provider=%s locator=%r error=%s",
                                 candidate.kind,
                                 candidate.provider_key,
                                 safe_log_value(candidate.locator),
-                                error_code(error),
+                                code,
                             )
                         else:
                             self._maintenance_failures.pop(retry_key, None)
                             refreshed += 1
+                            details.append(
+                                JobRunDetail(
+                                    kind=JobRunDetailKind.DISCOVERY_REFRESH,
+                                    outcome=JobRunDetailOutcome.CHANGED,
+                                    label=candidate.locator,
+                                    summary=(
+                                        f"Refreshed {candidate.kind.value} with "
+                                        f"{len(snapshot.entries)} entries."
+                                    ),
+                                    affected_count=len(snapshot.entries),
+                                    subject_id=str(snapshot.id),
+                                    source=candidate.provider_key,
+                                )
+                            )
                             _LOGGER.info(
                                 "catalog.maintenance_discovery_refreshed kind=%s "
                                 "provider=%s locator=%r snapshot_id=%s entries=%d",
@@ -906,20 +1048,36 @@ class CatalogService:
                     for candidate in discoveries:
                         tasks.create_task(refresh_discovery(candidate))
             except asyncio.CancelledError:
+                if run is not None and jobs is not None:
+                    await jobs.cancel_run(run)
                 raise
             except Exception as error:
                 self._maintenance_last_error = error_code(error)
+                if run is not None and jobs is not None:
+                    await jobs.fail_run(run, self._maintenance_last_error)
                 raise
             finally:
                 self._maintenance_last_metadata_candidates = len(sources)
                 self._maintenance_last_discovery_candidates = len(discoveries)
                 self._maintenance_last_metadata_repaired = repaired
                 self._maintenance_last_discovery_refreshed = refreshed
+                self._maintenance_last_failures = failed
                 self._maintenance_last_finished_at = self._clock()
                 self._maintenance_active_candidates = 0
                 self._maintenance_active_processed = 0
                 self._maintenance_pending_batch = None
                 self._maintenance_pending_trigger = None
+
+            if run is not None and jobs is not None:
+                await jobs.finish_run(
+                    run,
+                    candidate_count=len(sources) + len(discoveries),
+                    processed_count=len(sources) + len(discoveries),
+                    changed_count=repaired + refreshed,
+                    failure_count=failed,
+                    error_code=("catalog_maintenance_partial" if failed else None),
+                    details=tuple(details),
+                )
 
             _LOGGER.info(
                 "catalog.maintenance_completed trigger=%s batch=%d "
@@ -964,7 +1122,8 @@ class CatalogService:
                     _LOGGER.info("catalog.maintenance_cycle_started")
                     await self._run_maintenance(
                         self._maintenance_batch,
-                        trigger="scheduled",
+                        trigger=JobTrigger.SCHEDULED,
+                        actor_id=None,
                     )
                 except asyncio.CancelledError:
                     raise
@@ -1020,7 +1179,8 @@ class CatalogService:
 
     def _maintenance_failed(self, key: str, now: datetime) -> None:
         attempts = self._maintenance_failures.get(key, (0, now))[0] + 1
-        delay = min(3600, 60 * 2 ** (attempts - 1))
+        base_delay = max(60, int(self._maintenance_interval.total_seconds()) * 2)
+        delay = min(3600, base_delay * 2 ** (attempts - 1))
         self._maintenance_failures[key] = (attempts, now + timedelta(seconds=delay))
 
     def _manual_maintenance_finished(

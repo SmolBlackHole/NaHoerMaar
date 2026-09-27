@@ -798,18 +798,40 @@ class SessionRepository:
                 )
             )
 
-    async def prune(self, now: datetime) -> tuple[int, int]:
-        undos = await self._session.execute(
-            delete(_QueueUndoRow)
-            .where(_QueueUndoRow.expires_at <= now)
-            .returning(_QueueUndoRow.id)
+    async def prune(
+        self,
+        now: datetime,
+        *,
+        limit: int | None = None,
+    ) -> tuple[int, int]:
+        """Delete expired transient state, optionally bounded per table."""
+        if limit is not None and limit < 1:
+            raise ValueError("Player prune limit must be positive.")
+        undo_ids = select(_QueueUndoRow.id).where(_QueueUndoRow.expires_at <= now)
+        receipt_ids = select(_OperationReceiptRow.operation_id).where(
+            _OperationReceiptRow.expires_at <= now
         )
-        receipts = await self._session.execute(
-            delete(_OperationReceiptRow)
-            .where(_OperationReceiptRow.expires_at <= now)
-            .returning(_OperationReceiptRow.operation_id)
-        )
-        return len(undos.all()), len(receipts.all())
+        if limit is not None:
+            undo_ids = undo_ids.order_by(
+                _QueueUndoRow.expires_at, _QueueUndoRow.id
+            ).limit(limit)
+            receipt_ids = receipt_ids.order_by(
+                _OperationReceiptRow.expires_at,
+                _OperationReceiptRow.operation_id,
+            ).limit(limit)
+        undos = tuple(await self._session.scalars(undo_ids))
+        receipts = tuple(await self._session.scalars(receipt_ids))
+        if undos:
+            await self._session.execute(
+                delete(_QueueUndoRow).where(_QueueUndoRow.id.in_(undos))
+            )
+        if receipts:
+            await self._session.execute(
+                delete(_OperationReceiptRow).where(
+                    _OperationReceiptRow.operation_id.in_(receipts)
+                )
+            )
+        return len(undos), len(receipts)
 
     async def _active_radio(
         self,

@@ -19,6 +19,16 @@ const maxHour = computed(() =>
 function hourLabel(hour: number) {
 	return `${String(hour).padStart(2, "0")}:00`;
 }
+
+function hourIntensity(seconds: number) {
+	if (!seconds) return "bg-elevated/45 ring-default/70";
+	const ratio = seconds / maxHour.value;
+	if (ratio <= 0.2) return "bg-primary/15 ring-primary/20";
+	if (ratio <= 0.4) return "bg-primary/30 ring-primary/30";
+	if (ratio <= 0.6) return "bg-primary/50 ring-primary/40";
+	if (ratio <= 0.8) return "bg-primary/70 ring-primary/50";
+	return "bg-primary ring-primary/70";
+}
 </script>
 
 <template>
@@ -64,13 +74,8 @@ function hourLabel(hour: number) {
 						:text="`${hourLabel(item.hour)}: ${formatStatisticsDuration(item.listening_seconds)}`"
 					>
 						<div
-							class="aspect-square rounded-md bg-primary transition-opacity"
-							:class="item.listening_seconds ? '' : 'bg-elevated'"
-							:style="{
-								opacity: item.listening_seconds
-									? 0.2 + (item.listening_seconds / maxHour) * 0.8
-									: 1,
-							}"
+							class="aspect-square rounded-md ring-1 ring-inset transition-[background-color,box-shadow,transform] duration-150 hover:scale-105"
+							:class="hourIntensity(item.listening_seconds)"
 						/>
 					</UTooltip>
 				</div>

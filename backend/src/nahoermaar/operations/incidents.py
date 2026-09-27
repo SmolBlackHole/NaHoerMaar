@@ -214,10 +214,23 @@ class IncidentRepository:
         )
         return value is not None
 
-    async def purge_before(self, cutoff: datetime) -> None:
-        await self._session.execute(
-            delete(_IncidentRow).where(_IncidentRow.occurred_at < cutoff)
+    async def purge_before(self, cutoff: datetime, *, limit: int | None = None) -> int:
+        identifiers = select(_IncidentRow.id).where(_IncidentRow.occurred_at < cutoff)
+        if limit is not None:
+            if limit < 1:
+                raise ValueError("Incident purge limit must be positive.")
+            identifiers = identifiers.order_by(
+                _IncidentRow.occurred_at, _IncidentRow.id
+            ).limit(limit)
+        values = tuple(await self._session.scalars(identifiers))
+        if not values:
+            return 0
+        removed = await self._session.execute(
+            delete(_IncidentRow)
+            .where(_IncidentRow.id.in_(values))
+            .returning(_IncidentRow.id)
         )
+        return len(removed.all())
 
     async def between(
         self,

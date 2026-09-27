@@ -14,19 +14,37 @@ export function createJobsWorkflow(client: BackendClient, authority: SessionAuth
 	}
 
 	function runCatalogMaintenance(batchSize: number) {
+		return run((signal) =>
+			client.jobs.runCatalogMaintenance({ batch_size: batchSize }, signal),
+		);
+	}
+
+	function runHousekeeping(batchSize: number) {
+		return run((signal) => client.jobs.runHousekeeping({ batch_size: batchSize }, signal));
+	}
+
+	function run(
+		start: (signal: AbortSignal) => ReturnType<BackendClient["jobs"]["runHousekeeping"]>,
+	) {
 		return jobs.load(async (signal) => {
-			const updated = await client.jobs.runCatalogMaintenance(
-				{ batch_size: batchSize },
-				signal,
-			);
-			const current = jobs.data.value?.jobs ?? [];
+			const updated = await start(signal);
+			const current = jobs.data.value;
+			const registered = current?.jobs ?? [];
 			return {
-				jobs: current.some(({ id }) => id === updated.id)
-					? current.map((job) => (job.id === updated.id ? updated : job))
-					: [...current, updated],
+				jobs: registered.some(({ id }) => id === updated.id)
+					? registered.map((job) => (job.id === updated.id ? updated : job))
+					: [...registered, updated],
+				recent_runs: current?.recent_runs ?? [],
+				history_retention_days: current?.history_retention_days ?? 30,
 			};
 		});
 	}
 
-	return { jobs, load, runCatalogMaintenance, dispose: jobs.dispose };
+	return {
+		jobs,
+		load,
+		runCatalogMaintenance,
+		runHousekeeping,
+		dispose: jobs.dispose,
+	};
 }

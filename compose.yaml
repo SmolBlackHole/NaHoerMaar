@@ -124,7 +124,7 @@ services:
             PGDATABASE: ${POSTGRES_DB:-nahormaar}
             PGUSER: ${POSTGRES_USER:-nahormaar}
             PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
-            EXPECTED_SCHEMA_REVISION: 0004_discord_avatar_cache
+            EXPECTED_SCHEMA_REVISION: 0008_background_job_details
             BACKUP_KEEP: ${BACKUP_KEEP:-14}
         volumes:
             - ./data/backups:/backups

@@ -28,6 +28,9 @@ function label(badge: ListenerBadge) {
 		queue_curator: "Queue curator",
 		radio_rider: "Radio rider",
 		wide_rotation: "Wide rotation",
+		long_haul: "Long haul",
+		queue_architect: "Queue architect",
+		locked_in: "Locked in",
 	}[badge.kind];
 }
 
@@ -43,6 +46,9 @@ function icon(badge: ListenerBadge) {
 		queue_curator: icons.value.list,
 		radio_rider: icons.value.radio,
 		wide_rotation: icons.value.music,
+		long_haul: icons.value.clock,
+		queue_architect: icons.value.list,
+		locked_in: icons.value.headphones,
 	}[badge.kind];
 }
 
@@ -59,6 +65,9 @@ function description(badge: ListenerBadge) {
 		queue_curator: `${badge.sample_size} manual requests reached confirmed playback.`,
 		radio_rider: `${badge.sample_size} Radio tracks heard.`,
 		wide_rotation: `${badge.sample_size} different tracks heard.`,
+		long_haul: `${formatStatisticsDuration(badge.value)} of music heard in this period.`,
+		queue_architect: `${badge.sample_size} manual requests reached confirmed playback.`,
+		locked_in: `Music was audible for ${percentage}% of this listener's channel time.`,
 	}[badge.kind];
 }
 </script>

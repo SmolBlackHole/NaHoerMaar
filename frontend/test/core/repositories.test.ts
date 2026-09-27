@@ -132,13 +132,18 @@ describe("new backend repositories", () => {
 
 		await client.jobs.status();
 		await client.jobs.runCatalogMaintenance({ batch_size: 25 });
+		await client.jobs.runHousekeeping({ batch_size: 500 });
 
 		expect(fetcher.mock.calls.map(([url, options]) => [url, options?.method])).toEqual([
 			["/api/jobs", undefined],
 			["/api/jobs/catalog-maintenance", "POST"],
+			["/api/jobs/housekeeping", "POST"],
 		]);
 		expect(JSON.parse(fetcher.mock.calls[1]![1]!.body as string)).toEqual({
 			batch_size: 25,
+		});
+		expect(JSON.parse(fetcher.mock.calls[2]![1]!.body as string)).toEqual({
+			batch_size: 500,
 		});
 	});
 });

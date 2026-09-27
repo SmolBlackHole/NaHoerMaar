@@ -480,6 +480,28 @@ def assign_listener_badges(
                 float(item.unique_tracks),
                 item.unique_tracks >= 25,
             ),
+            (
+                ListenerBadgeKind.LONG_HAUL,
+                item.listening_seconds,
+                item.listening_seconds >= 6 * 60 * 60,
+            ),
+            (
+                ListenerBadgeKind.QUEUE_ARCHITECT,
+                float(item.confirmed_manual_requests),
+                item.confirmed_manual_requests >= 25,
+            ),
+            (
+                ListenerBadgeKind.LOCKED_IN,
+                (
+                    item.listening_seconds / item.presence_seconds
+                    if item.presence_seconds > 0
+                    else 0.0
+                ),
+                (
+                    item.presence_seconds >= 2 * 60 * 60
+                    and item.listening_seconds / item.presence_seconds >= 0.9
+                ),
+            ),
         )
         for kind, value, qualified in earned:
             if qualified:
