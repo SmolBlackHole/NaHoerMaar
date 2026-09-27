@@ -2,6 +2,7 @@
 const player = useNuxtApp().$backendCore.stores.usePlayerStore();
 const { icons } = useTheme();
 const now = useNow({ interval: 1000 });
+const open = ref(false);
 const presets = [15, 30, 45, 60] as const;
 
 const expiresAt = computed(() => {
@@ -34,13 +35,9 @@ const pending = computed(
 </script>
 
 <template>
-	<UPopover :ui="{ content: 'w-64 max-w-[calc(100vw-2rem)] p-4' }">
-		<UTooltip
-			:text="expiresAt ? `Sleep timer: ${remainingLabel} remaining` : 'Set sleep timer'"
-		>
+	<UPopover v-model:open="open" :ui="{ content: 'w-64 max-w-[calc(100vw-2rem)] p-4' }">
+		<template #anchor>
 			<UButton
-				:icon="icons.clock"
-				:label="expiresAt ? remainingLabel : undefined"
 				:aria-label="
 					expiresAt ? `Sleep timer, ${remainingLabel} remaining` : 'Set sleep timer'
 				"
@@ -50,8 +47,20 @@ const pending = computed(
 				:class="expiresAt ? 'px-2' : 'size-10'"
 				:loading="pending"
 				:disabled="!player.canControl"
-			/>
-		</UTooltip>
+				@click="open = !open"
+			>
+				<UTooltip
+					:text="
+						expiresAt ? `Sleep timer: ${remainingLabel} remaining` : 'Set sleep timer'
+					"
+				>
+					<span class="inline-flex items-center justify-center gap-1.5">
+						<UIcon :name="icons.clock" class="size-5" />
+						<span v-if="expiresAt" class="tabular-nums">{{ remainingLabel }}</span>
+					</span>
+				</UTooltip>
+			</UButton>
+		</template>
 		<template #content>
 			<div class="space-y-4">
 				<div>
