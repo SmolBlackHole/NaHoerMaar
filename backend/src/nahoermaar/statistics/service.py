@@ -24,10 +24,13 @@ from .models import (
     GroupStatisticsReport,
     ListenerBadge,
     ListenerBadgeKind,
+    PersonalHighlights,
     PersonalStatisticsReport,
+    RankedArtist,
     RankedListener,
     RankedRequestedArtist,
     RankedRequestedTrack,
+    RankedTrack,
     StatisticsPeriod,
 )
 from .repository import PresenceInterval, StatisticsRepository
@@ -101,6 +104,9 @@ class StatisticsService:
         requested_tracks: tuple[RankedRequestedTrack, ...] = ()
         requested_artists: tuple[RankedRequestedArtist, ...] = ()
         highlights: GroupHighlights | None = None
+        top_tracks_by_listening: tuple[RankedTrack, ...] = ()
+        top_artists_by_listening: tuple[RankedArtist, ...] = ()
+        personal_highlights: PersonalHighlights | None = None
         async with self._units() as work:
             repository = StatisticsRepository(work.session)
             recorded_since = await repository.recorded_since()
@@ -194,6 +200,74 @@ class StatisticsService:
                         else None
                     ),
                 )
+            else:
+                top_tracks_by_listening = await repository.top_tracks(
+                    started_at,
+                    ended_at,
+                    user_id=user_id,
+                    sort_by_listening=True,
+                )
+                top_artists_by_listening = await repository.top_artists(
+                    started_at,
+                    ended_at,
+                    user_id=user_id,
+                    sort_by_listening=True,
+                )
+                listening_pattern = await repository.listening_pattern(
+                    started_at,
+                    ended_at,
+                    self._timezone.key,
+                    user_id,
+                )
+                request_outcomes = await repository.personal_request_outcomes(
+                    started_at,
+                    ended_at,
+                    user_id,
+                )
+                radio_discoveries = await repository.top_tracks(
+                    started_at,
+                    ended_at,
+                    user_id=user_id,
+                    limit=3,
+                    sort_by_listening=True,
+                    origin="radio",
+                )
+                influenced_tracks = await repository.influenced_tracks(
+                    started_at,
+                    ended_at,
+                    user_id,
+                )
+                ranked_listeners = assign_listener_badges(
+                    await repository.top_listeners(
+                        started_at,
+                        ended_at,
+                        self._timezone.key,
+                    )
+                )
+                personal_badges = next(
+                    (
+                        listener.badges
+                        for listener in ranked_listeners
+                        if listener.user_id == user_id
+                    ),
+                    (),
+                )
+                group_listening_seconds = await repository.group_listening_seconds(
+                    started_at,
+                    ended_at,
+                )
+                personal_highlights = PersonalHighlights(
+                    group_listening_share=(
+                        totals.listening_seconds / group_listening_seconds
+                        if group_listening_seconds > 0
+                        else None
+                    ),
+                    listening_pattern=listening_pattern,
+                    request_outcomes=request_outcomes,
+                    radio_discoveries=radio_discoveries,
+                    influenced_tracks=influenced_tracks,
+                    badges=personal_badges,
+                )
         _LOGGER.info(
             "statistics.projected scope=%s period=%s requests=%d plays=%d "
             "playback_seconds=%.3f listening_seconds=%.3f "
@@ -231,6 +305,8 @@ class StatisticsService:
                 requested_artists=requested_artists,
                 highlights=highlights,
             )
+        if personal_highlights is None:
+            raise RuntimeError("Personal statistics highlights were not projected.")
         return PersonalStatisticsReport(
             coverage=coverage,
             totals=totals,
@@ -238,6 +314,9 @@ class StatisticsService:
             top_tracks=top_tracks,
             top_artists=top_artists,
             user_id=user_id,
+            top_tracks_by_listening=top_tracks_by_listening,
+            top_artists_by_listening=top_artists_by_listening,
+            highlights=personal_highlights,
         )
 
     def _window(

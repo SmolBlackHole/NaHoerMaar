@@ -17,6 +17,7 @@ from nahoermaar.statistics.models import (
     ActivityGranularity,
     ContagiousTrackHighlight,
     GroupStatisticsReport,
+    InfluencedTrack,
     ListenerBadge,
     ListenerBadgeKind,
     ListenerIdentity,
@@ -116,6 +117,48 @@ class RankedArtistView(BaseModel):
     name: str
     plays: int
     listening_seconds: float
+
+
+class WeekdayListeningView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    iso_weekday: int
+    listening_seconds: float
+
+
+class HourListeningView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    hour: int
+    listening_seconds: float
+
+
+class ListeningPatternView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    weekdays: tuple[WeekdayListeningView, ...]
+    hours: tuple[HourListeningView, ...]
+
+
+class PersonalRequestOutcomesView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    manual_requests: int
+    played_requests: int
+    completed_requests: int
+    play_rate: float | None
+    completion_rate: float | None
+
+
+class InfluencedTrackView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    track_id: UUID
+    title: str
+    artist_names: tuple[str, ...]
+    artwork_url: str | None
+    later_requests: int
+    distinct_listeners: int
 
 
 class ListenerBadgeView(BaseModel):
@@ -253,6 +296,17 @@ class GroupHighlightsView(BaseModel):
     average_listeners: float | None
 
 
+class PersonalHighlightsView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    group_listening_share: float | None
+    listening_pattern: ListeningPatternView
+    request_outcomes: PersonalRequestOutcomesView
+    radio_discoveries: tuple[RankedTrackView, ...]
+    influenced_tracks: tuple[InfluencedTrackView, ...]
+    badges: tuple[ListenerBadgeView, ...]
+
+
 class StatisticsView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -273,6 +327,9 @@ class GroupStatisticsView(StatisticsView):
 
 class PersonalStatisticsView(StatisticsView):
     user_id: UUID
+    top_tracks_by_listening: tuple[RankedTrackView, ...]
+    top_artists_by_listening: tuple[RankedArtistView, ...]
+    highlights: PersonalHighlightsView
 
 
 def router(application: Application) -> APIRouter:
@@ -450,6 +507,83 @@ def personal_statistics_view(
     return PersonalStatisticsView(
         **common.model_dump(),
         user_id=report.user_id,
+        top_tracks_by_listening=tuple(
+            RankedTrackView(
+                track_id=item.track_id,
+                title=item.title,
+                artist_names=item.artist_names,
+                artwork_url=item.artwork_url,
+                plays=item.plays,
+                listening_seconds=item.listening_seconds,
+            )
+            for item in report.top_tracks_by_listening
+        ),
+        top_artists_by_listening=tuple(
+            RankedArtistView(
+                artist_id=item.artist_id,
+                name=item.name,
+                plays=item.plays,
+                listening_seconds=item.listening_seconds,
+            )
+            for item in report.top_artists_by_listening
+        ),
+        highlights=PersonalHighlightsView(
+            group_listening_share=report.highlights.group_listening_share,
+            listening_pattern=ListeningPatternView(
+                weekdays=tuple(
+                    WeekdayListeningView(
+                        iso_weekday=item.iso_weekday,
+                        listening_seconds=item.listening_seconds,
+                    )
+                    for item in report.highlights.listening_pattern.weekdays
+                ),
+                hours=tuple(
+                    HourListeningView(
+                        hour=item.hour,
+                        listening_seconds=item.listening_seconds,
+                    )
+                    for item in report.highlights.listening_pattern.hours
+                ),
+            ),
+            request_outcomes=PersonalRequestOutcomesView(
+                manual_requests=report.highlights.request_outcomes.manual_requests,
+                played_requests=report.highlights.request_outcomes.played_requests,
+                completed_requests=(
+                    report.highlights.request_outcomes.completed_requests
+                ),
+                play_rate=report.highlights.request_outcomes.play_rate,
+                completion_rate=report.highlights.request_outcomes.completion_rate,
+            ),
+            radio_discoveries=tuple(
+                RankedTrackView(
+                    track_id=item.track_id,
+                    title=item.title,
+                    artist_names=item.artist_names,
+                    artwork_url=item.artwork_url,
+                    plays=item.plays,
+                    listening_seconds=item.listening_seconds,
+                )
+                for item in report.highlights.radio_discoveries
+            ),
+            influenced_tracks=tuple(
+                _influenced_track_view(item)
+                for item in report.highlights.influenced_tracks
+            ),
+            badges=tuple(
+                _listener_badge_view(item) for item in report.highlights.badges
+            ),
+        ),
+    )
+
+
+def _influenced_track_view(track: InfluencedTrack) -> InfluencedTrackView:
+    return InfluencedTrackView(
+        track_id=track.track_id,
+        title=track.title,
+        artist_names=track.artist_names,
+        artwork_url=track.artwork_url,
+        later_requests=track.later_requests,
+        distinct_listeners=track.distinct_listeners,
     )
 
 

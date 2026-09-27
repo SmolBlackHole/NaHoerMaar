@@ -10,13 +10,14 @@ const props = withDefaults(
 		activity?: readonly ActivityBucket[];
 		loading?: boolean;
 		granularity?: ActivityBucket["granularity"];
+		scope?: "group" | "personal";
 	}>(),
-	{ activity: () => [], loading: false, granularity: "day" },
+	{ activity: () => [], loading: false, granularity: "day", scope: "group" },
 );
 
 type Measure = "playback_seconds" | "listening_seconds" | "presence_seconds";
 
-const measures = [
+const groupMeasures = [
 	{
 		value: "playback_seconds" as const,
 		label: "Playback time",
@@ -34,8 +35,24 @@ const measures = [
 	},
 ] satisfies readonly { value: Measure; label: string; description: string }[];
 
-const measure = ref<Measure>("playback_seconds");
-const selectedMeasure = computed(() => measures.find((item) => item.value === measure.value)!);
+const personalMeasures = [
+	{
+		value: "listening_seconds" as const,
+		label: "Time heard",
+		description: "Audible time credited to this listener.",
+	},
+	{
+		value: "presence_seconds" as const,
+		label: "Channel presence",
+		description: "Time this listener spent in the voice channel.",
+	},
+] satisfies readonly { value: Measure; label: string; description: string }[];
+
+const measures = computed(() => (props.scope === "personal" ? personalMeasures : groupMeasures));
+const measure = ref<Measure>(props.scope === "personal" ? "listening_seconds" : "playback_seconds");
+const selectedMeasure = computed(
+	() => measures.value.find((item) => item.value === measure.value)!,
+);
 const maxSeconds = computed(() =>
 	Math.max(1, ...props.activity.map((bucket) => bucket[measure.value])),
 );
@@ -47,6 +64,13 @@ const heading = computed(() =>
 	(props.activity[0]?.granularity ?? props.granularity) === "month"
 		? "Monthly activity"
 		: "Daily activity",
+);
+
+watch(
+	() => props.scope,
+	(scope) => {
+		measure.value = scope === "personal" ? "listening_seconds" : "playback_seconds";
+	},
 );
 
 function label(value: string, granularity: ActivityBucket["granularity"]) {

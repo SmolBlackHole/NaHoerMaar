@@ -1173,11 +1173,36 @@ export interface components {
             top_tracks: components["schemas"]["RankedTrackView"][];
             totals: components["schemas"]["TotalsView"];
         };
+        /** HourListeningView */
+        HourListeningView: {
+            /** Hour */
+            hour: number;
+            /** Listening Seconds */
+            listening_seconds: number;
+        };
         /**
          * IconSet
          * @enum {string}
          */
         IconSet: "lucide" | "ph" | "heroicons" | "tabler";
+        /** InfluencedTrackView */
+        InfluencedTrackView: {
+            /** Artist Names */
+            artist_names: string[];
+            /** Artwork Url */
+            artwork_url: string | null;
+            /** Distinct Listeners */
+            distinct_listeners: number;
+            /** Later Requests */
+            later_requests: number;
+            /** Title */
+            title: string;
+            /**
+             * Track Id
+             * Format: uuid
+             */
+            track_id: string;
+        };
         /** JoinVoiceInput */
         JoinVoiceInput: {
             /** Channel Id */
@@ -1223,6 +1248,13 @@ export interface components {
             second: components["schemas"]["ListenerIdentityView"];
             /** Shared Playbacks */
             shared_playbacks: number;
+        };
+        /** ListeningPatternView */
+        ListeningPatternView: {
+            /** Hours */
+            hours: components["schemas"]["HourListeningView"][];
+            /** Weekdays */
+            weekdays: components["schemas"]["WeekdayListeningView"][];
         };
         /** LogEntryView */
         LogEntryView: {
@@ -1313,15 +1345,46 @@ export interface components {
             /** Undo Id */
             undo_id: string | null;
         };
+        /** PersonalHighlightsView */
+        PersonalHighlightsView: {
+            /** Badges */
+            badges: components["schemas"]["ListenerBadgeView"][];
+            /** Group Listening Share */
+            group_listening_share: number | null;
+            /** Influenced Tracks */
+            influenced_tracks: components["schemas"]["InfluencedTrackView"][];
+            listening_pattern: components["schemas"]["ListeningPatternView"];
+            /** Radio Discoveries */
+            radio_discoveries: components["schemas"]["RankedTrackView"][];
+            request_outcomes: components["schemas"]["PersonalRequestOutcomesView"];
+        };
+        /** PersonalRequestOutcomesView */
+        PersonalRequestOutcomesView: {
+            /** Completed Requests */
+            completed_requests: number;
+            /** Completion Rate */
+            completion_rate: number | null;
+            /** Manual Requests */
+            manual_requests: number;
+            /** Play Rate */
+            play_rate: number | null;
+            /** Played Requests */
+            played_requests: number;
+        };
         /** PersonalStatisticsView */
         PersonalStatisticsView: {
             /** Activity */
             activity: components["schemas"]["ActivityBucketView"][];
             coverage: components["schemas"]["CoverageView"];
+            highlights: components["schemas"]["PersonalHighlightsView"];
             /** Top Artists */
             top_artists: components["schemas"]["RankedArtistView"][];
+            /** Top Artists By Listening */
+            top_artists_by_listening: components["schemas"]["RankedArtistView"][];
             /** Top Tracks */
             top_tracks: components["schemas"]["RankedTrackView"][];
+            /** Top Tracks By Listening */
+            top_tracks_by_listening: components["schemas"]["RankedTrackView"][];
             totals: components["schemas"]["TotalsView"];
             /**
              * User Id
@@ -2012,6 +2075,13 @@ export interface components {
             operation_id: string;
             /** Volume */
             volume: number;
+        };
+        /** WeekdayListeningView */
+        WeekdayListeningView: {
+            /** Iso Weekday */
+            iso_weekday: number;
+            /** Listening Seconds */
+            listening_seconds: number;
         };
     };
     responses: never;

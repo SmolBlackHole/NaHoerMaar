@@ -125,6 +125,53 @@ class RankedArtist:
 
 
 @dataclass(frozen=True, slots=True)
+class WeekdayListening:
+    iso_weekday: int
+    listening_seconds: float
+
+
+@dataclass(frozen=True, slots=True)
+class HourListening:
+    hour: int
+    listening_seconds: float
+
+
+@dataclass(frozen=True, slots=True)
+class ListeningPattern:
+    weekdays: tuple[WeekdayListening, ...]
+    hours: tuple[HourListening, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class PersonalRequestOutcomes:
+    manual_requests: int
+    played_requests: int
+    completed_requests: int
+
+    @property
+    def play_rate(self) -> float | None:
+        if self.manual_requests == 0:
+            return None
+        return self.played_requests / self.manual_requests
+
+    @property
+    def completion_rate(self) -> float | None:
+        if self.played_requests == 0:
+            return None
+        return self.completed_requests / self.played_requests
+
+
+@dataclass(frozen=True, slots=True)
+class InfluencedTrack:
+    track_id: UUID
+    title: str
+    artist_names: tuple[str, ...]
+    artwork_url: str | None
+    later_requests: int
+    distinct_listeners: int
+
+
+@dataclass(frozen=True, slots=True)
 class RankedRequestedTrack:
     track_id: UUID
     title: str
@@ -261,6 +308,16 @@ class GroupHighlights:
 
 
 @dataclass(frozen=True, slots=True)
+class PersonalHighlights:
+    group_listening_share: float | None
+    listening_pattern: ListeningPattern
+    request_outcomes: PersonalRequestOutcomes
+    radio_discoveries: tuple[RankedTrack, ...]
+    influenced_tracks: tuple[InfluencedTrack, ...]
+    badges: tuple[ListenerBadge, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class StatisticsReport:
     coverage: Coverage
     totals: StatisticsTotals
@@ -281,3 +338,6 @@ class GroupStatisticsReport(StatisticsReport):
 @dataclass(frozen=True, slots=True)
 class PersonalStatisticsReport(StatisticsReport):
     user_id: UserId
+    top_tracks_by_listening: tuple[RankedTrack, ...]
+    top_artists_by_listening: tuple[RankedArtist, ...]
+    highlights: PersonalHighlights

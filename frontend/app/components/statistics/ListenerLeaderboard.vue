@@ -6,7 +6,6 @@ import type { GroupStatistics } from "~/core/models/statistics";
 import { formatStatisticsDuration } from "~/core/models/statistics";
 
 type Listener = GroupStatistics["top_listeners"][number];
-type Badge = Listener["badges"][number];
 
 const props = defineProps<{
 	listeners: readonly Listener[];
@@ -28,52 +27,6 @@ function name(listener: Listener) {
 function share(listener: Listener) {
 	if (props.totalListeningSeconds <= 0) return 0;
 	return Math.round((listener.listening_seconds / props.totalListeningSeconds) * 100);
-}
-
-function badgeLabel(badge: Badge) {
-	return {
-		night_owl: "Night owl",
-		explorer: "Explorer",
-		resident_dj: "Resident DJ",
-		radio_regular: "Radio regular",
-		repeat_offender: "Repeat offender",
-		always_around: "Always around",
-		all_ears: "All ears",
-		queue_curator: "Queue curator",
-		radio_rider: "Radio rider",
-		wide_rotation: "Wide rotation",
-	}[badge.kind];
-}
-
-function badgeIcon(badge: Badge) {
-	return {
-		night_owl: icons.value.dark,
-		explorer: icons.value.search,
-		resident_dj: icons.value.music,
-		radio_regular: icons.value.radio,
-		repeat_offender: icons.value.reload,
-		always_around: icons.value.clock,
-		all_ears: icons.value.headphones,
-		queue_curator: icons.value.list,
-		radio_rider: icons.value.radio,
-		wide_rotation: icons.value.music,
-	}[badge.kind];
-}
-
-function badgeDescription(badge: Badge) {
-	const value = Math.round(badge.value * 100);
-	return {
-		night_owl: `${value}% of their heard time landed between midnight and 5 AM.`,
-		explorer: `${value}% unique tracks across ${badge.sample_size} heard tracks.`,
-		resident_dj: `${badge.sample_size} manual requests reached confirmed playback.`,
-		radio_regular: `${value}% of ${badge.sample_size} heard tracks came from Radio.`,
-		repeat_offender: `${value}% repeats across ${badge.sample_size} heard tracks.`,
-		always_around: `${formatStatisticsDuration(badge.value)} spent in the voice channel during this period.`,
-		all_ears: `${formatStatisticsDuration(badge.value)} of music actually heard during this period.`,
-		queue_curator: `${badge.sample_size} manual requests reached confirmed playback.`,
-		radio_rider: `${badge.sample_size} Radio tracks heard during this period.`,
-		wide_rotation: `${badge.sample_size} different tracks heard during this period.`,
-	}[badge.kind];
 }
 </script>
 
@@ -134,29 +87,12 @@ function badgeDescription(badge: Badge) {
 					</div>
 				</div>
 
-				<div v-if="leader.badges.length" class="mt-4">
-					<p
-						class="mb-2 flex items-center gap-1.5 text-[0.6875rem] font-medium uppercase tracking-wider text-muted"
-					>
-						<UIcon :name="icons.sparkles" class="size-3.5 text-primary" />
-						Achievements
-					</p>
-					<div class="flex flex-wrap gap-1.5">
-						<UTooltip
-							v-for="badge in leader.badges"
-							:key="badge.kind"
-							:text="badgeDescription(badge)"
-						>
-							<UBadge
-								:label="badgeLabel(badge)"
-								:icon="badgeIcon(badge)"
-								color="primary"
-								variant="subtle"
-								size="sm"
-							/>
-						</UTooltip>
-					</div>
-				</div>
+				<StatisticsListenerBadges
+					v-if="leader.badges.length"
+					class="mt-4"
+					:badges="leader.badges"
+					heading
+				/>
 			</NuxtLink>
 
 			<div v-if="runnersUp.length" class="grid gap-2">
@@ -181,19 +117,11 @@ function badgeDescription(badge: Badge) {
 							<span aria-hidden="true"> · </span>{{ share(listener) }}%
 						</p>
 					</div>
-					<UTooltip
+					<StatisticsListenerBadges
 						v-if="listener.badges[0]"
-						:text="badgeDescription(listener.badges[0])"
-					>
-						<UBadge
-							:label="badgeLabel(listener.badges[0])"
-							:icon="badgeIcon(listener.badges[0])"
-							color="primary"
-							variant="subtle"
-							size="sm"
-							class="hidden shrink-0 sm:inline-flex"
-						/>
-					</UTooltip>
+						class="hidden shrink-0 sm:block"
+						:badges="listener.badges.slice(0, 1)"
+					/>
 					<span
 						v-if="listener.badges.length > 1"
 						class="hidden shrink-0 text-xs text-muted sm:inline"

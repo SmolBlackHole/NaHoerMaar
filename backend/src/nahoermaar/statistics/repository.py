@@ -34,8 +34,12 @@ from .models import (
     BusiestHour,
     BusiestWeekday,
     ContagiousTrackHighlight,
+    HourListening,
+    InfluencedTrack,
     ListenerIdentity,
+    ListeningPattern,
     ListenerPairHighlight,
+    PersonalRequestOutcomes,
     PlaybackBreakdown,
     PlaybackOutcomes,
     RadioConversionHighlight,
@@ -47,6 +51,7 @@ from .models import (
     RequestTotals,
     SharedTrackHighlight,
     StatisticsTotals,
+    WeekdayListening,
 )
 
 
@@ -234,6 +239,8 @@ class StatisticsRepository:
         *,
         user_id: UserId | None = None,
         limit: int = 5,
+        sort_by_listening: bool = False,
+        origin: str | None = None,
     ) -> tuple[RankedTrack, ...]:
         relation, conditions, audio_seconds = self._listening_scope(
             started_at,
@@ -247,6 +254,13 @@ class StatisticsRepository:
         plays = func.count(func.distinct(self._playbacks.c.id)).label("plays")
         listening = func.coalesce(func.sum(audio_seconds), 0.0).label(
             "listening_seconds"
+        )
+        if origin is not None:
+            conditions.append(self._requests.c.origin == origin)
+        ordering = (
+            (listening.desc(), plays.desc())
+            if sort_by_listening
+            else (plays.desc(), listening.desc())
         )
         artists = (
             select(
@@ -284,7 +298,7 @@ class StatisticsRepository:
                         self._tracks.c.title,
                         self._tracks.c.artwork_url,
                     )
-                    .order_by(plays.desc(), listening.desc(), self._tracks.c.id)
+                    .order_by(*ordering, self._tracks.c.id)
                     .limit(limit)
                 )
             )
@@ -310,6 +324,7 @@ class StatisticsRepository:
         *,
         user_id: UserId | None = None,
         limit: int = 5,
+        sort_by_listening: bool = False,
     ) -> tuple[RankedArtist, ...]:
         relation, conditions, audio_seconds = self._listening_scope(
             started_at,
@@ -327,6 +342,11 @@ class StatisticsRepository:
         listening = func.coalesce(func.sum(audio_seconds), 0.0).label(
             "listening_seconds"
         )
+        ordering = (
+            (listening.desc(), plays.desc())
+            if sort_by_listening
+            else (plays.desc(), listening.desc())
+        )
         rows = (
             (
                 await self._session.execute(
@@ -339,7 +359,7 @@ class StatisticsRepository:
                     .select_from(relation)
                     .where(and_(*conditions))
                     .group_by(self._artists.c.id, self._artists.c.name)
-                    .order_by(plays.desc(), listening.desc(), self._artists.c.id)
+                    .order_by(*ordering, self._artists.c.id)
                     .limit(limit)
                 )
             )
@@ -352,6 +372,218 @@ class StatisticsRepository:
                 name=row["name"],
                 plays=int(row["plays"]),
                 listening_seconds=float(row["listening_seconds"]),
+            )
+            for row in rows
+        )
+
+    async def listening_pattern(
+        self,
+        started_at: datetime,
+        ended_at: datetime,
+        timezone: str,
+        user_id: UserId,
+    ) -> ListeningPattern:
+        local_heard = func.timezone(timezone, self._listeners.c.first_heard_at)
+        weekday = func.extract("isodow", local_heard).label("iso_weekday")
+        hour = func.extract("hour", local_heard).label("hour")
+        listening = func.sum(self._listeners.c.audio_seconds).label("listening_seconds")
+        relation = self._listeners.join(
+            self._playbacks,
+            self._playbacks.c.id == self._listeners.c.playback_id,
+        )
+        conditions = (
+            self._listeners.c.user_id == user_id,
+            self._playbacks.c.started_at >= started_at,
+            self._playbacks.c.started_at < ended_at,
+        )
+        weekday_rows = (
+            (
+                await self._session.execute(
+                    select(weekday, listening)
+                    .select_from(relation)
+                    .where(*conditions)
+                    .group_by(weekday)
+                    .order_by(weekday)
+                )
+            )
+            .mappings()
+            .all()
+        )
+        hour_rows = (
+            (
+                await self._session.execute(
+                    select(hour, listening)
+                    .select_from(relation)
+                    .where(*conditions)
+                    .group_by(hour)
+                    .order_by(hour)
+                )
+            )
+            .mappings()
+            .all()
+        )
+        weekday_seconds = {
+            int(row["iso_weekday"]): float(row["listening_seconds"] or 0.0)
+            for row in weekday_rows
+        }
+        hour_seconds = {
+            int(row["hour"]): float(row["listening_seconds"] or 0.0)
+            for row in hour_rows
+        }
+        return ListeningPattern(
+            weekdays=tuple(
+                WeekdayListening(day, weekday_seconds.get(day, 0.0))
+                for day in range(1, 8)
+            ),
+            hours=tuple(
+                HourListening(hour_value, hour_seconds.get(hour_value, 0.0))
+                for hour_value in range(24)
+            ),
+        )
+
+    async def group_listening_seconds(
+        self,
+        started_at: datetime,
+        ended_at: datetime,
+    ) -> float:
+        value = await self._session.scalar(
+            select(func.coalesce(func.sum(self._listeners.c.audio_seconds), 0.0))
+            .select_from(
+                self._listeners.join(
+                    self._playbacks,
+                    self._playbacks.c.id == self._listeners.c.playback_id,
+                )
+            )
+            .where(
+                self._playbacks.c.started_at >= started_at,
+                self._playbacks.c.started_at < ended_at,
+            )
+        )
+        return float(value or 0.0)
+
+    async def personal_request_outcomes(
+        self,
+        started_at: datetime,
+        ended_at: datetime,
+        user_id: UserId,
+    ) -> PersonalRequestOutcomes:
+        relation = self._requests.outerjoin(
+            self._playbacks,
+            and_(
+                self._playbacks.c.request_id == self._requests.c.id,
+                self._playbacks.c.started_at < ended_at,
+            ),
+        )
+        row = (
+            (
+                await self._session.execute(
+                    select(
+                        func.count(func.distinct(self._requests.c.id)).label(
+                            "manual_requests"
+                        ),
+                        func.count(func.distinct(self._requests.c.id))
+                        .filter(self._playbacks.c.id.is_not(None))
+                        .label("played_requests"),
+                        func.count(func.distinct(self._requests.c.id))
+                        .filter(self._playbacks.c.end_reason == "completed")
+                        .label("completed_requests"),
+                    )
+                    .select_from(relation)
+                    .where(
+                        self._requests.c.requested_by == user_id,
+                        self._requests.c.origin == "manual",
+                        self._requests.c.requested_at >= started_at,
+                        self._requests.c.requested_at < ended_at,
+                    )
+                )
+            )
+            .mappings()
+            .one()
+        )
+        return PersonalRequestOutcomes(
+            manual_requests=int(row["manual_requests"] or 0),
+            played_requests=int(row["played_requests"] or 0),
+            completed_requests=int(row["completed_requests"] or 0),
+        )
+
+    async def influenced_tracks(
+        self,
+        started_at: datetime,
+        ended_at: datetime,
+        user_id: UserId,
+        *,
+        limit: int = 3,
+    ) -> tuple[InfluencedTrack, ...]:
+        original = (
+            select(
+                self._requests.c.track_id,
+                func.min(self._requests.c.requested_at).label("requested_at"),
+            )
+            .where(
+                self._requests.c.requested_by == user_id,
+                self._requests.c.origin == "manual",
+                self._requests.c.requested_at >= started_at,
+                self._requests.c.requested_at < ended_at,
+            )
+            .group_by(self._requests.c.track_id)
+            .subquery()
+        )
+        later = self._requests.alias("personal_later_request")
+        later_count = func.count().label("later_requests")
+        listener_count = func.count(func.distinct(later.c.requested_by)).label(
+            "distinct_listeners"
+        )
+        artists = self._artist_names()
+        rows = (
+            (
+                await self._session.execute(
+                    select(
+                        self._tracks.c.id,
+                        self._tracks.c.title,
+                        self._tracks.c.artwork_url,
+                        artists.label("artist_names"),
+                        later_count,
+                        listener_count,
+                    )
+                    .select_from(
+                        original.join(
+                            later,
+                            and_(
+                                later.c.track_id == original.c.track_id,
+                                later.c.origin == "manual",
+                                later.c.requested_by != user_id,
+                                later.c.requested_at > original.c.requested_at,
+                                later.c.requested_at < ended_at,
+                            ),
+                        ).join(
+                            self._tracks,
+                            self._tracks.c.id == original.c.track_id,
+                        )
+                    )
+                    .group_by(
+                        self._tracks.c.id,
+                        self._tracks.c.title,
+                        self._tracks.c.artwork_url,
+                    )
+                    .order_by(
+                        listener_count.desc(),
+                        later_count.desc(),
+                        self._tracks.c.id,
+                    )
+                    .limit(limit)
+                )
+            )
+            .mappings()
+            .all()
+        )
+        return tuple(
+            InfluencedTrack(
+                track_id=row["id"],
+                title=row["title"],
+                artist_names=tuple(cast(list[str] | None, row["artist_names"]) or ()),
+                artwork_url=row["artwork_url"],
+                later_requests=int(row["later_requests"]),
+                distinct_listeners=int(row["distinct_listeners"]),
             )
             for row in rows
         )

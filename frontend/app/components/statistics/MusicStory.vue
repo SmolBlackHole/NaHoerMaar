@@ -29,7 +29,7 @@ watch(featuredArtwork, () => {
 
 		<div
 			v-if="featured"
-			class="mt-4 grid gap-8 xl:grid-cols-[minmax(17rem,0.7fr)_minmax(0,1.3fr)]"
+			class="mt-4 grid gap-8 xl:grid-cols-[minmax(17rem,30rem)_minmax(0,1fr)]"
 		>
 			<article class="featured-track">
 				<img
@@ -136,7 +136,8 @@ watch(featuredArtwork, () => {
 .featured-track {
 	position: relative;
 	isolation: isolate;
-	min-height: 16rem;
+	aspect-ratio: 16 / 9;
+	min-height: 14rem;
 	overflow: hidden;
 	border-radius: 1rem;
 	background: #111318;
@@ -186,7 +187,8 @@ watch(featuredArtwork, () => {
 	position: relative;
 	z-index: 1;
 	display: flex;
-	min-height: 16rem;
+	height: 100%;
+	min-height: 14rem;
 	flex-direction: column;
 	padding: 1.25rem;
 }

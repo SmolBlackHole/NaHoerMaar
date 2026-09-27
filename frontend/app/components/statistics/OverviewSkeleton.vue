@@ -67,8 +67,8 @@ defineProps<{ metrics: readonly MetricItem[] }>();
 		<section aria-hidden="true">
 			<h2 class="text-lg font-semibold text-highlighted">The music</h2>
 			<p class="mt-1 text-xs text-muted">The tracks and artists that kept coming back.</p>
-			<div class="mt-4 grid gap-8 xl:grid-cols-[minmax(17rem,0.7fr)_minmax(0,1.3fr)]">
-				<div class="flex min-h-64 flex-col rounded-2xl bg-elevated/45 p-5">
+			<div class="mt-4 grid gap-8 xl:grid-cols-[minmax(17rem,30rem)_minmax(0,1fr)]">
+				<div class="flex aspect-video min-h-56 flex-col rounded-2xl bg-elevated/45 p-5">
 					<div class="flex items-center justify-between gap-3">
 						<USkeleton class="h-7 w-24 rounded-full" />
 						<USkeleton class="h-7 w-16 rounded-full" />

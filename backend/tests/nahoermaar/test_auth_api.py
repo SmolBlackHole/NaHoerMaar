@@ -235,7 +235,22 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             assert "top_listeners" not in own_statistics.json()
             assert "requested_tracks" not in own_statistics.json()
             assert "requested_artists" not in own_statistics.json()
-            assert "highlights" not in own_statistics.json()
+            assert own_statistics.json()["top_tracks_by_listening"] == []
+            assert own_statistics.json()["top_artists_by_listening"] == []
+            personal_highlights = own_statistics.json()["highlights"]
+            assert personal_highlights["group_listening_share"] is None
+            assert personal_highlights["request_outcomes"] == {
+                "manual_requests": 0,
+                "played_requests": 0,
+                "completed_requests": 0,
+                "play_rate": None,
+                "completion_rate": None,
+            }
+            assert personal_highlights["radio_discoveries"] == []
+            assert personal_highlights["influenced_tracks"] == []
+            assert personal_highlights["badges"] == []
+            assert len(personal_highlights["listening_pattern"]["weekdays"]) == 7
+            assert len(personal_highlights["listening_pattern"]["hours"]) == 24
             own_profile = await client.get(f"/api/profiles/{current.user.id}")
             assert own_profile.status_code == 200
             assert own_profile.json()["id"] == str(current.user.id)

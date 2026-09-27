@@ -6,6 +6,7 @@ import type { components } from "../api/schema.generated";
 export type GroupStatistics = components["schemas"]["GroupStatisticsView"];
 export type PersonalStatistics = components["schemas"]["PersonalStatisticsView"];
 export type ActivityBucket = components["schemas"]["ActivityBucketView"];
+export type ListenerBadge = components["schemas"]["ListenerBadgeView"];
 
 export function formatStatisticsDuration(seconds: number): string {
 	const minutes = Math.round(seconds / 60);

@@ -22,6 +22,7 @@ const role = computed(() => {
 	return "Listener";
 });
 const discordAvatar = computed(() => props.value.discord.avatar_url ?? undefined);
+const groupShare = computed(() => props.value.statistics.highlights.group_listening_share);
 const metrics = computed(() => {
 	const totals = props.value.statistics.totals;
 	return [
@@ -31,53 +32,43 @@ const metrics = computed(() => {
 			icon: icons.value.headphones,
 		},
 		{
-			label: "Channel presence",
-			value: formatStatisticsDuration(totals.presence_seconds),
+			label: "Share of group time",
+			value:
+				groupShare.value === null
+					? "No group time"
+					: `${Math.round(groupShare.value * 100)}%`,
 			icon: icons.value.users,
 		},
 		{
-			label: "Requests",
-			value: formatStatistic(totals.requests.total),
-			icon: icons.value.radio,
+			label: "Channel presence",
+			value: formatStatisticsDuration(totals.presence_seconds),
+			icon: icons.value.clock,
 		},
 		{
-			label: "Confirmed plays",
-			value: formatStatistic(totals.playback.overall.started),
-			icon: icons.value.play,
-		},
-	];
-});
-const secondaryMetrics = computed(() => {
-	const totals = props.value.statistics.totals;
-	return [
-		{
-			label: "Completed",
-			value: formatStatistic(totals.playback.overall.completed),
-			icon: icons.value.check,
-		},
-		{
-			label: "Skipped",
-			value: formatStatistic(totals.playback.overall.skipped),
-			icon: icons.value.skip,
-		},
-		{
-			label: "Different tracks",
+			label: "Tracks heard",
 			value: formatStatistic(totals.unique_tracks),
 			icon: icons.value.music,
 		},
-		{
-			label: "Different artists",
-			value: formatStatistic(totals.unique_artists),
-			icon: icons.value.user,
-		},
 	];
 });
-const topTracks = computed(() => props.value.statistics.top_tracks.slice(0, 5));
-const topArtists = computed(() => props.value.statistics.top_artists.slice(0, 5));
-const recentTracks = computed(() => props.value.recent_tracks.slice(0, 6));
+const recentTracks = computed(() => props.value.recent_tracks.slice(0, 8));
+const periodLabel = computed(
+	() =>
+		({
+			"7d": "Last 7 days",
+			"30d": "Last 30 days",
+			year: "This year",
+			all: "All recorded time",
+		})[period.value],
+);
 
 function formatDate(value: string) {
-	return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value));
+	return new Intl.DateTimeFormat(undefined, {
+		month: "short",
+		day: "numeric",
+		hour: "2-digit",
+		minute: "2-digit",
+	}).format(new Date(value));
 }
 </script>
 
@@ -107,148 +98,68 @@ function formatDate(value: string) {
 
 		<StatisticsMetricGrid class="mt-7" :items="metrics" />
 		<p v-if="value.statistics.coverage.partial" class="mt-3 text-xs leading-relaxed text-muted">
-			Statistics start on
-			{{
-				value.statistics.coverage.recorded_since
-					? formatDate(value.statistics.coverage.recorded_since)
-					: "the first recorded activity"
-			}}. Earlier activity is not included.
+			Showing the activity NaHörMaar has recorded so far. Earlier listening is not included.
 		</p>
 
 		<slot name="details" />
 
-		<div class="mt-10 grid gap-8 xl:grid-cols-[minmax(0,1.5fr)_minmax(18rem,1fr)]">
-			<StatisticsActivity :activity="value.statistics.activity" />
-			<section aria-labelledby="profile-request-heading">
-				<h2 id="profile-request-heading" class="text-lg font-semibold text-highlighted">
-					Requests and outcomes
-				</h2>
-				<dl class="mt-4 space-y-1 rounded-xl bg-elevated/40 p-2">
-					<div class="flex justify-between gap-4 rounded-lg px-3 py-2.5">
-						<dt class="text-sm text-muted">Manual requests</dt>
-						<dd class="font-medium tabular-nums">
-							{{ value.statistics.totals.requests.manual }}
-						</dd>
-					</div>
-					<div class="flex justify-between gap-4 rounded-lg px-3 py-2.5">
-						<dt class="text-sm text-muted">Radio requests</dt>
-						<dd class="font-medium tabular-nums">
-							{{ value.statistics.totals.requests.radio }}
-						</dd>
-					</div>
-					<div class="flex justify-between gap-4 rounded-lg px-3 py-2.5">
-						<dt class="text-sm text-muted">Stopped</dt>
-						<dd class="font-medium tabular-nums">
-							{{ value.statistics.totals.playback.overall.stopped }}
-						</dd>
-					</div>
-					<div class="flex justify-between gap-4 rounded-lg px-3 py-2.5">
-						<dt class="text-sm text-muted">Failed</dt>
-						<dd class="font-medium tabular-nums">
-							{{ value.statistics.totals.playback.overall.failed }}
-						</dd>
-					</div>
-				</dl>
-			</section>
+		<section
+			v-if="value.statistics.highlights.badges.length"
+			class="mt-10 rounded-2xl bg-linear-to-br from-primary/10 via-elevated/35 to-elevated/20 p-5"
+			aria-label="Achievements"
+		>
+			<StatisticsListenerBadges
+				:badges="value.statistics.highlights.badges"
+				:period-label="periodLabel"
+				heading
+			/>
+		</section>
+
+		<div class="mt-12 grid gap-12 2xl:grid-cols-[minmax(0,1.15fr)_minmax(24rem,0.85fr)]">
+			<StatisticsActivity
+				:activity="value.statistics.activity"
+				:granularity="value.statistics.coverage.granularity"
+				scope="personal"
+			/>
+			<ProfileListeningRhythm :pattern="value.statistics.highlights.listening_pattern" />
 		</div>
 
-		<StatisticsMetricGrid class="mt-8" :items="secondaryMetrics" />
+		<ProfileFavorites class="mt-12" :statistics="value.statistics" />
+		<ProfileInsights class="mt-12" :highlights="value.statistics.highlights" />
 
-		<div class="mt-10 grid min-w-0 gap-10 xl:grid-cols-3">
-			<section class="min-w-0" aria-labelledby="top-tracks-heading">
-				<h2 id="top-tracks-heading" class="text-lg font-semibold text-highlighted">
-					Most played tracks
-				</h2>
-				<ol v-if="topTracks.length" class="mt-5 space-y-2">
-					<li
-						v-for="track in topTracks"
-						:key="track.track_id"
-						class="flex items-center gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-elevated/50"
-					>
-						<PlayerTrackArtwork
-							:entry="{ artwork_url: track.artwork_url }"
-							class="size-10 shrink-0"
-						/>
-						<div class="min-w-0 flex-1">
-							<p class="truncate text-sm font-medium text-highlighted">
-								{{ track.title }}
-							</p>
-							<p class="mt-0.5 truncate text-xs text-muted">
-								{{ track.artist_names.join(", ") || "Unknown artist" }}
-							</p>
-						</div>
-						<span class="shrink-0 text-xs tabular-nums text-muted">
-							{{ track.plays }} plays
-						</span>
-					</li>
-				</ol>
-				<p v-else class="mt-5 text-sm text-muted">No confirmed tracks in this period.</p>
-			</section>
-
-			<section class="min-w-0" aria-labelledby="top-artists-heading">
-				<h2 id="top-artists-heading" class="text-lg font-semibold text-highlighted">
-					Most played artists
-				</h2>
-				<ol v-if="topArtists.length" class="mt-5 space-y-2">
-					<li
-						v-for="(artist, index) in topArtists"
-						:key="artist.artist_id"
-						class="flex items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-elevated/50"
-					>
-						<span class="w-5 shrink-0 text-right text-sm tabular-nums text-muted">{{
-							index + 1
-						}}</span>
-						<p class="min-w-0 flex-1 truncate text-sm font-medium text-highlighted">
-							{{ artist.name }}
-						</p>
-						<span class="shrink-0 text-xs tabular-nums text-muted"
-							>{{ artist.plays }} plays</span
-						>
-					</li>
-				</ol>
-				<p v-else class="mt-5 text-sm text-muted">No artists in this period.</p>
-			</section>
-
-			<section class="min-w-0" aria-labelledby="recent-heading">
+		<section class="mt-12" aria-labelledby="recent-heading">
+			<div>
 				<h2 id="recent-heading" class="text-lg font-semibold text-highlighted">
 					Recently heard
 				</h2>
-				<ul v-if="recentTracks.length" class="mt-5 space-y-2">
-					<li
-						v-for="track in recentTracks"
-						:key="track.playback_id"
-						class="flex items-center gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-elevated/50"
-					>
-						<img
-							v-if="track.artwork_url"
-							:src="track.artwork_url"
-							alt=""
-							width="40"
-							height="40"
-							class="size-10 shrink-0 rounded-lg object-cover"
-							loading="lazy"
-						/>
-						<div
-							v-else
-							class="grid size-10 shrink-0 place-items-center rounded-lg bg-elevated"
-						>
-							<UIcon :name="icons.music" class="size-4 text-muted" />
-						</div>
-						<div class="min-w-0 flex-1">
-							<p class="truncate text-sm font-medium text-highlighted">
-								{{ track.title }}
-							</p>
-							<p class="mt-0.5 truncate text-xs text-muted">
-								{{ track.artist_names.join(", ") || "Unknown artist" }}
-							</p>
-						</div>
-						<span class="shrink-0 text-xs text-muted">{{
-							formatDate(track.last_heard_at)
-						}}</span>
-					</li>
-				</ul>
-				<p v-else class="mt-5 text-sm text-muted">No recent listening in this period.</p>
-			</section>
-		</div>
+				<p class="mt-1 text-xs text-muted">
+					The latest tracks this listener actually heard.
+				</p>
+			</div>
+			<ul v-if="recentTracks.length" class="mt-5 grid gap-2 lg:grid-cols-2">
+				<li
+					v-for="track in recentTracks"
+					:key="track.playback_id"
+					class="flex min-w-0 items-center gap-3 rounded-xl bg-elevated/35 p-2.5"
+				>
+					<PlayerTrackArtwork :entry="track" class="size-12 shrink-0 rounded-lg" />
+					<div class="min-w-0 flex-1">
+						<p class="truncate text-sm font-medium text-highlighted">
+							{{ track.title }}
+						</p>
+						<p class="mt-0.5 truncate text-xs text-muted">
+							{{ track.artist_names.join(", ") || "Unknown artist" }}
+						</p>
+					</div>
+					<div class="shrink-0 text-right text-xs text-muted">
+						<p class="tabular-nums">
+							{{ formatStatisticsDuration(track.audio_seconds) }}
+						</p>
+						<p class="mt-0.5">{{ formatDate(track.last_heard_at) }}</p>
+					</div>
+				</li>
+			</ul>
+			<p v-else class="mt-5 text-sm text-muted">No recent listening yet.</p>
+		</section>
 	</div>
 </template>

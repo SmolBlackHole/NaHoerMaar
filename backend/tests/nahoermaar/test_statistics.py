@@ -452,6 +452,35 @@ def test_statistics_project_shared_and_personal_facts_without_double_counting() 
         assert personal.totals.presence_seconds == 5400.0
         assert sum(day.playback_seconds for day in personal.activity) == 180.0
         assert sum(day.listening_seconds for day in personal.activity) == 140.0
+        assert [track.title for track in personal.top_tracks_by_listening] == [
+            "First track",
+            "Second track",
+        ]
+        assert personal.top_artists_by_listening[0].name == "Shared artist"
+        assert personal.highlights.group_listening_share == pytest.approx(140 / 170)
+        assert (
+            personal.highlights.listening_pattern.weekdays[4].listening_seconds == 140.0
+        )
+        assert (
+            personal.highlights.listening_pattern.hours[12].listening_seconds == 100.0
+        )
+        assert personal.highlights.listening_pattern.hours[13].listening_seconds == 40.0
+        assert personal.highlights.request_outcomes.manual_requests == 1
+        assert personal.highlights.request_outcomes.played_requests == 1
+        assert personal.highlights.request_outcomes.completed_requests == 0
+        assert personal.highlights.request_outcomes.play_rate == 1.0
+        assert personal.highlights.request_outcomes.completion_rate == 0.0
+        assert [track.track_id for track in personal.highlights.radio_discoveries] == [
+            seeded.first_track_id
+        ]
+        assert [track.track_id for track in personal.highlights.influenced_tracks] == [
+            seeded.second_track_id
+        ]
+        assert personal.highlights.influenced_tracks[0].later_requests == 1
+        assert personal.highlights.influenced_tracks[0].distinct_listeners == 1
+        assert {badge.kind for badge in personal.highlights.badges} == {
+            ListenerBadgeKind.RESIDENT_DJ
+        }
 
         yearly = await service.overview(StatisticsPeriod.YEAR)
         assert yearly.coverage.granularity is ActivityGranularity.MONTH

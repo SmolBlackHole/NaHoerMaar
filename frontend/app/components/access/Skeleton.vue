@@ -10,7 +10,17 @@ const metrics = ["Your role", "Allowed listeners", "Available members", "Operato
 		<dl
 			class="grid overflow-hidden rounded-2xl border border-default sm:grid-cols-2 xl:grid-cols-4"
 		>
-			<div v-for="label in metrics" :key="label" class="space-y-3 p-5">
+			<div
+				v-for="(label, index) in metrics"
+				:key="label"
+				class="space-y-3 p-5"
+				:class="[
+					index > 0 && 'border-t border-default sm:border-t-0',
+					index % 2 === 1 && 'sm:border-l sm:border-default',
+					index === 2 && 'sm:border-l-0 sm:border-t xl:border-l xl:border-t-0',
+					index === 3 && 'sm:border-t xl:border-t-0',
+				]"
+			>
 				<dt class="flex items-center gap-2 text-sm text-muted">
 					<USkeleton class="size-4 shrink-0 rounded" />
 					{{ label }}
