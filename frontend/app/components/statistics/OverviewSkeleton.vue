@@ -41,7 +41,11 @@ defineProps<{ metrics: readonly MetricItem[] }>();
 						<USkeleton class="h-3 w-8" />
 					</div>
 					<USkeleton class="mt-2 h-1.5 w-full rounded-full" />
-					<USkeleton class="mt-4 h-5 w-28 rounded-full" />
+					<div class="mt-4 flex flex-wrap gap-1.5">
+						<USkeleton class="h-5 w-24 rounded-full" />
+						<USkeleton class="h-5 w-28 rounded-full" />
+						<USkeleton class="h-5 w-20 rounded-full" />
+					</div>
 				</div>
 				<div class="grid gap-2">
 					<div
@@ -55,7 +59,12 @@ defineProps<{ metrics: readonly MetricItem[] }>();
 							<USkeleton class="h-4 w-24" />
 							<USkeleton class="h-3 w-20" />
 						</div>
-						<USkeleton class="hidden h-5 w-24 rounded-full sm:block" />
+						<div class="hidden items-center gap-1.5 lg:flex">
+							<USkeleton class="h-5 w-20 rounded-full" />
+							<USkeleton class="h-5 w-24 rounded-full" />
+							<USkeleton class="h-5 w-16 rounded-full" />
+							<USkeleton class="h-3 w-5" />
+						</div>
 						<USkeleton class="size-4 shrink-0" />
 					</div>
 				</div>

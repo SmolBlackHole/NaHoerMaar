@@ -28,6 +28,21 @@ function share(listener: Listener) {
 	if (props.totalListeningSeconds <= 0) return 0;
 	return Math.round((listener.listening_seconds / props.totalListeningSeconds) * 100);
 }
+
+function compactBadges(listener: Listener) {
+	const kinds = new Set(listener.badges.map((badge) => badge.kind));
+	return listener.badges
+		.filter(
+			(badge) =>
+				!(badge.kind === "all_ears" && kinds.has("long_haul")) &&
+				!(badge.kind === "queue_curator" && kinds.has("queue_architect")),
+		)
+		.slice(0, 3);
+}
+
+function remainingBadges(listener: Listener) {
+	return Math.max(0, listener.badges.length - compactBadges(listener).length);
+}
 </script>
 
 <template>
@@ -87,12 +102,12 @@ function share(listener: Listener) {
 					</div>
 				</div>
 
-				<StatisticsListenerBadges
-					v-if="leader.badges.length"
-					class="mt-4"
-					:badges="leader.badges"
-					heading
-				/>
+				<div v-if="leader.badges.length" class="mt-4">
+					<StatisticsListenerBadges :badges="compactBadges(leader)" heading />
+					<p v-if="remainingBadges(leader)" class="mt-2 text-xs text-muted">
+						+{{ remainingBadges(leader) }} more on the profile
+					</p>
+				</div>
 			</NuxtLink>
 
 			<div v-if="runnersUp.length" class="grid gap-2">
@@ -120,13 +135,13 @@ function share(listener: Listener) {
 					<StatisticsListenerBadges
 						v-if="listener.badges[0]"
 						class="hidden max-w-120 shrink-0 lg:block"
-						:badges="listener.badges.slice(0, 3)"
+						:badges="compactBadges(listener)"
 					/>
 					<span
-						v-if="listener.badges.length > 3"
+						v-if="remainingBadges(listener)"
 						class="hidden shrink-0 text-xs text-muted lg:inline"
 					>
-						+{{ listener.badges.length - 3 }}
+						+{{ remainingBadges(listener) }}
 					</span>
 					<UIcon
 						:name="icons.arrowRight"

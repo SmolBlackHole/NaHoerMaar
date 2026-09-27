@@ -40,6 +40,28 @@ type UnitFactory = Callable[[], UnitOfWork]
 
 _LOGGER = logging.getLogger(__name__)
 
+_BADGE_PRIORITY = (
+    ListenerBadgeKind.NIGHT_OWL,
+    ListenerBadgeKind.EXPLORER,
+    ListenerBadgeKind.RESIDENT_DJ,
+    ListenerBadgeKind.RADIO_REGULAR,
+    ListenerBadgeKind.REPEAT_OFFENDER,
+    ListenerBadgeKind.TASTE_MAKER,
+    ListenerBadgeKind.RADIO_CONVERT,
+    ListenerBadgeKind.DAWN_PATROL,
+    ListenerBadgeKind.WEEKEND_REGULAR,
+    ListenerBadgeKind.ARTIST_EXPLORER,
+    ListenerBadgeKind.LISTENING_STREAK,
+    ListenerBadgeKind.QUEUE_ARCHITECT,
+    ListenerBadgeKind.LONG_HAUL,
+    ListenerBadgeKind.LOCKED_IN,
+    ListenerBadgeKind.QUEUE_CURATOR,
+    ListenerBadgeKind.RADIO_RIDER,
+    ListenerBadgeKind.WIDE_ROTATION,
+    ListenerBadgeKind.ALL_EARS,
+    ListenerBadgeKind.ALWAYS_AROUND,
+)
+
 
 def _utc_now() -> datetime:
     return datetime.now(UTC)
@@ -145,13 +167,30 @@ class StatisticsService:
                 ended_at,
                 user_id=user_id,
             )
-            if user_id is None:
-                listeners = await repository.top_listeners(
-                    started_at,
-                    ended_at,
-                    self._timezone.key,
+            listeners = await repository.top_listeners(
+                started_at,
+                ended_at,
+                self._timezone.key,
+            )
+            achievement_facts = await repository.listener_achievement_facts(
+                started_at,
+                ended_at,
+                self._timezone.key,
+            )
+            ranked_listeners = assign_listener_badges(
+                tuple(
+                    replace(
+                        listener,
+                        achievement_facts=achievement_facts.get(
+                            listener.user_id,
+                            listener.achievement_facts,
+                        ),
+                    )
+                    for listener in listeners
                 )
-                top_listeners = assign_listener_badges(listeners)[:8]
+            )
+            if user_id is None:
+                top_listeners = ranked_listeners[:8]
                 active_listeners = await repository.active_listener_count(
                     started_at, ended_at
                 )
@@ -236,13 +275,6 @@ class StatisticsService:
                     started_at,
                     ended_at,
                     user_id,
-                )
-                ranked_listeners = assign_listener_badges(
-                    await repository.top_listeners(
-                        started_at,
-                        ended_at,
-                        self._timezone.key,
-                    )
                 )
                 personal_badges = next(
                     (
@@ -417,18 +449,29 @@ class StatisticsService:
 def assign_listener_badges(
     listeners: tuple[RankedListener, ...],
 ) -> tuple[RankedListener, ...]:
+    minimum_rate_seconds = 30 * 60
     awards: dict[UserId, list[ListenerBadge]] = {}
     _award(
         awards,
         ListenerBadgeKind.NIGHT_OWL,
-        (item for item in listeners if item.night_listening_seconds > 0),
+        (
+            item
+            for item in listeners
+            if item.plays >= 10 and item.listening_seconds >= minimum_rate_seconds
+        ),
         lambda item: item.night_share,
         lambda item: item.plays,
     )
     _award(
         awards,
         ListenerBadgeKind.EXPLORER,
-        (item for item in listeners if item.unique_tracks >= 10),
+        (
+            item
+            for item in listeners
+            if item.plays >= 10
+            and item.unique_tracks >= 10
+            and item.listening_seconds >= minimum_rate_seconds
+        ),
         lambda item: item.discovery_ratio,
         lambda item: item.unique_tracks,
     )
@@ -442,52 +485,114 @@ def assign_listener_badges(
     _award(
         awards,
         ListenerBadgeKind.RADIO_REGULAR,
-        (item for item in listeners if item.plays >= 10),
+        (
+            item
+            for item in listeners
+            if item.plays >= 10 and item.listening_seconds >= minimum_rate_seconds
+        ),
         lambda item: item.radio_share,
         lambda item: item.plays,
     )
     _award(
         awards,
         ListenerBadgeKind.REPEAT_OFFENDER,
-        (item for item in listeners if item.plays >= 10),
+        (
+            item
+            for item in listeners
+            if item.plays >= 10 and item.listening_seconds >= minimum_rate_seconds
+        ),
         lambda item: item.repeat_ratio,
         lambda item: item.plays,
     )
     for item in listeners:
+        facts = item.achievement_facts
+        dawn_share = (
+            facts.dawn_listening_seconds / item.listening_seconds
+            if item.listening_seconds > 0
+            else 0.0
+        )
+        weekend_share = (
+            facts.weekend_listening_seconds / item.listening_seconds
+            if item.listening_seconds > 0
+            else 0.0
+        )
         earned = (
+            (
+                ListenerBadgeKind.DAWN_PATROL,
+                facts.dawn_listening_seconds,
+                round(item.listening_seconds),
+                facts.dawn_listening_seconds >= 60 * 60 and dawn_share >= 0.25,
+            ),
+            (
+                ListenerBadgeKind.WEEKEND_REGULAR,
+                facts.weekend_listening_seconds,
+                round(item.listening_seconds),
+                facts.weekend_listening_seconds >= 2 * 60 * 60 and weekend_share >= 0.5,
+            ),
+            (
+                ListenerBadgeKind.TASTE_MAKER,
+                float(facts.influenced_tracks),
+                item.manual_requests,
+                facts.influenced_tracks >= 3,
+            ),
+            (
+                ListenerBadgeKind.RADIO_CONVERT,
+                float(facts.radio_converted_tracks),
+                item.radio_plays,
+                facts.radio_converted_tracks >= 3,
+            ),
+            (
+                ListenerBadgeKind.ARTIST_EXPLORER,
+                float(facts.distinct_artists),
+                item.unique_tracks,
+                facts.distinct_artists >= 20,
+            ),
+            (
+                ListenerBadgeKind.LISTENING_STREAK,
+                float(facts.longest_listening_streak),
+                facts.active_listening_days,
+                facts.longest_listening_streak >= 3,
+            ),
             (
                 ListenerBadgeKind.ALWAYS_AROUND,
                 item.presence_seconds,
+                round(item.presence_seconds),
                 item.presence_seconds >= 2 * 60 * 60,
             ),
             (
                 ListenerBadgeKind.ALL_EARS,
                 item.listening_seconds,
+                round(item.listening_seconds),
                 item.listening_seconds >= 2 * 60 * 60,
             ),
             (
                 ListenerBadgeKind.QUEUE_CURATOR,
                 float(item.confirmed_manual_requests),
+                item.confirmed_manual_requests,
                 item.confirmed_manual_requests >= 10,
             ),
             (
                 ListenerBadgeKind.RADIO_RIDER,
                 float(item.radio_plays),
+                item.plays,
                 item.radio_plays >= 20,
             ),
             (
                 ListenerBadgeKind.WIDE_ROTATION,
                 float(item.unique_tracks),
+                item.plays,
                 item.unique_tracks >= 25,
             ),
             (
                 ListenerBadgeKind.LONG_HAUL,
                 item.listening_seconds,
+                round(item.listening_seconds),
                 item.listening_seconds >= 6 * 60 * 60,
             ),
             (
                 ListenerBadgeKind.QUEUE_ARCHITECT,
                 float(item.confirmed_manual_requests),
+                item.confirmed_manual_requests,
                 item.confirmed_manual_requests >= 25,
             ),
             (
@@ -497,19 +602,29 @@ def assign_listener_badges(
                     if item.presence_seconds > 0
                     else 0.0
                 ),
+                round(item.presence_seconds),
                 (
                     item.presence_seconds >= 2 * 60 * 60
                     and item.listening_seconds / item.presence_seconds >= 0.9
                 ),
             ),
         )
-        for kind, value, qualified in earned:
+        for kind, value, sample_size, qualified in earned:
             if qualified:
                 awards.setdefault(item.user_id, []).append(
-                    ListenerBadge(kind=kind, value=value, sample_size=round(value))
+                    ListenerBadge(kind=kind, value=value, sample_size=sample_size)
                 )
     return tuple(
-        replace(item, badges=tuple(awards.get(item.user_id, ()))) for item in listeners
+        replace(
+            item,
+            badges=tuple(
+                sorted(
+                    awards.get(item.user_id, ()),
+                    key=lambda badge: _BADGE_PRIORITY.index(badge.kind),
+                )
+            ),
+        )
+        for item in listeners
     )
 
 

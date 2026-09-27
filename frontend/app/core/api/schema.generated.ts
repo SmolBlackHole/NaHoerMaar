@@ -1550,7 +1550,7 @@ export interface components {
          * ListenerBadgeKind
          * @enum {string}
          */
-        ListenerBadgeKind: "night_owl" | "explorer" | "resident_dj" | "radio_regular" | "repeat_offender" | "always_around" | "all_ears" | "queue_curator" | "radio_rider" | "wide_rotation" | "long_haul" | "queue_architect" | "locked_in";
+        ListenerBadgeKind: "night_owl" | "explorer" | "resident_dj" | "radio_regular" | "repeat_offender" | "always_around" | "all_ears" | "queue_curator" | "radio_rider" | "wide_rotation" | "long_haul" | "queue_architect" | "locked_in" | "dawn_patrol" | "weekend_regular" | "taste_maker" | "radio_convert" | "artist_explorer" | "listening_streak";
         /** ListenerBadgeView */
         ListenerBadgeView: {
             kind: components["schemas"]["ListenerBadgeKind"];

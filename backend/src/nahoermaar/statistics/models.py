@@ -4,7 +4,7 @@
 
 """Typed read models shared by statistics queries, services and API views."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import StrEnum
 from uuid import UUID
@@ -38,6 +38,12 @@ class ListenerBadgeKind(StrEnum):
     LONG_HAUL = "long_haul"
     QUEUE_ARCHITECT = "queue_architect"
     LOCKED_IN = "locked_in"
+    DAWN_PATROL = "dawn_patrol"
+    WEEKEND_REGULAR = "weekend_regular"
+    TASTE_MAKER = "taste_maker"
+    RADIO_CONVERT = "radio_convert"
+    ARTIST_EXPLORER = "artist_explorer"
+    LISTENING_STREAK = "listening_streak"
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,6 +204,17 @@ class ListenerBadge:
 
 
 @dataclass(frozen=True, slots=True)
+class ListenerAchievementFacts:
+    dawn_listening_seconds: float = 0.0
+    weekend_listening_seconds: float = 0.0
+    distinct_artists: int = 0
+    influenced_tracks: int = 0
+    radio_converted_tracks: int = 0
+    active_listening_days: int = 0
+    longest_listening_streak: int = 0
+
+
+@dataclass(frozen=True, slots=True)
 class RankedListener:
     user_id: UserId
     discord_id: str
@@ -212,6 +229,9 @@ class RankedListener:
     presence_seconds: float
     listening_seconds: float
     night_listening_seconds: float
+    achievement_facts: ListenerAchievementFacts = field(
+        default_factory=ListenerAchievementFacts
+    )
     badges: tuple[ListenerBadge, ...] = ()
 
     @property

@@ -77,7 +77,7 @@ const metrics = [
 			</div>
 			<div class="mt-3 flex flex-wrap gap-2">
 				<USkeleton
-					v-for="width in [28, 24, 32]"
+					v-for="width in [28, 24, 32, 20, 30, 26]"
 					:key="width"
 					class="h-6 rounded-full"
 					:style="{ width: `${width * 4}px` }"

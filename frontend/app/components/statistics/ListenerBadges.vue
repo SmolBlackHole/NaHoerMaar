@@ -31,6 +31,12 @@ function label(badge: ListenerBadge) {
 		long_haul: "Long haul",
 		queue_architect: "Queue architect",
 		locked_in: "Locked in",
+		dawn_patrol: "Dawn patrol",
+		weekend_regular: "Weekend regular",
+		taste_maker: "Taste maker",
+		radio_convert: "Radio convert",
+		artist_explorer: "Artist explorer",
+		listening_streak: "Listening streak",
 	}[badge.kind];
 }
 
@@ -49,25 +55,39 @@ function icon(badge: ListenerBadge) {
 		long_haul: icons.value.clock,
 		queue_architect: icons.value.list,
 		locked_in: icons.value.headphones,
+		dawn_patrol: icons.value.light,
+		weekend_regular: icons.value.sunMoon,
+		taste_maker: icons.value.sparkles,
+		radio_convert: icons.value.reload,
+		artist_explorer: icons.value.search,
+		listening_streak: icons.value.clock,
 	}[badge.kind];
 }
 
 function description(badge: ListenerBadge) {
 	const percentage = Math.round(badge.value * 100);
+	const shareOfSample =
+		badge.sample_size > 0 ? Math.round((badge.value / badge.sample_size) * 100) : 0;
 	return {
-		night_owl: `${percentage}% of heard time landed between midnight and 5 AM.`,
-		explorer: `${percentage}% unique tracks across ${badge.sample_size} heard tracks.`,
-		resident_dj: `${badge.sample_size} manual requests reached confirmed playback.`,
-		radio_regular: `${percentage}% of ${badge.sample_size} heard tracks came from Radio.`,
-		repeat_offender: `${percentage}% repeats across ${badge.sample_size} heard tracks.`,
-		always_around: `${formatStatisticsDuration(badge.value)} spent in the voice channel.`,
-		all_ears: `${formatStatisticsDuration(badge.value)} of music actually heard.`,
-		queue_curator: `${badge.sample_size} manual requests reached confirmed playback.`,
-		radio_rider: `${badge.sample_size} Radio tracks heard.`,
-		wide_rotation: `${badge.sample_size} different tracks heard.`,
-		long_haul: `${formatStatisticsDuration(badge.value)} of music heard in this period.`,
-		queue_architect: `${badge.sample_size} manual requests reached confirmed playback.`,
-		locked_in: `Music was audible for ${percentage}% of this listener's channel time.`,
+		night_owl: `${percentage}% of heard time landed between midnight and 5 AM, the highest eligible share. Requires 10 plays and 30 minutes heard.`,
+		explorer: `${percentage}% unique tracks across ${badge.sample_size} heard tracks, the highest eligible share. Requires 10 plays and 30 minutes heard.`,
+		resident_dj: `${badge.sample_size} manual requests reached confirmed playback, the highest total this period.`,
+		radio_regular: `${percentage}% of ${badge.sample_size} heard tracks came from Radio, the highest eligible share. Requires 10 plays and 30 minutes heard.`,
+		repeat_offender: `${percentage}% repeats across ${badge.sample_size} heard tracks, the highest eligible share. Requires 10 plays and 30 minutes heard.`,
+		always_around: `${formatStatisticsDuration(badge.value)} spent in the voice channel. Earned at 2 hours.`,
+		all_ears: `${formatStatisticsDuration(badge.value)} of music actually heard. Earned at 2 hours.`,
+		queue_curator: `${badge.sample_size} manual requests reached confirmed playback. Earned at 10.`,
+		radio_rider: `${Math.round(badge.value)} Radio tracks heard across ${badge.sample_size} plays. Earned at 20.`,
+		wide_rotation: `${Math.round(badge.value)} different tracks across ${badge.sample_size} plays. Earned at 25.`,
+		long_haul: `${formatStatisticsDuration(badge.value)} of music heard in this period. Earned at 6 hours.`,
+		queue_architect: `${badge.sample_size} manual requests reached confirmed playback. Earned at 25.`,
+		locked_in: `Music was audible for ${percentage}% of ${formatStatisticsDuration(badge.sample_size)} in the channel. Earned at 90% across at least 2 hours.`,
+		dawn_patrol: `${formatStatisticsDuration(badge.value)} heard between 5 and 9 AM, ${shareOfSample}% of ${formatStatisticsDuration(badge.sample_size)} total. Earned at 1 hour and 25%.`,
+		weekend_regular: `${formatStatisticsDuration(badge.value)} heard on weekends, ${shareOfSample}% of ${formatStatisticsDuration(badge.sample_size)} total. Earned at 2 hours and 50%.`,
+		taste_maker: `${Math.round(badge.value)} of ${badge.sample_size} manual requests were later requested by someone else. Earned at 3 tracks.`,
+		radio_convert: `${Math.round(badge.value)} Radio discoveries were later requested manually across ${badge.sample_size} Radio plays. Earned at 3 tracks.`,
+		artist_explorer: `${Math.round(badge.value)} known artists heard across ${badge.sample_size} different tracks. Earned at 20 artists.`,
+		listening_streak: `${Math.round(badge.value)} consecutive listening days across ${badge.sample_size} active days. Earned at 3 days.`,
 	}[badge.kind];
 }
 </script>

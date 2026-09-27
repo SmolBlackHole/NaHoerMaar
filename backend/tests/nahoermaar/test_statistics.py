@@ -20,6 +20,7 @@ from nahoermaar.database.schema import Base
 from nahoermaar.database.uow import UnitOfWork
 from nahoermaar.statistics.models import (
     ActivityGranularity,
+    ListenerAchievementFacts,
     ListenerBadgeKind,
     RankedListener,
     StatisticsPeriod,
@@ -400,6 +401,14 @@ def test_statistics_project_shared_and_personal_facts_without_double_counting() 
         assert overview.top_listeners[0].repeat_ratio == 0.0
         assert overview.top_listeners[0].radio_share == 0.5
         assert overview.top_listeners[0].presence_seconds == 5400.0
+        assert overview.top_listeners[0].achievement_facts.distinct_artists == 1
+        assert overview.top_listeners[0].achievement_facts.influenced_tracks == 1
+        assert overview.top_listeners[0].achievement_facts.active_listening_days == 1
+        assert overview.top_listeners[0].achievement_facts.longest_listening_streak == 1
+        owner_ranking = next(
+            item for item in overview.top_listeners if item.user_id == seeded.owner_id
+        )
+        assert owner_ranking.achievement_facts.radio_converted_tracks == 1
         assert overview.active_listeners == 2
         assert {track.track_id for track in overview.requested_tracks} == {
             seeded.first_track_id,
@@ -534,8 +543,8 @@ def test_listener_badges_enforce_samples_and_stable_ties() -> None:
         unique_tracks=10,
         radio_plays=5,
         confirmed_manual_requests=1,
-        listening_seconds=100,
-        night_listening_seconds=10,
+        listening_seconds=30 * 60,
+        night_listening_seconds=0,
     )
     repeater = _ranked_listener(
         2,
@@ -543,8 +552,8 @@ def test_listener_badges_enforce_samples_and_stable_ties() -> None:
         unique_tracks=5,
         radio_plays=9,
         confirmed_manual_requests=3,
-        listening_seconds=100,
-        night_listening_seconds=20,
+        listening_seconds=30 * 60,
+        night_listening_seconds=0,
     )
     same_radio_share = _ranked_listener(
         3,
@@ -552,8 +561,8 @@ def test_listener_badges_enforce_samples_and_stable_ties() -> None:
         unique_tracks=6,
         radio_plays=9,
         confirmed_manual_requests=2,
-        listening_seconds=100,
-        night_listening_seconds=5,
+        listening_seconds=30 * 60,
+        night_listening_seconds=0,
     )
     tiny_sample = _ranked_listener(
         4,
@@ -561,8 +570,8 @@ def test_listener_badges_enforce_samples_and_stable_ties() -> None:
         unique_tracks=1,
         radio_plays=1,
         confirmed_manual_requests=0,
-        listening_seconds=10,
-        night_listening_seconds=10,
+        listening_seconds=60,
+        night_listening_seconds=60,
     )
     regular = _ranked_listener(
         5,
@@ -584,9 +593,26 @@ def test_listener_badges_enforce_samples_and_stable_ties() -> None:
         listening_seconds=6.5 * 60 * 60,
         night_listening_seconds=0,
     )
+    night_winner = _ranked_listener(
+        7,
+        plays=10,
+        unique_tracks=10,
+        radio_plays=0,
+        confirmed_manual_requests=0,
+        listening_seconds=30 * 60,
+        night_listening_seconds=30 * 60,
+    )
 
     ranked = assign_listener_badges(
-        (explorer, repeater, same_radio_share, tiny_sample, regular, collector)
+        (
+            explorer,
+            repeater,
+            same_radio_share,
+            tiny_sample,
+            regular,
+            collector,
+            night_winner,
+        )
     )
     badges = {item.user_id: {badge.kind for badge in item.badges} for item in ranked}
 
@@ -596,8 +622,9 @@ def test_listener_badges_enforce_samples_and_stable_ties() -> None:
         ListenerBadgeKind.REPEAT_OFFENDER,
     }
     assert badges[same_radio_share.user_id] == set()
-    assert badges[tiny_sample.user_id] == {ListenerBadgeKind.NIGHT_OWL}
+    assert badges[tiny_sample.user_id] == set()
     assert badges[regular.user_id] == {ListenerBadgeKind.ALWAYS_AROUND}
+    assert badges[night_winner.user_id] == {ListenerBadgeKind.NIGHT_OWL}
     assert badges[collector.user_id] == {
         ListenerBadgeKind.ALWAYS_AROUND,
         ListenerBadgeKind.ALL_EARS,
@@ -609,6 +636,59 @@ def test_listener_badges_enforce_samples_and_stable_ties() -> None:
         ListenerBadgeKind.QUEUE_ARCHITECT,
         ListenerBadgeKind.LOCKED_IN,
     }
+
+
+def test_listener_badges_add_period_bound_earned_achievements() -> None:
+    listener = _ranked_listener(
+        1,
+        plays=8,
+        unique_tracks=8,
+        radio_plays=8,
+        confirmed_manual_requests=3,
+        presence_seconds=0,
+        listening_seconds=4 * 60 * 60,
+        night_listening_seconds=0,
+        achievement_facts=ListenerAchievementFacts(
+            dawn_listening_seconds=60 * 60,
+            weekend_listening_seconds=2 * 60 * 60,
+            distinct_artists=20,
+            influenced_tracks=3,
+            radio_converted_tracks=3,
+            active_listening_days=4,
+            longest_listening_streak=3,
+        ),
+    )
+
+    [ranked] = assign_listener_badges((listener,))
+    badges = {badge.kind: badge for badge in ranked.badges}
+
+    earned_kinds = tuple(
+        kind
+        for kind in badges
+        if kind
+        in {
+            ListenerBadgeKind.TASTE_MAKER,
+            ListenerBadgeKind.RADIO_CONVERT,
+            ListenerBadgeKind.DAWN_PATROL,
+            ListenerBadgeKind.WEEKEND_REGULAR,
+            ListenerBadgeKind.ARTIST_EXPLORER,
+            ListenerBadgeKind.LISTENING_STREAK,
+        }
+    )
+    assert earned_kinds == (
+        ListenerBadgeKind.TASTE_MAKER,
+        ListenerBadgeKind.RADIO_CONVERT,
+        ListenerBadgeKind.DAWN_PATROL,
+        ListenerBadgeKind.WEEKEND_REGULAR,
+        ListenerBadgeKind.ARTIST_EXPLORER,
+        ListenerBadgeKind.LISTENING_STREAK,
+    )
+    assert badges[ListenerBadgeKind.DAWN_PATROL].value == 60 * 60
+    assert badges[ListenerBadgeKind.DAWN_PATROL].sample_size == 4 * 60 * 60
+    assert badges[ListenerBadgeKind.TASTE_MAKER].value == 3
+    assert badges[ListenerBadgeKind.TASTE_MAKER].sample_size == 3
+    assert badges[ListenerBadgeKind.LISTENING_STREAK].value == 3
+    assert badges[ListenerBadgeKind.LISTENING_STREAK].sample_size == 4
 
 
 def test_active_day_streaks_end_on_the_current_local_day() -> None:
@@ -643,6 +723,7 @@ def _ranked_listener(
     presence_seconds: float | None = None,
     listening_seconds: float,
     night_listening_seconds: float,
+    achievement_facts: ListenerAchievementFacts | None = None,
 ) -> RankedListener:
     return RankedListener(
         user_id=UserId(UUID(int=identity)),
@@ -660,4 +741,5 @@ def _ranked_listener(
         ),
         listening_seconds=listening_seconds,
         night_listening_seconds=night_listening_seconds,
+        achievement_facts=achievement_facts or ListenerAchievementFacts(),
     )

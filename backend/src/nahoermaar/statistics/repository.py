@@ -4,8 +4,8 @@
 
 """Direct PostgreSQL projections over requests, plays and listener facts."""
 
-from dataclasses import dataclass
-from datetime import date, datetime
+from dataclasses import dataclass, replace
+from datetime import date, datetime, timedelta
 from typing import cast
 
 from sqlalchemy import (
@@ -36,6 +36,7 @@ from .models import (
     ContagiousTrackHighlight,
     HourListening,
     InfluencedTrack,
+    ListenerAchievementFacts,
     ListenerIdentity,
     ListeningPattern,
     ListenerPairHighlight,
@@ -1292,6 +1293,261 @@ class StatisticsRepository:
             for row in rows
         )
 
+    async def listener_achievement_facts(
+        self,
+        started_at: datetime,
+        ended_at: datetime,
+        timezone: str,
+    ) -> dict[UserId, ListenerAchievementFacts]:
+        """Project period-bound inputs for earned listener achievements."""
+        facts: dict[UserId, ListenerAchievementFacts] = {}
+        local_heard = func.timezone(timezone, self._listeners.c.first_heard_at)
+        local_heard_end = func.timezone(timezone, self._listeners.c.last_heard_at)
+        local_day = func.date_trunc("day", local_heard)
+        local_weekday = func.extract("isodow", local_heard)
+        heard_interval_seconds = func.extract("epoch", local_heard_end - local_heard)
+        dawn_start = local_day + func.make_interval(0, 0, 0, 0, 5)
+        dawn_end = local_day + func.make_interval(0, 0, 0, 0, 9)
+        dawn_overlap_seconds = func.greatest(
+            0.0,
+            func.extract(
+                "epoch",
+                func.least(local_heard_end, dawn_end)
+                - func.greatest(local_heard, dawn_start),
+            ),
+        )
+        dawn_audio_seconds = case(
+            (
+                heard_interval_seconds > 0,
+                self._listeners.c.audio_seconds
+                * dawn_overlap_seconds
+                / heard_interval_seconds,
+            ),
+            (
+                local_heard >= dawn_start,
+                case(
+                    (local_heard < dawn_end, self._listeners.c.audio_seconds),
+                    else_=0.0,
+                ),
+            ),
+            else_=0.0,
+        )
+        weekend_audio_seconds = case(
+            (local_weekday.in_((6, 7)), self._listeners.c.audio_seconds),
+            else_=0.0,
+        )
+        listening_relation = self._listeners.join(
+            self._playbacks,
+            self._playbacks.c.id == self._listeners.c.playback_id,
+        )
+        listening_rows = (
+            (
+                await self._session.execute(
+                    select(
+                        self._listeners.c.user_id,
+                        func.sum(dawn_audio_seconds).label("dawn_listening_seconds"),
+                        func.sum(weekend_audio_seconds).label(
+                            "weekend_listening_seconds"
+                        ),
+                    )
+                    .select_from(listening_relation)
+                    .where(
+                        self._playbacks.c.started_at >= started_at,
+                        self._playbacks.c.started_at < ended_at,
+                    )
+                    .group_by(self._listeners.c.user_id)
+                )
+            )
+            .mappings()
+            .all()
+        )
+        for row in listening_rows:
+            user_id = UserId(row["user_id"])
+            facts[user_id] = ListenerAchievementFacts(
+                dawn_listening_seconds=float(row["dawn_listening_seconds"] or 0.0),
+                weekend_listening_seconds=float(
+                    row["weekend_listening_seconds"] or 0.0
+                ),
+            )
+
+        artist_rows = (
+            (
+                await self._session.execute(
+                    select(
+                        self._listeners.c.user_id,
+                        func.count(
+                            func.distinct(self._track_artists.c.artist_id)
+                        ).label("distinct_artists"),
+                    )
+                    .select_from(
+                        listening_relation.join(
+                            self._requests,
+                            self._requests.c.id == self._playbacks.c.request_id,
+                        ).join(
+                            self._track_artists,
+                            self._track_artists.c.track_id == self._requests.c.track_id,
+                        )
+                    )
+                    .where(
+                        self._playbacks.c.started_at >= started_at,
+                        self._playbacks.c.started_at < ended_at,
+                    )
+                    .group_by(self._listeners.c.user_id)
+                )
+            )
+            .mappings()
+            .all()
+        )
+        for row in artist_rows:
+            user_id = UserId(row["user_id"])
+            facts[user_id] = replace(
+                facts.get(user_id, ListenerAchievementFacts()),
+                distinct_artists=int(row["distinct_artists"] or 0),
+            )
+
+        original = (
+            select(
+                self._requests.c.requested_by.label("user_id"),
+                self._requests.c.track_id,
+                func.min(self._requests.c.requested_at).label("requested_at"),
+            )
+            .where(
+                self._requests.c.requested_at >= started_at,
+                self._requests.c.requested_at < ended_at,
+                self._requests.c.origin == "manual",
+                self._requests.c.requested_by.is_not(None),
+            )
+            .group_by(self._requests.c.requested_by, self._requests.c.track_id)
+            .subquery()
+        )
+        later = self._requests.alias("achievement_later_request")
+        influence_rows = (
+            (
+                await self._session.execute(
+                    select(
+                        original.c.user_id,
+                        func.count(func.distinct(original.c.track_id)).label(
+                            "influenced_tracks"
+                        ),
+                    )
+                    .select_from(
+                        original.join(
+                            later,
+                            and_(
+                                later.c.track_id == original.c.track_id,
+                                later.c.origin == "manual",
+                                later.c.requested_by != original.c.user_id,
+                                later.c.requested_at > original.c.requested_at,
+                                later.c.requested_at < ended_at,
+                            ),
+                        )
+                    )
+                    .group_by(original.c.user_id)
+                )
+            )
+            .mappings()
+            .all()
+        )
+        for row in influence_rows:
+            user_id = UserId(row["user_id"])
+            facts[user_id] = replace(
+                facts.get(user_id, ListenerAchievementFacts()),
+                influenced_tracks=int(row["influenced_tracks"] or 0),
+            )
+
+        first_heard = (
+            select(
+                self._listeners.c.user_id,
+                self._requests.c.track_id,
+                self._requests.c.origin,
+                self._listeners.c.first_heard_at,
+                self._playbacks.c.id.label("playback_id"),
+            )
+            .select_from(
+                listening_relation.join(
+                    self._requests,
+                    self._requests.c.id == self._playbacks.c.request_id,
+                )
+            )
+            .where(
+                self._playbacks.c.started_at >= started_at,
+                self._playbacks.c.started_at < ended_at,
+            )
+            .distinct(self._listeners.c.user_id, self._requests.c.track_id)
+            .order_by(
+                self._listeners.c.user_id,
+                self._requests.c.track_id,
+                self._listeners.c.first_heard_at,
+                self._playbacks.c.id,
+            )
+            .subquery()
+        )
+        manual = self._requests.alias("achievement_manual_request")
+        conversion_rows = (
+            (
+                await self._session.execute(
+                    select(
+                        first_heard.c.user_id,
+                        func.count(func.distinct(first_heard.c.track_id)).label(
+                            "radio_converted_tracks"
+                        ),
+                    )
+                    .select_from(
+                        first_heard.join(
+                            manual,
+                            and_(
+                                manual.c.track_id == first_heard.c.track_id,
+                                manual.c.origin == "manual",
+                                manual.c.requested_by == first_heard.c.user_id,
+                                manual.c.requested_at > first_heard.c.first_heard_at,
+                                manual.c.requested_at < ended_at,
+                            ),
+                        )
+                    )
+                    .where(first_heard.c.origin == "radio")
+                    .group_by(first_heard.c.user_id)
+                )
+            )
+            .mappings()
+            .all()
+        )
+        for row in conversion_rows:
+            user_id = UserId(row["user_id"])
+            facts[user_id] = replace(
+                facts.get(user_id, ListenerAchievementFacts()),
+                radio_converted_tracks=int(row["radio_converted_tracks"] or 0),
+            )
+
+        active_day = sql_cast(local_heard, Date).label("active_day")
+        active_rows = (
+            (
+                await self._session.execute(
+                    select(self._listeners.c.user_id, active_day)
+                    .select_from(listening_relation)
+                    .where(
+                        self._playbacks.c.started_at >= started_at,
+                        self._playbacks.c.started_at < ended_at,
+                    )
+                    .distinct()
+                    .order_by(self._listeners.c.user_id, active_day)
+                )
+            )
+            .mappings()
+            .all()
+        )
+        days_by_user: dict[UserId, list[date]] = {}
+        for row in active_rows:
+            days_by_user.setdefault(UserId(row["user_id"]), []).append(
+                row["active_day"]
+            )
+        for user_id, active_days in days_by_user.items():
+            facts[user_id] = replace(
+                facts.get(user_id, ListenerAchievementFacts()),
+                active_listening_days=len(active_days),
+                longest_listening_streak=_longest_consecutive_days(active_days),
+            )
+        return facts
+
     async def active_listener_count(
         self,
         started_at: datetime,
@@ -1584,3 +1840,17 @@ def _table(name: str) -> Table:
         return Base.metadata.tables[name]
     except KeyError as error:
         raise RuntimeError(f"Statistics table is not registered: {name}") from error
+
+
+def _longest_consecutive_days(days: list[date]) -> int:
+    longest = 0
+    running = 0
+    previous: date | None = None
+    for active_day in days:
+        if previous is not None and active_day == previous + timedelta(days=1):
+            running += 1
+        else:
+            running = 1
+        longest = max(longest, running)
+        previous = active_day
+    return longest
