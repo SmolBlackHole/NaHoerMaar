@@ -31,6 +31,10 @@ type RequestHandler = Callable[[Request], Awaitable[Response]]
 _LOGGER = logging.getLogger(__name__)
 _PUBLIC_PATHS = {"/api/auth/discord", CALLBACK_PATH}
 _SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+_SECURITY_INCIDENT_CODES = {
+    AuthErrorCode.ORIGIN_FORBIDDEN.value,
+    AuthErrorCode.CSRF_FAILED.value,
+}
 
 
 def install_auth_middleware(
@@ -246,6 +250,8 @@ async def _record_http_incident(
     actor_id: UUID | None,
     correlation_id: UUID,
 ) -> None:
+    if status < 500 and code not in _SECURITY_INCIDENT_CODES:
+        return
     try:
         await incidents.record(
             severity=(

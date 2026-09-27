@@ -173,6 +173,11 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
         gateway=cast(DiscordGateway, Gateway()),
     )
     app = create_app(application)
+
+    @app.get("/api/_test/broken", include_in_schema=False)
+    async def broken() -> None:
+        raise RuntimeError("test failure")
+
     contract = app.openapi()
     assert "/api/events" in contract["paths"]
     assert "/api/listening/recent" in contract["paths"]
@@ -199,7 +204,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
     async def scenario() -> None:
         await access.reconcile()
         await player.start()
-        transport = httpx.ASGITransport(app=app)
+        transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
         async with httpx.AsyncClient(
             transport=transport,
             base_url=ORIGIN,
@@ -718,6 +723,35 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             )
             assert rejected_login_origin.status_code == 403
             assert rejected_login_origin.json() == {"error": "origin_forbidden"}
+
+            missing = await client.get("/api/_test/missing")
+            assert missing.status_code == 404
+            assert missing.json() == {"error": "not_found", "retryable": False}
+
+            broken = await client.get("/api/_test/broken")
+            assert broken.status_code == 500
+            assert broken.json() == {"error": "internal_error", "retryable": True}
+
+            incident_report = await client.get("/api/incidents")
+            http_incidents = [
+                item
+                for item in incident_report.json()["recent"]
+                if item["component"] == "http"
+            ]
+            http_codes = {item["error_code"] for item in http_incidents}
+            assert {
+                "csrf_failed",
+                "internal_error",
+                "origin_forbidden",
+            } <= http_codes
+            assert "validation_failed" not in http_codes
+            assert "not_found" not in http_codes
+            assert "profile_not_found" not in http_codes
+            assert "operator_access_managed_in_config" not in http_codes
+            assert (
+                sum(item["error_code"] == "internal_error" for item in http_incidents)
+                == 1
+            )
 
             sleep_timer = await client.put(
                 "/api/player/sleep-timer",
