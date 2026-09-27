@@ -2,26 +2,16 @@
 const core = useNuxtApp().$backendCore;
 const player = core.stores.usePlayerStore();
 const recent = core.workflows.recent();
-const loadingMore = ref(false);
-const history = computed(() => recent.recent.data.value?.entries ?? []);
-const hasMore = recent.hasMore;
+const { icons } = useTheme();
+const history = computed(() => recent.history.data.value?.entries ?? []);
 
-onMounted(() => void recent.load(20));
+onMounted(() => void recent.load({ pageSize: 10, newSnapshot: true }));
 watch(
 	() => player.state?.runtime.playback_id,
 	(value, previous) => {
-		if (previous && value !== previous) void recent.load(20);
+		if (previous && value !== previous) void recent.load({ pageSize: 10, newSnapshot: true });
 	},
 );
-async function loadMore() {
-	if (loadingMore.value || !hasMore.value) return;
-	loadingMore.value = true;
-	try {
-		await recent.more(20);
-	} finally {
-		loadingMore.value = false;
-	}
-}
 onScopeDispose(recent.dispose);
 </script>
 
@@ -31,30 +21,26 @@ onScopeDispose(recent.dispose);
 			<h2 id="history-heading" class="text-xl font-semibold tracking-tight text-highlighted">
 				Recently played
 			</h2>
+			<UButton
+				to="/history"
+				label="View all"
+				variant="link"
+				color="neutral"
+				:trailing-icon="icons.arrowRight"
+			/>
 		</div>
-		<div v-if="recent.recent.loading.value && !history.length" aria-busy="true">
+		<div v-if="recent.history.loading.value && !history.length" aria-busy="true">
 			<PlayerRecentList :entries="[]" loading />
 		</div>
 		<p
-			v-else-if="recent.recent.error.value && !history.length"
+			v-else-if="recent.history.error.value && !history.length"
 			role="alert"
 			class="text-sm text-warning"
 		>
-			{{ recent.recent.error.value }}
+			{{ recent.history.error.value }}
 		</p>
 		<div v-else id="history-tracks" class="history-scroll">
 			<PlayerRecentList :entries="history" />
-			<div v-if="hasMore" class="flex justify-center py-3">
-				<UButton
-					label="Load more"
-					:loading="loadingMore"
-					:disabled="loadingMore"
-					variant="ghost"
-					color="neutral"
-					class="min-h-11"
-					@click="loadMore"
-				/>
-			</div>
 		</div>
 	</section>
 </template>

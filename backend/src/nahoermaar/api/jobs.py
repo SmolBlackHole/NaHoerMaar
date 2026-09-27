@@ -4,9 +4,7 @@
 
 """Admin controls and persisted history for bounded application jobs."""
 
-from base64 import urlsafe_b64decode, urlsafe_b64encode
-from binascii import Error as Base64Error
-from datetime import UTC, datetime
+from datetime import datetime
 import logging
 from typing import Annotated
 from uuid import UUID
@@ -29,6 +27,7 @@ from nahoermaar.operations.jobs import (
 
 from .errors import ApiError, ApiErrorCode
 from .middleware import authenticated
+from .pagination import TimestampPosition, decode_position, encode_position
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -369,22 +368,15 @@ def _run_detail_view(detail: JobRunDetail) -> BackgroundJobRunDetailView:
 
 
 def _encode_cursor(cursor: JobRunCursor | None) -> str | None:
-    if cursor is None:
-        return None
-    payload = f"{cursor.started_at.astimezone(UTC).isoformat()}|{cursor.run_id}"
-    return urlsafe_b64encode(payload.encode()).decode().rstrip("=")
+    return encode_position(
+        TimestampPosition(cursor.started_at, cursor.run_id)
+        if cursor is not None
+        else None
+    )
 
 
 def _decode_cursor(value: str | None) -> JobRunCursor | None:
-    if value is None:
+    position = decode_position(value)
+    if position is None:
         return None
-    try:
-        padding = "=" * (-len(value) % 4)
-        payload = urlsafe_b64decode(value + padding).decode()
-        started_at_value, run_id_value = payload.split("|", 1)
-        started_at = datetime.fromisoformat(started_at_value)
-        if started_at.tzinfo is None:
-            raise ValueError("Cursor timestamp must have a timezone.")
-        return JobRunCursor(started_at.astimezone(UTC), UUID(run_id_value))
-    except (Base64Error, UnicodeDecodeError, ValueError) as error:
-        raise ApiError(ApiErrorCode.VALIDATION_FAILED, 422) from error
+    return JobRunCursor(position.occurred_at, position.identifier)

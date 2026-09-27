@@ -50,7 +50,7 @@ from nahoermaar.users.service import (
 )
 from nahoermaar.users.domain import DiscordMember
 from nahoermaar.views.profile import ProfileView
-from nahoermaar.views.recent import RecentListeningView
+from nahoermaar.views.history import PlaybackHistoryView
 
 NOW = datetime(2026, 9, 24, 12, tzinfo=UTC)
 ROOT = Path(__file__).parents[3]
@@ -132,7 +132,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
         clock=lambda: NOW,
     )
     profiles = ProfileView(units, statistics)
-    recent = RecentListeningView(units)
+    history = PlaybackHistoryView(units)
     logs = RecentLogBuffer()
     logs.addFilter(ContextFilter())
     root_logger = logging.getLogger()
@@ -163,7 +163,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
         listening,
         statistics,
         profiles,
-        recent,
+        history,
         incidents,
         automation,
         jobs,
@@ -332,10 +332,15 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             }
             assert (await client.get("/api/listening/recent")).json() == {
                 "entries": [],
-                "next_cursor": None,
+                "contributors": [],
+                "page": 1,
+                "page_size": 20,
+                "total": 0,
+                "page_count": 0,
+                "snapshot": None,
             }
             invalid_recent = await client.get(
-                "/api/listening/recent", params={"limit": 0}
+                "/api/listening/recent", params={"page_size": 0}
             )
             assert invalid_recent.status_code == 422
             assert invalid_recent.json() == {"error": "validation_failed"}
@@ -539,9 +544,12 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
                 "9",
                 source_url="https://cdn.discordapp.com/avatars/9/test.png",
             )
-            recent = await client.get("/api/listening/recent", params={"limit": 1})
+            recent = await client.get("/api/listening/recent", params={"page_size": 1})
             assert recent.status_code == 200
-            assert recent.json() == {
+            recent_payload = recent.json()
+            snapshot = recent_payload.pop("snapshot")
+            assert snapshot
+            assert recent_payload == {
                 "entries": [
                     {
                         "playback_id": str(playback_id),
@@ -553,6 +561,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
                         "duration_seconds": 180.0,
                         "origin": "manual",
                         "requested_by": str(current.user.id),
+                        "radio_run_id": None,
                         "source_id": None,
                         "source_url": None,
                         "source_provider": None,
@@ -570,11 +579,41 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
                         "end_reason": "completed",
                         "audio_seconds": 42.0,
                         "group_audio_seconds": 40.0,
-                        "play_count": 2,
                     }
                 ],
-                "next_cursor": None,
+                "contributors": [
+                    {
+                        "user_id": str(current.user.id),
+                        "display_name": "Owner",
+                        "avatar_url": application.avatars.public_url("9"),
+                    }
+                ],
+                "page": 1,
+                "page_size": 1,
+                "total": 2,
+                "page_count": 2,
             }
+            older = await client.get(
+                "/api/listening/recent",
+                params={"page": 2, "page_size": 1, "snapshot": snapshot},
+            )
+            assert older.status_code == 200
+            assert older.json()["entries"][0]["playback_id"] == str(prior_playback_id)
+            assert older.json()["snapshot"] == snapshot
+            search = await client.get(
+                "/api/listening/recent", params={"q": "api TRACK"}
+            )
+            assert search.status_code == 200
+            assert search.json()["total"] == 2
+            manual = await client.get(
+                "/api/listening/recent",
+                params={"radio": False, "requested_by": str(current.user.id)},
+            )
+            assert manual.status_code == 200
+            assert manual.json()["total"] == 2
+            assert all(
+                entry["origin"] == "manual" for entry in manual.json()["entries"]
+            )
             change = await anext(events)
             assert change.event == "change"
             assert change.id == "1"

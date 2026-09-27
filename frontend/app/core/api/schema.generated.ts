@@ -335,8 +335,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Recent Playback */
-        get: operations["recent_playback_api_listening_recent_get"];
+        /** Playback History */
+        get: operations["playback_history_api_listening_recent_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1731,11 +1731,111 @@ export interface components {
             overall: components["schemas"]["PlaybackOutcomesView"];
             radio: components["schemas"]["PlaybackOutcomesView"];
         };
+        /** PlaybackContributorView */
+        PlaybackContributorView: {
+            /** Avatar Url */
+            avatar_url: string;
+            /** Discord Id */
+            discord_id: string;
+            /** Discord Username */
+            discord_username: string | null;
+            /** Display Name */
+            display_name: string;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+        };
         /**
          * PlaybackEndReason
          * @enum {string}
          */
         PlaybackEndReason: "completed" | "skipped" | "stopped" | "failed";
+        /** PlaybackHistoryEntryView */
+        PlaybackHistoryEntryView: {
+            /** Artist Names */
+            artist_names: string[];
+            /** Artwork Url */
+            artwork_url: string | null;
+            /** Audio Seconds */
+            audio_seconds: number;
+            contributor: components["schemas"]["PlaybackContributorView"] | null;
+            /** Duration Seconds */
+            duration_seconds: number | null;
+            /** End Reason */
+            end_reason: string | null;
+            /** Ended At */
+            ended_at: string | null;
+            /** Group Audio Seconds */
+            group_audio_seconds: number;
+            /** Origin */
+            origin: string;
+            /**
+             * Playback Id
+             * Format: uuid
+             */
+            playback_id: string;
+            /** Radio Run Id */
+            radio_run_id: string | null;
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+            /**
+             * Requested By
+             * Format: uuid
+             */
+            requested_by: string;
+            /** Source Id */
+            source_id: string | null;
+            /** Source Provider */
+            source_provider: string | null;
+            /** Source Url */
+            source_url: string | null;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Title */
+            title: string;
+            /**
+             * Track Id
+             * Format: uuid
+             */
+            track_id: string;
+        };
+        /** PlaybackHistoryFilterContributorView */
+        PlaybackHistoryFilterContributorView: {
+            /** Avatar Url */
+            avatar_url: string | null;
+            /** Display Name */
+            display_name: string;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+        };
+        /** PlaybackHistoryPageView */
+        PlaybackHistoryPageView: {
+            /** Contributors */
+            contributors: components["schemas"]["PlaybackHistoryFilterContributorView"][];
+            /** Entries */
+            entries: components["schemas"]["PlaybackHistoryEntryView"][];
+            /** Page */
+            page: number;
+            /** Page Count */
+            page_count: number;
+            /** Page Size */
+            page_size: number;
+            /** Snapshot */
+            snapshot: string | null;
+            /** Total */
+            total: number;
+        };
         /** PlaybackOutcomesView */
         PlaybackOutcomesView: {
             /** Completed */
@@ -2028,81 +2128,6 @@ export interface components {
             listening_seconds: number;
             /** Plays */
             plays: number;
-            /** Title */
-            title: string;
-            /**
-             * Track Id
-             * Format: uuid
-             */
-            track_id: string;
-        };
-        /** RecentContributorView */
-        RecentContributorView: {
-            /** Avatar Url */
-            avatar_url: string;
-            /** Discord Id */
-            discord_id: string;
-            /** Discord Username */
-            discord_username: string | null;
-            /** Display Name */
-            display_name: string;
-            /**
-             * User Id
-             * Format: uuid
-             */
-            user_id: string;
-        };
-        /** RecentPlaybackPageView */
-        RecentPlaybackPageView: {
-            /** Entries */
-            entries: components["schemas"]["RecentPlaybackView"][];
-            /** Next Cursor */
-            next_cursor: string | null;
-        };
-        /** RecentPlaybackView */
-        RecentPlaybackView: {
-            /** Artist Names */
-            artist_names: string[];
-            /** Artwork Url */
-            artwork_url: string | null;
-            /** Audio Seconds */
-            audio_seconds: number;
-            contributor: components["schemas"]["RecentContributorView"] | null;
-            /** Duration Seconds */
-            duration_seconds: number | null;
-            /** End Reason */
-            end_reason: string | null;
-            /** Ended At */
-            ended_at: string | null;
-            /** Group Audio Seconds */
-            group_audio_seconds: number;
-            /** Origin */
-            origin: string;
-            /** Play Count */
-            play_count: number;
-            /**
-             * Playback Id
-             * Format: uuid
-             */
-            playback_id: string;
-            /**
-             * Request Id
-             * Format: uuid
-             */
-            request_id: string;
-            /** Requested By */
-            requested_by: string | null;
-            /** Source Id */
-            source_id: string | null;
-            /** Source Provider */
-            source_provider: string | null;
-            /** Source Url */
-            source_url: string | null;
-            /**
-             * Started At
-             * Format: date-time
-             */
-            started_at: string;
             /** Title */
             title: string;
             /**
@@ -5051,11 +5076,15 @@ export interface operations {
             };
         };
     };
-    recent_playback_api_listening_recent_get: {
+    playback_history_api_listening_recent_get: {
         parameters: {
             query?: {
-                cursor?: string | null;
-                limit?: number;
+                page?: number;
+                page_size?: number;
+                q?: string | null;
+                radio?: boolean | null;
+                requested_by?: string | null;
+                snapshot?: string | null;
             };
             header?: never;
             path?: never;
@@ -5069,7 +5098,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RecentPlaybackPageView"];
+                    "application/json": components["schemas"]["PlaybackHistoryPageView"];
                 };
             };
             /** @description Invalid request */

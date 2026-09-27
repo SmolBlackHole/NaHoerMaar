@@ -11,7 +11,7 @@ const recent = core.workflows.recent();
 const { icons } = useTheme();
 const period = ref<StatisticsPeriod>("7d");
 const report = computed(() => statistics.groupReport.data.value);
-const recentTracks = computed(() => (recent.recent.data.value?.entries ?? []).slice(0, 5));
+const recentTracks = computed(() => recent.history.data.value?.entries ?? []);
 const metrics = computed(() => {
 	const totals = report.value?.totals;
 	return [
@@ -39,7 +39,10 @@ const metrics = computed(() => {
 });
 
 async function load() {
-	await Promise.all([statistics.overview(period.value), recent.load(10)]);
+	await Promise.all([
+		statistics.overview(period.value),
+		recent.load({ pageSize: 5, newSnapshot: true }),
+	]);
 }
 
 watch(period, load);
@@ -140,7 +143,7 @@ onScopeDispose(() => {
 									</p>
 								</div>
 								<UButton
-									to="/?view=queue#recently-played"
+									to="/history"
 									label="View all"
 									variant="link"
 									color="neutral"

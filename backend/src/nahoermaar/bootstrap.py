@@ -97,7 +97,7 @@ from .users.service import (
     UserProfileChanged,
 )
 from .views.profile import ProfileView
-from .views.recent import RecentListeningView
+from .views.history import PlaybackHistoryView
 
 _LOGGER = logging.getLogger(__name__)
 type AsyncCloser = Callable[[], Awaitable[None]]
@@ -129,7 +129,7 @@ class Application:
     listening: ListeningService
     statistics: StatisticsService
     profiles: ProfileView
-    recent: RecentListeningView
+    history: PlaybackHistoryView
     incidents: IncidentService
     automation: PlaybackAutomation
     jobs: JobService
@@ -285,7 +285,7 @@ def bootstrap(
         access,
     )
     profiles = ProfileView(units, statistics)
-    recent = RecentListeningView(units)
+    history = PlaybackHistoryView(units)
     housekeeping = HousekeepingService(units, jobs, avatars)
 
     async def summon(discord_id: str, channel_id: int, correlation_id: UUID) -> None:
@@ -344,7 +344,7 @@ def bootstrap(
         listening,
         statistics,
         profiles,
-        recent,
+        history,
         incidents,
         automation,
         jobs,

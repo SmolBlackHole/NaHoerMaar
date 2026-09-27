@@ -3,23 +3,33 @@
 
 import type { SessionAuthority } from "../api/transport";
 import type { BackendClient } from "../client";
-import type { RecentPlaybackPage } from "../models/listening";
-import { createCursorPagination } from "./cursorPagination";
+import type { PlaybackHistoryPage } from "../models/listening";
+import { createPagePagination } from "./pagePagination";
+
+export interface PlaybackHistoryFilters {
+	radio?: boolean;
+	requestedBy?: string;
+}
 
 export function createRecentWorkflow(client: BackendClient, authority: SessionAuthority) {
-	const pagination = createCursorPagination<
-		RecentPlaybackPage["entries"][number],
-		RecentPlaybackPage
-	>(
+	const pagination = createPagePagination<PlaybackHistoryPage, PlaybackHistoryFilters>(
 		authority,
-		(limit, cursor, signal) => client.listening.recent(limit, cursor, signal),
-		({ playback_id }) => playback_id,
+		(request, signal) =>
+			client.listening.recent(
+				{
+					page: request.page,
+					pageSize: request.pageSize,
+					query: request.query,
+					radio: request.filters.radio,
+					requestedBy: request.filters.requestedBy,
+					snapshot: request.snapshot,
+				},
+				signal,
+			),
 	);
 	return {
-		recent: pagination.page,
-		hasMore: pagination.hasMore,
+		history: pagination.page,
 		load: pagination.load,
-		more: pagination.more,
 		dispose: pagination.dispose,
 	};
 }

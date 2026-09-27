@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""Authenticated read endpoints for shared listening history."""
+"""Authenticated query endpoint for shared listening history."""
 
 from datetime import datetime
 from typing import Annotated
@@ -13,10 +13,13 @@ from pydantic import BaseModel, ConfigDict
 
 from nahoermaar.bootstrap import Application
 from nahoermaar.listening.domain import PlaybackRecordId
-from nahoermaar.views.recent import RecentPlayback
+from nahoermaar.users.domain import UserId
+from nahoermaar.views.history import PlaybackHistoryEntry, PlaybackHistorySnapshot
+
+from .pagination import TimestampPosition, decode_position, encode_position
 
 
-class RecentContributorView(BaseModel):
+class PlaybackContributorView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     user_id: UUID
@@ -26,7 +29,7 @@ class RecentContributorView(BaseModel):
     avatar_url: str
 
 
-class RecentPlaybackView(BaseModel):
+class PlaybackHistoryEntryView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     playback_id: UUID
@@ -37,53 +40,98 @@ class RecentPlaybackView(BaseModel):
     artwork_url: str | None
     duration_seconds: float | None
     origin: str
-    requested_by: UUID | None
+    requested_by: UUID
+    radio_run_id: UUID | None
     source_id: UUID | None
     source_url: str | None
     source_provider: str | None
-    contributor: RecentContributorView | None
+    contributor: PlaybackContributorView | None
     started_at: datetime
     ended_at: datetime | None
     end_reason: str | None
     audio_seconds: float
     group_audio_seconds: float
-    play_count: int
 
 
-class RecentPlaybackPageView(BaseModel):
+class PlaybackHistoryFilterContributorView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    entries: tuple[RecentPlaybackView, ...]
-    next_cursor: UUID | None
+    user_id: UUID
+    display_name: str
+    avatar_url: str | None
+
+
+class PlaybackHistoryPageView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    entries: tuple[PlaybackHistoryEntryView, ...]
+    contributors: tuple[PlaybackHistoryFilterContributorView, ...]
+    page: int
+    page_size: int
+    total: int
+    page_count: int
+    snapshot: str | None
 
 
 def router(application: Application) -> APIRouter:
     routes = APIRouter(prefix="/api/listening", tags=["listening"])
 
     @routes.get("/recent")
-    async def recent_playback(
-        limit: Annotated[int, Query(ge=1, le=100)] = 20,
-        cursor: UUID | None = None,
-    ) -> RecentPlaybackPageView:
-        page = await application.recent.get(
-            limit=limit,
-            cursor=PlaybackRecordId(cursor) if cursor is not None else None,
+    async def playback_history(
+        page: Annotated[int, Query(ge=1)] = 1,
+        page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+        q: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
+        radio: bool | None = None,
+        requested_by: UUID | None = None,
+        snapshot: str | None = None,
+    ) -> PlaybackHistoryPageView:
+        result = await application.history.get(
+            page=page,
+            page_size=page_size,
+            query=q,
+            radio=radio,
+            requested_by=UserId(requested_by) if requested_by is not None else None,
+            snapshot=_snapshot(snapshot),
         )
-        return RecentPlaybackPageView(
-            entries=tuple(
-                _recent_playback_view(item, application) for item in page.entries
+        return PlaybackHistoryPageView(
+            entries=tuple(_entry_view(item, application) for item in result.entries),
+            contributors=tuple(
+                PlaybackHistoryFilterContributorView(
+                    user_id=contributor.user_id,
+                    display_name=contributor.display_name,
+                    avatar_url=(
+                        application.avatars.public_url(
+                            contributor.discord_id,
+                            avatar_hash=contributor.discord_avatar_hash,
+                        )
+                        if contributor.discord_id is not None
+                        else None
+                    ),
+                )
+                for contributor in result.contributors
             ),
-            next_cursor=page.next_cursor,
+            page=result.page,
+            page_size=result.page_size,
+            total=result.total,
+            page_count=result.page_count,
+            snapshot=encode_position(
+                TimestampPosition(
+                    result.snapshot.started_at,
+                    result.snapshot.playback_id,
+                )
+                if result.snapshot is not None
+                else None
+            ),
         )
 
     return routes
 
 
-def _recent_playback_view(
-    item: RecentPlayback,
+def _entry_view(
+    item: PlaybackHistoryEntry,
     application: Application,
-) -> RecentPlaybackView:
-    return RecentPlaybackView(
+) -> PlaybackHistoryEntryView:
+    return PlaybackHistoryEntryView(
         playback_id=item.playback_id,
         request_id=item.request_id,
         track_id=item.track_id,
@@ -93,14 +141,15 @@ def _recent_playback_view(
         duration_seconds=item.duration_seconds,
         origin=item.origin.value,
         requested_by=item.requested_by,
+        radio_run_id=item.radio_run_id,
         source_id=item.source_id,
         source_url=item.source_url,
         source_provider=(
             item.source_provider.value if item.source_provider is not None else None
         ),
         contributor=(
-            RecentContributorView(
-                user_id=item.contributor_id,
+            PlaybackContributorView(
+                user_id=item.requested_by,
                 display_name=item.contributor_display_name,
                 discord_id=item.contributor_discord_id,
                 discord_username=item.contributor_discord_username,
@@ -109,9 +158,7 @@ def _recent_playback_view(
                     avatar_hash=item.contributor_discord_avatar_hash,
                 ),
             )
-            if item.contributor_id is not None
-            and item.contributor_display_name is not None
-            and item.contributor_discord_id is not None
+            if item.contributor_discord_id is not None
             else None
         ),
         started_at=item.started_at,
@@ -119,5 +166,14 @@ def _recent_playback_view(
         end_reason=item.end_reason.value if item.end_reason is not None else None,
         audio_seconds=item.audio_seconds,
         group_audio_seconds=item.group_audio_seconds,
-        play_count=item.play_count,
+    )
+
+
+def _snapshot(value: str | None) -> PlaybackHistorySnapshot | None:
+    position = decode_position(value)
+    if position is None:
+        return None
+    return PlaybackHistorySnapshot(
+        position.occurred_at,
+        PlaybackRecordId(position.identifier),
     )

@@ -11,12 +11,19 @@ describe("new backend repositories", () => {
 		await client.account.session();
 		await client.account.account();
 		await client.account.profile("7d");
-		await client.listening.recent(10);
+		await client.listening.recent({
+			page: 3,
+			pageSize: 10,
+			query: "Still Alive",
+			radio: true,
+			requestedBy: "user-one",
+			snapshot: "snapshot one",
+		});
 		expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
 			"/api/auth/session",
 			"/api/users/me",
 			"/api/profiles/me?period=7d",
-			"/api/listening/recent?limit=10",
+			"/api/listening/recent?page=3&page_size=10&q=Still+Alive&radio=true&requested_by=user-one&snapshot=snapshot+one",
 		]);
 		expect(client.account.loginUrl).toBe("/api/auth/discord");
 	});

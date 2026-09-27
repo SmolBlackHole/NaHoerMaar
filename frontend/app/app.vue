@@ -3,6 +3,7 @@ const core = useNuxtApp().$backendCore;
 const session = core.stores.useSessionStore();
 const consent = useConsentStore();
 const route = useRoute();
+const { icons } = useTheme();
 const publicPage = computed(() => ["/licenses", "/licenses/"].includes(route.path));
 onMounted(() => {
 	consent.ready = true;
@@ -23,10 +24,20 @@ watch(publicPage, (isPublic) => {
 		<NuxtLoadingIndicator />
 		<div
 			v-if="!publicPage && session.status === 'checking'"
-			class="grid min-h-dvh place-items-center text-muted"
+			class="app-boot"
 			role="status"
+			aria-live="polite"
+			aria-label="Loading NaHörMaar"
 		>
-			Loading NaHörMaar…
+			<div class="app-boot__content">
+				<div class="app-boot__brand">
+					<UIcon :name="icons.headphones" class="size-7 text-primary" />
+					<span>NaHörMaar</span>
+				</div>
+				<div class="app-boot__progress" aria-hidden="true">
+					<span />
+				</div>
+			</div>
 		</div>
 		<AuthWelcome v-else-if="!publicPage && session.status !== 'authenticated'" />
 		<ProfileWelcome v-else-if="!publicPage && !session.account?.profile_complete" />
@@ -46,6 +57,50 @@ watch(publicPage, (isPublic) => {
 </template>
 
 <style>
+.app-boot {
+	display: grid;
+	min-height: 100dvh;
+	place-items: center;
+	background: var(--ui-bg);
+}
+.app-boot__content {
+	display: grid;
+	justify-items: center;
+	padding: 2rem;
+}
+.app-boot__brand {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	font-size: 1.125rem;
+	font-weight: 600;
+	letter-spacing: -0.025em;
+	color: var(--ui-text-highlighted);
+}
+.app-boot__progress {
+	width: 7.5rem;
+	height: 0.125rem;
+	margin-top: 1.25rem;
+	overflow: hidden;
+	border-radius: 9999px;
+	background: var(--ui-bg-accented);
+}
+.app-boot__progress span {
+	display: block;
+	width: 45%;
+	height: 100%;
+	border-radius: 9999px;
+	background: var(--ui-primary);
+	animation: app-boot-progress 1.1s ease-in-out infinite;
+}
+@keyframes app-boot-progress {
+	0% {
+		transform: translateX(-120%);
+	}
+	100% {
+		transform: translateX(270%);
+	}
+}
 .page-enter-active {
 	transition: opacity 140ms ease-out;
 }
@@ -57,6 +112,10 @@ watch(publicPage, (isPublic) => {
 	opacity: 0;
 }
 @media (prefers-reduced-motion: reduce) {
+	.app-boot__progress span {
+		animation: none;
+		transform: translateX(60%);
+	}
 	.animate-spin {
 		animation: none !important;
 	}

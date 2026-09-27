@@ -11,6 +11,30 @@ and current listening evidence belongs in
 [Testing and acceptance](docs/testing.md#live-acceptance). Completed work leaves
 this page once implementation, tests and its owning documentation agree.
 
+## Next: API contract and queryability review
+
+Review the complete HTTP surface after the current TODO is finished. Consolidate
+resource routes that currently split browsing, filtering and history into
+separate endpoints. Define consistent resource names, HTTP verbs, query
+parameters, pagination documents, search behavior, errors and OpenAPI naming.
+
+Queryable collections should support their real use cases through filters,
+search and stable pagination instead of adding a new route for every view. Keep
+command endpoints only where an operation is not a resource mutation. Record
+intentional exceptions and cut contracts over directly with the generated
+TypeScript client rather than maintaining parallel compatibility shapes.
+
+## Next: backend model and pattern consolidation
+
+Audit the domain, database models, projections, repositories and services after
+the current feature work has settled. Simplify repeated conversions, cursor or
+page documents, query parsing and repository plumbing with small shared helpers
+only where the same decision is already repeated.
+
+Keep ownership explicit and domain values typed. This is a focused refactor,
+not another rewrite: remove accidental duplication and inconsistent patterns
+without replacing working module boundaries or introducing generic frameworks.
+
 ## Next: lyrics
 
 Add an optional lyrics view for the current track. Prefer synchronized lyrics

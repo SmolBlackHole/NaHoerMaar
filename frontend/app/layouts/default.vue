@@ -61,6 +61,15 @@ const links = computed(() => [
 			open.value = false;
 		},
 	},
+	{
+		label: "History",
+		"aria-label": "Playback history",
+		icon: icons.value.clock,
+		to: "/history",
+		onSelect: () => {
+			open.value = false;
+		},
+	},
 	...(["owner", "admin"].includes(session.account?.role ?? "")
 		? [
 				{

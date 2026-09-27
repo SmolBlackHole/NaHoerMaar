@@ -1,10 +1,21 @@
 <script setup lang="ts">
 import { formatTime } from "~/core/models/player";
-import type { RecentPlayback } from "~/core/models/listening";
+import type { PlaybackHistoryEntry } from "~/core/models/listening";
 
-withDefaults(defineProps<{ entries: RecentPlayback[]; loading?: boolean }>(), { loading: false });
+const props = withDefaults(
+	defineProps<{
+		entries: PlaybackHistoryEntry[];
+		loading?: boolean;
+		skeletonCount?: number;
+		layout?: "compact" | "history";
+	}>(),
+	{ loading: false, skeletonCount: 5, layout: "compact" },
+);
 const player = useNuxtApp().$backendCore.stores.usePlayerStore();
 const { icons } = useTheme();
+const listLabel = computed(() =>
+	props.layout === "history" ? "Playback history" : "Recently played tracks",
+);
 function playedAt(value: string) {
 	return new Intl.DateTimeFormat(undefined, {
 		month: "short",
@@ -13,20 +24,47 @@ function playedAt(value: string) {
 		minute: "2-digit",
 	}).format(new Date(value));
 }
-function artistUrl(item: RecentPlayback) {
+function artistUrl(item: PlaybackHistoryEntry) {
 	const artist = item.artist_names.join(", ");
 	return artist ? `https://music.youtube.com/search?q=${encodeURIComponent(artist)}` : null;
 }
-function requeue(item: RecentPlayback) {
+function endState(item: PlaybackHistoryEntry) {
+	if (!item.ended_at) return "Playing now";
+	switch (item.end_reason) {
+		case "completed":
+			return "Completed";
+		case "skipped":
+			return "Skipped";
+		case "stopped":
+			return "Stopped";
+		case "failed":
+			return "Failed";
+		default:
+			return "Ended";
+	}
+}
+function requeue(item: PlaybackHistoryEntry) {
 	return player.add([{ track_id: item.track_id, source_id: null }]);
 }
 </script>
 
 <template>
 	<div>
-		<ol v-if="loading" aria-label="Loading recently played tracks" class="space-y-1">
+		<div v-if="props.layout === 'history'" class="recent-columns" aria-hidden="true">
+			<span class="recent-column-track">Track</span>
+			<span>Requested by</span>
+			<span>Length</span>
+			<span>Played</span>
+			<span></span>
+		</div>
+		<ol
+			v-if="loading"
+			:aria-label="`Loading ${listLabel.toLowerCase()}`"
+			class="recent-list space-y-1"
+			:class="{ 'recent-list--history': props.layout === 'history' }"
+		>
 			<li
-				v-for="index in 5"
+				v-for="index in props.skeletonCount"
 				:key="index"
 				class="recent-row flex flex-wrap items-center gap-3 py-4"
 				aria-hidden="true"
@@ -36,16 +74,27 @@ function requeue(item: RecentPlayback) {
 					<USkeleton class="h-4 w-full max-w-72" />
 					<USkeleton class="h-3 w-32" />
 				</div>
-				<USkeleton class="recent-contributor h-5 w-28" />
+				<div class="recent-contributor flex min-w-0 items-center gap-2">
+					<USkeleton class="size-6 shrink-0 rounded-full" />
+					<USkeleton class="h-3 w-20" />
+				</div>
 				<USkeleton class="recent-duration h-3 w-10" />
-				<USkeleton class="hidden h-3 w-28 lg:block lg:w-36" />
+				<div class="recent-moment hidden w-36 space-y-2 lg:block">
+					<USkeleton class="h-3 w-28" />
+					<USkeleton class="h-3 w-16" />
+				</div>
 				<div class="recent-actions ml-auto flex items-center gap-1">
 					<USkeleton class="size-11 rounded-lg" />
 					<USkeleton class="size-11 rounded-lg" />
 				</div>
 			</li>
 		</ol>
-		<ol v-else-if="entries.length" aria-label="Recently played tracks" class="space-y-1">
+		<ol
+			v-else-if="entries.length"
+			:aria-label="listLabel"
+			class="recent-list space-y-1"
+			:class="{ 'recent-list--history': props.layout === 'history' }"
+		>
 			<li
 				v-for="item in entries"
 				:key="item.playback_id"
@@ -86,12 +135,7 @@ function requeue(item: RecentPlayback) {
 						<span class="recent-mobile-duration shrink-0 tabular-nums">
 							{{ formatTime(item.duration_seconds) }}
 						</span>
-						<UTooltip
-							v-if="item.play_count > 1"
-							text="Playback starts in the latest 100 history entries"
-						>
-							<span class="shrink-0 tabular-nums">{{ item.play_count }} plays</span>
-						</UTooltip>
+						<span class="recent-mobile-state shrink-0">{{ endState(item) }}</span>
 					</p>
 				</div>
 				<PlayerContributor
@@ -103,12 +147,12 @@ function requeue(item: RecentPlayback) {
 				<span class="recent-duration text-xs tabular-nums text-muted">
 					{{ formatTime(item.duration_seconds) }}
 				</span>
-				<time
-					:datetime="item.ended_at ?? item.started_at"
-					class="hidden text-xs tabular-nums text-muted lg:block lg:w-36"
-				>
-					{{ item.ended_at ? playedAt(item.ended_at) : "Playing now" }}
-				</time>
+				<div class="recent-moment hidden w-36 text-xs text-muted lg:block">
+					<time :datetime="item.started_at" class="block tabular-nums">
+						{{ playedAt(item.started_at) }}
+					</time>
+					<span class="mt-1 block">{{ endState(item) }}</span>
+				</div>
 				<div class="recent-actions ml-auto flex items-center">
 					<UTooltip :text="`Queue ${item.title} again`">
 						<UButton
@@ -135,10 +179,37 @@ function requeue(item: RecentPlayback) {
 </template>
 
 <style scoped>
+.recent-columns {
+	display: grid;
+	grid-template-columns: 3rem minmax(14rem, 1fr) minmax(8rem, 12rem) 3rem 9rem 5.5rem;
+	gap: 1rem;
+	align-items: center;
+	padding: 0 0.75rem 0.75rem;
+	font-size: 0.6875rem;
+	font-weight: 500;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--ui-text-dimmed);
+}
+.recent-column-track {
+	grid-column: 1 / 3;
+}
 .recent-row {
 	padding-inline-start: 0.75rem;
 	border-radius: 0.5rem;
 	transition: background-color 140ms ease-out;
+}
+.recent-list--history .recent-row {
+	display: grid;
+	grid-template-columns: 3rem minmax(14rem, 1fr) minmax(8rem, 12rem) 3rem 9rem 5.5rem;
+	gap: 1rem;
+}
+.recent-list--history .recent-track {
+	flex: none;
+}
+.recent-list--history .recent-actions {
+	margin-left: 0;
+	justify-content: flex-end;
 }
 .recent-row:hover,
 .recent-row:focus-within {
@@ -147,7 +218,18 @@ function requeue(item: RecentPlayback) {
 .recent-mobile-duration {
 	display: none;
 }
+.recent-mobile-state {
+	display: none;
+}
 @container workspace (max-width: 600px) {
+	.recent-columns {
+		display: none;
+	}
+	.recent-list--history .recent-row {
+		display: grid;
+		grid-template-columns: 2.75rem minmax(0, 1fr) auto;
+		gap: 0.75rem;
+	}
 	.recent-row {
 		display: grid;
 		grid-template-columns: 2.75rem minmax(0, 1fr) auto;
@@ -183,9 +265,27 @@ function requeue(item: RecentPlayback) {
 	.recent-mobile-duration {
 		display: inline;
 	}
+	.recent-mobile-state {
+		display: inline;
+	}
 	.recent-duration,
-	.recent-row > time {
+	.recent-moment {
 		display: none;
+	}
+}
+@container workspace (min-width: 601px) and (max-width: 950px) {
+	.recent-columns {
+		display: none;
+	}
+	.recent-list--history .recent-row {
+		display: flex;
+		gap: 0.75rem;
+	}
+	.recent-list--history .recent-track {
+		flex: 1 1 8rem;
+	}
+	.recent-list--history .recent-actions {
+		margin-left: auto;
 	}
 }
 </style>

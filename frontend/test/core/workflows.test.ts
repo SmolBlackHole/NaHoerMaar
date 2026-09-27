@@ -41,18 +41,27 @@ describe("new backend page workflows", () => {
 		const recent = core.workflows.recent();
 		const pending = recent.load();
 		const signal = fetcher.mock.calls[0]![1]?.signal;
-		expect(fetcher.mock.calls[0]![0]).toBe("/api/listening/recent?limit=20");
+		expect(fetcher.mock.calls[0]![0]).toBe("/api/listening/recent?page=1&page_size=20");
 
 		core.authority.lost("signed_out");
 		expect(signal?.aborted).toBe(true);
-		finishRead(Response.json({ entries: [], next_cursor: null }));
+		finishRead(
+			Response.json({
+				entries: [],
+				page: 1,
+				page_size: 20,
+				total: 0,
+				page_count: 0,
+				snapshot: null,
+			}),
+		);
 		expect(await pending).toBeNull();
-		expect(recent.recent.data.value).toBeNull();
-		expect(recent.recent.loading.value).toBe(false);
+		expect(recent.history.data.value).toBeNull();
+		expect(recent.history.loading.value).toBe(false);
 		recent.dispose();
 	});
 
-	it("appends recent pages without replacing entries that are already visible", async () => {
+	it("keeps numbered history pages on one stable snapshot", async () => {
 		const fetcher = vi.fn<typeof fetch>();
 		const core = createBackendCore({ fetch: fetcher });
 		core.authority.replace("session-token", "restored");
@@ -60,29 +69,53 @@ describe("new backend page workflows", () => {
 			.mockResolvedValueOnce(
 				Response.json({
 					entries: [{ playback_id: "first" }],
-					next_cursor: "cursor-one",
+					page: 1,
+					page_size: 1,
+					total: 2,
+					page_count: 2,
+					snapshot: "snapshot-one",
 				}),
 			)
 			.mockResolvedValueOnce(
 				Response.json({
-					entries: [{ playback_id: "first" }, { playback_id: "second" }],
-					next_cursor: null,
+					entries: [{ playback_id: "second" }],
+					page: 2,
+					page_size: 1,
+					total: 2,
+					page_count: 2,
+					snapshot: "snapshot-one",
+				}),
+			)
+			.mockResolvedValueOnce(
+				Response.json({
+					entries: [{ playback_id: "radio" }],
+					contributors: [],
+					page: 1,
+					page_size: 1,
+					total: 1,
+					page_count: 1,
+					snapshot: "snapshot-two",
 				}),
 			);
 		const workflow = core.workflows.recent();
 
-		await workflow.load(1);
-		await workflow.more(1);
+		await workflow.load({ pageSize: 1, query: "Still Alive", newSnapshot: true });
+		await workflow.load({ page: 2, pageSize: 1, query: "Still Alive" });
+		await workflow.load({
+			pageSize: 1,
+			query: "Still Alive",
+			filters: { radio: true, requestedBy: "user-one" },
+		});
 
 		expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
-			"/api/listening/recent?limit=1",
-			"/api/listening/recent?limit=1&cursor=cursor-one",
+			"/api/listening/recent?page=1&page_size=1&q=Still+Alive",
+			"/api/listening/recent?page=2&page_size=1&q=Still+Alive&snapshot=snapshot-one",
+			"/api/listening/recent?page=1&page_size=1&q=Still+Alive&radio=true&requested_by=user-one",
 		]);
-		expect(workflow.recent.data.value?.entries.map(({ playback_id }) => playback_id)).toEqual([
-			"first",
-			"second",
+		expect(workflow.history.data.value?.entries.map(({ playback_id }) => playback_id)).toEqual([
+			"radio",
 		]);
-		expect(workflow.hasMore.value).toBe(false);
+		expect(workflow.history.data.value?.page).toBe(1);
 		workflow.dispose();
 	});
 
