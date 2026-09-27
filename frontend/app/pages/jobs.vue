@@ -109,9 +109,9 @@ onBeforeUnmount(() => {
 					{{ workflow.jobs.error.value }}
 				</p>
 
-				<div v-if="!job" class="rounded-lg border border-default p-6">
-					<USkeleton v-if="workflow.jobs.loading.value" class="h-40 w-full" />
-					<p v-else class="text-sm text-muted">No background jobs are registered.</p>
+				<JobsSkeleton v-if="workflow.jobs.loading.value && !job" />
+				<div v-else-if="!job" class="rounded-lg border border-default p-6">
+					<p class="text-sm text-muted">No background jobs are registered.</p>
 				</div>
 
 				<UCard v-else>

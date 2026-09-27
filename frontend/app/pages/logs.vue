@@ -152,12 +152,9 @@ onBeforeUnmount(() => {
 					aria-label="Bot logs"
 					aria-live="off"
 				>
-					<div v-if="!visibleEntries.length" class="p-6 text-sm text-muted">
-						{{
-							logs.page.loading.value
-								? "Loading logs…"
-								: "No log messages in this view yet."
-						}}
+					<LogsSkeleton v-if="logs.page.loading.value && !entries.length" />
+					<div v-else-if="!visibleEntries.length" class="p-6 text-sm text-muted">
+						No log messages in this view yet.
 					</div>
 					<div
 						v-for="entry in visibleEntries"

@@ -30,6 +30,11 @@ class ListenerBadgeKind(StrEnum):
     RESIDENT_DJ = "resident_dj"
     RADIO_REGULAR = "radio_regular"
     REPEAT_OFFENDER = "repeat_offender"
+    ALWAYS_AROUND = "always_around"
+    ALL_EARS = "all_ears"
+    QUEUE_CURATOR = "queue_curator"
+    RADIO_RIDER = "radio_rider"
+    WIDE_ROTATION = "wide_rotation"
 
 
 @dataclass(frozen=True, slots=True)

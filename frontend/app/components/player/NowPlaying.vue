@@ -9,6 +9,7 @@ const consent = useConsentStore();
 const { icons } = useTheme();
 const { currentPosition } = usePlaybackPosition();
 const current = computed(() => player.state?.runtime.current ?? null);
+const loading = computed(() => !player.state && player.connection === "connecting");
 const nextTrack = computed(() => player.state?.queue[0]?.request ?? null);
 const source = computed(() => (current.value ? trackSource(current.value) : undefined));
 const videoId = computed(() => (current.value ? youtubeVideoId(current.value) : null));
@@ -118,8 +119,11 @@ watch(loadVideo, (visible) => {
 		}"
 	>
 		<div class="media-stage">
+			<div v-if="loading" class="media-loading" aria-hidden="true">
+				<USkeleton class="size-full rounded-none" />
+			</div>
 			<div
-				v-if="artwork && !artworkFailed"
+				v-else-if="artwork && !artworkFailed"
 				:key="artwork"
 				class="media-artwork"
 				:class="{ 'is-moving': coverMoving }"
@@ -255,7 +259,13 @@ watch(loadVideo, (visible) => {
 			</div>
 		</div>
 		<div v-show="!videoControls || videoFailed" class="media-details">
-			<div class="media-copy">
+			<div v-if="loading" class="media-copy space-y-4" aria-busy="true">
+				<USkeleton class="h-5 w-36 rounded-full" />
+				<USkeleton class="h-12 w-full max-w-2xl" />
+				<USkeleton class="h-12 w-3/5 max-w-lg" />
+				<USkeleton class="mt-3 h-10 w-32 rounded-lg" />
+			</div>
+			<div v-else class="media-copy">
 				<PlayerContributor
 					v-if="current"
 					:contributor="current.contributor"
@@ -285,8 +295,15 @@ watch(loadVideo, (visible) => {
 					<UIcon :name="icons.plus" />{{ nextTrack ? "Open queue" : "Add a track" }}
 				</button>
 			</div>
+			<div v-if="loading" class="next-track-cue" aria-hidden="true">
+				<USkeleton class="size-12! shrink-0 rounded-lg" />
+				<div class="min-w-0 flex-1 space-y-2">
+					<USkeleton class="h-4 w-full" />
+					<USkeleton class="h-3 w-16" />
+				</div>
+			</div>
 			<UTooltip
-				v-if="current"
+				v-else-if="current"
 				:text="
 					nextTrack ? `Open queue: ${nextTrack.track.title}` : 'Open queue to add a track'
 				"
@@ -396,6 +413,10 @@ watch(loadVideo, (visible) => {
 	container-type: size;
 	background: var(--player-stage-bg);
 	pointer-events: none;
+}
+.media-loading {
+	position: absolute;
+	inset: 0;
 }
 .media-artwork {
 	position: absolute;

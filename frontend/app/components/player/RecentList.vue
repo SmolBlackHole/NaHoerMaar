@@ -36,7 +36,7 @@ function requeue(item: RecentPlayback) {
 					<USkeleton class="h-4 w-full max-w-72" />
 					<USkeleton class="h-3 w-32" />
 				</div>
-				<USkeleton class="recent-radio h-5 w-28" />
+				<USkeleton class="recent-contributor h-5 w-28" />
 				<USkeleton class="recent-duration h-3 w-10" />
 				<USkeleton class="hidden h-3 w-28 lg:block lg:w-36" />
 				<div class="recent-actions ml-auto flex items-center gap-1">
@@ -95,10 +95,10 @@ function requeue(item: RecentPlayback) {
 					</p>
 				</div>
 				<PlayerContributor
-					v-if="item.origin === 'radio'"
+					v-if="item.contributor"
 					:contributor="item.contributor"
-					origin="radio"
-					class="recent-radio"
+					:origin="item.origin"
+					class="recent-contributor"
 				/>
 				<span class="recent-duration text-xs tabular-nums text-muted">
 					{{ formatTime(item.duration_seconds) }}
@@ -172,7 +172,7 @@ function requeue(item: RecentPlayback) {
 		grid-row: 1;
 		align-self: center;
 	}
-	.recent-radio {
+	.recent-contributor {
 		grid-column: 2;
 	}
 	.recent-details {

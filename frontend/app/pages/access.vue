@@ -247,23 +247,7 @@ onScopeDispose(access.dispose);
 						<span>{{ error }}</span>
 					</div>
 
-					<div
-						v-if="access.page.loading.value && !state"
-						aria-label="Loading listener access"
-					>
-						<div
-							class="grid overflow-hidden rounded-2xl border border-default sm:grid-cols-2 xl:grid-cols-4"
-						>
-							<div v-for="index in 4" :key="index" class="space-y-3 p-5">
-								<USkeleton class="h-4 w-28" />
-								<USkeleton class="h-8 w-20" />
-							</div>
-						</div>
-						<div class="mt-8 grid gap-8 xl:grid-cols-2">
-							<USkeleton class="h-96 rounded-2xl" />
-							<USkeleton class="h-96 rounded-2xl" />
-						</div>
-					</div>
+					<AccessSkeleton v-if="access.page.loading.value && !state" />
 
 					<template v-else-if="state">
 						<dl

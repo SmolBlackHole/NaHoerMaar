@@ -1192,7 +1192,7 @@ export interface components {
          * ListenerBadgeKind
          * @enum {string}
          */
-        ListenerBadgeKind: "night_owl" | "explorer" | "resident_dj" | "radio_regular" | "repeat_offender";
+        ListenerBadgeKind: "night_owl" | "explorer" | "resident_dj" | "radio_regular" | "repeat_offender" | "always_around" | "all_ears" | "queue_curator" | "radio_rider" | "wide_rotation";
         /** ListenerBadgeView */
         ListenerBadgeView: {
             kind: components["schemas"]["ListenerBadgeKind"];

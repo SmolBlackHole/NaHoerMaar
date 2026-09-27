@@ -17,7 +17,7 @@ withDefaults(
 
 <template>
 	<dl
-		class="grid overflow-hidden rounded-2xl border border-default sm:grid-cols-2 xl:grid-cols-4"
+		class="grid overflow-hidden rounded-2xl border border-default bg-elevated/20 sm:grid-cols-2 xl:grid-cols-4"
 	>
 		<div
 			v-for="(item, index) in items"
@@ -30,10 +30,15 @@ withDefaults(
 				index === 3 && 'sm:border-t xl:border-t-0',
 			]"
 		>
-			<dt class="flex items-center gap-2 text-sm text-muted">
-				<UIcon :name="item.icon" class="size-4 shrink-0" />{{ item.label }}
+			<dt class="flex items-center gap-3 text-sm text-muted">
+				<span
+					class="grid size-9 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"
+				>
+					<UIcon :name="item.icon" class="size-4" />
+				</span>
+				{{ item.label }}
 			</dt>
-			<dd class="mt-3 text-2xl font-semibold tabular-nums text-highlighted">
+			<dd class="mt-4 text-2xl font-semibold tabular-nums text-highlighted">
 				<USkeleton v-if="loading" class="h-8 w-20" />
 				<template v-else>{{ item.value }}</template>
 			</dd>

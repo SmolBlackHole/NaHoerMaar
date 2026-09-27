@@ -273,11 +273,29 @@ function formatWait(seconds: number) {
 
 		<div
 			v-if="!player.state && player.connection === 'connecting'"
-			class="space-y-3"
 			aria-label="Loading queue"
 			aria-busy="true"
 		>
-			<USkeleton v-for="row in 3" :key="row" class="h-18 w-full" />
+			<div class="queue-columns queue-grid text-xs text-muted" aria-hidden="true">
+				<span /><span /><span>Track</span><span>Requested by</span><span>Duration</span
+				><span />
+			</div>
+			<ol class="queue-list" aria-hidden="true">
+				<li v-for="row in 3" :key="row" class="queue-row queue-grid">
+					<USkeleton class="mx-auto size-4" />
+					<USkeleton class="queue-cover rounded-md" />
+					<div class="min-w-0 space-y-2">
+						<USkeleton class="h-4 w-full max-w-72" />
+						<USkeleton class="h-3 w-32" />
+					</div>
+					<USkeleton class="h-5 w-28" />
+					<div class="space-y-2 text-right">
+						<USkeleton class="ml-auto h-3 w-10" />
+						<USkeleton class="ml-auto h-3 w-12" />
+					</div>
+					<USkeleton class="mx-auto size-4" />
+				</li>
+			</ol>
 		</div>
 		<template v-else-if="queue.length">
 			<div class="queue-columns queue-grid text-xs text-muted" aria-hidden="true">

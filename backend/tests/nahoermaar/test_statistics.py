@@ -535,18 +535,48 @@ def test_listener_badges_enforce_samples_and_stable_ties() -> None:
         listening_seconds=10,
         night_listening_seconds=10,
     )
+    regular = _ranked_listener(
+        5,
+        plays=2,
+        unique_tracks=2,
+        radio_plays=0,
+        confirmed_manual_requests=0,
+        presence_seconds=2 * 60 * 60,
+        listening_seconds=100,
+        night_listening_seconds=0,
+    )
+    collector = _ranked_listener(
+        6,
+        plays=30,
+        unique_tracks=25,
+        radio_plays=20,
+        confirmed_manual_requests=10,
+        presence_seconds=3 * 60 * 60,
+        listening_seconds=2 * 60 * 60,
+        night_listening_seconds=0,
+    )
 
-    ranked = assign_listener_badges((explorer, repeater, same_radio_share, tiny_sample))
+    ranked = assign_listener_badges(
+        (explorer, repeater, same_radio_share, tiny_sample, regular, collector)
+    )
     badges = {item.user_id: {badge.kind for badge in item.badges} for item in ranked}
 
     assert badges[explorer.user_id] == {ListenerBadgeKind.EXPLORER}
     assert badges[repeater.user_id] == {
-        ListenerBadgeKind.RESIDENT_DJ,
         ListenerBadgeKind.RADIO_REGULAR,
         ListenerBadgeKind.REPEAT_OFFENDER,
     }
     assert badges[same_radio_share.user_id] == set()
     assert badges[tiny_sample.user_id] == {ListenerBadgeKind.NIGHT_OWL}
+    assert badges[regular.user_id] == {ListenerBadgeKind.ALWAYS_AROUND}
+    assert badges[collector.user_id] == {
+        ListenerBadgeKind.ALWAYS_AROUND,
+        ListenerBadgeKind.ALL_EARS,
+        ListenerBadgeKind.RESIDENT_DJ,
+        ListenerBadgeKind.QUEUE_CURATOR,
+        ListenerBadgeKind.RADIO_RIDER,
+        ListenerBadgeKind.WIDE_ROTATION,
+    }
 
 
 def test_active_day_streaks_end_on_the_current_local_day() -> None:
@@ -578,6 +608,7 @@ def _ranked_listener(
     unique_tracks: int,
     radio_plays: int,
     confirmed_manual_requests: int,
+    presence_seconds: float | None = None,
     listening_seconds: float,
     night_listening_seconds: float,
 ) -> RankedListener:
@@ -592,7 +623,9 @@ def _ranked_listener(
         plays=plays,
         unique_tracks=unique_tracks,
         radio_plays=radio_plays,
-        presence_seconds=listening_seconds,
+        presence_seconds=(
+            listening_seconds if presence_seconds is None else presence_seconds
+        ),
         listening_seconds=listening_seconds,
         night_listening_seconds=night_listening_seconds,
     )

@@ -32,12 +32,8 @@ onScopeDispose(recent.dispose);
 				Recently played
 			</h2>
 		</div>
-		<div
-			v-if="recent.recent.loading.value && !history.length"
-			class="space-y-2"
-			aria-busy="true"
-		>
-			<USkeleton v-for="row in 4" :key="row" class="h-16 w-full" />
+		<div v-if="recent.recent.loading.value && !history.length" aria-busy="true">
+			<PlayerRecentList :entries="[]" loading />
 		</div>
 		<p
 			v-else-if="recent.recent.error.value && !history.length"

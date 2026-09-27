@@ -78,13 +78,7 @@ const visible = computed(() => filtered.value.slice(0, visibleCount.value));
 				The license list could not be loaded.
 				<button type="button" @click="refresh()">Try again</button>
 			</p>
-			<p
-				v-else-if="status === 'pending' || status === 'idle'"
-				role="status"
-				class="license-status"
-			>
-				Loading licenses…
-			</p>
+			<LicensesSkeleton v-else-if="status === 'pending' || status === 'idle'" />
 			<template v-else>
 				<p class="license-count" role="status">
 					{{ filtered.length }} components, including build tools

@@ -374,6 +374,39 @@ def assign_listener_badges(
         lambda item: item.repeat_ratio,
         lambda item: item.plays,
     )
+    for item in listeners:
+        earned = (
+            (
+                ListenerBadgeKind.ALWAYS_AROUND,
+                item.presence_seconds,
+                item.presence_seconds >= 2 * 60 * 60,
+            ),
+            (
+                ListenerBadgeKind.ALL_EARS,
+                item.listening_seconds,
+                item.listening_seconds >= 2 * 60 * 60,
+            ),
+            (
+                ListenerBadgeKind.QUEUE_CURATOR,
+                float(item.confirmed_manual_requests),
+                item.confirmed_manual_requests >= 10,
+            ),
+            (
+                ListenerBadgeKind.RADIO_RIDER,
+                float(item.radio_plays),
+                item.radio_plays >= 20,
+            ),
+            (
+                ListenerBadgeKind.WIDE_ROTATION,
+                float(item.unique_tracks),
+                item.unique_tracks >= 25,
+            ),
+        )
+        for kind, value, qualified in earned:
+            if qualified:
+                awards.setdefault(item.user_id, []).append(
+                    ListenerBadge(kind=kind, value=value, sample_size=round(value))
+                )
     return tuple(
         replace(item, badges=tuple(awards.get(item.user_id, ()))) for item in listeners
     )
