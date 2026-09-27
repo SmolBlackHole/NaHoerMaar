@@ -3,27 +3,58 @@
 
 import type { SessionAuthority } from "../api/transport";
 import type { BackendClient } from "../client";
-import type { BackgroundJobs } from "../models/jobs";
-import { createQueryState } from "./queryState";
+import type { BackgroundJobRun, BackgroundJobRunPage, BackgroundJobs } from "../models/jobs";
+import { createCursorPagination } from "./cursorPagination";
+import { createQueryState, type QueryState } from "./queryState";
 
 export function createJobsWorkflow(client: BackendClient, authority: SessionAuthority) {
 	const jobs = createQueryState<BackgroundJobs>(authority);
+	const runHistory = createCursorPagination<
+		BackgroundJobRunPage["entries"][number],
+		BackgroundJobRunPage
+	>(
+		authority,
+		(limit, cursor, signal) => client.jobs.runs({ limit, cursor }, signal),
+		({ id }) => id,
+	);
+	const runs = runHistory.page;
+	const runDetails = new Map<string, QueryState<BackgroundJobRun>>();
 
-	function load() {
+	async function load() {
+		const [status] = await Promise.all([refreshStatus(), runHistory.refresh()]);
+		return status;
+	}
+
+	function refreshStatus() {
 		return jobs.load((signal) => client.jobs.status(signal));
 	}
 
+	function runDetail(id: string) {
+		let state = runDetails.get(id);
+		if (!state) {
+			state = createQueryState<BackgroundJobRun>(authority);
+			runDetails.set(id, state);
+		}
+		return state;
+	}
+
+	function loadRun(id: string) {
+		const detail = runDetail(id);
+		if (detail.data.value) return Promise.resolve(detail.data.value);
+		return detail.load((signal) => client.jobs.run(id, signal));
+	}
+
 	function runCatalogMaintenance(batchSize: number) {
-		return run((signal) =>
+		return start((signal) =>
 			client.jobs.runCatalogMaintenance({ batch_size: batchSize }, signal),
 		);
 	}
 
 	function runHousekeeping(batchSize: number) {
-		return run((signal) => client.jobs.runHousekeeping({ batch_size: batchSize }, signal));
+		return start((signal) => client.jobs.runHousekeeping({ batch_size: batchSize }, signal));
 	}
 
-	function run(
+	function start(
 		start: (signal: AbortSignal) => ReturnType<BackendClient["jobs"]["runHousekeeping"]>,
 	) {
 		return jobs.load(async (signal) => {
@@ -34,7 +65,6 @@ export function createJobsWorkflow(client: BackendClient, authority: SessionAuth
 				jobs: registered.some(({ id }) => id === updated.id)
 					? registered.map((job) => (job.id === updated.id ? updated : job))
 					: [...registered, updated],
-				recent_runs: current?.recent_runs ?? [],
 				history_retention_days: current?.history_retention_days ?? 30,
 			};
 		});
@@ -42,9 +72,20 @@ export function createJobsWorkflow(client: BackendClient, authority: SessionAuth
 
 	return {
 		jobs,
+		runs,
+		hasMoreRuns: runHistory.hasMore,
 		load,
+		refreshStatus,
+		more: runHistory.more,
+		runDetail,
+		loadRun,
 		runCatalogMaintenance,
 		runHousekeeping,
-		dispose: jobs.dispose,
+		dispose() {
+			jobs.dispose();
+			runHistory.dispose();
+			for (const detail of runDetails.values()) detail.dispose();
+			runDetails.clear();
+		},
 	};
 }

@@ -131,18 +131,30 @@ describe("new backend repositories", () => {
 		fetcher.mockImplementation(async () => Response.json({ jobs: [] }));
 
 		await client.jobs.status();
+		await client.jobs.runs({
+			limit: 10,
+			cursor: "next page",
+			jobId: "housekeeping",
+			status: "failed",
+		});
+		await client.jobs.run("run/id");
 		await client.jobs.runCatalogMaintenance({ batch_size: 25 });
 		await client.jobs.runHousekeeping({ batch_size: 500 });
 
 		expect(fetcher.mock.calls.map(([url, options]) => [url, options?.method])).toEqual([
 			["/api/jobs", undefined],
+			[
+				"/api/jobs/runs?limit=10&cursor=next+page&job_id=housekeeping&status=failed",
+				undefined,
+			],
+			["/api/jobs/runs/run%2Fid", undefined],
 			["/api/jobs/catalog-maintenance", "POST"],
 			["/api/jobs/housekeeping", "POST"],
 		]);
-		expect(JSON.parse(fetcher.mock.calls[1]![1]!.body as string)).toEqual({
+		expect(JSON.parse(fetcher.mock.calls[3]![1]!.body as string)).toEqual({
 			batch_size: 25,
 		});
-		expect(JSON.parse(fetcher.mock.calls[2]![1]!.body as string)).toEqual({
+		expect(JSON.parse(fetcher.mock.calls[4]![1]!.body as string)).toEqual({
 			batch_size: 500,
 		});
 	});

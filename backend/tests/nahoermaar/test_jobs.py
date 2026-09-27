@@ -13,7 +13,9 @@ from nahoermaar.database.uow import UnitOfWork
 from nahoermaar.operations.incidents import IncidentPeriod, IncidentService
 from nahoermaar.operations.housekeeping import HousekeepingService
 from nahoermaar.operations.jobs import (
+    JobHealth,
     JobId,
+    JobRun,
     JobRunDetail,
     JobRunDetailKind,
     JobRunDetailOutcome,
@@ -39,6 +41,10 @@ def test_job_runs_persist_failures_recovery_and_interruption() -> None:
     async def scenario() -> None:
         await migrate(database.engine)
         await jobs.start()
+        assert await jobs.health((JobId.CATALOG_MAINTENANCE, JobId.HOUSEKEEPING)) == {
+            JobId.CATALOG_MAINTENANCE: JobHealth.UNKNOWN,
+            JobId.HOUSEKEEPING: JobHealth.UNKNOWN,
+        }
 
         partial = await jobs.start_run(
             JobId.CATALOG_MAINTENANCE,
@@ -67,6 +73,9 @@ def test_job_runs_persist_failures_recovery_and_interruption() -> None:
         )
         assert partial.status is JobRunStatus.PARTIAL
         assert partial.duration_seconds == 4
+        assert await jobs.health((JobId.CATALOG_MAINTENANCE,)) == {
+            JobId.CATALOG_MAINTENANCE: JobHealth.NEEDS_ATTENTION
+        }
 
         current[0] += timedelta(minutes=5)
         recovered = await jobs.start_run(
@@ -81,6 +90,9 @@ def test_job_runs_persist_failures_recovery_and_interruption() -> None:
             changed_count=5,
         )
         assert recovered.status is JobRunStatus.SUCCEEDED
+        assert await jobs.health((JobId.CATALOG_MAINTENANCE,)) == {
+            JobId.CATALOG_MAINTENANCE: JobHealth.HEALTHY
+        }
 
         current[0] += timedelta(seconds=1)
         interrupted = await jobs.start_run(
@@ -98,6 +110,9 @@ def test_job_runs_persist_failures_recovery_and_interruption() -> None:
         )
         cancelled = await jobs.cancel_run(cancelled)
         assert cancelled.status is JobRunStatus.CANCELLED
+        assert await jobs.health((JobId.HOUSEKEEPING,)) == {
+            JobId.HOUSEKEEPING: JobHealth.NEEDS_ATTENTION
+        }
 
         history = await jobs.recent()
         assert [run.status for run in history] == [
@@ -109,6 +124,31 @@ def test_job_runs_persist_failures_recovery_and_interruption() -> None:
         assert history[1].id == interrupted.id
         assert history[1].error_code == "job_interrupted"
         assert history[3].details == partial.details
+
+        first_page = await jobs.runs(limit=2)
+        assert [run.id for run in first_page.entries] == [
+            history[0].id,
+            history[1].id,
+        ]
+        assert all(not run.details for run in first_page.entries)
+        assert first_page.next_cursor is not None
+        second_page = await jobs.runs(limit=2, cursor=first_page.next_cursor)
+        assert [run.id for run in second_page.entries] == [
+            history[2].id,
+            history[3].id,
+        ]
+        assert second_page.next_cursor is None
+
+        partial_runs = await jobs.runs(limit=20, status=JobRunStatus.PARTIAL)
+        assert [run.id for run in partial_runs.entries] == [partial.id]
+        catalog_runs = await jobs.runs(limit=20, job_id=JobId.CATALOG_MAINTENANCE)
+        assert [run.id for run in catalog_runs.entries] == [
+            recovered.id,
+            partial.id,
+        ]
+        loaded_partial = await jobs.run(partial.id)
+        assert loaded_partial is not None
+        assert loaded_partial.details == partial.details
 
         report = await incidents.report(IncidentPeriod.HOURS_24)
         assert report.totals.warnings == 2
@@ -122,6 +162,47 @@ def test_job_runs_persist_failures_recovery_and_interruption() -> None:
         current[0] += timedelta(days=31)
         assert await jobs.purge(current[0], limit=10) == 4
         assert await jobs.recent() == ()
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        asyncio.run(database.close())
+
+
+def test_job_run_cursor_is_stable_for_equal_timestamps() -> None:
+    database = Database(os.environ["DATABASE_URL"])
+
+    def units() -> UnitOfWork:
+        return UnitOfWork(database.sessions)
+
+    incidents = IncidentService(units, clock=lambda: NOW)
+    jobs = JobService(units, incidents, clock=lambda: NOW)
+
+    async def scenario() -> None:
+        await migrate(database.engine)
+        runs: list[JobRun] = []
+        for _ in range(3):
+            run = await jobs.start_run(
+                JobId.CATALOG_MAINTENANCE,
+                JobTrigger.MANUAL,
+                1,
+            )
+            runs.append(
+                await jobs.finish_run(
+                    run,
+                    candidate_count=1,
+                    processed_count=1,
+                    changed_count=1,
+                )
+            )
+
+        expected = sorted(runs, key=lambda run: run.id, reverse=True)
+        first_page = await jobs.runs(limit=2)
+        assert list(first_page.entries) == expected[:2]
+        assert first_page.next_cursor is not None
+        second_page = await jobs.runs(limit=2, cursor=first_page.next_cursor)
+        assert list(second_page.entries) == expected[2:]
+        assert second_page.next_cursor is None
 
     try:
         asyncio.run(scenario())

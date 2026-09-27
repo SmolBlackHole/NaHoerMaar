@@ -4,7 +4,7 @@ const player = core.stores.usePlayerStore();
 const recent = core.workflows.recent();
 const loadingMore = ref(false);
 const history = computed(() => recent.recent.data.value?.entries ?? []);
-const hasMore = computed(() => Boolean(recent.recent.data.value?.next_cursor));
+const hasMore = recent.hasMore;
 
 onMounted(() => void recent.load(20));
 watch(

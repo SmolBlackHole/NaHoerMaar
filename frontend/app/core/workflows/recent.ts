@@ -4,30 +4,22 @@
 import type { SessionAuthority } from "../api/transport";
 import type { BackendClient } from "../client";
 import type { RecentPlaybackPage } from "../models/listening";
-import { createQueryState } from "./queryState";
+import { createCursorPagination } from "./cursorPagination";
 
 export function createRecentWorkflow(client: BackendClient, authority: SessionAuthority) {
-	const recent = createQueryState<RecentPlaybackPage>(authority);
-	async function load(limit = 20) {
-		return recent.load((signal) => client.listening.recent(limit, undefined, signal));
-	}
-	async function more(limit = 20) {
-		const previous = recent.data.value;
-		if (!previous?.next_cursor) return previous;
-		const page = await recent.load((signal) =>
-			client.listening.recent(limit, previous.next_cursor ?? undefined, signal),
-		);
-		if (!page) return null;
-		recent.set({
-			entries: [...previous.entries, ...page.entries],
-			next_cursor: page.next_cursor,
-		});
-		return recent.data.value;
-	}
+	const pagination = createCursorPagination<
+		RecentPlaybackPage["entries"][number],
+		RecentPlaybackPage
+	>(
+		authority,
+		(limit, cursor, signal) => client.listening.recent(limit, cursor, signal),
+		({ playback_id }) => playback_id,
+	);
 	return {
-		recent,
-		load,
-		more,
-		dispose: recent.dispose,
+		recent: pagination.page,
+		hasMore: pagination.hasMore,
+		load: pagination.load,
+		more: pagination.more,
+		dispose: pagination.dispose,
 	};
 }

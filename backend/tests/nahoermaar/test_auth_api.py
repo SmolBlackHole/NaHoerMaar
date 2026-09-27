@@ -34,7 +34,7 @@ from nahoermaar.messaging import MessageBus
 from nahoermaar.listening.service import ListeningService
 from nahoermaar.observability import ContextFilter
 from nahoermaar.operations.incidents import IncidentService
-from nahoermaar.operations.jobs import JobService
+from nahoermaar.operations.jobs import JobId, JobService, JobTrigger
 from nahoermaar.operations.housekeeping import HousekeepingService
 from nahoermaar.operations.logs import RecentLogBuffer
 from nahoermaar.player.automation import PlaybackAutomation
@@ -178,6 +178,8 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
     assert "/api/listening/recent" in contract["paths"]
     assert "/api/logs" in contract["paths"]
     assert "/api/jobs" in contract["paths"]
+    assert "/api/jobs/runs" in contract["paths"]
+    assert "/api/jobs/runs/{run_id}" in contract["paths"]
     assert "/api/jobs/catalog-maintenance" in contract["paths"]
     assert "/api/jobs/housekeeping" in contract["paths"]
     assert "/api/incidents" in contract["paths"]
@@ -365,8 +367,81 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
                 "housekeeping",
             ]
             assert jobs.json()["jobs"][0]["default_batch_size"] == 10
-            assert jobs.json()["recent_runs"] == []
+            assert [item["health"] for item in jobs.json()["jobs"]] == [
+                "unknown",
+                "unknown",
+            ]
+            assert "recent_runs" not in jobs.json()
             assert jobs.json()["history_retention_days"] == 30
+            job_runs = await client.get("/api/jobs/runs")
+            assert job_runs.status_code == 200
+            assert job_runs.json() == {"entries": [], "next_cursor": None}
+            missing_job_run = await client.get(f"/api/jobs/runs/{uuid4()}")
+            assert missing_job_run.status_code == 404
+            assert missing_job_run.json() == {
+                "error": "not_found",
+                "retryable": False,
+            }
+            invalid_job_cursor = await client.get(
+                "/api/jobs/runs",
+                params={"cursor": "not-a-cursor"},
+            )
+            assert invalid_job_cursor.status_code == 422
+            assert invalid_job_cursor.json() == {
+                "error": "validation_failed",
+                "retryable": False,
+            }
+            first_run = await application.jobs.start_run(
+                JobId.HOUSEKEEPING,
+                JobTrigger.MANUAL,
+                1,
+                current.user.id,
+            )
+            first_run = await application.jobs.finish_run(
+                first_run,
+                candidate_count=1,
+                processed_count=1,
+                changed_count=1,
+            )
+            second_run = await application.jobs.start_run(
+                JobId.HOUSEKEEPING,
+                JobTrigger.MANUAL,
+                1,
+                current.user.id,
+            )
+            second_run = await application.jobs.finish_run(
+                second_run,
+                candidate_count=1,
+                processed_count=1,
+                changed_count=0,
+            )
+            first_run_page = await client.get(
+                "/api/jobs/runs",
+                params={"limit": 1, "job_id": "housekeeping"},
+            )
+            assert first_run_page.status_code == 200
+            assert len(first_run_page.json()["entries"]) == 1
+            assert "details" not in first_run_page.json()["entries"][0]
+            assert first_run_page.json()["next_cursor"] is not None
+            second_run_page = await client.get(
+                "/api/jobs/runs",
+                params={
+                    "limit": 1,
+                    "job_id": "housekeeping",
+                    "cursor": first_run_page.json()["next_cursor"],
+                },
+            )
+            assert second_run_page.status_code == 200
+            paged_ids = {
+                first_run_page.json()["entries"][0]["id"],
+                second_run_page.json()["entries"][0]["id"],
+            }
+            assert paged_ids == {str(first_run.id), str(second_run.id)}
+            assert second_run_page.json()["next_cursor"] is None
+            run_detail = await client.get(f"/api/jobs/runs/{first_run.id}")
+            assert run_detail.status_code == 200
+            assert run_detail.json()["id"] == str(first_run.id)
+            assert run_detail.json()["details"] == []
             started_job = await client.post(
                 "/api/jobs/catalog-maintenance",
                 headers=headers,

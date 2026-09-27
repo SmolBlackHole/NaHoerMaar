@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: MPL-2.0 -->
 
 <script setup lang="ts">
-import type { BackgroundJob, BackgroundJobRun } from "~/core/models/jobs";
+import type { BackgroundJob, BackgroundJobRunSummary } from "~/core/models/jobs";
 import { failureForCode } from "~/core/errors";
 
 definePageMeta({ pageTransition: { name: "page", mode: "out-in" } });
@@ -19,11 +19,11 @@ const expandedJobs = ref<string[]>([]);
 const expandedRun = ref<string>();
 const allowed = computed(() => ["owner", "admin"].includes(session.account?.role ?? ""));
 const jobs = computed(() => workflow.jobs.data.value?.jobs ?? []);
-const runs = computed(() => workflow.jobs.data.value?.recent_runs ?? []);
+const runs = computed(() => workflow.runs.data.value?.entries ?? []);
 const runningJobs = computed(() => jobs.value.filter(({ running }) => running).length);
 const latestRun = computed(() => runs.value[0]);
 const attentionRuns = computed(
-	() => runs.value.filter(({ status }) => ["partial", "failed"].includes(status)).length,
+	() => jobs.value.filter(({ health }) => health === "needs_attention").length,
 );
 let timer: ReturnType<typeof setTimeout> | undefined;
 let disposed = false;
@@ -88,8 +88,16 @@ function detailTone(outcome: string) {
 	return "text-dimmed";
 }
 
-function runLabel(run: BackgroundJobRun) {
+function runLabel(run: BackgroundJobRunSummary) {
 	return jobs.value.find(({ id }) => id === run.job_id)?.label ?? run.job_id;
+}
+
+function jobState(job: BackgroundJob) {
+	if (job.running) return { label: "Running", color: "primary" as const };
+	if (job.health === "needs_attention")
+		return { label: "Needs attention", color: "warning" as const };
+	if (job.health === "healthy") return { label: "Healthy", color: "success" as const };
+	return { label: "Not run", color: "neutral" as const };
 }
 
 function jobIcon(job: BackgroundJob) {
@@ -118,7 +126,7 @@ function progressLabel(job: BackgroundJob) {
 	return `${job.active_processed} of ${job.active_candidates} candidates processed`;
 }
 
-function runFacts(run: BackgroundJobRun) {
+function runFacts(run: BackgroundJobRunSummary) {
 	return [
 		{ label: "Requested", value: run.requested_count },
 		{ label: "Candidates", value: run.candidate_count },
@@ -138,15 +146,28 @@ function toggleJob(id: string) {
 		: [...expandedJobs.value, id];
 }
 
-function toggleRun(id: string) {
-	expandedRun.value = expandedRun.value === id ? undefined : id;
+async function toggleRun(id: string) {
+	if (expandedRun.value === id) {
+		expandedRun.value = undefined;
+		return;
+	}
+	expandedRun.value = id;
+	await workflow.loadRun(id);
 }
+
+const runDetail = (id: string) => workflow.runDetail(id).data.value;
+const runDetailLoading = (id: string) => workflow.runDetail(id).loading.value;
+const runDetailError = (id: string) => workflow.runDetail(id).error.value;
 
 async function refresh() {
 	if (!allowed.value || visibility.value !== "visible" || Object.values(submitting).some(Boolean))
 		return;
 	await workflow.load();
 	for (const job of jobs.value) batchSizes[job.id] ??= job.default_batch_size;
+}
+
+function loadMoreRuns() {
+	return workflow.more();
 }
 
 async function runNow(job: BackgroundJob) {
@@ -338,10 +359,10 @@ onBeforeUnmount(() => {
 														{{ job.label }}
 													</h3>
 													<UBadge
-														:color="job.running ? 'primary' : 'neutral'"
+														:color="jobState(job).color"
 														variant="subtle"
 													>
-														{{ job.running ? "Running" : "Idle" }}
+														{{ jobState(job).label }}
 													</UBadge>
 												</div>
 												<p class="mt-1 text-sm leading-relaxed text-muted">
@@ -513,7 +534,14 @@ onBeforeUnmount(() => {
 							</div>
 						</section>
 
-						<section v-if="runs.length" aria-labelledby="job-history-title">
+						<section
+							v-if="
+								runs.length ||
+								workflow.runs.loading.value ||
+								workflow.runs.error.value
+							"
+							aria-labelledby="job-history-title"
+						>
 							<div class="mb-4 flex flex-wrap items-end justify-between gap-3">
 								<div>
 									<h2
@@ -530,7 +558,38 @@ onBeforeUnmount(() => {
 								<p class="text-xs text-muted">{{ runs.length }} recorded runs</p>
 							</div>
 
-							<div class="grid gap-2">
+							<p
+								v-if="workflow.runs.error.value && !runs.length"
+								class="rounded-xl bg-warning/10 px-4 py-3 text-sm text-warning"
+								role="alert"
+							>
+								{{ workflow.runs.error.value }}
+							</p>
+							<div
+								v-if="workflow.runs.loading.value && !runs.length"
+								class="grid gap-2"
+								aria-label="Loading job history"
+							>
+								<div
+									v-for="row in 3"
+									:key="row"
+									class="grid gap-3 rounded-xl bg-elevated/35 p-4 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto_auto] sm:items-center"
+								>
+									<div class="flex items-center gap-3">
+										<USkeleton class="size-9 shrink-0 rounded-full" />
+										<div class="grid flex-1 gap-2">
+											<USkeleton class="h-4 w-40 max-w-full" />
+											<USkeleton class="h-3 w-52 max-w-full" />
+										</div>
+									</div>
+									<USkeleton class="h-4 w-20" />
+									<USkeleton class="h-4 w-12" />
+									<USkeleton class="h-5 w-16 rounded-full" />
+									<USkeleton class="size-4" />
+								</div>
+							</div>
+
+							<div v-else class="grid gap-2">
 								<article
 									v-for="run in runs"
 									:key="run.id"
@@ -638,11 +697,42 @@ onBeforeUnmount(() => {
 												</p>
 
 												<div
-													v-if="run.details?.length"
+													v-if="runDetailLoading(run.id)"
+													class="mt-5 grid gap-2"
+													aria-label="Loading run details"
+												>
+													<div
+														v-for="row in 2"
+														:key="row"
+														class="flex items-start gap-3 rounded-xl bg-default/45 px-3 py-3"
+													>
+														<USkeleton
+															class="mt-0.5 size-4 shrink-0 rounded"
+														/>
+														<div class="grid flex-1 gap-2">
+															<USkeleton
+																class="h-4 w-44 max-w-full"
+															/>
+															<USkeleton
+																class="h-3 w-80 max-w-full"
+															/>
+														</div>
+													</div>
+												</div>
+												<p
+													v-else-if="runDetailError(run.id)"
+													class="mt-5 text-sm text-warning"
+													role="alert"
+												>
+													{{ runDetailError(run.id) }}
+												</p>
+												<div
+													v-else-if="runDetail(run.id)?.details.length"
 													class="mt-5 grid gap-2"
 												>
 													<div
-														v-for="(detail, index) in run.details ?? []"
+														v-for="(detail, index) in runDetail(run.id)
+															?.details ?? []"
 														:key="`${run.id}-${index}`"
 														class="flex items-start gap-3 rounded-xl bg-default/45 px-3 py-3"
 													>
@@ -695,6 +785,16 @@ onBeforeUnmount(() => {
 										</div>
 									</div>
 								</article>
+							</div>
+							<div v-if="workflow.hasMoreRuns.value" class="mt-4 flex justify-center">
+								<UButton
+									label="Load more runs"
+									color="neutral"
+									variant="soft"
+									:icon="icons.chevronDown"
+									:loading="workflow.runs.loading.value"
+									@click="loadMoreRuns"
+								/>
 							</div>
 						</section>
 					</template>

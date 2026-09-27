@@ -65,7 +65,7 @@ describe("new backend page workflows", () => {
 			)
 			.mockResolvedValueOnce(
 				Response.json({
-					entries: [{ playback_id: "second" }],
+					entries: [{ playback_id: "first" }, { playback_id: "second" }],
 					next_cursor: null,
 				}),
 			);
@@ -82,6 +82,7 @@ describe("new backend page workflows", () => {
 			"first",
 			"second",
 		]);
+		expect(workflow.hasMore.value).toBe(false);
 		workflow.dispose();
 	});
 
@@ -147,11 +148,11 @@ describe("new backend page workflows", () => {
 			id: "catalog-maintenance",
 			label: "Catalog maintenance",
 			running: false,
+			health: "unknown",
 		};
 		fetcher
-			.mockResolvedValueOnce(
-				Response.json({ jobs: [idle], recent_runs: [], history_retention_days: 30 }),
-			)
+			.mockResolvedValueOnce(Response.json({ jobs: [idle], history_retention_days: 30 }))
+			.mockResolvedValueOnce(Response.json({ entries: [], next_cursor: null }))
 			.mockResolvedValueOnce(
 				Response.json({ ...idle, running: true, active_batch_size: 25 }),
 			);
@@ -167,6 +168,7 @@ describe("new backend page workflows", () => {
 		});
 		expect(fetcher.mock.calls.map(([url, options]) => [url, options?.method])).toEqual([
 			["/api/jobs", undefined],
+			["/api/jobs/runs?limit=20", undefined],
 			["/api/jobs/catalog-maintenance", "POST"],
 		]);
 		workflow.dispose();
@@ -180,33 +182,94 @@ describe("new backend page workflows", () => {
 			id: "housekeeping",
 			label: "Data housekeeping",
 			running: false,
+			health: "healthy",
 		};
-		const recentRun = { id: "run-one", job_id: "housekeeping", status: "succeeded" };
+		const recentRun = {
+			id: "run-one",
+			job_id: "housekeeping",
+			status: "succeeded",
+			details: [{ label: "Expired sessions", outcome: "changed" }],
+		};
+		const runSummary = {
+			id: recentRun.id,
+			job_id: recentRun.job_id,
+			status: recentRun.status,
+		};
 		fetcher
 			.mockResolvedValueOnce(
 				Response.json({
 					jobs: [idle],
-					recent_runs: [recentRun],
 					history_retention_days: 30,
 				}),
 			)
+			.mockResolvedValueOnce(Response.json({ entries: [runSummary], next_cursor: null }))
 			.mockResolvedValueOnce(
 				Response.json({ ...idle, running: true, active_batch_size: 500 }),
-			);
+			)
+			.mockResolvedValueOnce(Response.json(recentRun));
 		const workflow = core.workflows.jobs();
 
 		await workflow.load();
 		await workflow.runHousekeeping(500);
+		await workflow.loadRun("run-one");
+		await workflow.loadRun("run-one");
 
 		expect(workflow.jobs.data.value?.jobs[0]).toMatchObject({
 			id: "housekeeping",
 			running: true,
 			active_batch_size: 500,
 		});
-		expect(workflow.jobs.data.value?.recent_runs).toEqual([recentRun]);
+		expect(workflow.runs.data.value?.entries).toEqual([runSummary]);
+		expect(workflow.runDetail("run-one").data.value?.details).toEqual(recentRun.details);
 		expect(fetcher.mock.calls.map(([url, options]) => [url, options?.method])).toEqual([
 			["/api/jobs", undefined],
+			["/api/jobs/runs?limit=20", undefined],
 			["/api/jobs/housekeeping", "POST"],
+			["/api/jobs/runs/run-one", undefined],
+		]);
+		workflow.dispose();
+	});
+
+	it("keeps loaded job history pages while refreshing the newest summaries", async () => {
+		const fetcher = vi.fn<typeof fetch>();
+		const core = createBackendCore({ fetch: fetcher });
+		core.authority.replace("session-token", "restored");
+		const status = { jobs: [], history_retention_days: 30 };
+		fetcher
+			.mockResolvedValueOnce(Response.json(status))
+			.mockResolvedValueOnce(
+				Response.json({ entries: [{ id: "run-two" }], next_cursor: "older" }),
+			)
+			.mockResolvedValueOnce(
+				Response.json({ entries: [{ id: "run-one" }], next_cursor: null }),
+			)
+			.mockResolvedValueOnce(Response.json(status))
+			.mockResolvedValueOnce(
+				Response.json({
+					entries: [{ id: "run-three" }, { id: "run-two", status: "succeeded" }],
+					next_cursor: "older-again",
+				}),
+			);
+		const workflow = core.workflows.jobs();
+
+		await workflow.load();
+		await workflow.more();
+		await workflow.load();
+
+		expect(workflow.runs.data.value).toEqual({
+			entries: [
+				{ id: "run-three" },
+				{ id: "run-two", status: "succeeded" },
+				{ id: "run-one" },
+			],
+			next_cursor: null,
+		});
+		expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+			"/api/jobs",
+			"/api/jobs/runs?limit=20",
+			"/api/jobs/runs?limit=20&cursor=older",
+			"/api/jobs",
+			"/api/jobs/runs?limit=20",
 		]);
 		workflow.dispose();
 	});

@@ -4,19 +4,30 @@
 
 """Admin controls and persisted history for bounded application jobs."""
 
+from base64 import urlsafe_b64decode, urlsafe_b64encode
+from binascii import Error as Base64Error
+from datetime import UTC, datetime
 import logging
-from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Request, status
+from fastapi import APIRouter, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from nahoermaar.bootstrap import Application
 from nahoermaar.catalog.service import CatalogMaintenanceStatus
 from nahoermaar.operations.housekeeping import HousekeepingStatus
-from nahoermaar.operations.jobs import HISTORY_RETENTION_DAYS, JobRun, JobRunDetail
+from nahoermaar.operations.jobs import (
+    HISTORY_RETENTION_DAYS,
+    JobHealth,
+    JobId,
+    JobRun,
+    JobRunCursor,
+    JobRunDetail,
+    JobRunStatus,
+)
 
+from .errors import ApiError, ApiErrorCode
 from .middleware import authenticated
 
 _LOGGER = logging.getLogger(__name__)
@@ -28,6 +39,7 @@ class BackgroundJobView(BaseModel):
     id: str
     label: str
     description: str
+    health: JobHealth
     running: bool
     interval_seconds: float
     default_batch_size: int
@@ -81,11 +93,36 @@ class BackgroundJobRunView(BaseModel):
     details: tuple[BackgroundJobRunDetailView, ...]
 
 
+class BackgroundJobRunSummaryView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    job_id: str
+    trigger: str
+    status: str
+    requested_by: UUID | None
+    requested_count: int
+    candidate_count: int
+    processed_count: int
+    changed_count: int
+    failure_count: int
+    started_at: datetime
+    finished_at: datetime | None
+    duration_seconds: float | None
+    error_code: str | None
+
+
+class BackgroundJobRunPageView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    entries: tuple[BackgroundJobRunSummaryView, ...]
+    next_cursor: str | None
+
+
 class BackgroundJobsView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     jobs: tuple[BackgroundJobView, ...]
-    recent_runs: tuple[BackgroundJobRunView, ...]
     history_retention_days: int
 
 
@@ -112,15 +149,52 @@ def router(application: Application) -> APIRouter:
     @routes.get("")
     async def background_jobs(request: Request) -> BackgroundJobsView:
         await application.access.require_admin(authenticated(request).user.id)
-        runs = await application.jobs.recent()
+        job_ids = (JobId.CATALOG_MAINTENANCE, JobId.HOUSEKEEPING)
+        health = await application.jobs.health(job_ids)
         return BackgroundJobsView(
             jobs=(
-                _catalog_maintenance_view(application.catalog.maintenance_status()),
-                _housekeeping_view(application.housekeeping.status()),
+                _catalog_maintenance_view(
+                    application.catalog.maintenance_status(),
+                    health[JobId.CATALOG_MAINTENANCE],
+                ),
+                _housekeeping_view(
+                    application.housekeeping.status(),
+                    health[JobId.HOUSEKEEPING],
+                ),
             ),
-            recent_runs=tuple(_run_view(run) for run in runs),
             history_retention_days=HISTORY_RETENTION_DAYS,
         )
+
+    @routes.get("/runs")
+    async def background_job_runs(
+        request: Request,
+        limit: Annotated[int, Query(ge=1, le=100)] = 20,
+        cursor: str | None = None,
+        job_id: JobId | None = None,
+        run_status: Annotated[JobRunStatus | None, Query(alias="status")] = None,
+    ) -> BackgroundJobRunPageView:
+        await application.access.require_admin(authenticated(request).user.id)
+        page = await application.jobs.runs(
+            limit=limit,
+            cursor=_decode_cursor(cursor),
+            job_id=job_id,
+            status=run_status,
+        )
+        return BackgroundJobRunPageView(
+            entries=tuple(_run_summary_view(run) for run in page.entries),
+            next_cursor=_encode_cursor(page.next_cursor),
+        )
+
+    @routes.get("/runs/{run_id}")
+    async def background_job_run(
+        run_id: UUID,
+        request: Request,
+    ) -> BackgroundJobRunView:
+        await application.access.require_admin(authenticated(request).user.id)
+        run = await application.jobs.run(run_id)
+        if run is None:
+            raise ApiError(ApiErrorCode.NOT_FOUND, status.HTTP_404_NOT_FOUND)
+        return _run_view(run)
 
     @routes.post(
         "/catalog-maintenance",
@@ -141,7 +215,11 @@ def router(application: Application) -> APIRouter:
             actor.id,
             body.batch_size,
         )
-        return _catalog_maintenance_view(current)
+        health = await application.jobs.health((JobId.CATALOG_MAINTENANCE,))
+        return _catalog_maintenance_view(
+            current,
+            health[JobId.CATALOG_MAINTENANCE],
+        )
 
     @routes.post(
         "/housekeeping",
@@ -159,13 +237,15 @@ def router(application: Application) -> APIRouter:
             actor.id,
             body.batch_size,
         )
-        return _housekeeping_view(current)
+        health = await application.jobs.health((JobId.HOUSEKEEPING,))
+        return _housekeeping_view(current, health[JobId.HOUSEKEEPING])
 
     return routes
 
 
 def _catalog_maintenance_view(
     current: CatalogMaintenanceStatus,
+    health: JobHealth,
 ) -> BackgroundJobView:
     return BackgroundJobView(
         id="catalog-maintenance",
@@ -173,6 +253,7 @@ def _catalog_maintenance_view(
         description=(
             "Repairs incomplete track metadata and refreshes stale search results."
         ),
+        health=health,
         running=current.running,
         interval_seconds=current.interval_seconds,
         default_batch_size=current.default_batch_size,
@@ -202,7 +283,10 @@ def _catalog_maintenance_view(
     )
 
 
-def _housekeeping_view(current: HousekeepingStatus) -> BackgroundJobView:
+def _housekeeping_view(
+    current: HousekeepingStatus,
+    health: JobHealth,
+) -> BackgroundJobView:
     return BackgroundJobView(
         id="housekeeping",
         label="Data housekeeping",
@@ -210,6 +294,7 @@ def _housekeeping_view(current: HousekeepingStatus) -> BackgroundJobView:
             "Removes expired sessions, receipts, cache snapshots, incidents and "
             "superseded avatars."
         ),
+        health=health,
         running=current.running,
         interval_seconds=current.interval_seconds,
         default_batch_size=current.default_batch_size,
@@ -251,6 +336,25 @@ def _run_view(run: JobRun) -> BackgroundJobRunView:
     )
 
 
+def _run_summary_view(run: JobRun) -> BackgroundJobRunSummaryView:
+    return BackgroundJobRunSummaryView(
+        id=run.id,
+        job_id=run.job_id,
+        trigger=run.trigger,
+        status=run.status,
+        requested_by=run.requested_by,
+        requested_count=run.requested_count,
+        candidate_count=run.candidate_count,
+        processed_count=run.processed_count,
+        changed_count=run.changed_count,
+        failure_count=run.failure_count,
+        started_at=run.started_at,
+        finished_at=run.finished_at,
+        duration_seconds=run.duration_seconds,
+        error_code=run.error_code,
+    )
+
+
 def _run_detail_view(detail: JobRunDetail) -> BackgroundJobRunDetailView:
     return BackgroundJobRunDetailView(
         kind=detail.kind,
@@ -262,3 +366,25 @@ def _run_detail_view(detail: JobRunDetail) -> BackgroundJobRunDetailView:
         source=detail.source,
         error_code=detail.error_code,
     )
+
+
+def _encode_cursor(cursor: JobRunCursor | None) -> str | None:
+    if cursor is None:
+        return None
+    payload = f"{cursor.started_at.astimezone(UTC).isoformat()}|{cursor.run_id}"
+    return urlsafe_b64encode(payload.encode()).decode().rstrip("=")
+
+
+def _decode_cursor(value: str | None) -> JobRunCursor | None:
+    if value is None:
+        return None
+    try:
+        padding = "=" * (-len(value) % 4)
+        payload = urlsafe_b64decode(value + padding).decode()
+        started_at_value, run_id_value = payload.split("|", 1)
+        started_at = datetime.fromisoformat(started_at_value)
+        if started_at.tzinfo is None:
+            raise ValueError("Cursor timestamp must have a timezone.")
+        return JobRunCursor(started_at.astimezone(UTC), UUID(run_id_value))
+    except (Base64Error, UnicodeDecodeError, ValueError) as error:
+        raise ApiError(ApiErrorCode.VALIDATION_FAILED, 422) from error

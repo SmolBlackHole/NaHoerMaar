@@ -5,6 +5,8 @@ import type { components } from "../api/schema.generated";
 
 export type BackgroundJob = components["schemas"]["BackgroundJobView"];
 export type BackgroundJobRun = components["schemas"]["BackgroundJobRunView"];
+export type BackgroundJobRunPage = components["schemas"]["BackgroundJobRunPageView"];
+export type BackgroundJobRunSummary = components["schemas"]["BackgroundJobRunSummaryView"];
 export type BackgroundJobs = components["schemas"]["BackgroundJobsView"];
 export type RunCatalogMaintenance = components["schemas"]["RunCatalogMaintenance"];
 export type RunHousekeeping = components["schemas"]["RunHousekeeping"];

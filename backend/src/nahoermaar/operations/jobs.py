@@ -23,7 +23,9 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     Uuid,
+    and_,
     delete,
+    or_,
     select,
     update,
 )
@@ -65,6 +67,12 @@ class JobRunStatus(StrEnum):
     PARTIAL = "partial"
     FAILED = "failed"
     CANCELLED = "cancelled"
+
+
+class JobHealth(StrEnum):
+    UNKNOWN = "unknown"
+    HEALTHY = "healthy"
+    NEEDS_ATTENTION = "needs_attention"
 
 
 class JobRunDetailKind(StrEnum):
@@ -114,6 +122,18 @@ class JobRun:
         if self.finished_at is None:
             return None
         return max(0.0, (self.finished_at - self.started_at).total_seconds())
+
+
+@dataclass(frozen=True, slots=True)
+class JobRunCursor:
+    started_at: datetime
+    run_id: UUID
+
+
+@dataclass(frozen=True, slots=True)
+class JobRunPage:
+    entries: tuple[JobRun, ...]
+    next_cursor: JobRunCursor | None
 
 
 def _enum_values[EnumValue: StrEnum](members: type[EnumValue]) -> list[str]:
@@ -313,12 +333,67 @@ class JobRunRepository:
             _to_run(row, tuple(details_by_run.get(row.id, ()))) for row in rows
         )
 
-    async def latest_finished(self, job_id: JobId) -> JobRun | None:
+    async def page(
+        self,
+        *,
+        limit: int,
+        cursor: JobRunCursor | None = None,
+        job_id: JobId | None = None,
+        status: JobRunStatus | None = None,
+    ) -> JobRunPage:
+        query = select(_JobRunRow)
+        if cursor is not None:
+            query = query.where(
+                or_(
+                    _JobRunRow.started_at < cursor.started_at,
+                    and_(
+                        _JobRunRow.started_at == cursor.started_at,
+                        _JobRunRow.id < cursor.run_id,
+                    ),
+                )
+            )
+        if job_id is not None:
+            query = query.where(_JobRunRow.job_id == job_id)
+        if status is not None:
+            query = query.where(_JobRunRow.status == status)
+        rows = tuple(
+            await self._session.scalars(
+                query.order_by(
+                    _JobRunRow.started_at.desc(), _JobRunRow.id.desc()
+                ).limit(limit + 1)
+            )
+        )
+        entries = tuple(_to_run(row) for row in rows[:limit])
+        next_cursor = (
+            JobRunCursor(entries[-1].started_at, entries[-1].id)
+            if len(rows) > limit and entries
+            else None
+        )
+        return JobRunPage(entries, next_cursor)
+
+    async def get(self, run_id: UUID) -> JobRun | None:
+        row = await self._session.get(_JobRunRow, run_id)
+        if row is None:
+            return None
+        detail_rows = await self._session.scalars(
+            select(_JobRunDetailRow)
+            .where(_JobRunDetailRow.run_id == run_id)
+            .order_by(_JobRunDetailRow.position)
+        )
+        return _to_run(row, tuple(_to_detail(detail) for detail in detail_rows))
+
+    async def latest_health_run(self, job_id: JobId) -> JobRun | None:
         row = await self._session.scalar(
             select(_JobRunRow)
             .where(
                 _JobRunRow.job_id == job_id,
-                _JobRunRow.status != JobRunStatus.RUNNING,
+                _JobRunRow.status.in_(
+                    (
+                        JobRunStatus.SUCCEEDED,
+                        JobRunStatus.PARTIAL,
+                        JobRunStatus.FAILED,
+                    )
+                ),
             )
             .order_by(_JobRunRow.started_at.desc(), _JobRunRow.id.desc())
             .limit(1)
@@ -519,6 +594,34 @@ class JobService:
         async with self._units() as work:
             return await JobRunRepository(work.session).recent(limit)
 
+    async def health(self, job_ids: tuple[JobId, ...]) -> dict[JobId, JobHealth]:
+        async with self._units() as work:
+            repository = JobRunRepository(work.session)
+            return {
+                job_id: _health(await repository.latest_health_run(job_id))
+                for job_id in job_ids
+            }
+
+    async def runs(
+        self,
+        *,
+        limit: int,
+        cursor: JobRunCursor | None = None,
+        job_id: JobId | None = None,
+        status: JobRunStatus | None = None,
+    ) -> JobRunPage:
+        async with self._units() as work:
+            return await JobRunRepository(work.session).page(
+                limit=limit,
+                cursor=cursor,
+                job_id=job_id,
+                status=status,
+            )
+
+    async def run(self, run_id: UUID) -> JobRun | None:
+        async with self._units() as work:
+            return await JobRunRepository(work.session).get(run_id)
+
     async def purge(self, now: datetime, limit: int) -> int:
         async with self._units() as work:
             removed = await JobRunRepository(work.session).purge_before(
@@ -531,7 +634,7 @@ class JobService:
     async def _persist_finished(self, run: JobRun) -> JobRun | None:
         async with self._units() as work:
             repository = JobRunRepository(work.session)
-            previous = await repository.latest_finished(run.job_id)
+            previous = await repository.latest_health_run(run.job_id)
             if not await repository.finish(run):
                 raise RuntimeError(f"Job run {run.id} is no longer running.")
             repository.add_details(run.id, run.details)
@@ -561,6 +664,14 @@ class JobService:
             ),
             occurred_at=run.finished_at,
         )
+
+
+def _health(run: JobRun | None) -> JobHealth:
+    if run is None:
+        return JobHealth.UNKNOWN
+    if run.status is JobRunStatus.SUCCEEDED:
+        return JobHealth.HEALTHY
+    return JobHealth.NEEDS_ATTENTION
 
 
 def _to_run(row: _JobRunRow, details: tuple[JobRunDetail, ...] = ()) -> JobRun:
