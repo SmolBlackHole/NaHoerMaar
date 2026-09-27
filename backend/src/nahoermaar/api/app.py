@@ -28,6 +28,7 @@ from .events import router as events_router
 from .listening import router as listening_router
 from .logs import router as logs_router
 from .jobs import router as jobs_router
+from .incidents import router as incidents_router
 from .middleware import install_auth_middleware
 from .player import router as player_router
 from .statistics import router as statistics_router
@@ -55,7 +56,12 @@ def create_app(application: Application | None = None) -> FastAPI:
     )
     app.state.application = container
     install_error_handlers(app)
-    install_auth_middleware(app, container.auth, container.settings.auth)
+    install_auth_middleware(
+        app,
+        container.auth,
+        container.settings.auth,
+        container.incidents,
+    )
     app.include_router(auth_router(container))
     app.include_router(users_router(container))
     app.include_router(catalog_router(container.catalog))
@@ -65,6 +71,7 @@ def create_app(application: Application | None = None) -> FastAPI:
     app.include_router(events_router(container))
     app.include_router(logs_router(container))
     app.include_router(jobs_router(container))
+    app.include_router(incidents_router(container))
 
     @app.get("/health", include_in_schema=False)
     async def health() -> dict[str, str]:

@@ -33,6 +33,7 @@ from nahoermaar.integrations.avatars import DiscordAvatarStore
 from nahoermaar.messaging import MessageBus
 from nahoermaar.listening.service import ListeningService
 from nahoermaar.observability import ContextFilter
+from nahoermaar.operations.incidents import IncidentService
 from nahoermaar.operations.logs import RecentLogBuffer
 from nahoermaar.player.events import PlaybackRuntimeChanged
 from nahoermaar.player.session import CatalogRadioResolver, PlayerSessionManager
@@ -106,7 +107,8 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
     provider = Provider()
     access = AccessService(units, Operators("9", ()), clock=lambda: NOW)
     auth = AuthService(units, provider, clock=lambda: NOW)
-    bus = MessageBus()
+    incidents = IncidentService(units, clock=lambda: NOW)
+    bus = MessageBus(incidents)
     catalog = CatalogService(units, ())
     player = PlayerSessionManager(units, bus, CatalogRadioResolver(catalog))
     listening = ListeningService(
@@ -151,6 +153,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
         statistics,
         profiles,
         recent,
+        incidents,
         logs,
         DiscordAvatarStore(Path("data/avatars")),
         gateway=cast(DiscordGateway, Gateway()),
@@ -162,6 +165,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
     assert "/api/logs" in contract["paths"]
     assert "/api/jobs" in contract["paths"]
     assert "/api/jobs/catalog-maintenance" in contract["paths"]
+    assert "/api/incidents" in contract["paths"]
     assert "/api/statistics/overview" in contract["paths"]
     assert "/api/statistics/users/{user_id}" in contract["paths"]
     assert "ErrorView" in contract["components"]["schemas"]
@@ -324,6 +328,14 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             )
             assert rejected.status_code == 403
             assert rejected.json() == {"error": "csrf_failed"}
+
+            incident_report = await client.get("/api/incidents")
+            assert incident_report.status_code == 200
+            assert incident_report.json()["retention_days"] == 14
+            assert incident_report.json()["totals"]["rejected"] >= 1
+            assert incident_report.json()["associated_users"][0]["user_id"] == str(
+                current.user.id
+            )
 
             headers = {
                 "origin": ORIGIN,

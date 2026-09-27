@@ -6,6 +6,7 @@ import type { BackendClient } from "../client";
 import { createAccessWorkflow } from "./access";
 import { createDiscoveryWorkflow } from "./discovery";
 import { createLogsWorkflow } from "./logs";
+import { createIncidentsWorkflow } from "./incidents";
 import { createJobsWorkflow } from "./jobs";
 import { createProfileWorkflow } from "./profile";
 import { createRecentWorkflow } from "./recent";
@@ -17,6 +18,7 @@ export function createBackendWorkflows(client: BackendClient, authority: Session
 		access: () => createAccessWorkflow(client, authority),
 		discovery: () => createDiscoveryWorkflow(client, authority),
 		logs: () => createLogsWorkflow(client, authority),
+		incidents: () => createIncidentsWorkflow(client, authority),
 		jobs: () => createJobsWorkflow(client, authority),
 		profile: () => createProfileWorkflow(client, authority),
 		recent: () => createRecentWorkflow(client, authority),

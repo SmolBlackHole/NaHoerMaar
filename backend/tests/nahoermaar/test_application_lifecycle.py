@@ -18,6 +18,7 @@ from nahoermaar.database.core import Database
 from nahoermaar.listening.service import ListeningService
 from nahoermaar.messaging import Command, MessageBus, MessageContext
 from nahoermaar.operations.logs import RecentLogBuffer
+from nahoermaar.operations.incidents import IncidentService
 from nahoermaar.player.domain import ListeningSessionId
 from nahoermaar.player.playback import PlaybackCoordinator
 from nahoermaar.player.session import PlayerSessionManager
@@ -135,6 +136,7 @@ def _application(calls: list[str], *, fail_gateway: bool = False) -> Application
         cast(StatisticsService, object()),
         cast(ProfileView, object()),
         cast(RecentListeningView, object()),
+        cast(IncidentService, object()),
         RecentLogBuffer(),
         DiscordAvatarStore(Path("data/avatars")),
         cast(DiscordGateway, gateway),

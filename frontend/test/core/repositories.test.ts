@@ -97,6 +97,7 @@ describe("new backend repositories", () => {
 		await client.access.grant("discord/one");
 		await client.access.revoke("discord/one");
 		await client.logs.recent(42, 100);
+		await client.incidents.report("7d");
 
 		expect(fetcher.mock.calls.map(([url, options]) => [url, options?.method])).toEqual([
 			[
@@ -117,6 +118,7 @@ describe("new backend repositories", () => {
 			["/api/access/discord%2Fone", "PUT"],
 			["/api/access/discord%2Fone", "DELETE"],
 			["/api/logs?limit=100&after=42", undefined],
+			["/api/incidents?period=7d", undefined],
 		]);
 	});
 

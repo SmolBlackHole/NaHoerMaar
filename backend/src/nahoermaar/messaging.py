@@ -20,6 +20,12 @@ from .observability import (
     error_code,
     log_context,
 )
+from .operations.incidents import (
+    IncidentKind,
+    IncidentService,
+    IncidentSeverity,
+    IncidentTrigger,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -69,11 +75,12 @@ type _StoredEventHandler = Callable[[Event, MessageContext], Awaitable[None]]
 class MessageBus:
     """Dispatch application messages without hiding scheduling or failures."""
 
-    __slots__ = ("_command_handlers", "_event_handlers")
+    __slots__ = ("_command_handlers", "_event_handlers", "_incidents")
 
-    def __init__(self) -> None:
+    def __init__(self, incidents: IncidentService | None = None) -> None:
         self._command_handlers: dict[type[object], _StoredHandler] = {}
         self._event_handlers: dict[type[Event], list[_StoredEventHandler]] = {}
+        self._incidents = incidents
 
     def register_command[CommandT, ResultT](
         self,
@@ -112,6 +119,13 @@ class MessageBus:
                     "message.command_missing_handler type=%s",
                     command_type.__name__,
                 )
+                await self._record_incident(
+                    severity=IncidentSeverity.ERROR,
+                    kind=IncidentKind.FAILED,
+                    error="MissingCommandHandlerError",
+                    operation=command_type.__name__,
+                    context=active_context,
+                )
                 raise MissingCommandHandlerError(command_type.__name__) from error
             started = time.perf_counter()
             _LOGGER.debug("message.command_started type=%s", command_type.__name__)
@@ -126,12 +140,26 @@ class MessageBus:
                         duration,
                         error_code(error),
                     )
+                    await self._record_incident(
+                        severity=IncidentSeverity.WARNING,
+                        kind=IncidentKind.REJECTED,
+                        error=error_code(error),
+                        operation=command_type.__name__,
+                        context=active_context,
+                    )
                 else:
                     _LOGGER.exception(
                         "message.command_failed type=%s duration_ms=%.2f error_code=%s",
                         command_type.__name__,
                         duration,
                         error_code(error),
+                    )
+                    await self._record_incident(
+                        severity=IncidentSeverity.ERROR,
+                        kind=IncidentKind.FAILED,
+                        error=error_code(error),
+                        operation=command_type.__name__,
+                        context=active_context,
                     )
                 raise
             _LOGGER.debug(
@@ -168,12 +196,54 @@ class MessageBus:
                         _elapsed_ms(started),
                         error_code(error),
                     )
+                    await self._record_incident(
+                        severity=IncidentSeverity.ERROR,
+                        kind=IncidentKind.FAILED,
+                        error=error_code(error),
+                        operation=(
+                            f"{type(event).__name__}."
+                            f"{getattr(consumer, '__qualname__', type(consumer).__name__)}"
+                        ),
+                        context=active_context,
+                    )
                     raise
             _LOGGER.debug(
                 "message.event_completed type=%s consumers=%d duration_ms=%.2f",
                 type(event).__name__,
                 len(consumers),
                 _elapsed_ms(started),
+            )
+
+    async def _record_incident(
+        self,
+        *,
+        severity: IncidentSeverity,
+        kind: IncidentKind,
+        error: str,
+        operation: str,
+        context: MessageContext,
+    ) -> None:
+        if self._incidents is None:
+            return
+        try:
+            await self._incidents.record(
+                severity=severity,
+                kind=kind,
+                component="messaging",
+                error_code=error,
+                actor_id=context.actor_id,
+                operation_type=operation,
+                correlation_id=context.correlation_id,
+                trigger=(
+                    IncidentTrigger.USER
+                    if context.actor_id is not None
+                    else IncidentTrigger.SYSTEM
+                ),
+            )
+        except Exception:
+            _LOGGER.exception(
+                "incident.record_failed component=messaging operation=%s",
+                operation,
             )
 
 

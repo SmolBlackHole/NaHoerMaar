@@ -15,6 +15,12 @@ from fastapi.responses import JSONResponse
 
 from nahoermaar.config import AuthSettings, CALLBACK_PATH
 from nahoermaar.observability import LogContext, log_context
+from nahoermaar.operations.incidents import (
+    IncidentKind,
+    IncidentService,
+    IncidentSeverity,
+    IncidentTrigger,
+)
 from nahoermaar.users.domain import Authenticated, AuthError, AuthErrorCode
 from nahoermaar.users.service import AuthService, SESSION_COOKIE
 
@@ -31,6 +37,7 @@ def install_auth_middleware(
     app: FastAPI,
     auth: AuthService,
     settings: AuthSettings,
+    incidents: IncidentService,
 ) -> None:
     """Install the one browser security and request logging boundary."""
 
@@ -63,6 +70,14 @@ def install_auth_middleware(
                         started,
                         AuthErrorCode.ORIGIN_FORBIDDEN,
                     )
+                    await _record_http_incident(
+                        incidents,
+                        request,
+                        response.status_code,
+                        AuthErrorCode.ORIGIN_FORBIDDEN.value,
+                        actor_id,
+                        request_uuid,
+                    )
                     return response
 
                 if path not in _PUBLIC_PATHS:
@@ -74,6 +89,14 @@ def install_auth_middleware(
                         response = _error(error.code, error.status, request_id)
                         _log_rejected(
                             request, response.status_code, started, error.code
+                        )
+                        await _record_http_incident(
+                            incidents,
+                            request,
+                            response.status_code,
+                            error.code.value,
+                            actor_id,
+                            request_uuid,
                         )
                         return response
                     actor_id = current.user.id
@@ -95,12 +118,33 @@ def install_auth_middleware(
                                 started,
                                 AuthErrorCode.CSRF_FAILED,
                             )
+                            await _record_http_incident(
+                                incidents,
+                                request,
+                                response.status_code,
+                                AuthErrorCode.CSRF_FAILED.value,
+                                actor_id,
+                                request_uuid,
+                            )
                         return response
 
                 with log_context(LogContext(actor_id=actor_id)):
                     response = await call_next(request)
                     _secure(response, request_id)
                     _log_completed(request, response.status_code, started)
+                    if response.status_code >= 400:
+                        await _record_http_incident(
+                            incidents,
+                            request,
+                            response.status_code,
+                            getattr(
+                                request.state,
+                                "error_code",
+                                f"http_{response.status_code}",
+                            ),
+                            actor_id,
+                            request_uuid,
+                        )
                     return response
             except Exception:
                 with log_context(LogContext(actor_id=actor_id)):
@@ -113,6 +157,14 @@ def install_auth_middleware(
                         path,
                         _elapsed_ms(started),
                         ApiErrorCode.INTERNAL_ERROR.value,
+                    )
+                    await _record_http_incident(
+                        incidents,
+                        request,
+                        500,
+                        ApiErrorCode.INTERNAL_ERROR.value,
+                        actor_id,
+                        request_uuid,
                     )
                 raise
 
@@ -184,3 +236,32 @@ def _log_rejected(
 
 def _elapsed_ms(started: float) -> float:
     return (time.perf_counter() - started) * 1000
+
+
+async def _record_http_incident(
+    incidents: IncidentService,
+    request: Request,
+    status: int,
+    code: str,
+    actor_id: UUID | None,
+    correlation_id: UUID,
+) -> None:
+    try:
+        await incidents.record(
+            severity=(
+                IncidentSeverity.ERROR if status >= 500 else IncidentSeverity.WARNING
+            ),
+            kind=IncidentKind.FAILED if status >= 500 else IncidentKind.REJECTED,
+            component="http",
+            error_code=code,
+            actor_id=actor_id,
+            operation_type=f"{request.method} {request.url.path}",
+            correlation_id=correlation_id,
+            trigger=IncidentTrigger.USER,
+        )
+    except Exception:
+        _LOGGER.exception(
+            "incident.record_failed component=http operation=%s_%s",
+            request.method,
+            request.url.path,
+        )

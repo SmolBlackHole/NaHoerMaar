@@ -37,6 +37,7 @@ APPLICATION_TABLES = {
     "queue_undos",
     "queue_undo_groups",
     "queue_undo_entries",
+    "operational_incidents",
     "radio_runs",
     "radio_candidates",
     "radio_exclusions",
@@ -64,7 +65,7 @@ def test_initial_migration_upgrades_and_downgrades_fresh_postgresql() -> None:
                 lambda value: MigrationContext.configure(value).get_current_revision()
             )
             assert APPLICATION_TABLES <= tables
-            assert revision == "0004_discord_avatar_cache"
+            assert revision == "0005_operational_incidents"
 
     try:
         asyncio.run(inspect_upgrade())

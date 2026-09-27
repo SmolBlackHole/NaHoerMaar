@@ -35,6 +35,7 @@ from .listening.service import (
 from .messaging import MessageBus, MessageContext
 from .observability import configure_logging
 from .operations.logs import RecentLogBuffer
+from .operations.incidents import IncidentService
 from .player.domain import OperationId, PlayerError, PlayerErrorCode
 from .player.events import (
     AddTracks,
@@ -121,6 +122,7 @@ class Application:
     statistics: StatisticsService
     profiles: ProfileView
     recent: RecentListeningView
+    incidents: IncidentService
     logs: RecentLogBuffer
     avatars: DiscordAvatarStore
     gateway: DiscordGateway | None = None
@@ -250,7 +252,8 @@ def bootstrap(
             YouTubeMusicProvider(settings.node_path),
         ),
     )
-    bus = MessageBus()
+    incidents = IncidentService(units)
+    bus = MessageBus(incidents)
     player = PlayerSessionManager(units, bus, CatalogRadioResolver(catalog))
     listening = ListeningService(units, bus, access)
     statistics = StatisticsService(
@@ -302,6 +305,7 @@ def bootstrap(
             listening,
             bus,
             gateway.output,
+            incidents=incidents,
         )
     _register_handlers(bus, auth, access, player, listening, playback)
     _LOGGER.info("application.configured")
@@ -317,6 +321,7 @@ def bootstrap(
         statistics,
         profiles,
         recent,
+        incidents,
         logs,
         avatars,
         gateway,

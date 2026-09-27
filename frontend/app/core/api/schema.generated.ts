@@ -226,6 +226,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/incidents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Incident Report */
+        get: operations["incident_report_api_incidents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs": {
         parameters: {
             query?: never;
@@ -863,6 +880,20 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** AssociatedUserCountView */
+        AssociatedUserCountView: {
+            /** Discord Username */
+            discord_username: string | null;
+            /** Display Name */
+            display_name: string | null;
+            /** Rejected Commands */
+            rejected_commands: number;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+        };
         /** AuthEventView */
         AuthEventView: {
             /** Error */
@@ -1185,6 +1216,115 @@ export interface components {
          * @enum {string}
          */
         IconSet: "lucide" | "ph" | "heroicons" | "tabler";
+        /** IncidentErrorCountView */
+        IncidentErrorCountView: {
+            /** Component */
+            component: string;
+            /** Count */
+            count: number;
+            /** Error Code */
+            error_code: string;
+        };
+        /** IncidentOperationCountView */
+        IncidentOperationCountView: {
+            /** Count */
+            count: number;
+            /** Errors */
+            errors: number;
+            /** Operation Type */
+            operation_type: string;
+            /** Warnings */
+            warnings: number;
+        };
+        /**
+         * IncidentPeriod
+         * @enum {string}
+         */
+        IncidentPeriod: "24h" | "7d" | "14d";
+        /** IncidentReportView */
+        IncidentReportView: {
+            /** Associated Users */
+            associated_users: components["schemas"]["AssociatedUserCountView"][];
+            /** Common Errors */
+            common_errors: components["schemas"]["IncidentErrorCountView"][];
+            /** Current Failure Free Seconds */
+            current_failure_free_seconds: number | null;
+            /**
+             * Ended At
+             * Format: date-time
+             */
+            ended_at: string;
+            /** Longest Failure Free Seconds */
+            longest_failure_free_seconds: number | null;
+            /** Operations */
+            operations: components["schemas"]["IncidentOperationCountView"][];
+            period: components["schemas"]["IncidentPeriod"];
+            /** Recent */
+            recent: components["schemas"]["IncidentView"][];
+            /** Recorded Since */
+            recorded_since: string | null;
+            /** Retention Days */
+            retention_days: number;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            totals: components["schemas"]["IncidentTotalsView"];
+        };
+        /** IncidentTotalsView */
+        IncidentTotalsView: {
+            /** Critical */
+            critical: number;
+            /** Errors */
+            errors: number;
+            /** Failed */
+            failed: number;
+            /** Recoveries */
+            recoveries: number;
+            /** Rejected */
+            rejected: number;
+            /** Retries */
+            retries: number;
+            /** System Triggered */
+            system_triggered: number;
+            /** User Triggered */
+            user_triggered: number;
+            /** Warnings */
+            warnings: number;
+        };
+        /** IncidentView */
+        IncidentView: {
+            /** Actor Id */
+            actor_id: string | null;
+            /** Component */
+            component: string;
+            /**
+             * Correlation Id
+             * Format: uuid
+             */
+            correlation_id: string;
+            /** Error Code */
+            error_code: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Kind */
+            kind: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Operation Type */
+            operation_type: string;
+            /** Severity */
+            severity: string;
+            /** Trigger */
+            trigger: string;
+        };
         /** InfluencedTrackView */
         InfluencedTrackView: {
             /** Artist Names */
@@ -3909,6 +4049,136 @@ export interface operations {
                 };
                 content: {
                     "text/event-stream": components["schemas"]["ErrorView"];
+                };
+            };
+        };
+    };
+    incident_report_api_incidents_get: {
+        parameters: {
+            query?: {
+                period?: components["schemas"]["IncidentPeriod"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IncidentReportView"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Request not allowed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description State conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Dependency unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency timed out */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
                 };
             };
         };

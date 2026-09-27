@@ -34,6 +34,12 @@ from nahoermaar.listening.service import (
     VoiceMemberState,
 )
 from nahoermaar.messaging import MessageBus, MessageContext
+from nahoermaar.operations.incidents import (
+    IncidentKind,
+    IncidentService,
+    IncidentSeverity,
+    IncidentTrigger,
+)
 from .domain import (
     OperationId,
     PlaybackCheckpoint,
@@ -326,6 +332,7 @@ class PlaybackCoordinator:
         "_catalog",
         "_current",
         "_expected_stops",
+        "_incidents",
         "_last_error",
         "_listening",
         "_loop",
@@ -354,11 +361,13 @@ class PlaybackCoordinator:
         bus: MessageBus,
         transport: PlaybackTransport,
         *,
+        incidents: IncidentService | None = None,
         voice_retry_delays: tuple[float, ...] = _VOICE_RETRY_DELAYS,
     ) -> None:
         self._player = player
         self._catalog = catalog
         self._listening = listening
+        self._incidents = incidents
         self._bus = bus
         self._background_tasks: set[asyncio.Task[None]] = set()
         self._transport = transport
@@ -652,6 +661,8 @@ class PlaybackCoordinator:
             await self._handle_connection_failure(desired, error, context)
             return
 
+        recovered_attempts = self._voice_attempts
+        recovered_error = self._voice_state.error
         self._voice_attempts = 0
         await self._set_voice_state(
             VoiceConnectionPhase.CONNECTED,
@@ -659,6 +670,14 @@ class PlaybackCoordinator:
             context=context,
         )
         await self._observe_audience(context)
+        if recovered_attempts:
+            await self._record_incident(
+                severity=IncidentSeverity.WARNING,
+                kind=IncidentKind.RECOVERED,
+                error=recovered_error or "voice_connection_failed",
+                operation="voice.connect",
+                context=context,
+            )
 
     async def _sync_output(
         self,
@@ -759,6 +778,7 @@ class PlaybackCoordinator:
         intent: PlaybackIntent,
     ) -> None:
         started_at = time.monotonic()
+        recovering = logical.retries > 0
         try:
             source = logical.source
             if source is None:
@@ -801,6 +821,14 @@ class PlaybackCoordinator:
                 intent is PlaybackIntent.PAUSED,
                 (time.monotonic() - started_at) * 1000,
             )
+            if recovering:
+                await self._record_incident(
+                    severity=IncidentSeverity.WARNING,
+                    kind=IncidentKind.RECOVERED,
+                    error=self._last_error or "audio_source_not_ready",
+                    operation="playback.start",
+                    context=logical.context,
+                )
         except asyncio.CancelledError:
             await self._stop_attempt(logical.attempt_id)
             raise
@@ -833,6 +861,13 @@ class PlaybackCoordinator:
             return
         self._last_error = error
         if retryable and logical.retries < 1:
+            await self._record_incident(
+                severity=IncidentSeverity.WARNING,
+                kind=IncidentKind.RETRY,
+                error=error,
+                operation="playback.start",
+                context=logical.context,
+            )
             logical.retries += 1
             logical.attempt_id = uuid4()
             logical.source = None
@@ -843,6 +878,13 @@ class PlaybackCoordinator:
                 checkpoint.intent,
             )
             return
+        await self._record_incident(
+            severity=IncidentSeverity.ERROR,
+            kind=IncidentKind.FAILED,
+            error=error,
+            operation="playback.start",
+            context=logical.context,
+        )
         await self._finish(logical, PlaybackEndReason.FAILED)
         self._current = None
         operation_id, context = self._command_context(logical.context)
@@ -1264,6 +1306,13 @@ class PlaybackCoordinator:
         failure = type(error).__name__
         retry_index = self._voice_attempts - 1
         if retry_index >= len(self._voice_retry_delays):
+            await self._record_incident(
+                severity=IncidentSeverity.ERROR,
+                kind=IncidentKind.FAILED,
+                error=failure,
+                operation="voice.connect",
+                context=context,
+            )
             await self._set_voice_state(
                 VoiceConnectionPhase.FAILED,
                 channel_id,
@@ -1280,6 +1329,13 @@ class PlaybackCoordinator:
             return
 
         delay = self._voice_retry_delays[retry_index]
+        await self._record_incident(
+            severity=IncidentSeverity.WARNING,
+            kind=IncidentKind.RETRY,
+            error=failure,
+            operation="voice.connect",
+            context=context,
+        )
         await self._set_voice_state(
             VoiceConnectionPhase.RETRYING,
             channel_id,
@@ -1357,6 +1413,34 @@ class PlaybackCoordinator:
             PlaybackRuntimeChanged(self._player.state.session.id),
             context.child(),
         )
+
+    async def _record_incident(
+        self,
+        *,
+        severity: IncidentSeverity,
+        kind: IncidentKind,
+        error: str,
+        operation: str,
+        context: MessageContext,
+    ) -> None:
+        if self._incidents is None:
+            return
+        try:
+            await self._incidents.record(
+                severity=severity,
+                kind=kind,
+                component="playback",
+                error_code=error,
+                actor_id=None,
+                operation_type=operation,
+                correlation_id=context.correlation_id,
+                trigger=IncidentTrigger.SYSTEM,
+            )
+        except Exception:
+            _LOGGER.exception(
+                "incident.record_failed component=playback operation=%s",
+                operation,
+            )
 
     def _schedule_audience(self) -> None:
         self._track_task(

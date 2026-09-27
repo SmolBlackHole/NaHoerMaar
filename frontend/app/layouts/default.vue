@@ -68,7 +68,7 @@ const links = computed(() => [
 					"aria-label": "Administration",
 					icon: icons.value.settings,
 					type: "trigger" as const,
-					defaultOpen: ["/access", "/jobs", "/logs"].includes(route.path),
+					defaultOpen: ["/access", "/jobs", "/incidents", "/logs"].includes(route.path),
 					children: [
 						{
 							label: "Access",
@@ -82,6 +82,14 @@ const links = computed(() => [
 							label: "Background Jobs",
 							"aria-label": "Manage background jobs",
 							to: "/jobs",
+							onSelect: () => {
+								open.value = false;
+							},
+						},
+						{
+							label: "Incidents",
+							"aria-label": "Incident statistics",
+							to: "/incidents",
 							onSelect: () => {
 								open.value = false;
 							},

@@ -16,12 +16,14 @@ from nahoermaar.catalog import repository as catalog_repository
 from nahoermaar.config import Settings
 from nahoermaar.database.schema import Base
 from nahoermaar.listening import repository as listening_repository
+from nahoermaar.operations import incidents as incidents_repository
 from nahoermaar.player import repository as player_repository
 from nahoermaar.users import repository as users_repository
 
 _MAPPING_MODULES = (
     catalog_repository,
     listening_repository,
+    incidents_repository,
     player_repository,
     users_repository,
 )
