@@ -29,6 +29,8 @@ export interface PlayerCommands {
 	seek: Schema["SeekInput"];
 	volume: Schema["VolumeInput"];
 	crossfade: Schema["CrossfadeInput"];
+	sleepTimer: Schema["SleepTimerInput"];
+	cancelSleepTimer: Schema["OperationInput"];
 	join: Schema["JoinVoiceInput"];
 	leave: Schema["OperationInput"];
 	startRadio: Schema["StartRadioInput"];

@@ -35,6 +35,7 @@ from nahoermaar.listening.service import ListeningService
 from nahoermaar.observability import ContextFilter
 from nahoermaar.operations.incidents import IncidentService
 from nahoermaar.operations.logs import RecentLogBuffer
+from nahoermaar.player.automation import PlaybackAutomation
 from nahoermaar.player.events import PlaybackRuntimeChanged
 from nahoermaar.player.session import CatalogRadioResolver, PlayerSessionManager
 from nahoermaar.statistics.service import StatisticsService
@@ -116,6 +117,11 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
         bus,
         access,
     )
+    automation = PlaybackAutomation(
+        player,
+        bus,
+        empty_channel_grace_seconds=60,
+    )
     statistics = StatisticsService(
         units,
         ZoneInfo("UTC"),
@@ -130,7 +136,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
     previous_level = root_logger.level
     root_logger.setLevel(logging.INFO)
     root_logger.addHandler(logs)
-    _register_handlers(bus, auth, access, player, listening)
+    _register_handlers(bus, auth, access, player, listening, automation)
     settings = Settings(
         os.environ["DATABASE_URL"],
         AuthSettings(
@@ -154,6 +160,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
         profiles,
         recent,
         incidents,
+        automation,
         logs,
         DiscordAvatarStore(Path("data/avatars")),
         gateway=cast(DiscordGateway, Gateway()),
@@ -166,6 +173,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
     assert "/api/jobs" in contract["paths"]
     assert "/api/jobs/catalog-maintenance" in contract["paths"]
     assert "/api/incidents" in contract["paths"]
+    assert "/api/player/sleep-timer" in contract["paths"]
     assert "/api/statistics/overview" in contract["paths"]
     assert "/api/statistics/users/{user_id}" in contract["paths"]
     assert "ErrorView" in contract["components"]["schemas"]
@@ -290,6 +298,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             assert player_state.status_code == 200
             assert player_state.json()["queue"] == []
             assert player_state.json()["crossfade_seconds"] == 7
+            assert player_state.json()["sleep_timer_expires_at"] is None
             assert player_state.json()["runtime"] == {
                 "phase": "disabled",
                 "current": None,
@@ -621,6 +630,31 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             )
             assert rejected_login_origin.status_code == 403
             assert rejected_login_origin.json() == {"error": "origin_forbidden"}
+
+            sleep_timer = await client.put(
+                "/api/player/sleep-timer",
+                headers=headers,
+                json={"operation_id": str(uuid4()), "seconds": 900},
+            )
+            assert sleep_timer.status_code == 200
+            assert sleep_timer.json()["outcome"]["action"] == "sleep_timer.set"
+            assert sleep_timer.json()["player"]["sleep_timer_expires_at"] is not None
+            await anext(events)
+            cancelled_sleep_timer = await client.request(
+                "DELETE",
+                "/api/player/sleep-timer",
+                headers=headers,
+                json={"operation_id": str(uuid4())},
+            )
+            assert cancelled_sleep_timer.status_code == 200
+            assert (
+                cancelled_sleep_timer.json()["outcome"]["action"]
+                == "sleep_timer.cancelled"
+            )
+            assert (
+                cancelled_sleep_timer.json()["player"]["sleep_timer_expires_at"] is None
+            )
+            await anext(events)
 
             waiting = asyncio.create_task(anext(events))
             await asyncio.sleep(0)

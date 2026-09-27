@@ -509,4 +509,6 @@ def _fingerprint(command: PlayerCommand) -> bytes:
 def _json_value(value: object) -> str:
     if isinstance(value, UUID):
         return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
     raise TypeError(f"Unsupported command value: {type(value).__name__}")

@@ -40,6 +40,7 @@ export const player = (revision = 1, sessionId = "listening-session"): PlayerSta
 	channel_id: "1550894913980465212",
 	volume: 0.5,
 	crossfade_seconds: 7,
+	sleep_timer_expires_at: null,
 	queue: [],
 	radio: null,
 	checkpoint: { intent: "stopped", request_id: null, position_seconds: 0 },

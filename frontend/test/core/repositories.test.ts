@@ -46,7 +46,7 @@ describe("new backend repositories", () => {
 		}
 	});
 
-	it("retains radio generation, precise Discord IDs and the new seek method", async () => {
+	it("retains radio generation, precise Discord IDs and player control methods", async () => {
 		const { client, fetcher } = fixture();
 		fetcher.mockImplementation(async () => Response.json({}));
 		await client.player.retryRadio({
@@ -55,6 +55,8 @@ describe("new backend repositories", () => {
 		});
 		await client.player.join({ operation_id: "op-voice", channel_id: "1550894913980465212" });
 		await client.player.seek({ operation_id: "op-seek", seconds: 42 });
+		await client.player.setSleepTimer({ operation_id: "op-sleep", seconds: 1800 });
+		await client.player.cancelSleepTimer({ operation_id: "op-cancel-sleep" });
 		expect(
 			fetcher.mock.calls.map(([url, options]) => [
 				url,
@@ -73,6 +75,8 @@ describe("new backend repositories", () => {
 				{ operation_id: "op-voice", channel_id: "1550894913980465212" },
 			],
 			["/api/player/seek", "POST", { operation_id: "op-seek", seconds: 42 }],
+			["/api/player/sleep-timer", "PUT", { operation_id: "op-sleep", seconds: 1800 }],
+			["/api/player/sleep-timer", "DELETE", { operation_id: "op-cancel-sleep" }],
 		]);
 	});
 

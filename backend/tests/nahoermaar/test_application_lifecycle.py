@@ -19,6 +19,7 @@ from nahoermaar.listening.service import ListeningService
 from nahoermaar.messaging import Command, MessageBus, MessageContext
 from nahoermaar.operations.logs import RecentLogBuffer
 from nahoermaar.operations.incidents import IncidentService
+from nahoermaar.player.automation import PlaybackAutomation
 from nahoermaar.player.domain import ListeningSessionId
 from nahoermaar.player.playback import PlaybackCoordinator
 from nahoermaar.player.session import PlayerSessionManager
@@ -106,6 +107,17 @@ class _Gateway:
         self._calls.append("gateway.close")
 
 
+class _Automation:
+    def __init__(self, calls: list[str]) -> None:
+        self._calls = calls
+
+    async def start(self) -> None:
+        self._calls.append("automation.start")
+
+    async def close(self) -> None:
+        self._calls.append("automation.close")
+
+
 class _Playback:
     def __init__(self, calls: list[str]) -> None:
         self._calls = calls
@@ -124,6 +136,7 @@ def _application(calls: list[str], *, fail_gateway: bool = False) -> Application
     listening = _Listening(calls)
     gateway = _Gateway(calls, fail=fail_gateway)
     playback = _Playback(calls)
+    automation = _Automation(calls)
     return Application(
         cast(Settings, object()),
         cast(Database, database),
@@ -137,6 +150,7 @@ def _application(calls: list[str], *, fail_gateway: bool = False) -> Application
         cast(ProfileView, object()),
         cast(RecentListeningView, object()),
         cast(IncidentService, object()),
+        cast(PlaybackAutomation, automation),
         RecentLogBuffer(),
         DiscordAvatarStore(Path("data/avatars")),
         cast(DiscordGateway, gateway),
@@ -165,8 +179,10 @@ def test_failed_start_closes_started_resources_in_reverse_order(
             "catalog.start",
             "player.start",
             "listening.start",
+            "automation.start",
             "gateway.open",
             "gateway.close",
+            "automation.close",
             "listening.close",
             "player.close",
             "catalog.close",
@@ -201,10 +217,12 @@ def test_application_shutdown_is_reverse_ordered_and_idempotent(
         "catalog.start",
         "player.start",
         "listening.start",
+        "automation.start",
         "gateway.open",
         "playback.start",
         "playback.close",
         "gateway.close",
+        "automation.close",
         "listening.close",
         "player.close",
         "catalog.close",

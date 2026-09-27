@@ -4,7 +4,7 @@
 
 """Authenticated player queries and serialized queue and radio commands."""
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from uuid import UUID
 
@@ -34,6 +34,7 @@ from nahoermaar.player.domain import (
 )
 from nahoermaar.player.events import (
     AddTracks,
+    CancelSleepTimer,
     ClearQueue,
     JoinVoice,
     LeaveVoice,
@@ -45,6 +46,7 @@ from nahoermaar.player.events import (
     RemoveQueueEntry,
     Seek,
     SetCrossfade,
+    SetSleepTimer,
     SetVolume,
     Skip,
     RetryRadio,
@@ -139,6 +141,10 @@ class JoinVoiceInput(OperationInput):
     channel_id: str = Field(pattern=r"^[1-9][0-9]{0,19}$")
 
 
+class SleepTimerInput(OperationInput):
+    seconds: int = Field(ge=60, le=86_400)
+
+
 class VoiceChannelView(View):
     id: str
     name: str
@@ -221,6 +227,7 @@ class PlayerView(View):
     channel_id: str | None
     volume: float
     crossfade_seconds: int
+    sleep_timer_expires_at: datetime | None
     queue: tuple[QueueEntryView, ...]
     checkpoint: CheckpointView
     radio: RadioView | None
@@ -399,6 +406,33 @@ def router(application: Application) -> APIRouter:
                 _session_id(application),
                 OperationId(body.operation_id),
                 body.seconds,
+            ),
+        )
+
+    @routes.put("/sleep-timer")
+    async def set_sleep_timer(
+        request: Request,
+        body: SleepTimerInput,
+    ) -> MutationView:
+        return await execute(
+            request,
+            SetSleepTimer(
+                _session_id(application),
+                OperationId(body.operation_id),
+                datetime.now(UTC) + timedelta(seconds=body.seconds),
+            ),
+        )
+
+    @routes.delete("/sleep-timer")
+    async def cancel_sleep_timer(
+        request: Request,
+        body: OperationInput,
+    ) -> MutationView:
+        return await execute(
+            request,
+            CancelSleepTimer(
+                _session_id(application),
+                OperationId(body.operation_id),
             ),
         )
 
@@ -613,6 +647,7 @@ async def player_view(
         ),
         volume=state.session.volume,
         crossfade_seconds=state.session.crossfade_seconds,
+        sleep_timer_expires_at=state.session.sleep_at,
         queue=queue,
         checkpoint=CheckpointView(
             intent=state.checkpoint.intent.value,

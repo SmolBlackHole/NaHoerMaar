@@ -23,6 +23,7 @@ def test_settings_load_explicit_environment() -> None:
             "NAHORMAAR_LOG_DIR": "var/logs",
             "LOG_RETENTION_DAYS": "21",
             "STATISTICS_TIMEZONE": "Europe/Berlin",
+            "EMPTY_CHANNEL_GRACE_SECONDS": "45",
         }
     )
 
@@ -42,6 +43,7 @@ def test_settings_load_explicit_environment() -> None:
     assert settings.log_directory == (Path.cwd() / "var/logs").resolve()
     assert settings.log_retention_days == 21
     assert settings.statistics_timezone == "Europe/Berlin"
+    assert settings.empty_channel_grace_seconds == 45
 
 
 def test_process_environment_overrides_dotenv(
@@ -77,6 +79,14 @@ def test_process_environment_overrides_dotenv(
         (
             {"DATABASE_URL": "postgres", "STATISTICS_TIMEZONE": "Mars/Olympus"},
             "STATISTICS_TIMEZONE",
+        ),
+        (
+            {"DATABASE_URL": "postgres", "EMPTY_CHANNEL_GRACE_SECONDS": "soon"},
+            "EMPTY_CHANNEL_GRACE_SECONDS",
+        ),
+        (
+            {"DATABASE_URL": "postgres", "EMPTY_CHANNEL_GRACE_SECONDS": "0"},
+            "EMPTY_CHANNEL_GRACE_SECONDS",
         ),
         (
             {

@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from nahoermaar.catalog.domain import TrackId, TrackSourceId
@@ -12,6 +12,7 @@ from nahoermaar.player.domain import (
     PlaybackIntent,
     PlayerAction,
     PlayerState,
+    SuspensionReason,
 )
 from nahoermaar.player.events import (
     AddTracks,
@@ -19,7 +20,9 @@ from nahoermaar.player.events import (
     JoinVoice,
     LeaveVoice,
     Play,
+    SetSleepTimer,
     StopPlayback,
+    SuspendPlayback,
     TrackSelection,
 )
 from nahoermaar.player.fsm import transition
@@ -124,3 +127,73 @@ def test_voice_target_is_persisted_by_the_same_fsm() -> None:
     assert joined.outcome.action is PlayerAction.VOICE_JOINED
     assert left.state.session.channel_id is None
     assert left.outcome.action is PlayerAction.VOICE_LEFT
+
+
+def test_unattended_suspend_preserves_queue_checkpoint_and_sleep_timer() -> None:
+    queued, actor_id = _queued_state()
+    joined = transition(
+        queued,
+        JoinVoice(queued.session.id, _operation(), 123456789),
+        actor_id,
+        NOW,
+    )
+    playing = transition(
+        joined.state,
+        Play(joined.state.session.id, _operation()),
+        actor_id,
+        NOW,
+    )
+    sleep_at = NOW + timedelta(hours=1)
+    armed = transition(
+        playing.state,
+        SetSleepTimer(playing.state.session.id, _operation(), sleep_at),
+        actor_id,
+        NOW,
+    )
+
+    suspended = transition(
+        armed.state,
+        SuspendPlayback(
+            armed.state.session.id,
+            _operation(),
+            SuspensionReason.EMPTY_AUDIENCE,
+        ),
+        None,
+        NOW,
+    )
+
+    assert suspended.outcome.action is PlayerAction.PLAYBACK_SUSPENDED
+    assert suspended.state.session.channel_id is None
+    assert suspended.state.session.sleep_at == sleep_at
+    assert suspended.state.checkpoint.request == armed.state.checkpoint.request
+    assert suspended.state.checkpoint.position_seconds == 0
+    assert suspended.state.checkpoint.intent is PlaybackIntent.PAUSED
+    assert suspended.state.queue == armed.state.queue
+
+
+def test_sleep_timer_suspend_clears_only_its_own_deadline() -> None:
+    queued, actor_id = _queued_state(1)
+    armed = transition(
+        queued,
+        SetSleepTimer(
+            queued.session.id,
+            _operation(),
+            NOW + timedelta(minutes=30),
+        ),
+        actor_id,
+        NOW,
+    )
+
+    suspended = transition(
+        armed.state,
+        SuspendPlayback(
+            armed.state.session.id,
+            _operation(),
+            SuspensionReason.SLEEP_TIMER,
+        ),
+        None,
+        NOW,
+    )
+
+    assert suspended.state.session.sleep_at is None
+    assert suspended.state.queue == armed.state.queue

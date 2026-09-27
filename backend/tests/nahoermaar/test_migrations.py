@@ -26,7 +26,7 @@ def test_alembic_uses_packaged_schema_revisions() -> None:
         Path(scripts.dir).resolve()
         == (root / "backend/src/nahoermaar/database/migrations").resolve()
     )
-    assert scripts.get_heads() == ["0005_operational_incidents"]
+    assert scripts.get_heads() == ["0006_unattended_playback"]
 
 
 def test_runtime_migration_uses_packaged_scripts() -> None:
@@ -42,7 +42,7 @@ def test_runtime_migration_uses_packaged_scripts() -> None:
     finally:
         asyncio.run(database.close())
 
-    assert revision == "0005_operational_incidents"
+    assert revision == "0006_unattended_playback"
 
 
 def _current_revision(connection: Connection) -> str | None:

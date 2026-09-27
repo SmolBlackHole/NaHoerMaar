@@ -26,6 +26,8 @@ from .integrations.avatars import DiscordAvatarStore
 from .integrations.youtube import YouTubeMusicProvider, YouTubeProvider
 from .listening.service import (
     AdvancePlayback,
+    AudienceChanged,
+    AudienceUnavailable,
     BeginPlayback,
     DisconnectAudience,
     FinishPlayback,
@@ -37,9 +39,11 @@ from .observability import configure_logging
 from .operations.logs import RecentLogBuffer
 from .operations.incidents import IncidentService
 from .player.domain import OperationId, PlayerError, PlayerErrorCode
+from .player.automation import PlaybackAutomation
 from .player.events import (
     AddTracks,
     ApplyRadioCandidates,
+    CancelSleepTimer,
     CheckpointPlayback,
     ClearQueue,
     CompletePlayback,
@@ -58,12 +62,14 @@ from .player.events import (
     RemoveQueueEntry,
     Seek,
     SetCrossfade,
+    SetSleepTimer,
     SetVolume,
     Skip,
     RetryRadio,
     StartRadio,
     StopPlayback,
     StopRadio,
+    SuspendPlayback,
     UndoQueue,
 )
 from .player.playback import PlaybackCoordinator
@@ -123,6 +129,7 @@ class Application:
     profiles: ProfileView
     recent: RecentListeningView
     incidents: IncidentService
+    automation: PlaybackAutomation
     logs: RecentLogBuffer
     avatars: DiscordAvatarStore
     gateway: DiscordGateway | None = None
@@ -167,6 +174,8 @@ class Application:
                 await self.player.start()
                 self._runtime_closers.append(("listening", self.listening.close))
                 await self.listening.start(self.player.state.session.id)
+                self._runtime_closers.append(("automation", self.automation.close))
+                await self.automation.start()
                 if self.gateway is not None:
                     self._runtime_closers.append(("discord", self.gateway.close))
                     await self.gateway.open()
@@ -256,6 +265,11 @@ def bootstrap(
     bus = MessageBus(incidents)
     player = PlayerSessionManager(units, bus, CatalogRadioResolver(catalog))
     listening = ListeningService(units, bus, access)
+    automation = PlaybackAutomation(
+        player,
+        bus,
+        empty_channel_grace_seconds=settings.empty_channel_grace_seconds,
+    )
     statistics = StatisticsService(
         units,
         ZoneInfo(settings.statistics_timezone),
@@ -307,7 +321,7 @@ def bootstrap(
             gateway.output,
             incidents=incidents,
         )
-    _register_handlers(bus, auth, access, player, listening, playback)
+    _register_handlers(bus, auth, access, player, listening, automation, playback)
     _LOGGER.info("application.configured")
     return Application(
         settings,
@@ -322,6 +336,7 @@ def bootstrap(
         profiles,
         recent,
         incidents,
+        automation,
         logs,
         avatars,
         gateway,
@@ -335,6 +350,7 @@ def _register_handlers(
     access: AccessService,
     player: PlayerSessionManager,
     listening: ListeningService,
+    automation: PlaybackAutomation,
     playback: PlaybackCoordinator | None = None,
 ) -> None:
     async def begin_login(command: BeginLogin, _context: MessageContext) -> LoginStart:
@@ -467,6 +483,9 @@ def _register_handlers(
     bus.register_command(Seek, playback_command)
     bus.register_command(SetVolume, playback_command)
     bus.register_command(SetCrossfade, playback_command)
+    bus.register_command(SetSleepTimer, playback_command)
+    bus.register_command(CancelSleepTimer, playback_command)
+    bus.register_command(SuspendPlayback, playback_command)
     bus.register_command(JoinVoice, playback_command)
     bus.register_command(LeaveVoice, playback_command)
     bus.register_command(CompletePlayback, playback_command)
@@ -478,9 +497,12 @@ def _register_handlers(
     bus.register_command(ObserveAudience, listening.observe)
     bus.register_command(DisconnectAudience, listening.disconnect)
     bus.subscribe(PlayerChanged, player.broadcast)
+    bus.subscribe(PlayerChanged, automation.player_changed)
     bus.subscribe(PlaybackRuntimeChanged, player.broadcast_runtime)
     bus.subscribe(VoiceConnectionChanged, player.broadcast_runtime)
     if playback is not None:
         bus.subscribe(PlayerChanged, playback.player_changed)
     bus.subscribe(RadioRefillRequested, player.refill)
     bus.subscribe(UserAccessChanged, reauthenticate_stream)
+    bus.subscribe(AudienceChanged, automation.audience_changed)
+    bus.subscribe(AudienceUnavailable, automation.audience_unavailable)

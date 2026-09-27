@@ -16,6 +16,7 @@ Session. This page owns attempts, audio transitions and restart behavior.
   - [Audio path and crossfade](#audio-path-and-crossfade)
   - [Checkpoints and restart](#checkpoints-and-restart)
   - [Voice connection](#voice-connection)
+  - [Unattended playback](#unattended-playback)
   - [Shutdown order](#shutdown-order)
 
 ## FSM and effects
@@ -99,6 +100,20 @@ If the saved channel no longer exists or cannot be entered, the track and
 position remain available. After the bounded retries are exhausted, another
 Join command, including `/pspsps`, starts a new attempt. Channel discovery and
 Discord installation are covered by [Set up Discord](../discord-setup.md).
+
+## Unattended playback
+
+Audience state and playback intent remain separate. When the selected voice
+channel becomes empty, one grace period starts. A listener returning cancels it.
+If the channel stays empty, NaHörMaar checkpoints and pauses the current track,
+keeps the queue, and leaves voice. `EMPTY_CHANNEL_GRACE_SECONDS` configures the
+grace period and defaults to 60 seconds.
+
+The Dock also offers a durable sleep timer. Its deadline survives a process
+restart and remains independent of the empty-channel grace period. When it
+expires, NaHörMaar performs the same pause, checkpoint and leave sequence. The
+remaining time and cancel action are visible in the Dock. Normal Join and Play
+controls resume the preserved session.
 
 ## Shutdown order
 

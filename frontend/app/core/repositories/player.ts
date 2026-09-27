@@ -31,6 +31,9 @@ export function createPlayerRepository(request: Transport, subscribe: SubscribeP
 		seek: (body: PlayerCommands["seek"]) => command("/seek", body),
 		setVolume: (body: PlayerCommands["volume"]) => command("/volume", body, "PUT"),
 		setCrossfade: (body: PlayerCommands["crossfade"]) => command("/crossfade", body, "PUT"),
+		setSleepTimer: (body: PlayerCommands["sleepTimer"]) => command("/sleep-timer", body, "PUT"),
+		cancelSleepTimer: (body: PlayerCommands["cancelSleepTimer"]) =>
+			command("/sleep-timer", body, "DELETE"),
 		join: (body: PlayerCommands["join"]) => command("/voice/join", body),
 		leave: (body: PlayerCommands["leave"]) => command("/voice/leave", body),
 		startRadio: (body: PlayerCommands["startRadio"]) => command("/radio", body),

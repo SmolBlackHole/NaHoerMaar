@@ -142,6 +142,7 @@ class _ListeningSessionRow(Base):
     channel_id: Mapped[int | None] = mapped_column(BigInteger)
     volume: Mapped[float] = mapped_column(Float)
     crossfade_seconds: Mapped[int] = mapped_column(Integer)
+    sleep_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
@@ -495,14 +496,15 @@ class SessionRepository:
         )
         radio = await self._active_radio(session_id)
         session = ListeningSession(
-            session_id,
-            row.revision,
-            row.queue_revision,
-            row.channel_id,
-            row.volume,
-            row.crossfade_seconds,
-            row.created_at,
-            row.updated_at,
+            id=session_id,
+            revision=row.revision,
+            queue_revision=row.queue_revision,
+            channel_id=row.channel_id,
+            volume=row.volume,
+            crossfade_seconds=row.crossfade_seconds,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+            sleep_at=row.sleep_at,
         )
         return PlayerState(
             session,
@@ -523,6 +525,7 @@ class SessionRepository:
                 channel_id=session.channel_id,
                 volume=session.volume,
                 crossfade_seconds=session.crossfade_seconds,
+                sleep_at=session.sleep_at,
                 created_at=session.created_at,
                 updated_at=session.updated_at,
             )
@@ -534,6 +537,7 @@ class SessionRepository:
                     "channel_id": session.channel_id,
                     "volume": session.volume,
                     "crossfade_seconds": session.crossfade_seconds,
+                    "sleep_at": session.sleep_at,
                     "updated_at": session.updated_at,
                 },
             )

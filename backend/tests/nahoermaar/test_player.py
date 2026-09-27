@@ -441,10 +441,15 @@ def test_repository_restores_relational_queue_radio_and_prunes_ephemera() -> Non
             NOW + timedelta(seconds=2),
         )
         assert removed.save_undo is not None
+        sleep_at = NOW + timedelta(minutes=30)
+        persisted = replace(
+            removed.state,
+            session=replace(removed.state.session, sleep_at=sleep_at),
+        )
 
         async with UnitOfWork(database.sessions) as work:
             repository = SessionRepository(work.session)
-            await repository.save(removed.state)
+            await repository.save(persisted)
             await repository.save_undo(removed.save_undo)
             await repository.save_receipt(
                 OperationReceipt(
@@ -464,6 +469,7 @@ def test_repository_restores_relational_queue_radio_and_prunes_ephemera() -> Non
             restored = await repository.load(session_id)
             undo = await repository.undo(removed.save_undo.id)
             assert restored is not None
+            assert restored.session.sleep_at == sleep_at
             assert restored.radio is not None
             assert restored.radio.seed.track_source_id == source_id
             assert len(restored.queue.entries) == 1

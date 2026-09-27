@@ -529,6 +529,14 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 			run("crossfade", (operationId) =>
 				client.player.setCrossfade({ operation_id: operationId, seconds }),
 			);
+		const setSleepTimer = (seconds: number) =>
+			run("sleep_timer.set", (operationId) =>
+				client.player.setSleepTimer({ operation_id: operationId, seconds }),
+			);
+		const cancelSleepTimer = () =>
+			run("sleep_timer.cancelled", (operationId) =>
+				client.player.cancelSleepTimer({ operation_id: operationId }),
+			);
 		const join = (channelId: string) =>
 			run("voice.join", (operationId) =>
 				client.player.join({ operation_id: operationId, channel_id: channelId }),
@@ -583,6 +591,8 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 			seek,
 			setVolume,
 			setCrossfade,
+			setSleepTimer,
+			cancelSleepTimer,
 			join,
 			leave: () => operation("voice.leave", client.player.leave),
 			startRadio,

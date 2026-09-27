@@ -8,6 +8,7 @@ import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import datetime
 import logging
 from uuid import UUID
 
@@ -23,6 +24,7 @@ from .domain import (
     QueueEntryId,
     RadioRunId,
     RadioSeed,
+    SuspensionReason,
     UndoId,
     VoiceConnectionState,
 )
@@ -174,6 +176,26 @@ class LeaveVoice(Command[MutationReply]):
 
 
 @dataclass(frozen=True, slots=True)
+class SetSleepTimer(Command[MutationReply]):
+    session_id: ListeningSessionId
+    operation_id: OperationId
+    sleep_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class CancelSleepTimer(Command[MutationReply]):
+    session_id: ListeningSessionId
+    operation_id: OperationId
+
+
+@dataclass(frozen=True, slots=True)
+class SuspendPlayback(Command[MutationReply]):
+    session_id: ListeningSessionId
+    operation_id: OperationId
+    reason: SuspensionReason
+
+
+@dataclass(frozen=True, slots=True)
 class CompletePlayback(Command[MutationReply]):
     session_id: ListeningSessionId
     operation_id: OperationId
@@ -214,6 +236,9 @@ type PlayerCommand = (
     | SetCrossfade
     | JoinVoice
     | LeaveVoice
+    | SetSleepTimer
+    | CancelSleepTimer
+    | SuspendPlayback
     | CompletePlayback
     | FailPlayback
     | CheckpointPlayback

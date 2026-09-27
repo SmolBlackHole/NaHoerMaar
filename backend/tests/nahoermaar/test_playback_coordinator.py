@@ -23,6 +23,7 @@ from nahoermaar.listening.domain import PlaybackEndReason
 from nahoermaar.listening.service import (
     AdvancePlayback,
     BeginPlayback,
+    DisconnectAudience,
     FinishPlayback,
 )
 from nahoermaar.messaging import Command, Event, MessageBus, MessageContext
@@ -616,6 +617,65 @@ def test_seek_reuses_the_current_resolved_source() -> None:
             assert transport.progress is not None
             assert transport.progress.position_seconds == 90.0
             assert coordinator.status.request == current_request
+        finally:
+            await coordinator.close()
+
+    asyncio.run(scenario())
+
+
+def test_suspension_pauses_output_and_disconnects_without_losing_checkpoint() -> None:
+    async def scenario() -> None:
+        tracks = (_track(1), _track(2))
+        state, current_request = _playing_state(tracks)
+        player = StaticPlayer(state)
+        transport = FakeTransport()
+        bus = RecordingBus()
+        coordinator = PlaybackCoordinator(
+            player,
+            StaticCatalog(tracks),
+            StaticListening(),
+            bus,
+            transport,
+        )
+        try:
+            await coordinator.start()
+            await asyncio.wait_for(transport.play_ready.wait(), timeout=1)
+            await _wait_for_runtime_change(bus)
+            assert transport.progress is not None
+            assert transport.connection is not None
+
+            suspended = replace(
+                state,
+                session=replace(
+                    state.session,
+                    revision=state.session.revision + 1,
+                    channel_id=None,
+                ),
+                checkpoint=replace(
+                    state.checkpoint,
+                    intent=PlaybackIntent.PAUSED,
+                    position_seconds=42.0,
+                ),
+            )
+            player.state = suspended
+            await coordinator.player_changed(
+                PlayerChanged(
+                    suspended.session.id,
+                    suspended.session.revision,
+                    OperationId(uuid4()),
+                    MutationOutcome(PlayerAction.PLAYBACK_SUSPENDED),
+                ),
+                MessageContext(),
+            )
+            await _wait_for_voice_phase(bus, VoiceConnectionPhase.DISCONNECTED)
+
+            assert transport.progress is not None
+            assert transport.progress.paused is True
+            assert transport.connection is None
+            assert coordinator.status.request == current_request
+            assert any(
+                isinstance(command, DisconnectAudience) for command in bus.commands
+            )
         finally:
             await coordinator.close()
 

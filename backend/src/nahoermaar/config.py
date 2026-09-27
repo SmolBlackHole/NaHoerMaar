@@ -155,6 +155,7 @@ class Settings:
     avatar_directory: Path = Path("data/avatars")
     log_retention_days: int = 14
     statistics_timezone: str = "UTC"
+    empty_channel_grace_seconds: int = 60
 
     @classmethod
     def load(
@@ -182,6 +183,18 @@ class Settings:
             ) from error
         if not 1 <= log_retention_days <= 365:
             raise ConfigurationError("LOG_RETENTION_DAYS must be between 1 and 365.")
+        try:
+            empty_channel_grace_seconds = int(
+                values.get("EMPTY_CHANNEL_GRACE_SECONDS", "60")
+            )
+        except ValueError as error:
+            raise ConfigurationError(
+                "EMPTY_CHANNEL_GRACE_SECONDS must be an integer."
+            ) from error
+        if not 1 <= empty_channel_grace_seconds <= 3600:
+            raise ConfigurationError(
+                "EMPTY_CHANNEL_GRACE_SECONDS must be between 1 and 3600."
+            )
         statistics_timezone = values.get("STATISTICS_TIMEZONE", "UTC").strip()
         try:
             ZoneInfo(statistics_timezone)
@@ -231,6 +244,7 @@ class Settings:
             ).resolve(),
             log_retention_days=log_retention_days,
             statistics_timezone=statistics_timezone,
+            empty_channel_grace_seconds=empty_channel_grace_seconds,
         )
 
 

@@ -34,6 +34,7 @@ from .domain import (
     RadioRunId,
     RadioState,
     RequestOrigin,
+    SuspensionReason,
     UndoGroup,
     UndoId,
     new_request,
@@ -41,6 +42,7 @@ from .domain import (
 from .events import (
     AddTracks,
     ApplyRadioCandidates,
+    CancelSleepTimer,
     CheckpointPlayback,
     ClearQueue,
     CompletePlayback,
@@ -58,11 +60,13 @@ from .events import (
     RetryRadio,
     Seek,
     SetCrossfade,
+    SetSleepTimer,
     SetVolume,
     Skip,
     StartRadio,
     StopPlayback,
     StopRadio,
+    SuspendPlayback,
     UndoQueue,
 )
 
@@ -90,6 +94,8 @@ def transition(
 
     if isinstance(command, ApplyRadioCandidates):
         result = _apply_radio(state, command, now)
+    elif isinstance(command, SuspendPlayback):
+        result = _suspend_playback(state, command)
     elif isinstance(command, CompletePlayback):
         result = _complete_playback(state, command, now)
     elif isinstance(command, FailPlayback):
@@ -128,6 +134,10 @@ def transition(
             result = _set_volume(state, command)
         elif isinstance(command, SetCrossfade):
             result = _set_crossfade(state, command)
+        elif isinstance(command, SetSleepTimer):
+            result = _set_sleep_timer(state, command, now)
+        elif isinstance(command, CancelSleepTimer):
+            result = _cancel_sleep_timer(state)
         elif isinstance(command, JoinVoice):
             result = _join_voice(state, command)
         else:
@@ -255,6 +265,45 @@ def _set_crossfade(state: PlayerState, command: SetCrossfade) -> Transition:
         session=replace(state.session, crossfade_seconds=command.seconds),
     )
     return Transition(updated, MutationOutcome(PlayerAction.CROSSFADE_CHANGED))
+
+
+def _set_sleep_timer(
+    state: PlayerState,
+    command: SetSleepTimer,
+    now: datetime,
+) -> Transition:
+    if command.sleep_at.utcoffset() is None or command.sleep_at <= now:
+        raise PlayerError(PlayerErrorCode.INVALID_COMMAND, 422)
+    updated = replace(
+        state,
+        session=replace(state.session, sleep_at=command.sleep_at),
+    )
+    return Transition(updated, MutationOutcome(PlayerAction.SLEEP_TIMER_SET))
+
+
+def _cancel_sleep_timer(state: PlayerState) -> Transition:
+    updated = replace(state, session=replace(state.session, sleep_at=None))
+    return Transition(updated, MutationOutcome(PlayerAction.SLEEP_TIMER_CANCELLED))
+
+
+def _suspend_playback(
+    state: PlayerState,
+    command: SuspendPlayback,
+) -> Transition:
+    checkpoint = state.checkpoint
+    if checkpoint.intent is PlaybackIntent.PLAYING:
+        checkpoint = replace(checkpoint, intent=PlaybackIntent.PAUSED)
+    session = replace(
+        state.session,
+        channel_id=None,
+        sleep_at=(
+            None
+            if command.reason is SuspensionReason.SLEEP_TIMER
+            else state.session.sleep_at
+        ),
+    )
+    updated = replace(state, session=session, checkpoint=checkpoint)
+    return Transition(updated, MutationOutcome(PlayerAction.PLAYBACK_SUSPENDED))
 
 
 def _join_voice(state: PlayerState, command: JoinVoice) -> Transition:

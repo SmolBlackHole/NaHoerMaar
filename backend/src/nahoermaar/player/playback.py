@@ -551,6 +551,10 @@ class PlaybackCoordinator:
         if action is PlayerAction.VOICE_JOINED:
             await self._reset_voice_retries(state.session.channel_id)
         self._transport.set_volume(state.session.volume)
+        if action is PlayerAction.PLAYBACK_SUSPENDED and self._current is not None:
+            await self._sample(context=context)
+            self._current.context = context
+            self._transport.pause(self._current.attempt_id)
         await self._sync_connection(state, context)
 
         if action is PlayerAction.PLAYBACK_PAUSED and self._current is not None:
@@ -597,6 +601,8 @@ class PlaybackCoordinator:
                         context=context,
                     )
                 await self._sync_output(state.checkpoint, context)
+        elif action is PlayerAction.PLAYBACK_SUSPENDED:
+            pass
         elif action is not PlayerAction.PLAYBACK_CHECKPOINTED:
             if action is PlayerAction.PLAYBACK_PLAYED and self._current is not None:
                 self._current.context = context
@@ -652,6 +658,11 @@ class PlaybackCoordinator:
         await self._set_voice_state(phase, desired, attempt=attempt, context=context)
         try:
             if current is not None:
+                await self._sample(context=context)
+                await self._bus.execute(
+                    DisconnectAudience(state.session.id, datetime.now(UTC)),
+                    context.child(),
+                )
                 await self._transport.disconnect(current.connection_id)
             await self._transport.connect(desired, uuid4())
         except asyncio.CancelledError:

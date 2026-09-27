@@ -141,7 +141,9 @@ async function commitSeek() {
 const action = computed(() =>
 	["playing", "transitioning"].includes(player.state?.runtime.phase ?? "idle") ? "pause" : "play",
 );
-const actionIcon = computed(() => (action.value === "pause" ? icons.value.pause : icons.value.play));
+const actionIcon = computed(() =>
+	action.value === "pause" ? icons.value.pause : icons.value.play,
+);
 const label = computed(
 	() =>
 		({
@@ -318,6 +320,7 @@ const confirmationDescription = computed(() =>
 			<span class="w-9">{{ formatTime(duration) }}</span>
 		</div>
 		<div class="dock-volume flex items-center gap-3">
+			<PlayerSleepTimer />
 			<UPopover :ui="{ content: 'w-72 max-w-[calc(100vw-2rem)] p-4' }">
 				<UTooltip text="Audio settings: bot volume, video volume and crossfade">
 					<UButton

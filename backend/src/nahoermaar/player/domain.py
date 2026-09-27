@@ -93,10 +93,18 @@ class PlayerAction(StrEnum):
     PLAYBACK_COMPLETED = "playback.completed"
     PLAYBACK_FAILED = "playback.failed"
     PLAYBACK_CHECKPOINTED = "playback.checkpointed"
+    PLAYBACK_SUSPENDED = "playback.suspended"
     VOLUME_CHANGED = "playback.volume_changed"
     CROSSFADE_CHANGED = "playback.crossfade_changed"
+    SLEEP_TIMER_SET = "sleep_timer.set"
+    SLEEP_TIMER_CANCELLED = "sleep_timer.cancelled"
     VOICE_JOINED = "voice.joined"
     VOICE_LEFT = "voice.left"
+
+
+class SuspensionReason(StrEnum):
+    EMPTY_AUDIENCE = "empty_audience"
+    SLEEP_TIMER = "sleep_timer"
 
 
 class PlayerErrorCode(StrEnum):
@@ -138,6 +146,7 @@ class ListeningSession:
     crossfade_seconds: int = DEFAULT_CROSSFADE_SECONDS
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    sleep_at: datetime | None = None
 
     def __post_init__(self) -> None:
         if self.revision < 0 or not 0 <= self.queue_revision <= self.revision:
@@ -152,6 +161,8 @@ class ListeningSession:
             _aware(self.created_at, "Session creation")
         if self.updated_at is not None:
             _aware(self.updated_at, "Session update")
+        if self.sleep_at is not None:
+            _aware(self.sleep_at, "Sleep timer")
 
 
 @dataclass(frozen=True, slots=True)
