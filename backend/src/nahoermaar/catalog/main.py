@@ -8,9 +8,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from nahoermaar.database.uow import UnitOfWork
+from nahoermaar.lifecycle import LifecycleResource
 from nahoermaar.operations.maintenance import HousekeepingContribution
 from nahoermaar.operations.scheduler import JobDefinition
-from nahoermaar.views.catalog import CatalogCleanupView
+from nahoermaar.views.catalog import CatalogCleanupReader
 
 from .maintenance import (
     CatalogCleanup,
@@ -31,12 +32,13 @@ class CatalogModule:
     service: CatalogService
     jobs: tuple[JobDefinition, ...]
     housekeeping: HousekeepingContribution
+    lifecycle: LifecycleResource
 
 
 def create_catalog_module(
     units: UnitOfWorkFactory,
     providers: tuple[CatalogProvider, ...],
-    cleanup_view: CatalogCleanupView,
+    cleanup_view: CatalogCleanupReader,
 ) -> CatalogModule:
     """Build Catalog use cases and their module-owned bounded jobs."""
     service = CatalogService(units, providers)
@@ -52,4 +54,5 @@ def create_catalog_module(
             revalidation.definition(),
         ),
         housekeeping.contribution(),
+        LifecycleResource("catalog", close=service.close),
     )

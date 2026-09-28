@@ -25,10 +25,10 @@ from nahoermaar.operations.jobs import (
     JobRunService,
     JobTrigger,
 )
+from nahoermaar.operations.logs import RecentLogBuffer
 from nahoermaar.operations.main import (
-    ModuleHousekeeping,
-    OperationsServices,
-    create_operations_module,
+    complete_operations_module,
+    create_operations_foundation,
 )
 from nahoermaar.operations.maintenance import (
     HousekeepingContext,
@@ -236,17 +236,17 @@ def test_housekeeping_records_a_bounded_manual_run(tmp_path: Path) -> None:
     def units() -> UnitOfWork:
         return UnitOfWork(database.sessions)
 
-    incidents = IncidentService(units, clock=lambda: NOW)
-    jobs = JobRunService(units, incidents, clock=lambda: NOW)
-    operations = create_operations_module(
-        units,
-        OperationsServices(incidents, jobs),
+    foundation = create_operations_foundation(units, RecentLogBuffer())
+    jobs = foundation.job_runs
+    operations = complete_operations_module(
+        foundation,
         (),
-        ModuleHousekeeping(
-            users=UsersMaintenance(units).contribution(),
-            player=PlayerMaintenance(units).contribution(),
-            catalog=CatalogHousekeeping(units).contribution(),
-            integrations=IntegrationsMaintenance(
+        (
+            UsersMaintenance(units).contribution(),
+            PlayerMaintenance(units).contribution(),
+            CatalogHousekeeping(units).contribution(),
+            *foundation.housekeeping,
+            IntegrationsMaintenance(
                 DiscordAvatarStore(tmp_path / "avatars")
             ).contribution(),
         ),

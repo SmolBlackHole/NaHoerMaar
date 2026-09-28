@@ -8,7 +8,6 @@ from datetime import UTC, date, datetime, timedelta
 import os
 from pathlib import Path
 from uuid import UUID, uuid4
-from zoneinfo import ZoneInfo
 
 from alembic import command
 from alembic.config import Config
@@ -18,6 +17,7 @@ from sqlalchemy import insert
 from nahoermaar.database.core import Database
 from nahoermaar.database.schema import Base
 from nahoermaar.database.uow import UnitOfWork
+from nahoermaar.statistics.main import create_statistics_module
 from nahoermaar.statistics.models import (
     ActivityGranularity,
     ListenerAchievementFacts,
@@ -26,7 +26,6 @@ from nahoermaar.statistics.models import (
     StatisticsPeriod,
 )
 from nahoermaar.statistics.service import (
-    StatisticsService,
     assign_listener_badges,
     calculate_active_day_streaks,
 )
@@ -357,12 +356,13 @@ def test_statistics_project_shared_and_personal_facts_without_double_counting() 
         def units() -> UnitOfWork:
             return UnitOfWork(database.sessions)
 
-        service = StatisticsService(
+        module = create_statistics_module(
             units,
-            ZoneInfo("Europe/Berlin"),
+            "Europe/Berlin",
             AccessService(units, Operators("9", ())),
             clock=lambda: NOW,
         )
+        service = module.service
         profiles = ProfileView(units, service)
         overview = await service.overview(StatisticsPeriod.DAYS_7)
         personal = await service.user(listener_id, StatisticsPeriod.DAYS_7)

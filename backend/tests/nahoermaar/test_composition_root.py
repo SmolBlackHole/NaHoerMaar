@@ -20,8 +20,14 @@ from nahoermaar.messaging import MessageBus
 from nahoermaar.database.uow import UnitOfWork
 from nahoermaar.operations.logs import RecentLogBuffer
 from nahoermaar.operations.jobs import JobId
+from nahoermaar.player.main import PlayerModule
+from nahoermaar.player.session import PlayerSessionManager
+from nahoermaar.statistics.service import StatisticsService
 from nahoermaar.users.domain import AccessRole
 from nahoermaar.users.repository import UserRepository
+from nahoermaar.views.catalog import CatalogCleanupView
+from nahoermaar.views.history import PlaybackHistoryView
+from nahoermaar.views.profile import ProfileView
 
 
 def _table_names(connection: Connection) -> set[str]:
@@ -51,18 +57,38 @@ def test_bootstrap_loads_settings_and_composes_auth(
     )
 
     assert application.settings.log_level is LogLevel.WARNING
-    assert application.access.operators.owner_id == "9"
+    assert application.users.access.operators.owner_id == "9"
     assert isinstance(application.bus, MessageBus)
-    assert isinstance(application.catalog, CatalogService)
-    assert not hasattr(application.catalog, "start")
-    catalog_job = application.jobs.descriptor(JobId.CATALOG_MAINTENANCE)
+    assert isinstance(application.statistics.service, StatisticsService)
+    assert isinstance(application.views.profiles, ProfileView)
+    assert isinstance(application.views.history, PlaybackHistoryView)
+    assert isinstance(application.views.catalog_cleanup, CatalogCleanupView)
+    assert isinstance(application.catalog.service, CatalogService)
+    assert application.catalog.lifecycle.name == "catalog"
+    assert application.catalog.lifecycle.start is None
+    assert isinstance(application.player, PlayerModule)
+    assert isinstance(application.player.service, PlayerSessionManager)
+    assert application.player.session_lifecycle.name == "player"
+    assert application.player.automation_lifecycle.name == "automation"
+    assert application.player.playback is None
+    assert application.player.playback_lifecycle is None
+    assert application.integrations.gateway is None
+    assert application.integrations.playback_transport is None
+    assert application.integrations.gateway_lifecycle is None
+    assert tuple(
+        provider.key for provider in application.integrations.catalog_providers
+    ) == (
+        "youtube",
+        "youtube_music",
+    )
+    catalog_job = application.operations.jobs.descriptor(JobId.CATALOG_MAINTENANCE)
     assert catalog_job.module == "catalog"
     assert catalog_job.controls.batch_size.default == 10
-    cleanup_job = application.jobs.descriptor(JobId.CATALOG_CLEANUP)
+    cleanup_job = application.operations.jobs.descriptor(JobId.CATALOG_CLEANUP)
     assert cleanup_job.module == "catalog"
     assert cleanup_job.controls.preview is not None
     assert cleanup_job.controls.age_days is not None
-    revalidation_job = application.jobs.descriptor(JobId.SOURCE_REVALIDATION)
+    revalidation_job = application.operations.jobs.descriptor(JobId.SOURCE_REVALIDATION)
     assert revalidation_job.module == "catalog"
     assert revalidation_job.controls.batch_size.default == 10
     paths = create_app(application).openapi()["paths"]
@@ -137,7 +163,7 @@ def test_application_start_migrates_empty_database_and_reconciles_operators(
         async with UnitOfWork(application.database.sessions) as work:
             configured_owner = await UserRepository(work.session).get_by_discord_id("9")
         assert configured_owner is not None
-        owner = await application.access.require_admin(configured_owner.id)
+        owner = await application.users.access.require_admin(configured_owner.id)
         assert owner.role is AccessRole.OWNER
         await application.close()
 

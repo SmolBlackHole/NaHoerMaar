@@ -12,25 +12,33 @@ import pytest
 
 from nahoermaar import bootstrap as bootstrap_module
 from nahoermaar.bootstrap import Application, ApplicationLifecycle
+from nahoermaar.catalog.main import CatalogModule
 from nahoermaar.catalog.service import CatalogService
 from nahoermaar.config import Settings
 from nahoermaar.database.core import Database
+from nahoermaar.lifecycle import LifecycleResource
+from nahoermaar.listening.main import ListeningModule
 from nahoermaar.listening.service import ListeningService
 from nahoermaar.messaging import Command, MessageBus, MessageContext
 from nahoermaar.operations.logs import RecentLogBuffer
 from nahoermaar.operations.incidents import IncidentService
 from nahoermaar.operations.jobs import JobRunService
+from nahoermaar.operations.maintenance import HousekeepingContribution
+from nahoermaar.operations.main import OperationsModule
 from nahoermaar.operations.scheduler import JobCoordinator
 from nahoermaar.player.automation import PlaybackAutomation
 from nahoermaar.player.domain import ListeningSessionId
+from nahoermaar.player.main import PlayerModule, SummonHandler
 from nahoermaar.player.playback import PlaybackCoordinator
 from nahoermaar.player.session import PlayerSessionManager
+from nahoermaar.statistics.main import StatisticsModule
 from nahoermaar.statistics.service import StatisticsService
-from nahoermaar.views.profile import ProfileView
-from nahoermaar.views.history import PlaybackHistoryView
-from nahoermaar.users.service import AccessService, AuthService
+from nahoermaar.views.main import ViewsModule
+from nahoermaar.users.service import AccessService, AuthService, IdentityProvider
+from nahoermaar.users.main import UsersModule
 from nahoermaar.integrations.discord import DiscordGateway
 from nahoermaar.integrations.avatars import DiscordAvatarStore
+from nahoermaar.integrations.main import IntegrationsModule
 
 
 class _Bus(MessageBus):
@@ -150,7 +158,12 @@ class _Playback:
         self._calls.append("playback.close")
 
 
-def _application(calls: list[str], *, fail_gateway: bool = False) -> Application:
+def _application(
+    calls: list[str],
+    *,
+    fail_gateway: bool = False,
+    catalog_resource_name: str = "catalog",
+) -> Application:
     database = _Database(calls)
     catalog = _Catalog(calls)
     player = _Player(calls)
@@ -160,27 +173,101 @@ def _application(calls: list[str], *, fail_gateway: bool = False) -> Application
     automation = _Automation(calls)
     jobs = _Jobs(calls)
     coordinator = _JobCoordinator(calls)
+
+    async def reconcile_operators() -> None:
+        calls.append("operators")
+
+    users = UsersModule(
+        cast(AuthService, object()),
+        cast(AccessService, object()),
+        cast(HousekeepingContribution, object()),
+        LifecycleResource("users.operators", start=reconcile_operators),
+    )
+
+    async def start_listening() -> None:
+        await listening.start(player.state.session.id)
+
+    listening_module = ListeningModule(
+        cast(ListeningService, listening),
+        LifecycleResource(
+            "listening",
+            start=start_listening,
+            close=listening.close,
+        ),
+    )
+    player_module = PlayerModule(
+        service=cast(PlayerSessionManager, player),
+        automation=cast(PlaybackAutomation, automation),
+        playback=cast(PlaybackCoordinator, playback),
+        housekeeping=cast(HousekeepingContribution, object()),
+        summon=cast(SummonHandler, object()),
+        session_lifecycle=LifecycleResource(
+            "player",
+            start=player.start,
+            close=player.close,
+        ),
+        automation_lifecycle=LifecycleResource(
+            "automation",
+            start=automation.start,
+            close=automation.close,
+        ),
+        playback_lifecycle=LifecycleResource(
+            "playback",
+            start=playback.start,
+            close=playback.close,
+        ),
+    )
+    integrations = IntegrationsModule(
+        identity=cast(IdentityProvider, object()),
+        catalog_providers=(),
+        avatars=DiscordAvatarStore(Path("data/avatars")),
+        housekeeping=cast(HousekeepingContribution, object()),
+        gateway=cast(DiscordGateway, gateway),
+        playback_transport=None,
+        gateway_lifecycle=LifecycleResource(
+            "discord",
+            start=gateway.open,
+            close=gateway.close,
+        ),
+    )
+    operations = OperationsModule(
+        incidents=cast(IncidentService, object()),
+        job_runs=cast(JobRunService, jobs),
+        jobs=cast(JobCoordinator, coordinator),
+        logs=RecentLogBuffer(),
+        reconciliation_lifecycle=LifecycleResource(
+            "job-runs.reconcile",
+            start=jobs.reconcile_interrupted_runs,
+        ),
+        jobs_lifecycle=LifecycleResource(
+            "jobs",
+            start=coordinator.start,
+            close=coordinator.close,
+        ),
+    )
     return Application(
         cast(Settings, object()),
         cast(Database, database),
         _Bus(calls),
-        cast(AuthService, object()),
-        cast(AccessService, object()),
-        cast(CatalogService, catalog),
-        cast(PlayerSessionManager, player),
-        cast(ListeningService, listening),
-        cast(StatisticsService, object()),
-        cast(ProfileView, object()),
-        cast(PlaybackHistoryView, object()),
-        cast(IncidentService, object()),
-        cast(PlaybackAutomation, automation),
-        cast(JobRunService, jobs),
-        cast(JobCoordinator, coordinator),
-        RecentLogBuffer(),
-        DiscordAvatarStore(Path("data/avatars")),
-        cast(DiscordGateway, gateway),
-        cast(PlaybackCoordinator, playback),
+        users,
+        CatalogModule(
+            cast(CatalogService, catalog),
+            (),
+            cast(HousekeepingContribution, object()),
+            LifecycleResource(catalog_resource_name, close=catalog.close),
+        ),
+        player_module,
+        listening_module,
+        StatisticsModule(cast(StatisticsService, object())),
+        cast(ViewsModule, object()),
+        integrations,
+        operations,
     )
+
+
+def test_application_rejects_duplicate_lifecycle_owners() -> None:
+    with pytest.raises(ValueError, match="resource names must be unique"):
+        _application([], catalog_resource_name="database")
 
 
 def test_failed_start_closes_started_resources_in_reverse_order(

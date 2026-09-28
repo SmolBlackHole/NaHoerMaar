@@ -73,15 +73,15 @@ async def event_stream(
     token: str | None,
 ) -> AsyncGenerator[ServerSentEvent]:
     """Send one resync snapshot, then committed changes without replay."""
-    async with application.player.events.subscribe() as changes:
-        initial = application.player.state
+    async with application.player.service.events.subscribe() as changes:
+        initial = application.player.service.state
         last_revision = -1
         while True:
             try:
-                await application.auth.authenticate(token)
+                await application.users.auth.authenticate(token)
                 if last_revision < 0:
                     document = await player_view(application, initial)
-                    await application.auth.authenticate(token)
+                    await application.users.auth.authenticate(token)
                     last_revision = initial.session.revision
                     _LOGGER.debug(
                         "sse.state_sent session=%s revision=%d",
@@ -109,7 +109,7 @@ async def event_stream(
                     continue
                 if isinstance(update, PlayerRuntimeChange):
                     document = await player_view(application, update.state)
-                    await application.auth.authenticate(token)
+                    await application.users.auth.authenticate(token)
                     last_revision = max(last_revision, update.state.session.revision)
                     _LOGGER.debug(
                         "sse.runtime_state_sent session=%s revision=%d phase=%s "
@@ -134,7 +134,7 @@ async def event_stream(
                     continue
 
                 document = await player_view(application, update.state)
-                await application.auth.authenticate(token)
+                await application.users.auth.authenticate(token)
                 last_revision = update.event.revision
                 _LOGGER.debug(
                     "sse.change_sent session=%s revision=%d action=%s",

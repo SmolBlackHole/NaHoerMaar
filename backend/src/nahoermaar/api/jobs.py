@@ -178,8 +178,8 @@ def router(application: Application) -> APIRouter:
 
     @routes.get("")
     async def background_jobs(request: Request) -> BackgroundJobsView:
-        await application.access.require_admin(authenticated(request).user.id)
-        jobs = await application.jobs.statuses()
+        await application.users.access.require_admin(authenticated(request).user.id)
+        jobs = await application.operations.jobs.statuses()
         return BackgroundJobsView(
             jobs=tuple(_coordinated_job_view(current) for current in jobs),
             history_retention_days=HISTORY_RETENTION_DAYS,
@@ -193,8 +193,8 @@ def router(application: Application) -> APIRouter:
         job_id: JobId | None = None,
         run_status: Annotated[JobRunStatus | None, Query(alias="status")] = None,
     ) -> BackgroundJobRunPageView:
-        await application.access.require_admin(authenticated(request).user.id)
-        page = await application.job_runs.runs(
+        await application.users.access.require_admin(authenticated(request).user.id)
+        page = await application.operations.job_runs.runs(
             limit=limit,
             cursor=_decode_cursor(cursor),
             job_id=job_id,
@@ -210,8 +210,8 @@ def router(application: Application) -> APIRouter:
         run_id: UUID,
         request: Request,
     ) -> BackgroundJobRunView:
-        await application.access.require_admin(authenticated(request).user.id)
-        run = await application.job_runs.run(run_id)
+        await application.users.access.require_admin(authenticated(request).user.id)
+        run = await application.operations.job_runs.run(run_id)
         if run is None:
             raise ApiError(ApiErrorCode.NOT_FOUND, status.HTTP_404_NOT_FOUND)
         return _run_view(run)
@@ -226,9 +226,9 @@ def router(application: Application) -> APIRouter:
         request: Request,
     ) -> BackgroundJobView:
         actor = authenticated(request).user
-        await application.access.require_admin(actor.id)
+        await application.users.access.require_admin(actor.id)
         try:
-            current = await application.jobs.trigger(
+            current = await application.operations.jobs.trigger(
                 job_id,
                 JobRunRequest(
                     batch_size=body.batch_size,

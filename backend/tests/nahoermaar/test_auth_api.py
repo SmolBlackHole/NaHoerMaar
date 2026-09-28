@@ -10,7 +10,6 @@ import os
 from pathlib import Path
 from typing import cast
 from uuid import uuid4
-from zoneinfo import ZoneInfo
 
 from alembic import command
 from alembic.config import Config
@@ -21,19 +20,19 @@ from nahoermaar.api.app import create_app
 from nahoermaar.api.events import AuthEventView, ChangeView, event_stream
 from nahoermaar.api.player import PlayerView
 from nahoermaar.catalog.maintenance import CatalogMaintenance
+from nahoermaar.catalog.main import CatalogModule
 from nahoermaar.catalog.service import CatalogService
-from nahoermaar.bootstrap import (  # pyright: ignore[reportPrivateUsage]
-    Application,
-    _register_handlers,  # pyright: ignore[reportPrivateUsage]
-)
+from nahoermaar.bootstrap import Application
 from nahoermaar.config import AuthSettings, Settings
 from nahoermaar.database.core import Database
 from nahoermaar.database.schema import Base
 from nahoermaar.database.uow import UnitOfWork
 from nahoermaar.integrations.discord import DiscordGateway
 from nahoermaar.integrations.avatars import DiscordAvatarStore
+from nahoermaar.integrations.main import IntegrationsModule
+from nahoermaar.lifecycle import LifecycleResource
 from nahoermaar.messaging import MessageBus
-from nahoermaar.listening.service import ListeningService
+from nahoermaar.listening.main import create_listening_module
 from nahoermaar.observability import ContextFilter
 from nahoermaar.operations.incidents import IncidentService
 from nahoermaar.operations.jobs import JobId, JobRunDetail, JobRunService, JobTrigger
@@ -44,21 +43,18 @@ from nahoermaar.operations.maintenance import (
     HousekeepingMaintenance,
     cleanup_detail,
 )
+from nahoermaar.operations.main import OperationsModule
 from nahoermaar.operations.scheduler import JobCoordinator
-from nahoermaar.player.automation import PlaybackAutomation
 from nahoermaar.player.events import PlaybackRuntimeChanged
-from nahoermaar.player.session import CatalogRadioResolver, PlayerSessionManager
-from nahoermaar.statistics.service import StatisticsService
+from nahoermaar.player.main import complete_player_module, prepare_player_module
+from nahoermaar.statistics.main import create_statistics_module
+from nahoermaar.users.main import create_users_module
 from nahoermaar.users.service import (
-    AccessService,
-    AuthService,
-    Operators,
     ProvidedDiscordIdentity,
     SESSION_COOKIE,
 )
 from nahoermaar.users.domain import DiscordMember
-from nahoermaar.views.profile import ProfileView
-from nahoermaar.views.history import PlaybackHistoryView
+from nahoermaar.views.main import create_views_module
 
 NOW = datetime(2026, 9, 24, 12, tzinfo=UTC)
 ROOT = Path(__file__).parents[3]
@@ -109,18 +105,29 @@ def _database() -> Database:
     return Database(database_url)
 
 
-def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
+def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
+    tmp_path: Path,
+) -> None:
     database = _database()
 
     def units() -> UnitOfWork:
         return UnitOfWork(database.sessions)
 
     provider = Provider()
-    access = AccessService(units, Operators("9", ()), clock=lambda: NOW)
-    auth = AuthService(units, provider, clock=lambda: NOW)
     incidents = IncidentService(units, clock=lambda: NOW)
     job_runs = JobRunService(units, incidents, clock=lambda: NOW)
     bus = MessageBus(incidents)
+    access_path = tmp_path / "access.toml"
+    access_path.write_text('owner_id = "9"\nadmin_ids = []\n', encoding="utf-8")
+    users_module = create_users_module(
+        units,
+        bus,
+        provider,
+        access_path,
+        clock=lambda: NOW,
+    )
+    access = users_module.access
+    auth = users_module.auth
     catalog = CatalogService(units, ())
     catalog_maintenance = CatalogMaintenance(
         units,
@@ -134,14 +141,17 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
     ) -> tuple[JobRunDetail, ...]:
         return (cleanup_detail("operations", "Expired data", 0),)
 
-    housekeeping = HousekeepingMaintenance(
-        (
-            HousekeepingContribution(
-                "operations",
-                ("Expired data",),
-                no_housekeeping_changes,
-            ),
-        )
+    housekeeping_contribution = HousekeepingContribution(
+        "operations",
+        ("Expired data",),
+        no_housekeeping_changes,
+    )
+    housekeeping = HousekeepingMaintenance((housekeeping_contribution,))
+    catalog_module = CatalogModule(
+        catalog,
+        (),
+        housekeeping_contribution,
+        LifecycleResource("catalog", close=catalog.close),
     )
     jobs = JobCoordinator(
         job_runs,
@@ -151,40 +161,73 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
         ),
         clock=lambda: NOW,
     )
-    player = PlayerSessionManager(units, bus, CatalogRadioResolver(catalog))
-    listening = ListeningService(
+    player_preparation = prepare_player_module(
+        units,
+        bus,
+        catalog,
+        access,
+        empty_channel_grace_seconds=60,
+    )
+    player = player_preparation.service
+    listening_module = create_listening_module(
         units,
         bus,
         access,
+        lambda: player.state.session.id,
     )
     avatars = DiscordAvatarStore(Path("data/avatars"))
-    automation = PlaybackAutomation(
-        player,
+    player_module = complete_player_module(
+        player_preparation,
+        catalog,
+        listening_module.service,
         bus,
-        empty_channel_grace_seconds=60,
+        None,
+        incidents=incidents,
     )
-    statistics = StatisticsService(
+    statistics_module = create_statistics_module(
         units,
-        ZoneInfo("UTC"),
+        "UTC",
         access,
         clock=lambda: NOW,
     )
-    profiles = ProfileView(units, statistics)
-    history = PlaybackHistoryView(units)
+    views_module = create_views_module(units, statistics_module)
+    integrations_module = IntegrationsModule(
+        identity=provider,
+        catalog_providers=(),
+        avatars=avatars,
+        housekeeping=housekeeping_contribution,
+        gateway=cast(DiscordGateway, Gateway()),
+        playback_transport=None,
+        gateway_lifecycle=None,
+    )
     logs = RecentLogBuffer()
+    operations_module = OperationsModule(
+        incidents=incidents,
+        job_runs=job_runs,
+        jobs=jobs,
+        logs=logs,
+        reconciliation_lifecycle=LifecycleResource(
+            "job-runs.reconcile",
+            start=job_runs.reconcile_interrupted_runs,
+        ),
+        jobs_lifecycle=LifecycleResource(
+            "jobs",
+            start=jobs.start,
+            close=jobs.close,
+        ),
+    )
     logs.addFilter(ContextFilter())
     root_logger = logging.getLogger()
     previous_level = root_logger.level
     root_logger.setLevel(logging.INFO)
     root_logger.addHandler(logs)
-    _register_handlers(bus, auth, access, player, listening, automation)
     settings = Settings(
         os.environ["DATABASE_URL"],
         AuthSettings(
             ORIGIN,
             "123",
             "secret",
-            Path("access.toml"),
+            access_path,
             frozenset({"http://localhost:3001"}),
         ),
     )
@@ -192,21 +235,14 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
         settings,
         database,
         bus,
-        auth,
-        access,
-        catalog,
-        player,
-        listening,
-        statistics,
-        profiles,
-        history,
-        incidents,
-        automation,
-        job_runs,
-        jobs,
-        logs,
-        avatars,
-        gateway=cast(DiscordGateway, Gateway()),
+        users_module,
+        catalog_module,
+        player_module,
+        listening_module,
+        statistics_module,
+        views_module,
+        integrations_module,
+        operations_module,
     )
     app = create_app(application)
 
@@ -320,7 +356,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             assert own_profile.json()["id"] == str(current.user.id)
             assert own_profile.json()["discord"]["display_name"] == "Andrey"
             assert own_profile.json()["discord"]["avatar_url"] == (
-                application.avatars.public_url(
+                application.integrations.avatars.public_url(
                     "9",
                     source_url="https://cdn.discordapp.com/avatars/9/test.png",
                 )
@@ -442,25 +478,25 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
                 "error": "validation_failed",
                 "retryable": False,
             }
-            first_run = await application.job_runs.start_run(
+            first_run = await application.operations.job_runs.start_run(
                 JobId.HOUSEKEEPING,
                 JobTrigger.MANUAL,
                 1,
                 current.user.id,
             )
-            first_run = await application.job_runs.finish_run(
+            first_run = await application.operations.job_runs.finish_run(
                 first_run,
                 candidate_count=1,
                 processed_count=1,
                 changed_count=1,
             )
-            second_run = await application.job_runs.start_run(
+            second_run = await application.operations.job_runs.start_run(
                 JobId.HOUSEKEEPING,
                 JobTrigger.MANUAL,
                 1,
                 current.user.id,
             )
-            second_run = await application.job_runs.finish_run(
+            second_run = await application.operations.job_runs.finish_run(
                 second_run,
                 candidate_count=1,
                 processed_count=1,
@@ -540,7 +576,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
                 "display_name": "Owner",
                 "discord_id": "9",
                 "discord_username": "Owner",
-                "avatar_url": application.avatars.public_url("9"),
+                "avatar_url": application.integrations.avatars.public_url("9"),
             }
             request_id = queued.json()["player"]["queue"][0]["request"]["id"]
             playback_id = uuid4()
@@ -549,7 +585,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
                 await work.session.execute(
                     insert(Base.metadata.tables["playback_records"]).values(
                         id=playback_id,
-                        session_id=application.player.state.session.id,
+                        session_id=application.player.service.state.session.id,
                         request_id=request_id,
                         started_at=NOW,
                         audio_seconds=42.0,
@@ -561,7 +597,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
                 await work.session.execute(
                     insert(Base.metadata.tables["playback_records"]).values(
                         id=prior_playback_id,
-                        session_id=application.player.state.session.id,
+                        session_id=application.player.service.state.session.id,
                         request_id=request_id,
                         started_at=NOW - timedelta(seconds=60),
                         audio_seconds=50.0,
@@ -585,7 +621,9 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             top_listener = enriched_overview.json()["top_listeners"][0]
             assert top_listener["discord_username"] == "Owner"
             assert top_listener["discord_display_name"] == "Andrey"
-            assert top_listener["avatar_url"] == application.avatars.public_url(
+            assert top_listener[
+                "avatar_url"
+            ] == application.integrations.avatars.public_url(
                 "9",
                 source_url="https://cdn.discordapp.com/avatars/9/test.png",
             )
@@ -615,7 +653,9 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
                             "display_name": "Owner",
                             "discord_id": "9",
                             "discord_username": "Owner",
-                            "avatar_url": application.avatars.public_url("9"),
+                            "avatar_url": application.integrations.avatars.public_url(
+                                "9"
+                            ),
                         },
                         "started_at": NOW.isoformat().replace("+00:00", "Z"),
                         "ended_at": (NOW + timedelta(seconds=42))
@@ -630,7 +670,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
                     {
                         "user_id": str(current.user.id),
                         "display_name": "Owner",
-                        "avatar_url": application.avatars.public_url("9"),
+                        "avatar_url": application.integrations.avatars.public_url("9"),
                     }
                 ],
                 "page": 1,
@@ -672,7 +712,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
                 change.data.state.queue[0].request.contributor.display_name == "Owner"
             )
             await bus.publish(
-                PlaybackRuntimeChanged(application.player.state.session.id)
+                PlaybackRuntimeChanged(application.player.service.state.session.id)
             )
             runtime = await anext(events)
             assert runtime.event == "state"
@@ -740,7 +780,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             assert runtime["current"]["track"]["title"] == "API track"
             assert runtime["current"]["contributor"]["display_name"] == "Local owner"
             assert runtime["current"]["contributor"]["avatar_url"] == (
-                application.avatars.public_url("9")
+                application.integrations.avatars.public_url("9")
             )
 
             operator = await client.put("/api/access/9", headers=headers)

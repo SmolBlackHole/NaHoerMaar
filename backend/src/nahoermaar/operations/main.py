@@ -2,16 +2,18 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""Operations module composition."""
+"""Operations foundation and completed runtime composition."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import timedelta
 
 from nahoermaar.database.uow import UnitOfWork
+from nahoermaar.lifecycle import LifecycleResource
 
 from .incidents import IncidentRepository, IncidentService, RETENTION_DAYS
 from .jobs import JobRunDetail, JobRunService
+from .logs import RecentLogBuffer
 from .maintenance import (
     HousekeepingContext,
     HousekeepingContribution,
@@ -24,48 +26,34 @@ type UnitOfWorkFactory = Callable[[], UnitOfWork]
 
 
 @dataclass(frozen=True, slots=True)
-class ModuleHousekeeping:
-    """Named module contributions consumed by Operations."""
-
-    users: HousekeepingContribution
-    player: HousekeepingContribution
-    catalog: HousekeepingContribution
-    integrations: HousekeepingContribution
-
-
-@dataclass(frozen=True, slots=True)
-class OperationsServices:
-    """Operations services needed before the runtime graph is complete."""
+class OperationsFoundation:
+    """Operations services and retention work required during composition."""
 
     incidents: IncidentService
     job_runs: JobRunService
+    logs: RecentLogBuffer
+    housekeeping: tuple[HousekeepingContribution, ...]
 
 
 @dataclass(frozen=True, slots=True)
 class OperationsModule:
-    """Fully composed Operations runtime."""
+    """Completed Operations runtime and its lifecycle resources."""
 
     incidents: IncidentService
     job_runs: JobRunService
     jobs: JobCoordinator
+    logs: RecentLogBuffer
+    reconciliation_lifecycle: LifecycleResource
+    jobs_lifecycle: LifecycleResource
 
 
-def create_operations_services(units: UnitOfWorkFactory) -> OperationsServices:
-    """Build Operations services required by the message bus."""
-    incidents = IncidentService(units)
-    return OperationsServices(
-        incidents,
-        JobRunService(units, incidents),
-    )
-
-
-def create_operations_module(
+def create_operations_foundation(
     units: UnitOfWorkFactory,
-    services: OperationsServices,
-    jobs: tuple[JobDefinition, ...],
-    housekeeping: ModuleHousekeeping,
-) -> OperationsModule:
-    """Compose one visible Housekeeping job from module-owned work."""
+    logs: RecentLogBuffer,
+) -> OperationsFoundation:
+    """Build Operations services and module-owned retention contributions."""
+    incidents = IncidentService(units)
+    job_runs = JobRunService(units, incidents)
 
     async def purge_incidents(
         context: HousekeepingContext,
@@ -81,14 +69,14 @@ def create_operations_module(
     async def purge_job_runs(
         context: HousekeepingContext,
     ) -> tuple[JobRunDetail, ...]:
-        removed = await services.job_runs.purge(context.now, context.batch_size)
+        removed = await job_runs.purge(context.now, context.batch_size)
         return (cleanup_detail("job-runs", "Job runs", removed),)
 
-    maintenance = HousekeepingMaintenance(
-        (
-            housekeeping.users,
-            housekeeping.player,
-            housekeeping.catalog,
+    return OperationsFoundation(
+        incidents=incidents,
+        job_runs=job_runs,
+        logs=logs,
+        housekeeping=(
             HousekeepingContribution(
                 "operations",
                 ("Incidents",),
@@ -99,14 +87,33 @@ def create_operations_module(
                 ("Job runs",),
                 purge_job_runs,
             ),
-            housekeeping.integrations,
-        )
+        ),
+    )
+
+
+def complete_operations_module(
+    foundation: OperationsFoundation,
+    jobs: tuple[JobDefinition, ...],
+    housekeeping: tuple[HousekeepingContribution, ...],
+) -> OperationsModule:
+    """Complete Operations from public jobs and ordered cleanup contributions."""
+    maintenance = HousekeepingMaintenance(housekeeping)
+    coordinator = JobCoordinator(
+        foundation.job_runs,
+        (*jobs, maintenance.definition()),
     )
     return OperationsModule(
-        services.incidents,
-        services.job_runs,
-        JobCoordinator(
-            services.job_runs,
-            (*jobs, maintenance.definition()),
+        incidents=foundation.incidents,
+        job_runs=foundation.job_runs,
+        jobs=coordinator,
+        logs=foundation.logs,
+        reconciliation_lifecycle=LifecycleResource(
+            "job-runs.reconcile",
+            start=foundation.job_runs.reconcile_interrupted_runs,
+        ),
+        jobs_lifecycle=LifecycleResource(
+            "jobs",
+            start=coordinator.start,
+            close=coordinator.close,
         ),
     )

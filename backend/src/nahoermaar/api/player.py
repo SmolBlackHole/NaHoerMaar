@@ -256,7 +256,7 @@ def router(application: Application) -> APIRouter:
 
     @routes.get("")
     async def player() -> PlayerView:
-        return await player_view(application, application.player.state)
+        return await player_view(application, application.player.service.state)
 
     @routes.post("/queue")
     async def add(request: Request, body: AddQueueInput) -> MutationView:
@@ -438,7 +438,7 @@ def router(application: Application) -> APIRouter:
 
     @routes.get("/voice/channels")
     async def voice_channels() -> tuple[VoiceChannelView, ...]:
-        if application.playback is None:
+        if application.player.playback is None:
             return ()
         return tuple(
             VoiceChannelView(
@@ -449,7 +449,7 @@ def router(application: Application) -> APIRouter:
                 can_connect=channel.can_connect,
                 can_speak=channel.can_speak,
             )
-            for channel in application.playback.channels()
+            for channel in application.player.playback.channels()
         )
 
     @routes.post("/voice/join")
@@ -541,7 +541,7 @@ def router(application: Application) -> APIRouter:
 
 
 def _session_id(application: Application) -> ListeningSessionId:
-    return application.player.state.session.id
+    return application.player.service.state.session.id
 
 
 async def _mutation(
@@ -570,8 +570,8 @@ async def player_view(
     state: PlayerState,
 ) -> PlayerView:
     runtime = (
-        application.playback.status
-        if application.playback is not None
+        application.player.playback.status
+        if application.player.playback is not None
         else PlaybackRuntimeState(
             PlaybackPhase.DISABLED,
             None,
@@ -594,7 +594,7 @@ async def player_view(
     radio_seed_title: str | None = None
     if radio_run is not None and radio_run.active:
         if radio_run.seed.track_source_id is not None:
-            radio_seed_track = await application.catalog.track_for_source(
+            radio_seed_track = await application.catalog.service.track_for_source(
                 radio_run.seed.track_source_id
             )
             if radio_seed_track is not None:
@@ -602,7 +602,7 @@ async def player_view(
                 radio_seed_title = radio_seed_track.title
         elif radio_run.seed.discovery_snapshot_id is not None:
             try:
-                seed_snapshot = await application.catalog.snapshot(
+                seed_snapshot = await application.catalog.service.snapshot(
                     radio_run.seed.discovery_snapshot_id,
                     DiscoveryKind.PLAYLIST,
                 )
@@ -610,13 +610,13 @@ async def player_view(
                 pass
             else:
                 radio_seed_title = seed_snapshot.snapshot.playlist_title
-    tracks = await application.catalog.tracks(track_ids)
+    tracks = await application.catalog.service.tracks(track_ids)
     contributor_ids = {entry.request.requested_by for entry in state.queue.entries}
     if current_request is not None:
         contributor_ids.add(current_request.requested_by)
     if radio_run is not None:
         contributor_ids.add(radio_run.initiated_by)
-    contributors = await application.access.users(contributor_ids)
+    contributors = await application.users.access.users(contributor_ids)
     queue = tuple(
         QueueEntryView(
             id=entry.id,
@@ -772,7 +772,7 @@ def _contributor_view(
         ),
         discord_id=user.discord.discord_id,
         discord_username=user.discord.username,
-        avatar_url=application.avatars.public_url(
+        avatar_url=application.integrations.avatars.public_url(
             user.discord.discord_id,
             avatar_hash=user.discord.avatar_hash,
         ),

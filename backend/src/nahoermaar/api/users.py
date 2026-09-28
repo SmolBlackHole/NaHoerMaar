@@ -220,7 +220,10 @@ def router(application: Application) -> APIRouter:
         period: Annotated[StatisticsPeriod, Query()] = StatisticsPeriod.DAYS_30,
     ) -> ProfilePageView:
         return _profile_page_view(
-            await application.profiles.get(authenticated(request).user.id, period),
+            await application.views.profiles.get(
+                authenticated(request).user.id,
+                period,
+            ),
             application,
         )
 
@@ -232,7 +235,7 @@ def router(application: Application) -> APIRouter:
     ) -> ProfilePageView:
         authenticated(request)
         return _profile_page_view(
-            await application.profiles.get(UserId(user_id), period),
+            await application.views.profiles.get(UserId(user_id), period),
             application,
         )
 
@@ -241,26 +244,27 @@ def router(application: Application) -> APIRouter:
         request: Request,
         history_limit: int = Query(default=100, ge=1, le=500),
     ) -> AccessView:
-        await application.access.require_admin(authenticated(request).user.id)
+        await application.users.access.require_admin(authenticated(request).user.id)
         return AccessView(
             operators=tuple(
                 _user_view(user, application)
-                for user in await application.access.operator_users()
+                for user in await application.users.access.operator_users()
             ),
             grants=tuple(
                 _grant_view(user, application)
-                for user in await application.access.grants()
+                for user in await application.users.access.grants()
             ),
             history=tuple(
                 _event_view(event)
-                for event in await application.access.history(history_limit)
+                for event in await application.users.access.history(history_limit)
             ),
         )
 
     @routes.get("/access/members")
     async def discord_members(request: Request) -> DiscordMembersView:
-        await application.access.require_admin(authenticated(request).user.id)
-        members = application.gateway.members() if application.gateway else ()
+        await application.users.access.require_admin(authenticated(request).user.id)
+        gateway = application.integrations.gateway
+        members = gateway.members() if gateway else ()
         return DiscordMembersView(
             members=tuple(_member_view(member, application) for member in members)
         )
@@ -273,7 +277,7 @@ def router(application: Application) -> APIRouter:
     ) -> FileResponse:
         authenticated(request)
         try:
-            asset = await application.avatars.get(discord_id, v)
+            asset = await application.integrations.avatars.get(discord_id, v)
         except AvatarUnavailableError as error:
             raise ApiError(ApiErrorCode.AVATAR_UNAVAILABLE, 404) from error
         return FileResponse(asset.path, media_type=asset.media_type)
@@ -298,7 +302,8 @@ def router(application: Application) -> APIRouter:
 
 
 def _user_view(user: User, application: Application) -> UserView:
-    members = application.gateway.members() if application.gateway else ()
+    gateway = application.integrations.gateway
+    members = gateway.members() if gateway else ()
     member = next(
         (
             candidate
@@ -313,7 +318,7 @@ def _user_view(user: User, application: Application) -> UserView:
             id=user.discord.discord_id,
             username=user.discord.username or (member.username if member else None),
             display_name=member.display_name if member else None,
-            avatar_url=application.avatars.public_url(
+            avatar_url=application.integrations.avatars.public_url(
                 user.discord.discord_id,
                 avatar_hash=user.discord.avatar_hash,
                 source_url=member.avatar_url if member else None,
@@ -355,7 +360,8 @@ def _profile_page_view(
     application: Application,
 ) -> ProfilePageView:
     identity = report.identity
-    members = application.gateway.members() if application.gateway else ()
+    gateway = application.integrations.gateway
+    members = gateway.members() if gateway else ()
     member = next(
         (
             candidate
@@ -370,7 +376,7 @@ def _profile_page_view(
             id=identity.discord.discord_id,
             username=identity.discord.username or (member.username if member else None),
             display_name=member.display_name if member else None,
-            avatar_url=application.avatars.public_url(
+            avatar_url=application.integrations.avatars.public_url(
                 identity.discord.discord_id,
                 avatar_hash=identity.discord.avatar_hash,
                 source_url=member.avatar_url if member else None,
@@ -435,7 +441,7 @@ def _member_view(
         discord_id=member.discord_id,
         username=member.username,
         display_name=member.display_name,
-        avatar_url=application.avatars.public_url(
+        avatar_url=application.integrations.avatars.public_url(
             member.discord_id,
             source_url=member.avatar_url,
         ),

@@ -342,8 +342,8 @@ def router(application: Application) -> APIRouter:
     ) -> GroupStatisticsView:
         authenticated(request)
         return group_statistics_view(
-            await application.statistics.overview(period),
-            application.avatars,
+            await application.statistics.service.overview(period),
+            application.integrations.avatars,
             _discord_members(application),
         )
 
@@ -355,7 +355,7 @@ def router(application: Application) -> APIRouter:
     ) -> PersonalStatisticsView:
         authenticated(request)
         return personal_statistics_view(
-            await application.statistics.user(UserId(user_id), period),
+            await application.statistics.service.user(UserId(user_id), period),
         )
 
     return routes
@@ -600,7 +600,8 @@ def _playback_outcomes_view(outcomes: PlaybackOutcomes) -> PlaybackOutcomesView:
 
 
 def _discord_members(application: Application) -> tuple[DiscordMember, ...]:
-    return application.gateway.members() if application.gateway else ()
+    gateway = application.integrations.gateway
+    return gateway.members() if gateway else ()
 
 
 def _ranked_listener_view(

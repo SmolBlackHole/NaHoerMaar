@@ -6,7 +6,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 from sqlalchemy import Table, exists, or_, select, union
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -47,6 +47,18 @@ class CatalogCleanupCandidates:
     sources: tuple[CatalogCleanupSource, ...]
     tracks: tuple[CatalogCleanupTrack, ...]
     artists: tuple[CatalogCleanupArtist, ...]
+
+
+class CatalogCleanupReader(Protocol):
+    """Read contract required by Catalog cleanup."""
+
+    async def candidates(
+        self,
+        session: AsyncSession,
+        *,
+        checked_before: datetime,
+        limit: int,
+    ) -> CatalogCleanupCandidates: ...
 
 
 class CatalogCleanupView:

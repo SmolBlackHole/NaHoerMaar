@@ -85,7 +85,7 @@ def router(application: Application) -> APIRouter:
         requested_by: UUID | None = None,
         snapshot: str | None = None,
     ) -> PlaybackHistoryPageView:
-        result = await application.history.get(
+        result = await application.views.history.get(
             page=page,
             page_size=page_size,
             query=q,
@@ -100,7 +100,7 @@ def router(application: Application) -> APIRouter:
                     user_id=contributor.user_id,
                     display_name=contributor.display_name,
                     avatar_url=(
-                        application.avatars.public_url(
+                        application.integrations.avatars.public_url(
                             contributor.discord_id,
                             avatar_hash=contributor.discord_avatar_hash,
                         )
@@ -153,7 +153,7 @@ def _entry_view(
                 display_name=item.contributor_display_name,
                 discord_id=item.contributor_discord_id,
                 discord_username=item.contributor_discord_username,
-                avatar_url=application.avatars.public_url(
+                avatar_url=application.integrations.avatars.public_url(
                     item.contributor_discord_id,
                     avatar_hash=item.contributor_discord_avatar_hash,
                 ),

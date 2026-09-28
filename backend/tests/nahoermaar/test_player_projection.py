@@ -93,9 +93,9 @@ def test_runtime_track_remains_visible_during_checkpoint_gap() -> None:
     application = cast(
         Application,
         SimpleNamespace(
-            playback=Playback(runtime),
-            catalog=Catalog(track),
-            access=Access(),
+            player=SimpleNamespace(playback=Playback(runtime)),
+            catalog=SimpleNamespace(service=Catalog(track)),
+            users=SimpleNamespace(access=Access()),
         ),
     )
 
@@ -150,10 +150,12 @@ def test_radio_queue_request_keeps_its_requester_without_an_active_radio() -> No
     application = cast(
         Application,
         SimpleNamespace(
-            playback=None,
-            catalog=Catalog(track),
-            access=Access((actor,)),
-            avatars=DiscordAvatarStore(Path("data/avatars")),
+            player=SimpleNamespace(playback=None),
+            catalog=SimpleNamespace(service=Catalog(track)),
+            users=SimpleNamespace(access=Access((actor,))),
+            integrations=SimpleNamespace(
+                avatars=DiscordAvatarStore(Path("data/avatars"))
+            ),
         ),
     )
 

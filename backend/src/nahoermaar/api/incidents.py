@@ -106,8 +106,8 @@ def router(application: Application) -> APIRouter:
         request: Request,
         period: Annotated[IncidentPeriod, Query()] = IncidentPeriod.HOURS_24,
     ) -> IncidentReportView:
-        await application.access.require_admin(authenticated(request).user.id)
-        return _report_view(await application.incidents.report(period))
+        await application.users.access.require_admin(authenticated(request).user.id)
+        return _report_view(await application.operations.incidents.report(period))
 
     return routes
 

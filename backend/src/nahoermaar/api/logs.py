@@ -48,8 +48,8 @@ def router(application: Application) -> APIRouter:
         after: int | None = Query(default=None, ge=0),
         limit: int = Query(default=200, ge=1, le=200),
     ) -> LogsView:
-        await application.access.require_admin(authenticated(request).user.id)
-        entries = application.logs.entries(after=after, limit=limit)
+        await application.users.access.require_admin(authenticated(request).user.id)
+        entries = application.operations.logs.entries(after=after, limit=limit)
         return LogsView(
             entries=tuple(_entry_view(entry) for entry in entries),
             cursor=entries[-1].id if entries else (after or 0),

@@ -25,6 +25,7 @@ from nahoermaar.listening.domain import (
     PlaybackRecord,
     PlaybackRecordId,
 )
+from nahoermaar.listening.main import create_listening_module
 from nahoermaar.listening.repository import ListeningRepository
 from nahoermaar.listening.service import (
     AdvancePlayback,
@@ -215,6 +216,38 @@ def _voice(
         members.append(VoiceMemberState(BLOCKED_DISCORD_ID, False, False))
     members.append(VoiceMemberState(BOT_DISCORD_ID, True, False))
     return tuple(members)
+
+
+def test_listening_module_owns_bindings_and_lifecycle() -> None:
+    database = _database()
+
+    async def scenario() -> None:
+        session_id, listener_id, _requests = await _seed(database)
+
+        def units() -> UnitOfWork:
+            return UnitOfWork(database.sessions)
+
+        bus = MessageBus()
+        module = create_listening_module(
+            units,
+            bus,
+            AccessService(units, Operators("999", ())),
+            lambda: session_id,
+        )
+        assert not module.service.operational
+        assert module.lifecycle.start is not None
+        await module.lifecycle.start()
+        assert module.service.operational
+
+        audience = await bus.execute(ObserveAudience(session_id, _voice(), NOW))
+        assert audience.user_ids == frozenset({listener_id})
+
+        assert module.lifecycle.close is not None
+        await module.lifecycle.close()
+        assert not module.service.operational
+        await database.close()
+
+    asyncio.run(scenario())
 
 
 def test_requests_become_plays_only_after_audio_and_progress_is_idempotent() -> None:

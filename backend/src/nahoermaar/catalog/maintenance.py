@@ -35,7 +35,7 @@ from nahoermaar.operations.scheduler import (
     JobProgressUnit,
     JobResult,
 )
-from nahoermaar.views.catalog import CatalogCleanupCandidates, CatalogCleanupView
+from nahoermaar.views.catalog import CatalogCleanupCandidates, CatalogCleanupReader
 
 from .domain import SourceAvailability, TrackSource
 from .repository import (
@@ -435,7 +435,7 @@ class CatalogCleanup:
     def __init__(
         self,
         units: UnitOfWorkFactory,
-        view: CatalogCleanupView,
+        view: CatalogCleanupReader,
         *,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         interval: timedelta = timedelta(days=1),

@@ -13,13 +13,17 @@ import pytest
 
 from nahoermaar.database.core import Database
 from nahoermaar.database.uow import UnitOfWork
+from nahoermaar.messaging import MessageBus, MessageContext
 from nahoermaar.users.domain import AccessRole, AuthError, AuthErrorCode, UserProfile
+from nahoermaar.users.main import create_users_module
 from nahoermaar.users.repository import UserRepository
 from nahoermaar.users.service import (
     AccessService,
     AuthService,
+    GrantAccess,
     Operators,
     ProvidedDiscordIdentity,
+    UserAccessChanged,
 )
 
 NOW = datetime(2026, 9, 24, 12, tzinfo=UTC)
@@ -54,6 +58,59 @@ def _database() -> Database:
     configuration.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
     command.upgrade(configuration, "head")
     return Database(database_url)
+
+
+def test_users_module_owns_bindings_and_operator_reconciliation(
+    tmp_path: Path,
+) -> None:
+    database = _database()
+
+    def units() -> UnitOfWork:
+        return UnitOfWork(database.sessions)
+
+    bus = MessageBus()
+    access_path = tmp_path / "access.toml"
+    access_path.write_text(
+        'owner_id = "9"\nadmin_ids = ["8"]\n',
+        encoding="utf-8",
+    )
+    module = create_users_module(
+        units,
+        bus,
+        Provider(),
+        access_path,
+        clock=lambda: NOW,
+    )
+    changes: list[UserAccessChanged] = []
+
+    async def capture(
+        event: UserAccessChanged,
+        _context: MessageContext,
+    ) -> None:
+        changes.append(event)
+
+    bus.subscribe(UserAccessChanged, capture)
+
+    async def scenario() -> None:
+        assert module.lifecycle.start is not None
+        await module.lifecycle.start()
+        assert {event.change.role_after for event in changes} == {
+            AccessRole.OWNER,
+            AccessRole.ADMIN,
+        }
+
+        async with units() as work:
+            owner = await UserRepository(work.session).get_by_discord_id("9")
+        assert owner is not None
+        grant = await bus.execute(GrantAccess(owner.id, "7"))
+        assert grant is not None
+        assert grant.role_after is AccessRole.USER
+        assert changes[-1].change == grant
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        asyncio.run(database.close())
 
 
 def test_operators_grant_login_profile_and_revocation_share_internal_users() -> None:

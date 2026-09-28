@@ -58,13 +58,13 @@ def create_app(application: Application | None = None) -> FastAPI:
     install_error_handlers(app)
     install_auth_middleware(
         app,
-        container.auth,
+        container.users.auth,
         container.settings.auth,
-        container.incidents,
+        container.operations.incidents,
     )
     app.include_router(auth_router(container))
     app.include_router(users_router(container))
-    app.include_router(catalog_router(container.catalog))
+    app.include_router(catalog_router(container.catalog.service))
     app.include_router(player_router(container))
     app.include_router(listening_router(container))
     app.include_router(statistics_router(container))
@@ -81,9 +81,11 @@ def create_app(application: Application | None = None) -> FastAPI:
     async def ready() -> JSONResponse:
         checks = {
             "database": "ready",
-            "player": "ready" if container.player.operational else "unavailable",
+            "player": (
+                "ready" if container.player.service.operational else "unavailable"
+            ),
             "listening": (
-                "ready" if container.listening.operational else "unavailable"
+                "ready" if container.listening.service.operational else "unavailable"
             ),
         }
         try:
@@ -96,12 +98,14 @@ def create_app(application: Application | None = None) -> FastAPI:
         if container.settings.discord.enabled:
             checks["discord"] = (
                 "ready"
-                if container.gateway is not None and container.gateway.operational
+                if container.integrations.gateway is not None
+                and container.integrations.gateway.operational
                 else "unavailable"
             )
             checks["playback"] = (
                 "ready"
-                if container.playback is not None and container.playback.operational
+                if container.player.playback is not None
+                and container.player.playback.operational
                 else "unavailable"
             )
         else:
