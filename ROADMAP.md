@@ -11,32 +11,6 @@ and current listening evidence belongs in
 [Testing and acceptance](docs/testing.md#live-acceptance). Completed work leaves
 this page once implementation, tests and its owning documentation agree.
 
-## Next: module composition and initialization
-
-Complete the backend module boundaries before revising the HTTP API. Every
-active feature module owns a `main.py` that receives only external dependencies
-and configuration, constructs its internal repositories, services, maintenance
-definitions and lifecycle resources, and returns one typed module object.
-
-`bootstrap.py` connects those module objects and process-wide infrastructure. It
-must not assemble individual services, enumerate module cleanup steps or reach
-into a module to wire its internal dependencies. Package `__init__.py` files
-remain free of construction side effects. Where a real dependency cycle exists,
-use an explicit staged factory with typed inputs instead of globals, service
-locators or mutable late wiring.
-
-Keep Views as read-only cross-module projections. Modules may depend on the
-specific read contract they need, but write behavior remains owned by the
-responsible module service and repository. Finish the active Users, Catalog,
-Player, Listening, Statistics, Integrations and Operations boundaries one module
-at a time, with composition and lifecycle tests for each completed cutover. Do
-not add compatibility containers or parallel initialization paths.
-
-Acceptance requires that the composition root reads as a process-level map,
-each runtime resource has one clear owner, module initialization is independently
-testable, and the public API and runtime behavior remain unchanged. Only after
-this cutover is complete should route naming, verbs and queryability change.
-
 ## Next: API contract and queryability review
 
 Review the complete HTTP surface after the current TODO is finished. Consolidate
@@ -76,14 +50,6 @@ temporary misses with bounded retention. Instrumental tracks, missing lyrics and
 provider failures need different states, and an old result must never appear for
 the next song.
 
-## Next: unattended playback
-
-Define what happens when a voice channel becomes empty: pause or leave after a
-configurable grace period, preserve the queue, and cancel the pending action when
-someone returns. Add a sleep timer with visible remaining time and a cancel
-action. Both behaviors must use the existing playback FSM rather than a second
-timer-owned state machine.
-
 ## Later: reactions
 
 Let each user like or dislike a persistent track, change the reaction or remove
@@ -112,24 +78,6 @@ and provide an explicit way to detach a linked playlist as a local copy.
 Define how local edits and upstream changes interact before implementation.
 Refreshing a saved playlist must not rewrite tracks that are already queued or
 playing.
-
-## Later: playback statistics and recap
-
-Extend the Overview with selectable periods, bot-wide statistics and a personal
-recap. Keep accepted requests, confirmed plays and actual listening time as
-separate measurements. Playback minutes must account for pauses, seeks, skips
-and failures; a request alone does not prove that somebody heard the track.
-
-Useful views include most-requested and most-played tracks and artists, unique
-tracks and artists, activity over time and longest active-day streaks with an
-explicit timezone rule. Lighthearted comparisons such as books read or distance
-walked need visible assumptions and approximate values.
-
-Persist recap inputs independently of the short Recently played view, using
-stable track, artist and account identities where available. Every recap states
-its covered period, when collection began and where older data is incomplete.
-Decide retention and who may inspect another person's statistics before storing
-more personal history.
 
 ## Later: faithful loading states
 
