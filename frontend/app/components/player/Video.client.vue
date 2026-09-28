@@ -5,6 +5,7 @@ const props = defineProps<{
 	title: string;
 	getPosition: () => number;
 	active: boolean;
+	visible: boolean;
 	state: string;
 	interactive: boolean;
 	volume: number;
@@ -46,10 +47,24 @@ function startPreview() {
 	align();
 	emit("blocked", false);
 }
-defineExpose({ align, startPreview });
-function fail() {
+function resetEmbed() {
 	clearTimeout(readyTimeout);
-	if (!disposed) emit("failed");
+	ready.value = false;
+	emit("ready", false);
+	embed?.destroy();
+	embed = undefined;
+	host.value?.replaceChildren();
+}
+function retry() {
+	if (disposed) return;
+	resetEmbed();
+	void nextTick(initialize);
+}
+defineExpose({ align, startPreview, retry });
+function fail() {
+	if (disposed) return;
+	resetEmbed();
+	emit("failed");
 }
 async function initialize() {
 	if (disposed || !props.active || !host.value || embed || initializing) return;
@@ -130,9 +145,9 @@ onBeforeUnmount(() => {
 	<div
 		ref="host"
 		class="media-video"
-		:class="{ 'is-interactive': interactive }"
+		:class="{ 'is-visible': visible, 'is-interactive': visible && interactive }"
 		:aria-busy="!ready"
-		:aria-hidden="!interactive"
+		:aria-hidden="!visible || !interactive"
 	/>
 </template>
 
@@ -145,8 +160,12 @@ onBeforeUnmount(() => {
 	height: max(100cqh, 56.25cqw);
 	transform: translate(-50%, -50%);
 	pointer-events: none;
+	visibility: hidden;
 }
-.media-video.is-interactive {
+.media-video.is-visible {
+	visibility: visible;
+}
+.media-video.is-visible.is-interactive {
 	inset: 0;
 	width: 100%;
 	height: 100%;

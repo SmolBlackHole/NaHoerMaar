@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { trackSource, youtubeVideoId } from "~/core/models/player";
+import { ArtworkHandoff } from "~/utils/artworkHandoff";
 import { loadArtworkCrop, type ArtworkCrop } from "~/utils/artworkCrop";
 
 const props = defineProps<{ active: boolean }>();
@@ -26,46 +27,61 @@ const visibility = useDocumentVisibility();
 const reducedMotion = usePreferredReducedMotion();
 const motionPaused = ref(false);
 const artworkCrop = shallowRef<ArtworkCrop | null>(null);
-const preloadedArtwork = shallowRef<HTMLImageElement | null>(null);
+const displayedArtwork = ref<string | null>(null);
 const videoFailed = ref(false);
-const artworkFailed = ref(false);
 const videoReady = ref(false);
 const videoBlocked = ref(false);
-const video = useTemplateRef<{ align: () => void; startPreview: () => void }>("video");
+const video = useTemplateRef<{
+	align: () => void;
+	startPreview: () => void;
+	retry: () => void;
+}>("video");
 const loadVideo = computed(
 	() => props.active && visibility.value === "visible" && player.connection === "live",
 );
-watch(artwork, () => {
-	artworkFailed.value = false;
-});
+let artworkHandoff: ArtworkHandoff | undefined;
+let pendingArtworkCrop: { url: string; crop: ArtworkCrop | null } | null = null;
 onMounted(() => {
+	artworkHandoff = new ArtworkHandoff();
 	watch(
-		nextArtwork,
-		(url) => {
-			preloadedArtwork.value = null;
-			if (!url) return;
-			const image = new Image();
-			image.decoding = "async";
-			image.referrerPolicy = "no-referrer";
-			image.src = url;
-			preloadedArtwork.value = image;
+		[artwork, nextArtwork],
+		async ([currentUrl, nextUrl]) => {
+			const result = await artworkHandoff?.update(currentUrl, nextUrl);
+			if (!result || result.status === "stale") return;
+			if (result.status !== "ready") {
+				displayedArtwork.value = null;
+				artworkCrop.value = null;
+				return;
+			}
+			displayedArtwork.value = result.url;
+			artworkCrop.value =
+				pendingArtworkCrop?.url === result.url ? pendingArtworkCrop.crop : null;
 		},
 		{ immediate: true },
 	);
 	watch(
 		artwork,
 		async (url, _previous, onCleanup) => {
-			artworkCrop.value = null;
-			if (!url) return;
+			pendingArtworkCrop = null;
+			if (!url) {
+				if (!displayedArtwork.value) artworkCrop.value = null;
+				return;
+			}
 			const controller = new AbortController();
 			onCleanup(() => controller.abort());
 			const crop = await loadArtworkCrop(url, controller.signal);
-			if (!controller.signal.aborted) artworkCrop.value = crop;
+			if (controller.signal.aborted) return;
+			pendingArtworkCrop = { url, crop };
+			if (displayedArtwork.value === url) artworkCrop.value = crop;
 		},
 		{ immediate: true, flush: "sync" },
 	);
 });
-const coverVisible = computed(() => preview.value === "cover" || videoFailed.value);
+onBeforeUnmount(() => artworkHandoff?.dispose());
+const videoVisible = computed(
+	() => preview.value === "video" && videoReady.value && !videoFailed.value,
+);
+const coverVisible = computed(() => !videoVisible.value);
 const coverMoving = computed(
 	() =>
 		props.active &&
@@ -90,7 +106,13 @@ function showVideo() {
 		return;
 	}
 	preview.value = "video";
+	if (videoFailed.value) retryVideo();
+}
+function retryVideo() {
 	videoFailed.value = false;
+	videoReady.value = false;
+	videoBlocked.value = false;
+	void nextTick(() => video.value?.retry());
 }
 watch(preview, () => {
 	videoControls.value = false;
@@ -114,8 +136,8 @@ watch(loadVideo, (visible) => {
 		class="listening-view"
 		aria-label="Now playing"
 		:class="{
-			'is-video': preview === 'video' && !videoFailed,
-			'has-video-controls': preview === 'video' && videoControls && !videoFailed,
+			'is-video': videoVisible,
+			'has-video-controls': videoVisible && videoControls,
 		}"
 	>
 		<div class="media-stage">
@@ -123,13 +145,13 @@ watch(loadVideo, (visible) => {
 				<USkeleton class="size-full rounded-none" />
 			</div>
 			<div
-				v-else-if="artwork && !artworkFailed"
-				:key="artwork"
+				v-else-if="displayedArtwork"
+				:key="displayedArtwork"
 				class="media-artwork"
 				:class="{ 'is-moving': coverMoving }"
 			>
 				<img
-					:src="artwork"
+					:src="displayedArtwork"
 					alt=""
 					referrerpolicy="no-referrer"
 					class="media-backdrop"
@@ -143,20 +165,20 @@ watch(loadVideo, (visible) => {
 								}
 							: undefined
 					"
-					@error="artworkFailed = true"
 				/>
 			</div>
 			<div v-else class="media-placeholder" aria-hidden="true">
 				<UIcon :name="icons.headphones" />
 			</div>
 			<PlayerVideo
-				v-if="consent.youtube && preview === 'video' && current && !videoFailed && videoId"
+				v-if="consent.youtube && current && videoId"
 				ref="video"
 				:key="player.state?.runtime.playback_id ?? videoId"
 				:video-id="videoId"
 				:title="current.track.title"
 				:get-position="currentPosition"
 				:active="loadVideo"
+				:visible="videoVisible"
 				:state="player.state?.runtime.phase ?? 'idle'"
 				:interactive="videoControls"
 				:volume="browserVolume"
@@ -193,7 +215,7 @@ watch(loadVideo, (visible) => {
 				</button>
 			</div>
 			<button
-				v-if="coverVisible && artwork && !artworkFailed && reducedMotion !== 'reduce'"
+				v-if="coverVisible && displayedArtwork && reducedMotion !== 'reduce'"
 				type="button"
 				class="media-tool-button"
 				:aria-label="motionPaused ? 'Resume cover motion' : 'Pause cover motion'"
@@ -347,14 +369,14 @@ watch(loadVideo, (visible) => {
 							: "Loading video…"
 				}}
 			</p>
-			<a
-				v-if="videoFailed"
-				:href="source?.source_url"
-				target="_blank"
-				rel="noopener noreferrer"
-				class="hover:underline"
-				>Open on YouTube</a
-			>
+			<div v-if="videoFailed" class="video-status-actions">
+				<button type="button" @click="retryVideo">
+					<UIcon :name="icons.reload" />Retry
+				</button>
+				<a :href="source?.source_url" target="_blank" rel="noopener noreferrer"
+					>Open on YouTube</a
+				>
+			</div>
 			<button v-else-if="videoBlocked" type="button" @click="video?.startPreview()">
 				<UIcon :name="icons.play" />Start preview
 			</button>
@@ -646,6 +668,11 @@ watch(loadVideo, (visible) => {
 	gap: 0.5rem;
 	min-height: 2.25rem;
 	cursor: pointer;
+}
+.video-status-actions {
+	display: flex;
+	align-items: center;
+	gap: 1rem;
 }
 .video-status-row button:hover,
 .video-status-row a:hover {
