@@ -12,7 +12,13 @@ from uuid import uuid4
 
 from nahoermaar.api.player import player_view
 from nahoermaar.bootstrap import Application
-from nahoermaar.catalog.domain import Track, TrackId
+from nahoermaar.catalog.domain import (
+    DiscoveryResult,
+    DiscoverySnapshotId,
+    Track,
+    TrackId,
+    TrackSourceId,
+)
 from nahoermaar.integrations.avatars import DiscordAvatarStore
 from nahoermaar.player.domain import (
     ListeningSessionId,
@@ -25,6 +31,7 @@ from nahoermaar.player.domain import (
     new_request,
 )
 from nahoermaar.player.playback import PlaybackPhase, PlaybackRuntimeState
+from nahoermaar.player.read_model import PlayerReader
 from nahoermaar.users.domain import DiscordIdentity, User, UserId, UserProfile
 
 NOW = datetime(2026, 9, 26, 12, tzinfo=UTC)
@@ -38,6 +45,16 @@ class Catalog:
         assert track_ids == {self.track.id}
         return {self.track.id: self.track}
 
+    async def track_for_source(self, source_id: TrackSourceId) -> Track | None:
+        _ = source_id
+        return None
+
+    async def snapshot(
+        self,
+        snapshot_id: DiscoverySnapshotId,
+    ) -> DiscoveryResult:
+        raise AssertionError(f"Unexpected discovery read: {snapshot_id}")
+
 
 class Access:
     def __init__(self, users: tuple[User, ...] = ()) -> None:
@@ -49,11 +66,6 @@ class Access:
             for user_id in user_ids
             if user_id in self.known
         }
-
-
-class Playback:
-    def __init__(self, status: PlaybackRuntimeState) -> None:
-        self.status = status
 
 
 def test_runtime_track_remains_visible_during_checkpoint_gap() -> None:
@@ -90,12 +102,14 @@ def test_runtime_track_remains_visible_during_checkpoint_gap() -> None:
         VoiceConnectionState(),
         None,
     )
+    reader = PlayerReader(Catalog(track), Access(), lambda: runtime)
     application = cast(
         Application,
         SimpleNamespace(
-            player=SimpleNamespace(playback=Playback(runtime)),
-            catalog=SimpleNamespace(service=Catalog(track)),
-            users=SimpleNamespace(access=Access()),
+            player=SimpleNamespace(reader=reader),
+            integrations=SimpleNamespace(
+                avatars=DiscordAvatarStore(Path("data/avatars"))
+            ),
         ),
     )
 
@@ -147,12 +161,22 @@ def test_radio_queue_request_keeps_its_requester_without_an_active_radio() -> No
         NOW,
         profile=UserProfile("Andrey"),
     )
+    disabled_runtime = PlaybackRuntimeState(
+        PlaybackPhase.DISABLED,
+        None,
+        None,
+        None,
+        0.0,
+        None,
+        None,
+        VoiceConnectionState(),
+        None,
+    )
+    reader = PlayerReader(Catalog(track), Access((actor,)), lambda: disabled_runtime)
     application = cast(
         Application,
         SimpleNamespace(
-            player=SimpleNamespace(playback=None),
-            catalog=SimpleNamespace(service=Catalog(track)),
-            users=SimpleNamespace(access=Access((actor,))),
+            player=SimpleNamespace(reader=reader),
             integrations=SimpleNamespace(
                 avatars=DiscordAvatarStore(Path("data/avatars"))
             ),

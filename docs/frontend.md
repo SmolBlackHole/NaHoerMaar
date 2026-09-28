@@ -44,9 +44,9 @@ of the Python package `nahoermaar`. It is a transport artifact and must not be
 edited or reformatted by hand.
 
 Repositories are grouped by backend capability: account, access, catalog,
-listening, logs, player and statistics. They all use the same transport, which
-adds CSRF credentials, normalizes API errors and rejects responses that belong
-to an earlier account generation.
+playbacks, player, statistics, jobs, incidents and logs. They all use the same
+transport, which adds CSRF credentials, normalizes API errors and rejects
+responses that belong to an earlier account generation.
 
 The browser calls Nuxt under `/api/`. Nitro forwards the request to the backend,
 so the browser stays on one origin in local development and in the Docker stack.
@@ -69,13 +69,15 @@ operation-ID checks, which prevents one command from being applied twice.
 The backend remains authoritative for queue order. Dragging an entry sends the
 observed queue revision and leaves the visible order unchanged until HTTP or SSE
 returns the accepted state. Mutations are never retried automatically after an
-uncertain network result. An explicit retry reuses the original operation ID.
+uncertain network result. An explicit retry reuses the original
+`Idempotency-Key`; the matching HTTP reply and SSE change expose that value as
+their operation ID.
 
 ## Page workflows
 
-Discovery, recent playback, profiles, statistics, access and logs use local
-workflow instances. Each workflow owns its loading state, error, cancellation
-and current result. Leaving the page disposes that state.
+Discovery, playback history, profiles, statistics, access, jobs, incidents and
+logs use local workflow instances. Each workflow owns its loading state, error,
+cancellation and current result. Leaving the page disposes that state.
 
 Use a Pinia store only when several views need the same data or when the data has
 a longer lifecycle than one page. A search result, selected statistics period or

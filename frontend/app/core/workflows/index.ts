@@ -9,7 +9,7 @@ import { createLogsWorkflow } from "./logs";
 import { createIncidentsWorkflow } from "./incidents";
 import { createJobsWorkflow } from "./jobs";
 import { createProfileWorkflow } from "./profile";
-import { createRecentWorkflow } from "./recent";
+import { createPlaybackHistoryWorkflow } from "./playbackHistory";
 import { createStatisticsWorkflow } from "./statistics";
 
 /** Factories keep query state local to the page that owns its lifecycle. */
@@ -21,7 +21,7 @@ export function createBackendWorkflows(client: BackendClient, authority: Session
 		incidents: () => createIncidentsWorkflow(client, authority),
 		jobs: () => createJobsWorkflow(client, authority),
 		profile: () => createProfileWorkflow(client, authority),
-		recent: () => createRecentWorkflow(client, authority),
+		playbackHistory: () => createPlaybackHistoryWorkflow(client, authority),
 		statistics: () => createStatisticsWorkflow(client, authority),
 	};
 }

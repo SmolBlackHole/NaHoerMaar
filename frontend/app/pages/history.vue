@@ -4,7 +4,7 @@ useSeoMeta({ title: "History | NaHörMaar" });
 
 const PAGE_SIZE = 25;
 const core = useNuxtApp().$backendCore;
-const playbackHistory = core.workflows.recent();
+const playbackHistory = core.workflows.playbackHistory();
 const { icons } = useTheme();
 const search = ref("");
 const activeQuery = ref("");
@@ -239,7 +239,7 @@ onScopeDispose(playbackHistory.dispose);
 							</div>
 						</div>
 
-						<div v-else-if="result && !result.entries.length" class="py-16 text-center">
+						<div v-else-if="result && !result.items.length" class="py-16 text-center">
 							<UIcon :name="icons.clock" class="mx-auto size-9 text-muted" />
 							<h3 class="mt-4 font-semibold text-highlighted">
 								{{
@@ -259,7 +259,7 @@ onScopeDispose(playbackHistory.dispose);
 
 						<PlayerRecentList
 							v-else-if="result"
-							:entries="result.entries"
+							:entries="result.items"
 							layout="history"
 						/>
 					</section>

@@ -82,7 +82,8 @@ new queue command. Neither SSE nor the event bus is a durable audit log.
 | Concern | Owner | Details |
 | --- | --- | --- |
 | Search, links and metadata | Catalog | [Catalog](engine/catalog.md) |
-| Queue order, attribution and history | Queue and Session | [Queue](engine/queue.md) |
+| Queue order and request attribution | Player Session | [Queue](engine/queue.md) |
+| Confirmed playback history | Playback history view | [Engine API](engine-api.md#playback-history) |
 | Automatic queue supply | Radio strategy and observer | [Radio](engine/radio.md) |
 | FSM, audio, voice and restart | Playback | [Playback](engine/playback.md) |
 | SQLAlchemy, transactions and migrations | Persistence and schema | [Database](engine/database.md) |
@@ -97,10 +98,17 @@ this page remains the overview.
 ## Composition and lifetime
 
 `backend/src/nahoermaar/bootstrap.py` is the composition root. It reads settings,
-creates the database, repositories, services, message bus, player Session,
-Discord adapters and FastAPI application, then registers their shutdown order.
-Feature modules receive their dependencies explicitly. Domain modules do not
-read environment values or log a Discord client in.
+creates process-wide infrastructure and asks each feature module's `main.py` to
+compose its repositories, services, maintenance contributions and lifecycle.
+The root wires the few dependencies that cross module boundaries and registers
+their shutdown order. Feature modules receive those dependencies explicitly.
+Domain modules do not read environment values or log a Discord client in.
+
+Cross-module persisted reads live under `views/` only when their result belongs
+to no single feature: profiles, confirmed playback history and catalog cleanup
+candidates. The live Player projection stays with Player because Player owns its
+state and runtime. Jobs, incidents and logs stay with Operations. Views are
+read-only and never become an alternate command or repository layer.
 
 The application uses the host event loop. A Session waits on its bounded inbox
 instead of polling. One backend worker owns one bot and one player; starting

@@ -17,6 +17,7 @@ from nahoermaar.player.events import PlayerRuntimeChange, Reauthenticate
 from nahoermaar.users.domain import AuthError
 from nahoermaar.users.service import SESSION_COOKIE
 
+from .errors import error_responses
 from .middleware import authenticated
 from .player import OutcomeView, PlayerView, View, player_view
 
@@ -45,6 +46,8 @@ def router(application: Application) -> APIRouter:
         "",
         response_class=EventSourceResponse,
         response_model=PlayerView | ChangeView | AuthEventView,
+        operation_id="streamEvents",
+        responses=error_responses(401, 500, 503),
         openapi_extra={
             "x-sse-payloads": {
                 "state": {"$ref": "#/components/schemas/PlayerView"},

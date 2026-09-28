@@ -32,7 +32,7 @@ from nahoermaar.catalog.providers import (
     ProviderTrack,
 )
 from nahoermaar.catalog.repository import DiscoveryRepository
-from nahoermaar.catalog.service import CatalogError, CatalogErrorCode, CatalogService
+from nahoermaar.catalog.service import CatalogService
 from nahoermaar.database.core import Database
 from nahoermaar.database.schema import Base
 from nahoermaar.database.uow import UnitOfWork
@@ -301,12 +301,9 @@ def test_cache_first_refresh_is_shared_and_provider_failure_keeps_last_snapshot(
         latest = await service.search("Zara Larsson")
         assert latest.snapshot.entries[0].track.title == "Refreshed title"
 
-        reopened = await service.snapshot(latest.snapshot.id, DiscoveryKind.SEARCH)
+        reopened = await service.snapshot(latest.snapshot.id)
         assert reopened.snapshot == latest.snapshot
         assert not reopened.stale
-        with pytest.raises(CatalogError) as mismatch:
-            await service.snapshot(latest.snapshot.id, DiscoveryKind.PLAYLIST)
-        assert mismatch.value.code is CatalogErrorCode.SNAPSHOT_NOT_FOUND
 
         provider.extra_tracks = (
             ProviderTrack(
@@ -325,14 +322,14 @@ def test_cache_first_refresh_is_shared_and_provider_failure_keeps_last_snapshot(
             base_url="http://localhost:3000",
         ) as client:
             response = await client.get(
-                f"/api/catalog/search/{paged.snapshot.id}",
-                params={"offset": 1, "limit": 1},
+                f"/api/catalog/discoveries/{paged.snapshot.id}",
+                params={"offset": 1, "page_size": 1},
             )
         assert response.status_code == 200
         assert response.json()["offset"] == 1
         assert response.json()["total"] == 2
         assert response.json()["next_offset"] is None
-        assert response.json()["entries"][0]["track"]["title"] == "Second title"
+        assert response.json()["items"][0]["track"]["title"] == "Second title"
 
         now[0] += timedelta(minutes=6)
         provider.fail = True
@@ -629,16 +626,16 @@ def test_search_endpoint_pages_a_snapshot_larger_than_the_first_view() -> None:
             first = await client.get("/api/catalog/search", params={"q": "Paging"})
             assert first.status_code == 200
             body = first.json()
-            assert len(body["entries"]) == 20
+            assert len(body["items"]) == 20
             assert body["total"] == 25
             assert body["next_offset"] == 20
 
             second = await client.get(
-                f"/api/catalog/search/{body['version']}",
-                params={"offset": body["next_offset"], "limit": 20},
+                f"/api/catalog/discoveries/{body['version']}",
+                params={"offset": body["next_offset"], "page_size": 20},
             )
             assert second.status_code == 200
-            assert len(second.json()["entries"]) == 5
+            assert len(second.json()["items"]) == 5
             assert second.json()["next_offset"] is None
         await service.close()
 
@@ -684,8 +681,8 @@ def test_provider_continuation_extends_snapshot_through_api(
             base_url="http://localhost:3000",
         ) as client:
             response = await client.post(
-                f"/api/catalog/{kind.value}/{first.snapshot.id}/continue",
-                params={"offset": 1, "limit": first.snapshot.limit},
+                f"/api/catalog/discoveries/{first.snapshot.id}/continuations",
+                params={"offset": 1, "page_size": first.snapshot.limit},
             )
 
         assert response.status_code == 200
@@ -694,7 +691,7 @@ def test_provider_continuation_extends_snapshot_through_api(
         assert body["offset"] == 1
         assert body["total"] == 2
         assert body["source_has_more"] is False
-        assert [entry["track"]["title"] for entry in body["entries"]] == ["Next title"]
+        assert [entry["track"]["title"] for entry in body["items"]] == ["Next title"]
         await service.close()
 
     try:

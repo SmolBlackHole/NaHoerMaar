@@ -10,7 +10,7 @@ const { icons } = useTheme();
 onMounted(() => void account.load());
 
 async function save(value: ProfileUpdate) {
-	if (!(await account.updateProfile(value))) return;
+	if (!(await account.update({ profile: value }))) return;
 	await session.refresh();
 }
 </script>

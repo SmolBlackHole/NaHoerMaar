@@ -4,23 +4,24 @@
 
 """Authenticated player queries and serialized queue and radio commands."""
 
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
+from typing import Annotated, Self, cast
 from uuid import UUID
 
-from fastapi import APIRouter, Request
-from pydantic import BaseModel, ConfigDict, Field
+from fastapi import APIRouter, Header, Request
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from nahoermaar.bootstrap import Application
 from nahoermaar.catalog.domain import (
-    DiscoveryKind,
     DiscoverySnapshotId,
     MediaKind,
     Track,
     TrackId,
     TrackSourceId,
 )
-from nahoermaar.catalog.service import CatalogError
+from nahoermaar.integrations.avatars import DiscordAvatarStore
 from nahoermaar.messaging import MessageContext
 from nahoermaar.player.domain import (
     ListeningSessionId,
@@ -30,7 +31,6 @@ from nahoermaar.player.domain import (
     RadioSeed,
     TrackRequest,
     UndoId,
-    VoiceConnectionState,
 )
 from nahoermaar.player.events import (
     AddTracks,
@@ -45,9 +45,8 @@ from nahoermaar.player.events import (
     PlayerCommand,
     RemoveQueueEntry,
     Seek,
-    SetCrossfade,
+    SetPlayerSettings,
     SetSleepTimer,
-    SetVolume,
     Skip,
     RetryRadio,
     StartRadio,
@@ -56,10 +55,12 @@ from nahoermaar.player.events import (
     TrackSelection,
     UndoQueue,
 )
-from nahoermaar.player.playback import PlaybackPhase, PlaybackRuntimeState
+from nahoermaar.player.playback import PlaybackPhase
+from nahoermaar.player.read_model import PlayerReadModel
 from nahoermaar.users.domain import User, UserId
 
 from .catalog import TrackView, track_view
+from .errors import error_responses
 from .middleware import authenticated
 
 
@@ -81,13 +82,11 @@ class TrackSelectionInput(View):
 
 
 class AddQueueInput(View):
-    operation_id: UUID
     tracks: tuple[TrackSelectionInput, ...] = Field(min_length=1, max_length=100)
     skip_duplicates: bool = False
 
 
 class RevisionInput(View):
-    operation_id: UUID
     expected_queue_revision: int = Field(ge=0)
 
 
@@ -100,7 +99,6 @@ class ClearQueueInput(RevisionInput):
 
 
 class UndoQueueInput(View):
-    operation_id: UUID
     undo_id: UUID
 
 
@@ -111,38 +109,64 @@ class RadioSeedInput(View):
 
 
 class StartRadioInput(View):
-    operation_id: UUID
     seed: RadioSeedInput
     expected_generation: UUID | None = None
 
 
 class RadioMutationInput(View):
-    operation_id: UUID
     expected_generation: UUID
 
 
-class OperationInput(View):
-    operation_id: UUID
+class ControlAction(StrEnum):
+    PLAY = "play"
+    PAUSE = "pause"
+    SKIP = "skip"
+    STOP = "stop"
+    SEEK = "seek"
 
 
-class SeekInput(OperationInput):
-    seconds: float = Field(ge=0)
+class ControlInput(View):
+    action: ControlAction
+    seconds: float | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def validate_action(self) -> Self:
+        if self.action is ControlAction.SEEK and self.seconds is None:
+            raise ValueError("Seek requires seconds.")
+        if self.action is not ControlAction.SEEK and self.seconds is not None:
+            raise ValueError("Only seek accepts seconds.")
+        return self
 
 
-class VolumeInput(OperationInput):
-    volume: float = Field(ge=0, le=1)
+class PlayerSettingsInput(View):
+    volume: float | None = Field(default=None, ge=0, le=1)
+    crossfade_seconds: int | None = None
+
+    @model_validator(mode="after")
+    def validate_update(self) -> Self:
+        if self.volume is None and self.crossfade_seconds is None:
+            raise ValueError("At least one Player setting is required.")
+        if self.crossfade_seconds is not None and self.crossfade_seconds not in {
+            0,
+            3,
+            4,
+            5,
+            6,
+            7,
+        }:
+            raise ValueError("Crossfade must be disabled or between 3 and 7 seconds.")
+        return self
 
 
-class CrossfadeInput(OperationInput):
-    seconds: int
-
-
-class JoinVoiceInput(OperationInput):
+class VoiceInput(View):
     channel_id: str = Field(pattern=r"^[1-9][0-9]{0,19}$")
 
 
-class SleepTimerInput(OperationInput):
+class SleepTimerInput(View):
     seconds: int = Field(ge=60, le=86_400)
+
+
+IdempotencyKey = Annotated[UUID, Header(alias="Idempotency-Key")]
 
 
 class VoiceChannelView(View):
@@ -246,25 +270,39 @@ class OutcomeView(View):
 
 
 class MutationView(View):
+    operation_id: UUID
     player: PlayerView
     outcome: OutcomeView
     replayed: bool
 
 
+_READ_ERRORS = error_responses(401, 500, 503)
+_MUTATION_ERRORS = error_responses(401, 403, 409, 422, 500, 503)
+_RESOURCE_MUTATION_ERRORS = error_responses(401, 403, 404, 409, 422, 500, 503)
+
+
 def router(application: Application) -> APIRouter:
     routes = APIRouter(prefix="/api/player", tags=["player"])
 
-    @routes.get("")
+    @routes.get("", operation_id="getPlayer", responses=_READ_ERRORS)
     async def player() -> PlayerView:
         return await player_view(application, application.player.service.state)
 
-    @routes.post("/queue")
-    async def add(request: Request, body: AddQueueInput) -> MutationView:
+    @routes.post(
+        "/queue",
+        operation_id="addQueueEntries",
+        responses=_RESOURCE_MUTATION_ERRORS,
+    )
+    async def add(
+        request: Request,
+        body: AddQueueInput,
+        idempotency_key: IdempotencyKey,
+    ) -> MutationView:
         current = authenticated(request)
         result = await application.bus.execute(
             AddTracks(
                 _session_id(application),
-                OperationId(body.operation_id),
+                OperationId(idempotency_key),
                 tuple(
                     TrackSelection(
                         TrackId(item.track_id),
@@ -280,17 +318,22 @@ def router(application: Application) -> APIRouter:
         )
         return await _mutation(application, result)
 
-    @routes.delete("/queue/{entry_id}")
+    @routes.delete(
+        "/queue/{entry_id}",
+        operation_id="removeQueueEntry",
+        responses=_RESOURCE_MUTATION_ERRORS,
+    )
     async def remove(
         entry_id: UUID,
         request: Request,
         body: RevisionInput,
+        idempotency_key: IdempotencyKey,
     ) -> MutationView:
         current = authenticated(request)
         result = await application.bus.execute(
             RemoveQueueEntry(
                 _session_id(application),
-                OperationId(body.operation_id),
+                OperationId(idempotency_key),
                 QueueEntryId(entry_id),
                 body.expected_queue_revision,
             ),
@@ -298,17 +341,22 @@ def router(application: Application) -> APIRouter:
         )
         return await _mutation(application, result)
 
-    @routes.put("/queue/{entry_id}")
+    @routes.patch(
+        "/queue/{entry_id}",
+        operation_id="moveQueueEntry",
+        responses=_RESOURCE_MUTATION_ERRORS,
+    )
     async def move(
         entry_id: UUID,
         request: Request,
         body: MoveQueueInput,
+        idempotency_key: IdempotencyKey,
     ) -> MutationView:
         current = authenticated(request)
         result = await application.bus.execute(
             MoveQueueEntry(
                 _session_id(application),
-                OperationId(body.operation_id),
+                OperationId(idempotency_key),
                 QueueEntryId(entry_id),
                 (
                     QueueEntryId(body.before_entry_id)
@@ -321,13 +369,21 @@ def router(application: Application) -> APIRouter:
         )
         return await _mutation(application, result)
 
-    @routes.post("/queue/clear")
-    async def clear(request: Request, body: ClearQueueInput) -> MutationView:
+    @routes.post(
+        "/queue/clear",
+        operation_id="clearQueue",
+        responses=_MUTATION_ERRORS,
+    )
+    async def clear(
+        request: Request,
+        body: ClearQueueInput,
+        idempotency_key: IdempotencyKey,
+    ) -> MutationView:
         current = authenticated(request)
         result = await application.bus.execute(
             ClearQueue(
                 _session_id(application),
-                OperationId(body.operation_id),
+                OperationId(idempotency_key),
                 body.expected_queue_revision,
                 UserId(body.requested_by) if body.requested_by is not None else None,
             ),
@@ -335,108 +391,108 @@ def router(application: Application) -> APIRouter:
         )
         return await _mutation(application, result)
 
-    @routes.post("/queue/undo")
-    async def undo(request: Request, body: UndoQueueInput) -> MutationView:
+    @routes.post(
+        "/queue/undo",
+        operation_id="undoQueue",
+        responses=_MUTATION_ERRORS,
+    )
+    async def undo(
+        request: Request,
+        body: UndoQueueInput,
+        idempotency_key: IdempotencyKey,
+    ) -> MutationView:
         current = authenticated(request)
         result = await application.bus.execute(
             UndoQueue(
                 _session_id(application),
-                OperationId(body.operation_id),
+                OperationId(idempotency_key),
                 UndoId(body.undo_id),
             ),
             MessageContext(actor_id=current.user.id),
         )
         return await _mutation(application, result)
 
-    @routes.post("/play")
-    async def play(request: Request, body: OperationInput) -> MutationView:
-        return await execute(
-            request,
-            Play(_session_id(application), OperationId(body.operation_id)),
-        )
+    @routes.post(
+        "/control",
+        operation_id="controlPlayer",
+        responses=_MUTATION_ERRORS,
+    )
+    async def control(
+        request: Request,
+        body: ControlInput,
+        idempotency_key: IdempotencyKey,
+    ) -> MutationView:
+        session_id = _session_id(application)
+        operation_id = OperationId(idempotency_key)
+        if body.action is ControlAction.PLAY:
+            command: PlayerCommand = Play(session_id, operation_id)
+        elif body.action is ControlAction.PAUSE:
+            command = Pause(session_id, operation_id)
+        elif body.action is ControlAction.SKIP:
+            command = Skip(session_id, operation_id)
+        elif body.action is ControlAction.STOP:
+            command = StopPlayback(session_id, operation_id)
+        else:
+            command = Seek(session_id, operation_id, cast(float, body.seconds))
+        return await execute(request, command)
 
-    @routes.post("/pause")
-    async def pause(request: Request, body: OperationInput) -> MutationView:
+    @routes.patch("", operation_id="updatePlayer", responses=_MUTATION_ERRORS)
+    async def update_player(
+        request: Request,
+        body: PlayerSettingsInput,
+        idempotency_key: IdempotencyKey,
+    ) -> MutationView:
         return await execute(
             request,
-            Pause(_session_id(application), OperationId(body.operation_id)),
-        )
-
-    @routes.post("/skip")
-    async def skip(request: Request, body: OperationInput) -> MutationView:
-        return await execute(
-            request,
-            Skip(_session_id(application), OperationId(body.operation_id)),
-        )
-
-    @routes.post("/stop")
-    async def stop(request: Request, body: OperationInput) -> MutationView:
-        return await execute(
-            request,
-            StopPlayback(_session_id(application), OperationId(body.operation_id)),
-        )
-
-    @routes.post("/seek")
-    async def seek(request: Request, body: SeekInput) -> MutationView:
-        return await execute(
-            request,
-            Seek(
+            SetPlayerSettings(
                 _session_id(application),
-                OperationId(body.operation_id),
-                body.seconds,
+                OperationId(idempotency_key),
+                volume=body.volume,
+                crossfade_seconds=body.crossfade_seconds,
             ),
         )
 
-    @routes.put("/volume")
-    async def set_volume(request: Request, body: VolumeInput) -> MutationView:
-        return await execute(
-            request,
-            SetVolume(
-                _session_id(application),
-                OperationId(body.operation_id),
-                body.volume,
-            ),
-        )
-
-    @routes.put("/crossfade")
-    async def set_crossfade(request: Request, body: CrossfadeInput) -> MutationView:
-        return await execute(
-            request,
-            SetCrossfade(
-                _session_id(application),
-                OperationId(body.operation_id),
-                body.seconds,
-            ),
-        )
-
-    @routes.put("/sleep-timer")
+    @routes.put(
+        "/sleep-timer",
+        operation_id="setSleepTimer",
+        responses=_MUTATION_ERRORS,
+    )
     async def set_sleep_timer(
         request: Request,
         body: SleepTimerInput,
+        idempotency_key: IdempotencyKey,
     ) -> MutationView:
         return await execute(
             request,
             SetSleepTimer(
                 _session_id(application),
-                OperationId(body.operation_id),
+                OperationId(idempotency_key),
                 datetime.now(UTC) + timedelta(seconds=body.seconds),
             ),
         )
 
-    @routes.delete("/sleep-timer")
+    @routes.delete(
+        "/sleep-timer",
+        operation_id="cancelSleepTimer",
+        responses=_MUTATION_ERRORS,
+    )
     async def cancel_sleep_timer(
         request: Request,
-        body: OperationInput,
+        idempotency_key: IdempotencyKey,
     ) -> MutationView:
         return await execute(
             request,
             CancelSleepTimer(
                 _session_id(application),
-                OperationId(body.operation_id),
+                OperationId(idempotency_key),
             ),
         )
 
-    @routes.get("/voice/channels")
+    @routes.get(
+        "/voice/channels",
+        operation_id="listVoiceChannels",
+        responses=_READ_ERRORS,
+    )
     async def voice_channels() -> tuple[VoiceChannelView, ...]:
         if application.player.playback is None:
             return ()
@@ -452,26 +508,41 @@ def router(application: Application) -> APIRouter:
             for channel in application.player.playback.channels()
         )
 
-    @routes.post("/voice/join")
-    async def join_voice(request: Request, body: JoinVoiceInput) -> MutationView:
+    @routes.put("/voice", operation_id="joinVoice", responses=_MUTATION_ERRORS)
+    async def join_voice(
+        request: Request,
+        body: VoiceInput,
+        idempotency_key: IdempotencyKey,
+    ) -> MutationView:
         return await execute(
             request,
             JoinVoice(
                 _session_id(application),
-                OperationId(body.operation_id),
+                OperationId(idempotency_key),
                 int(body.channel_id),
             ),
         )
 
-    @routes.post("/voice/leave")
-    async def leave_voice(request: Request, body: OperationInput) -> MutationView:
+    @routes.delete("/voice", operation_id="leaveVoice", responses=_MUTATION_ERRORS)
+    async def leave_voice(
+        request: Request,
+        idempotency_key: IdempotencyKey,
+    ) -> MutationView:
         return await execute(
             request,
-            LeaveVoice(_session_id(application), OperationId(body.operation_id)),
+            LeaveVoice(_session_id(application), OperationId(idempotency_key)),
         )
 
-    @routes.post("/radio")
-    async def start_radio(request: Request, body: StartRadioInput) -> MutationView:
+    @routes.put(
+        "/radio",
+        operation_id="startRadio",
+        responses=_RESOURCE_MUTATION_ERRORS,
+    )
+    async def start_radio(
+        request: Request,
+        body: StartRadioInput,
+        idempotency_key: IdempotencyKey,
+    ) -> MutationView:
         current = authenticated(request)
         seed = RadioSeed(
             body.seed.kind,
@@ -489,7 +560,7 @@ def router(application: Application) -> APIRouter:
         result = await application.bus.execute(
             StartRadio(
                 _session_id(application),
-                OperationId(body.operation_id),
+                OperationId(idempotency_key),
                 seed,
                 body.expected_generation,
             ),
@@ -497,32 +568,38 @@ def router(application: Application) -> APIRouter:
         )
         return await _mutation(application, result)
 
-    @routes.post("/radio/stop")
+    @routes.delete("/radio", operation_id="stopRadio", responses=_MUTATION_ERRORS)
     async def stop_radio(
         request: Request,
         body: RadioMutationInput,
+        idempotency_key: IdempotencyKey,
     ) -> MutationView:
         current = authenticated(request)
         result = await application.bus.execute(
             StopRadio(
                 _session_id(application),
-                OperationId(body.operation_id),
+                OperationId(idempotency_key),
                 body.expected_generation,
             ),
             MessageContext(actor_id=current.user.id),
         )
         return await _mutation(application, result)
 
-    @routes.post("/radio/retry")
+    @routes.post(
+        "/radio/retry",
+        operation_id="retryRadio",
+        responses=_MUTATION_ERRORS,
+    )
     async def retry_radio(
         request: Request,
         body: RadioMutationInput,
+        idempotency_key: IdempotencyKey,
     ) -> MutationView:
         current = authenticated(request)
         result = await application.bus.execute(
             RetryRadio(
                 _session_id(application),
-                OperationId(body.operation_id),
+                OperationId(idempotency_key),
                 body.expected_generation,
             ),
             MessageContext(actor_id=current.user.id),
@@ -550,6 +627,7 @@ async def _mutation(
 ) -> MutationView:
     outcome = reply.outcome
     return MutationView(
+        operation_id=reply.operation_id,
         player=await player_view(application, reply.state),
         outcome=OutcomeView(
             action=outcome.action.value,
@@ -569,59 +647,26 @@ async def player_view(
     application: Application,
     state: PlayerState,
 ) -> PlayerView:
-    runtime = (
-        application.player.playback.status
-        if application.player.playback is not None
-        else PlaybackRuntimeState(
-            PlaybackPhase.DISABLED,
-            None,
-            None,
-            None,
-            0.0,
-            None,
-            None,
-            VoiceConnectionState(),
-            None,
-        )
-    )
-    track_ids = {entry.track_id for entry in state.queue.entries}
-    checkpoint_request = state.checkpoint.request
-    current_request = checkpoint_request or runtime.request
-    if current_request is not None:
-        track_ids.add(current_request.track_id)
-    radio_run = state.radio
-    radio_seed_track: Track | None = None
-    radio_seed_title: str | None = None
-    if radio_run is not None and radio_run.active:
-        if radio_run.seed.track_source_id is not None:
-            radio_seed_track = await application.catalog.service.track_for_source(
-                radio_run.seed.track_source_id
-            )
-            if radio_seed_track is not None:
-                track_ids.add(radio_seed_track.id)
-                radio_seed_title = radio_seed_track.title
-        elif radio_run.seed.discovery_snapshot_id is not None:
-            try:
-                seed_snapshot = await application.catalog.service.snapshot(
-                    radio_run.seed.discovery_snapshot_id,
-                    DiscoveryKind.PLAYLIST,
-                )
-            except CatalogError:
-                pass
-            else:
-                radio_seed_title = seed_snapshot.snapshot.playlist_title
-    tracks = await application.catalog.service.tracks(track_ids)
-    contributor_ids = {entry.request.requested_by for entry in state.queue.entries}
-    if current_request is not None:
-        contributor_ids.add(current_request.requested_by)
-    if radio_run is not None:
-        contributor_ids.add(radio_run.initiated_by)
-    contributors = await application.users.access.users(contributor_ids)
+    projection = await application.player.reader.read(state)
+    return player_document(projection, application.integrations.avatars)
+
+
+def player_document(
+    projection: PlayerReadModel,
+    avatars: DiscordAvatarStore,
+) -> PlayerView:
+    state = projection.state
+    runtime = projection.runtime
+    current_request = projection.current_request
+    tracks = projection.tracks
+    contributors = projection.contributors
+    radio_seed_track = projection.radio_seed_track
+    radio_seed_title = projection.radio_seed_title
     queue = tuple(
         QueueEntryView(
             id=entry.id,
             position=entry.position,
-            request=_request_view(entry.request, tracks, contributors, application),
+            request=_request_view(entry.request, tracks, contributors, avatars),
         )
         for entry in state.queue.entries
     )
@@ -682,7 +727,7 @@ async def player_view(
                 ),
                 initiator=_contributor_view(
                     contributors.get(run.initiated_by),
-                    application,
+                    avatars,
                 ),
             )
             if run is not None
@@ -691,7 +736,7 @@ async def player_view(
         runtime=PlaybackRuntimeView(
             phase=runtime_phase.value,
             current=(
-                _request_view(current_request, tracks, contributors, application)
+                _request_view(current_request, tracks, contributors, avatars)
                 if current_request is not None
                 else None
             ),
@@ -733,9 +778,9 @@ async def player_view(
 
 def _request_view(
     request: TrackRequest,
-    tracks: dict[TrackId, Track],
-    contributors: dict[UserId, User],
-    application: Application,
+    tracks: Mapping[TrackId, Track],
+    contributors: Mapping[UserId, User],
+    avatars: DiscordAvatarStore,
 ) -> RequestView:
     track = tracks.get(request.track_id)
     if track is None:
@@ -751,7 +796,7 @@ def _request_view(
         source_id=request.source_id,
         contributor=_contributor_view(
             contributors.get(request.requested_by),
-            application,
+            avatars,
         ),
         track=track_view(track),
     )
@@ -759,7 +804,7 @@ def _request_view(
 
 def _contributor_view(
     user: User | None,
-    application: Application,
+    avatars: DiscordAvatarStore,
 ) -> ContributorView | None:
     if user is None:
         return None
@@ -772,7 +817,7 @@ def _contributor_view(
         ),
         discord_id=user.discord.discord_id,
         discord_username=user.discord.username,
-        avatar_url=application.integrations.avatars.public_url(
+        avatar_url=avatars.public_url(
             user.discord.discord_id,
             avatar_hash=user.discord.avatar_hash,
         ),

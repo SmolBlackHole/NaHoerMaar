@@ -59,9 +59,8 @@ from .events import (
     RemoveQueueEntry,
     RetryRadio,
     Seek,
-    SetCrossfade,
+    SetPlayerSettings,
     SetSleepTimer,
-    SetVolume,
     Skip,
     StartRadio,
     StopPlayback,
@@ -130,10 +129,8 @@ def transition(
             result = _stop_playback(state)
         elif isinstance(command, Seek):
             result = _seek(state, command)
-        elif isinstance(command, SetVolume):
-            result = _set_volume(state, command)
-        elif isinstance(command, SetCrossfade):
-            result = _set_crossfade(state, command)
+        elif isinstance(command, SetPlayerSettings):
+            result = _set_player_settings(state, command)
         elif isinstance(command, SetSleepTimer):
             result = _set_sleep_timer(state, command, now)
         elif isinstance(command, CancelSleepTimer):
@@ -247,24 +244,40 @@ def _seek(state: PlayerState, command: Seek) -> Transition:
     return Transition(updated, MutationOutcome(PlayerAction.PLAYBACK_SEEKED))
 
 
-def _set_volume(state: PlayerState, command: SetVolume) -> Transition:
-    if not isfinite(command.volume) or not 0 <= command.volume <= 1:
+def _set_player_settings(
+    state: PlayerState,
+    command: SetPlayerSettings,
+) -> Transition:
+    if command.volume is None and command.crossfade_seconds is None:
+        raise PlayerError(PlayerErrorCode.INVALID_COMMAND, 422)
+    if command.volume is not None and (
+        not isfinite(command.volume) or not 0 <= command.volume <= 1
+    ):
+        raise PlayerError(PlayerErrorCode.INVALID_COMMAND, 422)
+    if command.crossfade_seconds is not None and command.crossfade_seconds not in {
+        0,
+        3,
+        4,
+        5,
+        6,
+        7,
+    }:
         raise PlayerError(PlayerErrorCode.INVALID_COMMAND, 422)
     updated = replace(
         state,
-        session=replace(state.session, volume=command.volume),
+        session=replace(
+            state.session,
+            volume=(
+                command.volume if command.volume is not None else state.session.volume
+            ),
+            crossfade_seconds=(
+                command.crossfade_seconds
+                if command.crossfade_seconds is not None
+                else state.session.crossfade_seconds
+            ),
+        ),
     )
-    return Transition(updated, MutationOutcome(PlayerAction.VOLUME_CHANGED))
-
-
-def _set_crossfade(state: PlayerState, command: SetCrossfade) -> Transition:
-    if command.seconds not in {0, 3, 4, 5, 6, 7}:
-        raise PlayerError(PlayerErrorCode.INVALID_COMMAND, 422)
-    updated = replace(
-        state,
-        session=replace(state.session, crossfade_seconds=command.seconds),
-    )
-    return Transition(updated, MutationOutcome(PlayerAction.CROSSFADE_CHANGED))
+    return Transition(updated, MutationOutcome(PlayerAction.SETTINGS_UPDATED))
 
 
 def _set_sleep_timer(

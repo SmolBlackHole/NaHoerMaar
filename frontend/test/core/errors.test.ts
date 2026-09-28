@@ -20,7 +20,7 @@ describe("frontend failure presentation", () => {
 
 	it("keeps diagnostics while hiding machine codes from the UI", () => {
 		const failure = presentFailure(
-			new ApiFailure(403, { error: "origin_forbidden", retryable: false }, "request-id"),
+			new ApiFailure(403, { code: "origin_forbidden", retryable: false }, "request-id"),
 		);
 
 		expect(failure).toMatchObject({

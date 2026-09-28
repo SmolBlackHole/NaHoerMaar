@@ -6,7 +6,7 @@ import { createTransport, type AuthBoundary } from "./api/transport";
 import { createAccountRepository } from "./repositories/account";
 import { createAccessRepository } from "./repositories/access";
 import { createCatalogRepository } from "./repositories/catalog";
-import { createListeningRepository } from "./repositories/listening";
+import { createPlaybacksRepository } from "./repositories/playbacks";
 import { createIncidentsRepository } from "./repositories/incidents";
 import { createLogsRepository } from "./repositories/logs";
 import { createJobsRepository } from "./repositories/jobs";
@@ -26,7 +26,7 @@ export function createBackendClient(dependencies: BackendDependencies) {
 		access: createAccessRepository(request),
 		account: createAccountRepository(request),
 		catalog: createCatalogRepository(request),
-		listening: createListeningRepository(request),
+		playbacks: createPlaybacksRepository(request),
 		incidents: createIncidentsRepository(request),
 		logs: createLogsRepository(request),
 		jobs: createJobsRepository(request),

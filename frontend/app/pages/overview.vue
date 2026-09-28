@@ -7,11 +7,11 @@ useSeoMeta({ title: "Overview | NaHörMaar" });
 
 const core = useNuxtApp().$backendCore;
 const statistics = core.workflows.statistics();
-const recent = core.workflows.recent();
+const playbackHistory = core.workflows.playbackHistory();
 const { icons } = useTheme();
 const period = ref<StatisticsPeriod>("7d");
 const report = computed(() => statistics.groupReport.data.value);
-const recentTracks = computed(() => recent.history.data.value?.entries ?? []);
+const recentTracks = computed(() => playbackHistory.history.data.value?.items ?? []);
 const metrics = computed(() => {
 	const totals = report.value?.totals;
 	return [
@@ -40,8 +40,8 @@ const metrics = computed(() => {
 
 async function load() {
 	await Promise.all([
-		statistics.overview(period.value),
-		recent.load({ pageSize: 5, newSnapshot: true }),
+		statistics.load(period.value),
+		playbackHistory.load({ pageSize: 5, newSnapshot: true }),
 	]);
 }
 
@@ -49,7 +49,7 @@ watch(period, load);
 onMounted(load);
 onScopeDispose(() => {
 	statistics.dispose();
-	recent.dispose();
+	playbackHistory.dispose();
 });
 </script>
 

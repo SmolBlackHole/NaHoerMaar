@@ -107,12 +107,16 @@ class PlaybackHistoryView:
         query: str | None = None,
         radio: bool | None = None,
         requested_by: UserId | None = None,
+        started_from: datetime | None = None,
+        started_to: datetime | None = None,
+        end_reason: PlaybackEndReason | None = None,
         snapshot: PlaybackHistorySnapshot | None = None,
     ) -> PlaybackHistoryPage:
         if page < 1:
             raise ValueError("Playback history page must be positive.")
         if not 1 <= page_size <= 100:
             raise ValueError("Playback history page size must be between 1 and 100.")
+        self._validate_boundaries(started_from, started_to)
 
         contributor_id = self._requests.c.requested_by
         relation = (
@@ -161,6 +165,12 @@ class PlaybackHistoryView:
             filters.append(radio_filter if radio else ~radio_filter)
         if requested_by is not None:
             filters.append(self._requests.c.requested_by == requested_by)
+        if started_from is not None:
+            filters.append(self._playbacks.c.started_at >= started_from)
+        if started_to is not None:
+            filters.append(self._playbacks.c.started_at <= started_to)
+        if end_reason is not None:
+            filters.append(self._playbacks.c.end_reason == end_reason.value)
 
         async with self._units() as work:
             if snapshot is None:
@@ -308,6 +318,22 @@ class PlaybackHistoryView:
             .exists()
         )
         return (or_(self._tracks.c.title.ilike(pattern), matching_artist),)
+
+    @staticmethod
+    def _validate_boundaries(
+        started_from: datetime | None,
+        started_to: datetime | None,
+    ) -> None:
+        if started_from is not None and started_from.utcoffset() is None:
+            raise ValueError("Playback-history start boundary must be timezone-aware.")
+        if started_to is not None and started_to.utcoffset() is None:
+            raise ValueError("Playback-history end boundary must be timezone-aware.")
+        if (
+            started_from is not None
+            and started_to is not None
+            and started_from > started_to
+        ):
+            raise ValueError("Playback-history start cannot follow its end.")
 
     def _entry(self, row: Any) -> PlaybackHistoryEntry:
         contributor = UserId(row["requested_by"])

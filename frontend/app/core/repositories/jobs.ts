@@ -7,36 +7,50 @@ import type {
 	BackgroundJobRun,
 	BackgroundJobRunPage,
 	BackgroundJobs,
+	JobId,
+	JobRunStatus,
 	RunJob,
 } from "../models/jobs";
 
 export interface JobRunsQuery {
-	limit?: number;
+	pageSize?: number;
 	cursor?: string;
-	jobId?: string;
-	status?: string;
+	jobId?: JobId;
+	status?: JobRunStatus;
 }
 
 export function createJobsRepository(request: Transport) {
 	return {
-		status: (signal?: AbortSignal) => request<BackgroundJobs>("/api/jobs", { signal }),
-		runs: (query: JobRunsQuery = {}, signal?: AbortSignal) => {
-			const params = new URLSearchParams();
-			params.set("limit", String(query.limit ?? 20));
-			if (query.cursor) params.set("cursor", query.cursor);
-			if (query.jobId) params.set("job_id", query.jobId);
-			if (query.status) params.set("status", query.status);
-			return request<BackgroundJobRunPage>(`/api/jobs/runs?${params}`, { signal });
-		},
+		status: (signal?: AbortSignal) => request((api) => api.GET("/api/jobs", { signal })),
+		runs: (query: JobRunsQuery = {}, signal?: AbortSignal) =>
+			request((api) =>
+				api.GET("/api/jobs/runs", {
+					params: {
+						query: {
+							page_size: query.pageSize ?? 20,
+							cursor: query.cursor,
+							job_id: query.jobId,
+							status: query.status,
+						},
+					},
+					signal,
+				}),
+			),
 		run: (id: string, signal?: AbortSignal) =>
-			request<BackgroundJobRun>(`/api/jobs/runs/${encodeURIComponent(id)}`, { signal }),
+			request((api) =>
+				api.GET("/api/jobs/runs/{run_id}", {
+					params: { path: { run_id: id } },
+					signal,
+				}),
+			),
 		runJob: (id: string, body: RunJob, signal?: AbortSignal) =>
-			request<BackgroundJob>(`/api/jobs/${encodeURIComponent(id)}/runs`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify(body),
-				signal,
-			}),
+			request((api) =>
+				api.POST("/api/jobs/{job_id}/runs", {
+					params: { path: { job_id: id } },
+					body,
+					signal,
+				}),
+			),
 	};
 }
 

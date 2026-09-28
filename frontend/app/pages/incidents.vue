@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { IncidentPeriod } from "~/core/models/incidents";
+import type { IncidentPeriod, IncidentSeverity } from "~/core/models/incidents";
 
 definePageMeta({ pageTransition: { name: "page", mode: "out-in" } });
 useSeoMeta({ title: "Incidents | NaHörMaar" });
@@ -8,7 +8,13 @@ const core = useNuxtApp().$backendCore;
 const session = core.stores.useSessionStore();
 const incidents = core.workflows.incidents();
 const { icons } = useTheme();
+const PAGE_SIZE = 20;
 const period = ref<IncidentPeriod>("24h");
+const severity = ref<IncidentSeverity | "all">("all");
+const component = ref("");
+const code = ref("");
+const actorId = ref("");
+const page = ref(1);
 const periodItems = [
 	{ label: "Last 24 hours", value: "24h" },
 	{ label: "Last 7 days", value: "7d" },
@@ -17,11 +23,13 @@ const periodItems = [
 const allowed = computed(() => ["owner", "admin"].includes(session.account?.role ?? ""));
 const report = computed(() => incidents.report.data.value);
 const userIncidents = computed(() =>
-	(report.value?.recent ?? []).filter((incident) => incident.trigger === "user"),
+	(report.value?.items ?? []).filter((incident) => incident.trigger === "user"),
 );
 const systemIncidents = computed(() =>
-	(report.value?.recent ?? []).filter((incident) => incident.trigger === "system"),
+	(report.value?.items ?? []).filter((incident) => incident.trigger === "system"),
 );
+const severityItems = ["all", "warning", "error", "critical"];
+let filterTimer: ReturnType<typeof setTimeout> | undefined;
 
 const duration = (seconds: number | null) => {
 	if (seconds === null) return "No history yet";
@@ -41,13 +49,31 @@ const userName = (user: {
 	user_id: string;
 }) => user.display_name ?? user.discord_username ?? user.user_id;
 
-async function load() {
-	if (allowed.value) await incidents.load(period.value);
+async function load(nextPage = page.value) {
+	if (!allowed.value) return;
+	const next = await incidents.load({
+		page: nextPage,
+		pageSize: PAGE_SIZE,
+		filters: {
+			period: period.value,
+			severity: severity.value === "all" ? undefined : severity.value,
+			component: component.value.trim() || undefined,
+			code: code.value.trim() || undefined,
+			actorId: actorId.value.trim() || undefined,
+		},
+	});
+	if (next) page.value = next.page;
 }
 
-watch(period, load);
-onMounted(load);
-onBeforeUnmount(incidents.dispose);
+watch([period, severity, component, code, actorId], () => {
+	clearTimeout(filterTimer);
+	filterTimer = setTimeout(() => void load(1), 250);
+});
+onMounted(() => void load());
+onBeforeUnmount(() => {
+	clearTimeout(filterTimer);
+	incidents.dispose();
+});
 </script>
 
 <template>
@@ -62,7 +88,7 @@ onBeforeUnmount(incidents.dispose);
 						color="neutral"
 						variant="outline"
 						:loading="incidents.report.loading.value"
-						@click="load"
+						@click="load()"
 					/>
 				</template>
 			</UDashboardNavbar>
@@ -79,12 +105,37 @@ onBeforeUnmount(incidents.dispose);
 							Structured warnings, failures and recoveries retained for 14 days.
 						</p>
 					</div>
-					<USelect
-						v-model="period"
-						:items="periodItems"
-						value-key="value"
-						aria-label="Incident period"
-						class="w-44"
+					<div class="flex flex-wrap items-center justify-end gap-2">
+						<USelect
+							v-model="period"
+							:items="periodItems"
+							value-key="value"
+							aria-label="Incident period"
+							class="w-44"
+						/>
+						<USelect
+							v-model="severity"
+							:items="severityItems"
+							aria-label="Incident severity"
+							class="w-36"
+						/>
+					</div>
+				</div>
+				<div class="grid gap-2 sm:grid-cols-3">
+					<UInput
+						v-model="component"
+						placeholder="Component"
+						aria-label="Filter by component"
+					/>
+					<UInput
+						v-model="code"
+						placeholder="Error code"
+						aria-label="Filter by error code"
+					/>
+					<UInput
+						v-model="actorId"
+						placeholder="Actor ID"
+						aria-label="Filter by actor ID"
 					/>
 				</div>
 
@@ -301,6 +352,15 @@ onBeforeUnmount(incidents.dispose);
 							</p>
 						</section>
 					</div>
+
+					<SharedPagePagination
+						v-if="report.total > 0"
+						v-model:page="page"
+						:page-size="report.page_size"
+						:total="report.total"
+						:disabled="incidents.report.loading.value"
+						@select="load"
+					/>
 				</template>
 			</div>
 		</template>

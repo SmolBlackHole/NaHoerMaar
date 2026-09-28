@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""Authenticated query endpoint for shared listening history."""
+"""Authenticated collection endpoint for confirmed playback history."""
 
 from datetime import datetime
 from typing import Annotated
@@ -12,11 +12,17 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel, ConfigDict
 
 from nahoermaar.bootstrap import Application
-from nahoermaar.listening.domain import PlaybackRecordId
+from nahoermaar.listening.domain import PlaybackEndReason, PlaybackRecordId
 from nahoermaar.users.domain import UserId
 from nahoermaar.views.history import PlaybackHistoryEntry, PlaybackHistorySnapshot
 
-from .pagination import TimestampPosition, decode_position, encode_position
+from .errors import ApiError, ApiErrorCode, error_responses
+from .pagination import (
+    NumberedPageView,
+    TimestampPosition,
+    decode_position,
+    encode_position,
+)
 
 
 class PlaybackContributorView(BaseModel):
@@ -48,7 +54,7 @@ class PlaybackHistoryEntryView(BaseModel):
     contributor: PlaybackContributorView | None
     started_at: datetime
     ended_at: datetime | None
-    end_reason: str | None
+    end_reason: PlaybackEndReason | None
     audio_seconds: float
     group_audio_seconds: float
 
@@ -61,40 +67,47 @@ class PlaybackHistoryFilterContributorView(BaseModel):
     avatar_url: str | None
 
 
-class PlaybackHistoryPageView(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    entries: tuple[PlaybackHistoryEntryView, ...]
+class PlaybackHistoryPageView(NumberedPageView[PlaybackHistoryEntryView]):
     contributors: tuple[PlaybackHistoryFilterContributorView, ...]
-    page: int
-    page_size: int
-    total: int
-    page_count: int
-    snapshot: str | None
 
 
 def router(application: Application) -> APIRouter:
-    routes = APIRouter(prefix="/api/listening", tags=["listening"])
+    routes = APIRouter(prefix="/api/playbacks", tags=["playbacks"])
 
-    @routes.get("/recent")
-    async def playback_history(
+    @routes.get(
+        "",
+        operation_id="listPlaybacks",
+        responses=error_responses(401, 422, 500, 503),
+    )
+    async def list_playbacks(
         page: Annotated[int, Query(ge=1)] = 1,
         page_size: Annotated[int, Query(ge=1, le=100)] = 20,
         q: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
         radio: bool | None = None,
         requested_by: UUID | None = None,
+        started_from: datetime | None = None,
+        started_to: datetime | None = None,
+        end_reason: PlaybackEndReason | None = None,
         snapshot: str | None = None,
     ) -> PlaybackHistoryPageView:
-        result = await application.views.history.get(
-            page=page,
-            page_size=page_size,
-            query=q,
-            radio=radio,
-            requested_by=UserId(requested_by) if requested_by is not None else None,
-            snapshot=_snapshot(snapshot),
-        )
+        try:
+            result = await application.views.history.get(
+                page=page,
+                page_size=page_size,
+                query=q,
+                radio=radio,
+                requested_by=(
+                    UserId(requested_by) if requested_by is not None else None
+                ),
+                started_from=started_from,
+                started_to=started_to,
+                end_reason=end_reason,
+                snapshot=_snapshot(snapshot),
+            )
+        except ValueError as error:
+            raise ApiError(ApiErrorCode.VALIDATION_FAILED, 422) from error
         return PlaybackHistoryPageView(
-            entries=tuple(_entry_view(item, application) for item in result.entries),
+            items=tuple(_entry_view(item, application) for item in result.entries),
             contributors=tuple(
                 PlaybackHistoryFilterContributorView(
                     user_id=contributor.user_id,
@@ -163,7 +176,7 @@ def _entry_view(
         ),
         started_at=item.started_at,
         ended_at=item.ended_at,
-        end_reason=item.end_reason.value if item.end_reason is not None else None,
+        end_reason=item.end_reason,
         audio_seconds=item.audio_seconds,
         group_audio_seconds=item.group_audio_seconds,
     )

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { LogPage } from "~/core/models/logs";
 
-type LogEntry = LogPage["entries"][number];
+type LogEntry = LogPage["items"][number];
 
 definePageMeta({ pageTransition: { name: "page", mode: "out-in" } });
 useSeoMeta({ title: "Bot logs | NaHörMaar" });
@@ -16,25 +16,13 @@ const viewport = ref<HTMLElement | null>(null);
 const visibility = useDocumentVisibility();
 const levels = ["all", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"];
 const allowed = computed(() => ["owner", "admin"].includes(session.account?.role ?? ""));
-const entries = computed(() => logs.page.data.value?.entries ?? []);
-const visibleEntries = computed(() => {
-	const needle = filter.value.trim().toLocaleLowerCase();
-	return entries.value.filter(
-		(entry) =>
-			(level.value === "all" || entry.level === level.value) &&
-			(!needle ||
-				[
-					entry.actor_id,
-					entry.source,
-					entry.message,
-					entry.request_id,
-					entry.message_id,
-					entry.correlation_id,
-					entry.causation_id,
-				].some((value) => value?.toLocaleLowerCase().includes(needle))),
-	);
-});
+const entries = computed(() => logs.page.data.value?.items ?? []);
+const activeFilters = computed(() => ({
+	query: filter.value.trim() || undefined,
+	level: level.value === "all" ? undefined : level.value,
+}));
 let timer: ReturnType<typeof setTimeout> | undefined;
+let filterTimer: ReturnType<typeof setTimeout> | undefined;
 let disposed = false;
 
 const time = (value: string) =>
@@ -54,7 +42,7 @@ async function poll() {
 	const atBottom =
 		!viewport.value ||
 		viewport.value.scrollHeight - viewport.value.scrollTop - viewport.value.clientHeight < 64;
-	await logs.poll(200);
+	await logs.poll(activeFilters.value, 200);
 	if (atBottom)
 		await nextTick(() => viewport.value?.scrollTo({ top: viewport.value!.scrollHeight }));
 }
@@ -68,7 +56,8 @@ function schedule() {
 }
 async function start() {
 	if (!allowed.value) return;
-	await logs.loadLatest(200);
+	clearTimeout(timer);
+	await logs.loadLatest(activeFilters.value, 200);
 	await nextTick(() => viewport.value?.scrollTo({ top: viewport.value!.scrollHeight }));
 	schedule();
 }
@@ -76,10 +65,15 @@ watch([live, allowed, visibility], () => {
 	clearTimeout(timer);
 	if (live.value && allowed.value && visibility.value === "visible") void start();
 });
+watch([filter, level], () => {
+	clearTimeout(filterTimer);
+	filterTimer = setTimeout(() => void start(), 250);
+});
 onMounted(start);
 onBeforeUnmount(() => {
 	disposed = true;
 	clearTimeout(timer);
+	clearTimeout(filterTimer);
 	logs.dispose();
 });
 </script>
@@ -135,7 +129,7 @@ onBeforeUnmount(() => {
 							variant="ghost"
 							@click="
 								logs.page.set({
-									entries: [],
+									items: [],
 									cursor: logs.page.data.value?.cursor ?? 0,
 								})
 							"
@@ -153,11 +147,11 @@ onBeforeUnmount(() => {
 					aria-live="off"
 				>
 					<LogsSkeleton v-if="logs.page.loading.value && !entries.length" />
-					<div v-else-if="!visibleEntries.length" class="p-6 text-sm text-muted">
+					<div v-else-if="!entries.length" class="p-6 text-sm text-muted">
 						No log messages in this view yet.
 					</div>
 					<div
-						v-for="entry in visibleEntries"
+						v-for="entry in entries"
 						:key="entry.id"
 						class="log-row grid gap-x-3 px-4 py-2 text-xs hover:bg-elevated/60 sm:grid-cols-[10rem_5rem_6rem_10rem_12rem_minmax(0,1fr)] sm:py-1.5"
 					>

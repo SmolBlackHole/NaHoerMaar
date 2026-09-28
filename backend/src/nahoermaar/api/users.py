@@ -5,12 +5,12 @@
 """Profile, appearance and ordinary access administration endpoints."""
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Self
 from uuid import UUID
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from nahoermaar.bootstrap import Application
 from nahoermaar.integrations.avatars import AvatarUnavailableError
@@ -33,15 +33,15 @@ from nahoermaar.users.domain import (
     UserProfile,
 )
 from nahoermaar.users.service import (
+    AccessSnapshot,
     GrantAccess,
     RevokeAccess,
-    SaveAppearance,
-    SaveProfile,
+    UpdateUser,
 )
 from nahoermaar.views.profile import ProfileReport
 
 from .middleware import authenticated
-from .errors import ApiError, ApiErrorCode
+from .errors import ApiError, ApiErrorCode, error_responses
 from .statistics import PersonalStatisticsView, personal_statistics_view
 
 
@@ -125,6 +125,19 @@ class AppearanceUpdate(BaseModel):
     text_size: TextSize
 
 
+class CurrentUserUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    profile: ProfileUpdate | None = None
+    appearance: AppearanceUpdate | None = None
+
+    @model_validator(mode="after")
+    def require_change(self) -> Self:
+        if self.profile is None and self.appearance is None:
+            raise ValueError("profile or appearance is required")
+        return self
+
+
 class AccessEventView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -174,47 +187,54 @@ def router(application: Application) -> APIRouter:
     """Build user and access routes around the composed application."""
     routes = APIRouter(prefix="/api", tags=["users"])
 
-    @routes.get("/users/me")
+    @routes.get(
+        "/users/me",
+        operation_id="getCurrentUser",
+        responses=error_responses(401, 500, 503),
+    )
     async def own_account(request: Request) -> UserView:
         return _user_view(authenticated(request).user, application)
 
-    @routes.put("/users/me/profile")
-    async def update_profile(
+    @routes.patch(
+        "/users/me",
+        operation_id="updateCurrentUser",
+        responses=error_responses(401, 403, 422, 500, 503),
+    )
+    async def update_current_user(
         request: Request,
-        body: ProfileUpdate,
+        body: CurrentUserUpdate,
     ) -> UserView:
         current = authenticated(request)
         user = await application.bus.execute(
-            SaveProfile(
+            UpdateUser(
                 current.user.id,
-                UserProfile(body.display_name.strip()),
-            )
-        )
-        return _user_view(user, application)
-
-    @routes.put("/users/me/appearance")
-    async def update_appearance(
-        request: Request,
-        body: AppearanceUpdate,
-    ) -> UserView:
-        current = authenticated(request)
-        user = await application.bus.execute(
-            SaveAppearance(
-                current.user.id,
-                Appearance(
-                    body.mode,
-                    body.artwork_colors,
-                    body.primary_color,
-                    body.neutral_color,
-                    body.font_family,
-                    body.icon_set,
-                    body.text_size,
+                profile=(
+                    UserProfile(body.profile.display_name.strip())
+                    if body.profile is not None
+                    else None
+                ),
+                appearance=(
+                    Appearance(
+                        body.appearance.mode,
+                        body.appearance.artwork_colors,
+                        body.appearance.primary_color,
+                        body.appearance.neutral_color,
+                        body.appearance.font_family,
+                        body.appearance.icon_set,
+                        body.appearance.text_size,
+                    )
+                    if body.appearance is not None
+                    else None
                 ),
             )
         )
         return _user_view(user, application)
 
-    @routes.get("/profiles/me")
+    @routes.get(
+        "/profiles/me",
+        operation_id="getCurrentProfile",
+        responses=error_responses(401, 422, 500, 503),
+    )
     async def own_profile(
         request: Request,
         period: Annotated[StatisticsPeriod, Query()] = StatisticsPeriod.DAYS_30,
@@ -227,7 +247,11 @@ def router(application: Application) -> APIRouter:
             application,
         )
 
-    @routes.get("/profiles/{user_id}")
+    @routes.get(
+        "/profiles/{user_id}",
+        operation_id="getProfile",
+        responses=error_responses(401, 404, 422, 500, 503),
+    )
     async def profile(
         request: Request,
         user_id: UUID,
@@ -239,32 +263,34 @@ def router(application: Application) -> APIRouter:
             application,
         )
 
-    @routes.get("/access")
+    @routes.get(
+        "/access",
+        operation_id="getAccess",
+        responses=error_responses(401, 403, 422, 500, 503),
+    )
     async def access_state(
         request: Request,
         history_limit: int = Query(default=100, ge=1, le=500),
     ) -> AccessView:
         await application.users.access.require_admin(authenticated(request).user.id)
-        return AccessView(
-            operators=tuple(
-                _user_view(user, application)
-                for user in await application.users.access.operator_users()
-            ),
-            grants=tuple(
-                _grant_view(user, application)
-                for user in await application.users.access.grants()
-            ),
-            history=tuple(
-                _event_view(event)
-                for event in await application.users.access.history(history_limit)
-            ),
+        return _access_view(
+            await application.users.access.snapshot(history_limit),
+            application,
         )
 
-    @routes.get("/access/members")
-    async def discord_members(request: Request) -> DiscordMembersView:
+    @routes.get(
+        "/access/members",
+        operation_id="listDiscordMembers",
+        responses=error_responses(401, 403, 422, 500, 503),
+    )
+    async def discord_members(
+        request: Request,
+        q: Annotated[str | None, Query(min_length=1, max_length=100)] = None,
+        guild_id: Annotated[str | None, Query(min_length=1, max_length=32)] = None,
+    ) -> DiscordMembersView:
         await application.users.access.require_admin(authenticated(request).user.id)
         gateway = application.integrations.gateway
-        members = gateway.members() if gateway else ()
+        members = gateway.members(query=q, guild_id=guild_id) if gateway else ()
         return DiscordMembersView(
             members=tuple(_member_view(member, application) for member in members)
         )
@@ -282,14 +308,22 @@ def router(application: Application) -> APIRouter:
             raise ApiError(ApiErrorCode.AVATAR_UNAVAILABLE, 404) from error
         return FileResponse(asset.path, media_type=asset.media_type)
 
-    @routes.put("/access/{discord_id}")
+    @routes.put(
+        "/access/{discord_id}",
+        operation_id="grantAccess",
+        responses=error_responses(401, 403, 409, 422, 500, 503),
+    )
     async def grant_access(request: Request, discord_id: str) -> AccessEventView | None:
         change = await application.bus.execute(
             GrantAccess(authenticated(request).user.id, discord_id)
         )
         return _event_view(change) if change is not None else None
 
-    @routes.delete("/access/{discord_id}")
+    @routes.delete(
+        "/access/{discord_id}",
+        operation_id="revokeAccess",
+        responses=error_responses(401, 403, 409, 422, 500, 503),
+    )
     async def revoke_access(
         request: Request, discord_id: str
     ) -> AccessEventView | None:
@@ -352,6 +386,14 @@ def _grant_view(user: User, application: Application) -> AccessGrantView:
         user=_user_view(user, application),
         granted_by_user_id=user.access_granted_by,
         granted_at=user.access_granted_at,
+    )
+
+
+def _access_view(snapshot: AccessSnapshot, application: Application) -> AccessView:
+    return AccessView(
+        operators=tuple(_user_view(user, application) for user in snapshot.operators),
+        grants=tuple(_grant_view(user, application) for user in snapshot.grants),
+        history=tuple(_event_view(event) for event in snapshot.history),
     )
 
 

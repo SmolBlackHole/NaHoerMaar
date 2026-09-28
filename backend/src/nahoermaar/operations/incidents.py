@@ -134,7 +134,11 @@ class IncidentReport:
     associated_users: tuple[AssociatedUserCount, ...]
     current_failure_free_seconds: float | None
     longest_failure_free_seconds: float | None
-    recent: tuple[Incident, ...]
+    items: tuple[Incident, ...]
+    page: int
+    page_size: int
+    total: int
+    page_count: int
 
 
 def _enum_values[EnumValue: StrEnum](members: type[EnumValue]) -> list[str]:
@@ -236,16 +240,28 @@ class IncidentRepository:
         self,
         started_at: datetime,
         ended_at: datetime,
+        *,
+        severity: IncidentSeverity | None = None,
+        component: str | None = None,
+        error_code: str | None = None,
+        actor_id: UserId | None = None,
     ) -> tuple[Incident, ...]:
+        query = select(_IncidentRow).where(
+            _IncidentRow.occurred_at >= started_at,
+            _IncidentRow.occurred_at <= ended_at,
+        )
+        if severity is not None:
+            query = query.where(_IncidentRow.severity == severity)
+        if component is not None:
+            query = query.where(_IncidentRow.component == component)
+        if error_code is not None:
+            query = query.where(_IncidentRow.error_code == error_code)
+        if actor_id is not None:
+            query = query.where(_IncidentRow.actor_id == actor_id)
         rows = (
             (
                 await self._session.execute(
-                    select(_IncidentRow)
-                    .where(
-                        _IncidentRow.occurred_at >= started_at,
-                        _IncidentRow.occurred_at <= ended_at,
-                    )
-                    .order_by(_IncidentRow.occurred_at, _IncidentRow.id)
+                    query.order_by(_IncidentRow.occurred_at, _IncidentRow.id)
                 )
             )
             .scalars()
@@ -338,7 +354,23 @@ class IncidentService:
             await work.commit()
         return inserted
 
-    async def report(self, period: IncidentPeriod) -> IncidentReport:
+    async def report(
+        self,
+        period: IncidentPeriod,
+        *,
+        page: int = 1,
+        page_size: int = 20,
+        severity: IncidentSeverity | None = None,
+        component: str | None = None,
+        error_code: str | None = None,
+        actor_id: UserId | None = None,
+    ) -> IncidentReport:
+        if page < 1:
+            raise ValueError("Incident page must be positive.")
+        if not 1 <= page_size <= 100:
+            raise ValueError("Incident page size must be between 1 and 100.")
+        component = component.strip() if component else None
+        error_code = error_code.strip() if error_code else None
         ended_at = self._clock().astimezone(UTC)
         started_at = ended_at - _period_delta(period)
         retention_cutoff = ended_at - _RETENTION
@@ -347,7 +379,14 @@ class IncidentService:
         async with self._units() as work:
             repository = IncidentRepository(work.session)
             await repository.purge_before(retention_cutoff)
-            incidents = await repository.between(started_at, ended_at)
+            incidents = await repository.between(
+                started_at,
+                ended_at,
+                severity=severity,
+                component=component,
+                error_code=error_code,
+                actor_id=actor_id,
+            )
             identities = await repository.identities(
                 {
                     incident.actor_id
@@ -356,7 +395,15 @@ class IncidentService:
                 }
             )
             await work.commit()
-        return _report(period, started_at, ended_at, incidents, identities)
+        return _report(
+            period,
+            started_at,
+            ended_at,
+            incidents,
+            identities,
+            page=page,
+            page_size=page_size,
+        )
 
 
 def _incident(row: _IncidentRow) -> Incident:
@@ -380,6 +427,9 @@ def _report(
     ended_at: datetime,
     incidents: tuple[Incident, ...],
     identities: dict[UserId, IncidentIdentity],
+    *,
+    page: int,
+    page_size: int,
 ) -> IncidentReport:
     severity = Counter(incident.severity for incident in incidents)
     trigger = Counter(incident.trigger for incident in incidents)
@@ -397,6 +447,9 @@ def _report(
         if incident.kind is IncidentKind.REJECTED and incident.actor_id is not None:
             rejected_users[incident.actor_id] += 1
     failure_free, longest = _failure_free(incidents, ended_at)
+    total = len(incidents)
+    offset = (page - 1) * page_size
+    items = tuple(reversed(incidents))[offset : offset + page_size]
     return IncidentReport(
         period=period,
         started_at=started_at,
@@ -436,7 +489,11 @@ def _report(
         ),
         current_failure_free_seconds=failure_free,
         longest_failure_free_seconds=longest,
-        recent=tuple(reversed(incidents[-50:])),
+        items=items,
+        page=page,
+        page_size=page_size,
+        total=total,
+        page_count=(total + page_size - 1) // page_size,
     )
 
 

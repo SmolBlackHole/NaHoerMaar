@@ -12,7 +12,7 @@ export interface paths {
             cookie?: never;
         };
         /** Access State */
-        get: operations["access_state_api_access_get"];
+        get: operations["getAccess"];
         put?: never;
         post?: never;
         delete?: never;
@@ -30,10 +30,10 @@ export interface paths {
         };
         get?: never;
         /** Grant Access */
-        put: operations["grant_access_api_access__discord_id__put"];
+        put: operations["grantAccess"];
         post?: never;
         /** Revoke Access */
-        delete: operations["revoke_access_api_access__discord_id__delete"];
+        delete: operations["revokeAccess"];
         options?: never;
         head?: never;
         patch?: never;
@@ -47,7 +47,7 @@ export interface paths {
             cookie?: never;
         };
         /** Discord Members */
-        get: operations["discord_members_api_access_members_get"];
+        get: operations["listDiscordMembers"];
         put?: never;
         post?: never;
         delete?: never;
@@ -64,7 +64,7 @@ export interface paths {
             cookie?: never;
         };
         /** Begin */
-        get: operations["begin_api_auth_discord_get"];
+        get: operations["beginDiscordLogin"];
         put?: never;
         post?: never;
         delete?: never;
@@ -81,7 +81,7 @@ export interface paths {
             cookie?: never;
         };
         /** Callback */
-        get: operations["callback_api_auth_discord_callback_get"];
+        get: operations["completeDiscordLogin"];
         put?: never;
         post?: never;
         delete?: never;
@@ -100,7 +100,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Logout */
-        post: operations["logout_api_auth_logout_post"];
+        post: operations["logout"];
         delete?: never;
         options?: never;
         head?: never;
@@ -115,7 +115,7 @@ export interface paths {
             cookie?: never;
         };
         /** Session */
-        get: operations["session_api_auth_session_get"];
+        get: operations["getSession"];
         put?: never;
         post?: never;
         delete?: never;
@@ -124,7 +124,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/catalog/{kind}/{version}": {
+    "/api/catalog/discoveries/{version}": {
         parameters: {
             query?: never;
             header?: never;
@@ -132,7 +132,7 @@ export interface paths {
             cookie?: never;
         };
         /** Snapshot */
-        get: operations["snapshot_api_catalog__kind___version__get"];
+        get: operations["getCatalogDiscovery"];
         put?: never;
         post?: never;
         delete?: never;
@@ -141,7 +141,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/catalog/{kind}/{version}/continue": {
+    "/api/catalog/discoveries/{version}/continuations": {
         parameters: {
             query?: never;
             header?: never;
@@ -151,7 +151,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Continue Snapshot */
-        post: operations["continue_snapshot_api_catalog__kind___version__continue_post"];
+        post: operations["continueCatalogDiscovery"];
         delete?: never;
         options?: never;
         head?: never;
@@ -166,7 +166,7 @@ export interface paths {
             cookie?: never;
         };
         /** Link */
-        get: operations["link_api_catalog_link_get"];
+        get: operations["resolveCatalogLink"];
         put?: never;
         post?: never;
         delete?: never;
@@ -183,7 +183,7 @@ export interface paths {
             cookie?: never;
         };
         /** Playlist */
-        get: operations["playlist_api_catalog_playlist_get"];
+        get: operations["discoverCatalogPlaylist"];
         put?: never;
         post?: never;
         delete?: never;
@@ -200,7 +200,7 @@ export interface paths {
             cookie?: never;
         };
         /** Search */
-        get: operations["search_api_catalog_search_get"];
+        get: operations["searchCatalog"];
         put?: never;
         post?: never;
         delete?: never;
@@ -217,7 +217,7 @@ export interface paths {
             cookie?: never;
         };
         /** Events */
-        get: operations["events_api_events_get"];
+        get: operations["streamEvents"];
         put?: never;
         post?: never;
         delete?: never;
@@ -234,7 +234,7 @@ export interface paths {
             cookie?: never;
         };
         /** Incident Report */
-        get: operations["incident_report_api_incidents_get"];
+        get: operations["getIncidentReport"];
         put?: never;
         post?: never;
         delete?: never;
@@ -251,7 +251,7 @@ export interface paths {
             cookie?: never;
         };
         /** Background Jobs */
-        get: operations["background_jobs_api_jobs_get"];
+        get: operations["listBackgroundJobs"];
         put?: never;
         post?: never;
         delete?: never;
@@ -270,7 +270,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Run Job */
-        post: operations["run_job_api_jobs__job_id__runs_post"];
+        post: operations["runBackgroundJob"];
         delete?: never;
         options?: never;
         head?: never;
@@ -285,7 +285,7 @@ export interface paths {
             cookie?: never;
         };
         /** Background Job Runs */
-        get: operations["background_job_runs_api_jobs_runs_get"];
+        get: operations["listBackgroundJobRuns"];
         put?: never;
         post?: never;
         delete?: never;
@@ -302,24 +302,7 @@ export interface paths {
             cookie?: never;
         };
         /** Background Job Run */
-        get: operations["background_job_run_api_jobs_runs__run_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/listening/recent": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Playback History */
-        get: operations["playback_history_api_listening_recent_get"];
+        get: operations["getBackgroundJobRun"];
         put?: never;
         post?: never;
         delete?: never;
@@ -336,7 +319,24 @@ export interface paths {
             cookie?: never;
         };
         /** Recent Logs */
-        get: operations["recent_logs_api_logs_get"];
+        get: operations["listLogs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/playbacks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Playbacks */
+        get: operations["listPlaybacks"];
         put?: never;
         post?: never;
         delete?: never;
@@ -353,33 +353,17 @@ export interface paths {
             cookie?: never;
         };
         /** Player */
-        get: operations["player_api_player_get"];
+        get: operations["getPlayer"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /** Update Player */
+        patch: operations["updatePlayer"];
         trace?: never;
     };
-    "/api/player/crossfade": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /** Set Crossfade */
-        put: operations["set_crossfade_api_player_crossfade_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/player/pause": {
+    "/api/player/control": {
         parameters: {
             query?: never;
             header?: never;
@@ -388,25 +372,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Pause */
-        post: operations["pause_api_player_pause_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/player/play": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Play */
-        post: operations["play_api_player_play_post"];
+        /** Control */
+        post: operations["controlPlayer"];
         delete?: never;
         options?: never;
         head?: never;
@@ -423,7 +390,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Add */
-        post: operations["add_api_player_queue_post"];
+        post: operations["addQueueEntries"];
         delete?: never;
         options?: never;
         head?: never;
@@ -438,14 +405,14 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Move */
-        put: operations["move_api_player_queue__entry_id__put"];
+        put?: never;
         post?: never;
         /** Remove */
-        delete: operations["remove_api_player_queue__entry_id__delete"];
+        delete: operations["removeQueueEntry"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Move */
+        patch: operations["moveQueueEntry"];
         trace?: never;
     };
     "/api/player/queue/clear": {
@@ -458,7 +425,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Clear */
-        post: operations["clear_api_player_queue_clear_post"];
+        post: operations["clearQueue"];
         delete?: never;
         options?: never;
         head?: never;
@@ -475,7 +442,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Undo */
-        post: operations["undo_api_player_queue_undo_post"];
+        post: operations["undoQueue"];
         delete?: never;
         options?: never;
         head?: never;
@@ -490,10 +457,11 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        put?: never;
         /** Start Radio */
-        post: operations["start_radio_api_player_radio_post"];
-        delete?: never;
+        put: operations["startRadio"];
+        post?: never;
+        /** Stop Radio */
+        delete: operations["stopRadio"];
         options?: never;
         head?: never;
         patch?: never;
@@ -509,58 +477,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Retry Radio */
-        post: operations["retry_radio_api_player_radio_retry_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/player/radio/stop": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Stop Radio */
-        post: operations["stop_radio_api_player_radio_stop_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/player/seek": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Seek */
-        post: operations["seek_api_player_seek_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/player/skip": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Skip */
-        post: operations["skip_api_player_skip_post"];
+        post: operations["retryRadio"];
         delete?: never;
         options?: never;
         head?: never;
@@ -576,16 +493,16 @@ export interface paths {
         };
         get?: never;
         /** Set Sleep Timer */
-        put: operations["set_sleep_timer_api_player_sleep_timer_put"];
+        put: operations["setSleepTimer"];
         post?: never;
         /** Cancel Sleep Timer */
-        delete: operations["cancel_sleep_timer_api_player_sleep_timer_delete"];
+        delete: operations["cancelSleepTimer"];
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/player/stop": {
+    "/api/player/voice": {
         parameters: {
             query?: never;
             header?: never;
@@ -593,10 +510,11 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        put?: never;
-        /** Stop */
-        post: operations["stop_api_player_stop_post"];
-        delete?: never;
+        /** Join Voice */
+        put: operations["joinVoice"];
+        post?: never;
+        /** Leave Voice */
+        delete: operations["leaveVoice"];
         options?: never;
         head?: never;
         patch?: never;
@@ -610,59 +528,8 @@ export interface paths {
             cookie?: never;
         };
         /** Voice Channels */
-        get: operations["voice_channels_api_player_voice_channels_get"];
+        get: operations["listVoiceChannels"];
         put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/player/voice/join": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Join Voice */
-        post: operations["join_voice_api_player_voice_join_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/player/voice/leave": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Leave Voice */
-        post: operations["leave_voice_api_player_voice_leave_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/player/volume": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /** Set Volume */
-        put: operations["set_volume_api_player_volume_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -678,7 +545,7 @@ export interface paths {
             cookie?: never;
         };
         /** Profile */
-        get: operations["profile_api_profiles__user_id__get"];
+        get: operations["getProfile"];
         put?: never;
         post?: never;
         delete?: never;
@@ -695,7 +562,7 @@ export interface paths {
             cookie?: never;
         };
         /** Own Profile */
-        get: operations["own_profile_api_profiles_me_get"];
+        get: operations["getCurrentProfile"];
         put?: never;
         post?: never;
         delete?: never;
@@ -704,32 +571,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/statistics/overview": {
+    "/api/statistics": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Overview */
-        get: operations["overview_api_statistics_overview_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/statistics/users/{user_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** User Statistics */
-        get: operations["user_statistics_api_statistics_users__user_id__get"];
+        /** Statistics */
+        get: operations["getStatistics"];
         put?: never;
         post?: never;
         delete?: never;
@@ -746,47 +596,14 @@ export interface paths {
             cookie?: never;
         };
         /** Own Account */
-        get: operations["own_account_api_users_me_get"];
+        get: operations["getCurrentUser"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/users/me/appearance": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /** Update Appearance */
-        put: operations["update_appearance_api_users_me_appearance_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/users/me/profile": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /** Update Profile */
-        put: operations["update_profile_api_users_me_profile_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
+        /** Update Current User */
+        patch: operations["updateCurrentUser"];
         trace?: never;
     };
 }
@@ -892,11 +709,6 @@ export interface components {
         /** AddQueueInput */
         AddQueueInput: {
             /**
-             * Operation Id
-             * Format: uuid
-             */
-            operation_id: string;
-            /**
              * Skip Duplicates
              * @default false
              */
@@ -987,10 +799,12 @@ export interface components {
         };
         /** BackgroundJobRunPageView */
         BackgroundJobRunPageView: {
-            /** Entries */
-            entries: components["schemas"]["BackgroundJobRunSummaryView"][];
+            /** Items */
+            items: components["schemas"]["BackgroundJobRunSummaryView"][];
             /** Next Cursor */
             next_cursor: string | null;
+            /** Page Size */
+            page_size: number;
         };
         /** BackgroundJobRunSummaryView */
         BackgroundJobRunSummaryView: {
@@ -1179,11 +993,6 @@ export interface components {
         ClearQueueInput: {
             /** Expected Queue Revision */
             expected_queue_revision: number;
-            /**
-             * Operation Id
-             * Format: uuid
-             */
-            operation_id: string;
             /** Requested By */
             requested_by?: string | null;
         };
@@ -1222,6 +1031,17 @@ export interface components {
              */
             user_id: string;
         };
+        /**
+         * ControlAction
+         * @enum {string}
+         */
+        ControlAction: "play" | "pause" | "skip" | "stop" | "seek";
+        /** ControlInput */
+        ControlInput: {
+            action: components["schemas"]["ControlAction"];
+            /** Seconds */
+            seconds?: number | null;
+        };
         /** CoverageView */
         CoverageView: {
             /**
@@ -1243,15 +1063,10 @@ export interface components {
             /** Timezone */
             timezone: string;
         };
-        /** CrossfadeInput */
-        CrossfadeInput: {
-            /**
-             * Operation Id
-             * Format: uuid
-             */
-            operation_id: string;
-            /** Seconds */
-            seconds: number;
+        /** CurrentUserUpdate */
+        CurrentUserUpdate: {
+            appearance?: components["schemas"]["AppearanceUpdate"] | null;
+            profile?: components["schemas"]["ProfileUpdate"] | null;
         };
         /** DiscordMembersView */
         DiscordMembersView: {
@@ -1293,15 +1108,8 @@ export interface components {
             source: components["schemas"]["TrackSourceView"];
             track: components["schemas"]["TrackView"];
         };
-        /**
-         * DiscoveryKind
-         * @enum {string}
-         */
-        DiscoveryKind: "search" | "playlist";
         /** DiscoveryView */
         DiscoveryView: {
-            /** Entries */
-            entries: components["schemas"]["DiscoveryEntryView"][];
             /**
              * Expires At
              * Format: date-time
@@ -1312,12 +1120,16 @@ export interface components {
              * Format: date-time
              */
             fetched_at: string;
+            /** Items */
+            items: components["schemas"]["DiscoveryEntryView"][];
             /** Kind */
             kind: string;
             /** Next Offset */
             next_offset: number | null;
             /** Offset */
             offset: number;
+            /** Page Size */
+            page_size: number;
             /** Playlist Title */
             playlist_title: string | null;
             /** Provider */
@@ -1345,8 +1157,8 @@ export interface components {
          * @description One machine-readable API failure.
          */
         ErrorView: {
-            /** Error */
-            error: string;
+            /** Code */
+            code: string;
             /** Retryable */
             retryable?: boolean | null;
         };
@@ -1437,24 +1249,39 @@ export interface components {
              * Format: date-time
              */
             ended_at: string;
+            /** Items */
+            items: components["schemas"]["IncidentView"][];
             /** Longest Failure Free Seconds */
             longest_failure_free_seconds: number | null;
             /** Operations */
             operations: components["schemas"]["IncidentOperationCountView"][];
+            /** Page */
+            page: number;
+            /** Page Count */
+            page_count: number;
+            /** Page Size */
+            page_size: number;
             period: components["schemas"]["IncidentPeriod"];
-            /** Recent */
-            recent: components["schemas"]["IncidentView"][];
             /** Recorded Since */
             recorded_since: string | null;
             /** Retention Days */
             retention_days: number;
+            /** Snapshot */
+            snapshot: string | null;
             /**
              * Started At
              * Format: date-time
              */
             started_at: string;
+            /** Total */
+            total: number;
             totals: components["schemas"]["IncidentTotalsView"];
         };
+        /**
+         * IncidentSeverity
+         * @enum {string}
+         */
+        IncidentSeverity: "warning" | "error" | "critical";
         /** IncidentTotalsView */
         IncidentTotalsView: {
             /** Critical */
@@ -1550,16 +1377,6 @@ export interface components {
          * @enum {string}
          */
         JobRunStatus: "running" | "succeeded" | "partial" | "failed" | "cancelled";
-        /** JoinVoiceInput */
-        JoinVoiceInput: {
-            /** Channel Id */
-            channel_id: string;
-            /**
-             * Operation Id
-             * Format: uuid
-             */
-            operation_id: string;
-        };
         /**
          * ListenerBadgeKind
          * @enum {string}
@@ -1633,8 +1450,8 @@ export interface components {
         LogsView: {
             /** Cursor */
             cursor: number;
-            /** Entries */
-            entries: components["schemas"]["LogEntryView"][];
+            /** Items */
+            items: components["schemas"]["LogEntryView"][];
         };
         /**
          * MediaKind
@@ -1647,14 +1464,14 @@ export interface components {
             before_entry_id?: string | null;
             /** Expected Queue Revision */
             expected_queue_revision: number;
+        };
+        /** MutationView */
+        MutationView: {
             /**
              * Operation Id
              * Format: uuid
              */
             operation_id: string;
-        };
-        /** MutationView */
-        MutationView: {
             outcome: components["schemas"]["OutcomeView"];
             player: components["schemas"]["PlayerView"];
             /** Replayed */
@@ -1665,14 +1482,6 @@ export interface components {
          * @enum {string}
          */
         NeutralColor: "slate" | "gray" | "zinc" | "neutral" | "stone";
-        /** OperationInput */
-        OperationInput: {
-            /**
-             * Operation Id
-             * Format: uuid
-             */
-            operation_id: string;
-        };
         /** OutcomeView */
         OutcomeView: {
             /** Action */
@@ -1777,8 +1586,7 @@ export interface components {
             contributor: components["schemas"]["PlaybackContributorView"] | null;
             /** Duration Seconds */
             duration_seconds: number | null;
-            /** End Reason */
-            end_reason: string | null;
+            end_reason: components["schemas"]["PlaybackEndReason"] | null;
             /** Ended At */
             ended_at: string | null;
             /** Group Audio Seconds */
@@ -1837,8 +1645,8 @@ export interface components {
         PlaybackHistoryPageView: {
             /** Contributors */
             contributors: components["schemas"]["PlaybackHistoryFilterContributorView"][];
-            /** Entries */
-            entries: components["schemas"]["PlaybackHistoryEntryView"][];
+            /** Items */
+            items: components["schemas"]["PlaybackHistoryEntryView"][];
             /** Page */
             page: number;
             /** Page Count */
@@ -1891,6 +1699,13 @@ export interface components {
          * @enum {string}
          */
         PlayerRuntimeErrorCode: "playback_failed" | "radio_provider_failed" | "voice_connection_failed";
+        /** PlayerSettingsInput */
+        PlayerSettingsInput: {
+            /** Crossfade Seconds */
+            crossfade_seconds?: number | null;
+            /** Volume */
+            volume?: number | null;
+        };
         /** PlayerView */
         PlayerView: {
             /** Channel Id */
@@ -1996,11 +1811,6 @@ export interface components {
              * Format: uuid
              */
             expected_generation: string;
-            /**
-             * Operation Id
-             * Format: uuid
-             */
-            operation_id: string;
         };
         /** RadioSeedInput */
         RadioSeedInput: {
@@ -2223,11 +2033,6 @@ export interface components {
         RevisionInput: {
             /** Expected Queue Revision */
             expected_queue_revision: number;
-            /**
-             * Operation Id
-             * Format: uuid
-             */
-            operation_id: string;
         };
         /** RunJob */
         RunJob: {
@@ -2237,16 +2042,6 @@ export interface components {
             batch_size?: number | null;
             /** Preview */
             preview?: boolean | null;
-        };
-        /** SeekInput */
-        SeekInput: {
-            /**
-             * Operation Id
-             * Format: uuid
-             */
-            operation_id: string;
-            /** Seconds */
-            seconds: number;
         };
         /** SessionView */
         SessionView: {
@@ -2288,11 +2083,6 @@ export interface components {
         };
         /** SleepTimerInput */
         SleepTimerInput: {
-            /**
-             * Operation Id
-             * Format: uuid
-             */
-            operation_id: string;
             /** Seconds */
             seconds: number;
         };
@@ -2300,11 +2090,6 @@ export interface components {
         StartRadioInput: {
             /** Expected Generation */
             expected_generation?: string | null;
-            /**
-             * Operation Id
-             * Format: uuid
-             */
-            operation_id: string;
             seed: components["schemas"]["RadioSeedInput"];
         };
         /**
@@ -2392,11 +2177,6 @@ export interface components {
         /** UndoQueueInput */
         UndoQueueInput: {
             /**
-             * Operation Id
-             * Format: uuid
-             */
-            operation_id: string;
-            /**
              * Undo Id
              * Format: uuid
              */
@@ -2441,6 +2221,11 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** VoiceInput */
+        VoiceInput: {
+            /** Channel Id */
+            channel_id: string;
+        };
         /** VoiceRuntimeView */
         VoiceRuntimeView: {
             /** Attempt */
@@ -2450,16 +2235,6 @@ export interface components {
             error_code: components["schemas"]["PlayerRuntimeErrorCode"] | null;
             /** Phase */
             phase: string;
-        };
-        /** VolumeInput */
-        VolumeInput: {
-            /**
-             * Operation Id
-             * Format: uuid
-             */
-            operation_id: string;
-            /** Volume */
-            volume: number;
         };
         /** WeekdayListeningView */
         WeekdayListeningView: {
@@ -2477,7 +2252,7 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    access_state_api_access_get: {
+    getAccess: {
         parameters: {
             query?: {
                 history_limit?: number;
@@ -2497,15 +2272,6 @@ export interface operations {
                     "application/json": components["schemas"]["AccessView"];
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
                 headers: {
@@ -2524,44 +2290,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Validation failed */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Too many requests */
-            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2578,15 +2308,6 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency failed */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Dependency unavailable */
             503: {
                 headers: {
@@ -2596,18 +2317,9 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    grant_access_api_access__discord_id__put: {
+    grantAccess: {
         parameters: {
             query?: never;
             header?: never;
@@ -2627,15 +2339,6 @@ export interface operations {
                     "application/json": components["schemas"]["AccessEventView"] | null;
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
                 headers: {
@@ -2647,24 +2350,6 @@ export interface operations {
             };
             /** @description Request not allowed */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2690,26 +2375,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Too many requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Internal server error */
             500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency failed */
-            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2726,18 +2393,9 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    revoke_access_api_access__discord_id__delete: {
+    revokeAccess: {
         parameters: {
             query?: never;
             header?: never;
@@ -2757,15 +2415,6 @@ export interface operations {
                     "application/json": components["schemas"]["AccessEventView"] | null;
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
                 headers: {
@@ -2777,24 +2426,6 @@ export interface operations {
             };
             /** @description Request not allowed */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2820,26 +2451,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Too many requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Internal server error */
             500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency failed */
-            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2856,20 +2469,14 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    discord_members_api_access_members_get: {
+    listDiscordMembers: {
         parameters: {
-            query?: never;
+            query?: {
+                guild_id?: string | null;
+                q?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2885,15 +2492,6 @@ export interface operations {
                     "application/json": components["schemas"]["DiscordMembersView"];
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
                 headers: {
@@ -2912,44 +2510,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Validation failed */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Too many requests */
-            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2966,15 +2528,6 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency failed */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Dependency unavailable */
             503: {
                 headers: {
@@ -2984,18 +2537,9 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    begin_api_auth_discord_get: {
+    beginDiscordLogin: {
         parameters: {
             query?: never;
             header?: never;
@@ -3011,62 +2555,8 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Request not allowed */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Validation failed */
-            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3092,15 +2582,6 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency failed */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Dependency unavailable */
             503: {
                 headers: {
@@ -3110,18 +2591,9 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    callback_api_auth_discord_callback_get: {
+    completeDiscordLogin: {
         parameters: {
             query?: {
                 code?: string | null;
@@ -3141,53 +2613,8 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Request not allowed */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3204,15 +2631,6 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Too many requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Internal server error */
             500: {
                 headers: {
@@ -3222,36 +2640,9 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency failed */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Dependency unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    logout_api_auth_logout_post: {
+    logout: {
         parameters: {
             query?: never;
             header?: never;
@@ -3267,15 +2658,6 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
                 headers: {
@@ -3294,62 +2676,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Validation failed */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Too many requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Internal server error */
             500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency failed */
-            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3366,18 +2694,9 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    session_api_auth_session_get: {
+    getSession: {
         parameters: {
             query?: never;
             header?: never;
@@ -3395,71 +2714,8 @@ export interface operations {
                     "application/json": components["schemas"]["SessionView"];
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Request not allowed */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Validation failed */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Too many requests */
-            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3476,15 +2732,6 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency failed */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Dependency unavailable */
             503: {
                 headers: {
@@ -3494,26 +2741,16 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    snapshot_api_catalog__kind___version__get: {
+    getCatalogDiscovery: {
         parameters: {
             query?: {
-                limit?: number;
                 offset?: number;
+                page_size?: number;
             };
             header?: never;
             path: {
-                kind: components["schemas"]["DiscoveryKind"];
                 version: string;
             };
             cookie?: never;
@@ -3529,26 +2766,8 @@ export interface operations {
                     "application/json": components["schemas"]["DiscoveryView"];
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Request not allowed */
-            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3565,35 +2784,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Validation failed */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Too many requests */
-            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3610,15 +2802,6 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency failed */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Dependency unavailable */
             503: {
                 headers: {
@@ -3628,26 +2811,16 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    continue_snapshot_api_catalog__kind___version__continue_post: {
+    continueCatalogDiscovery: {
         parameters: {
             query: {
-                limit?: number;
                 offset: number;
+                page_size?: number;
             };
             header?: never;
             path: {
-                kind: components["schemas"]["DiscoveryKind"];
                 version: string;
             };
             cookie?: never;
@@ -3663,26 +2836,8 @@ export interface operations {
                     "application/json": components["schemas"]["DiscoveryView"];
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Request not allowed */
-            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3699,35 +2854,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Validation failed */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Too many requests */
-            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3762,18 +2890,9 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    link_api_catalog_link_get: {
+    resolveCatalogLink: {
         parameters: {
             query: {
                 provider?: string | null;
@@ -3794,26 +2913,8 @@ export interface operations {
                     "application/json": components["schemas"]["TrackView"];
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Request not allowed */
-            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3830,35 +2931,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Validation failed */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Too many requests */
-            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3893,18 +2967,9 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    playlist_api_catalog_playlist_get: {
+    discoverCatalogPlaylist: {
         parameters: {
             query: {
                 limit?: number;
@@ -3927,15 +2992,6 @@ export interface operations {
                     "application/json": components["schemas"]["DiscoveryView"];
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
                 headers: {
@@ -3945,53 +3001,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Request not allowed */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Validation failed */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Too many requests */
-            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4026,18 +3037,9 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    search_api_catalog_search_get: {
+    searchCatalog: {
         parameters: {
             query: {
                 limit?: number;
@@ -4060,15 +3062,6 @@ export interface operations {
                     "application/json": components["schemas"]["DiscoveryView"];
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
                 headers: {
@@ -4078,53 +3071,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Request not allowed */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Validation failed */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Too many requests */
-            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4159,18 +3107,9 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    events_api_events_get: {
+    streamEvents: {
         parameters: {
             query?: never;
             header?: never;
@@ -4188,75 +3127,13 @@ export interface operations {
                     "text/event-stream": unknown;
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/event-stream": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/event-stream": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Request not allowed */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/event-stream": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/event-stream": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/event-stream": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/event-stream": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Validation failed */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/event-stream": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Too many requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
+                    "application/json": components["schemas"]["ErrorView"];
                     "text/event-stream": components["schemas"]["ErrorView"];
                 };
             };
@@ -4266,15 +3143,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/event-stream": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency failed */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
+                    "application/json": components["schemas"]["ErrorView"];
                     "text/event-stream": components["schemas"]["ErrorView"];
                 };
             };
@@ -4284,24 +3153,22 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/event-stream": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
+                    "application/json": components["schemas"]["ErrorView"];
                     "text/event-stream": components["schemas"]["ErrorView"];
                 };
             };
         };
     };
-    incident_report_api_incidents_get: {
+    getIncidentReport: {
         parameters: {
             query?: {
+                actor_id?: string | null;
+                code?: string | null;
+                component?: string | null;
+                page?: number;
+                page_size?: number;
                 period?: components["schemas"]["IncidentPeriod"];
+                severity?: components["schemas"]["IncidentSeverity"] | null;
             };
             header?: never;
             path?: never;
@@ -4318,15 +3185,6 @@ export interface operations {
                     "application/json": components["schemas"]["IncidentReportView"];
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
                 headers: {
@@ -4345,44 +3203,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Validation failed */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Too many requests */
-            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4399,15 +3221,6 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency failed */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Dependency unavailable */
             503: {
                 headers: {
@@ -4417,18 +3230,9 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    background_jobs_api_jobs_get: {
+    listBackgroundJobs: {
         parameters: {
             query?: never;
             header?: never;
@@ -4446,15 +3250,6 @@ export interface operations {
                     "application/json": components["schemas"]["BackgroundJobsView"];
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
                 headers: {
@@ -4473,62 +3268,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Validation failed */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Too many requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Internal server error */
             500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency failed */
-            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4545,18 +3286,9 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    run_job_api_jobs__job_id__runs_post: {
+    runBackgroundJob: {
         parameters: {
             query?: never;
             header?: never;
@@ -4580,15 +3312,6 @@ export interface operations {
                     "application/json": components["schemas"]["BackgroundJobView"];
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
                 headers: {
@@ -4616,15 +3339,6 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -4643,26 +3357,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Too many requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Internal server error */
             500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency failed */
-            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4679,23 +3375,14 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    background_job_runs_api_jobs_runs_get: {
+    listBackgroundJobRuns: {
         parameters: {
             query?: {
                 cursor?: string | null;
                 job_id?: components["schemas"]["JobId"] | null;
-                limit?: number;
+                page_size?: number;
                 status?: components["schemas"]["JobRunStatus"] | null;
             };
             header?: never;
@@ -4713,15 +3400,6 @@ export interface operations {
                     "application/json": components["schemas"]["BackgroundJobRunPageView"];
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
                 headers: {
@@ -4740,44 +3418,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Validation failed */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Too many requests */
-            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4794,15 +3436,6 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency failed */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Dependency unavailable */
             503: {
                 headers: {
@@ -4812,18 +3445,9 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    background_job_run_api_jobs_runs__run_id__get: {
+    getBackgroundJobRun: {
         parameters: {
             query?: never;
             header?: never;
@@ -4843,15 +3467,6 @@ export interface operations {
                     "application/json": components["schemas"]["BackgroundJobRunView"];
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
                 headers: {
@@ -4879,35 +3494,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Validation failed */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Too many requests */
-            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4924,15 +3512,6 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency failed */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Dependency unavailable */
             503: {
                 headers: {
@@ -4942,157 +3521,20 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    playback_history_api_listening_recent_get: {
+    listLogs: {
         parameters: {
             query?: {
-                page?: number;
-                page_size?: number;
-                q?: string | null;
-                radio?: boolean | null;
-                requested_by?: string | null;
-                snapshot?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PlaybackHistoryPageView"];
-                };
-            };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Request not allowed */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Validation failed */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Too many requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Internal server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency failed */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Dependency unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-        };
-    };
-    recent_logs_api_logs_get: {
-        parameters: {
-            query?: {
+                actor_id?: string | null;
                 after?: number | null;
+                causation_id?: string | null;
+                correlation_id?: string | null;
+                level?: string | null;
                 limit?: number;
+                q?: string | null;
+                request_id?: string | null;
+                source?: string | null;
             };
             header?: never;
             path?: never;
@@ -5109,15 +3551,6 @@ export interface operations {
                     "application/json": components["schemas"]["LogsView"];
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
                 headers: {
@@ -5136,44 +3569,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Validation failed */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Too many requests */
-            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5190,8 +3587,65 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency failed */
-            502: {
+            /** @description Dependency unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+        };
+    };
+    listPlaybacks: {
+        parameters: {
+            query?: {
+                end_reason?: components["schemas"]["PlaybackEndReason"] | null;
+                page?: number;
+                page_size?: number;
+                q?: string | null;
+                radio?: boolean | null;
+                requested_by?: string | null;
+                snapshot?: string | null;
+                started_from?: string | null;
+                started_to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaybackHistoryPageView"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5208,18 +3662,9 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    player_api_player_get: {
+    getPlayer: {
         parameters: {
             query?: never;
             header?: never;
@@ -5237,71 +3682,8 @@ export interface operations {
                     "application/json": components["schemas"]["PlayerView"];
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Request not allowed */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Validation failed */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Too many requests */
-            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5318,15 +3700,6 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency failed */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Dependency unavailable */
             503: {
                 headers: {
@@ -5336,27 +3709,20 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    set_crossfade_api_player_crossfade_put: {
+    updatePlayer: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
             path?: never;
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CrossfadeInput"];
+                "application/json": components["schemas"]["PlayerSettingsInput"];
             };
         };
         responses: {
@@ -5369,15 +3735,6 @@ export interface operations {
                     "application/json": components["schemas"]["MutationView"];
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
                 headers: {
@@ -5389,24 +3746,6 @@ export interface operations {
             };
             /** @description Request not allowed */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5432,26 +3771,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Too many requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Internal server error */
             500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency failed */
-            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5468,27 +3789,20 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    pause_api_player_pause_post: {
+    controlPlayer: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
             path?: never;
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["OperationInput"];
+                "application/json": components["schemas"]["ControlInput"];
             };
         };
         responses: {
@@ -5501,15 +3815,6 @@ export interface operations {
                     "application/json": components["schemas"]["MutationView"];
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
                 headers: {
@@ -5521,24 +3826,6 @@ export interface operations {
             };
             /** @description Request not allowed */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5564,26 +3851,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Too many requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Internal server error */
             500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency failed */
-            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5600,153 +3869,14 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    play_api_player_play_post: {
+    addQueueEntries: {
         parameters: {
             query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["OperationInput"];
+            header: {
+                "Idempotency-Key": string;
             };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MutationView"];
-                };
-            };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Request not allowed */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Validation failed */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Too many requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Internal server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency failed */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Dependency unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-        };
-    };
-    add_api_player_queue_post: {
-        parameters: {
-            query?: never;
-            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -5765,15 +3895,6 @@ export interface operations {
                     "application/json": components["schemas"]["MutationView"];
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
                 headers: {
@@ -5801,15 +3922,6 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -5828,26 +3940,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Too many requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Internal server error */
             500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency failed */
-            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5864,155 +3958,14 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    move_api_player_queue__entry_id__put: {
+    removeQueueEntry: {
         parameters: {
             query?: never;
-            header?: never;
-            path: {
-                entry_id: string;
+            header: {
+                "Idempotency-Key": string;
             };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["MoveQueueInput"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MutationView"];
-                };
-            };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Request not allowed */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Validation failed */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Too many requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Internal server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency failed */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Dependency unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-        };
-    };
-    remove_api_player_queue__entry_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
             path: {
                 entry_id: string;
             };
@@ -6033,13 +3986,95 @@ export interface operations {
                     "application/json": components["schemas"]["MutationView"];
                 };
             };
-            /** @description Invalid request */
-            400: {
+            /** @description Authentication required */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Request not allowed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description State conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Dependency unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+        };
+    };
+    moveQueueEntry: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MoveQueueInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MutationView"];
                 };
             };
             /** @description Authentication required */
@@ -6069,15 +4104,6 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -6096,26 +4122,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Too many requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Internal server error */
             500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency failed */
-            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6132,21 +4140,14 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    clear_api_player_queue_clear_post: {
+    clearQueue: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -6165,15 +4166,6 @@ export interface operations {
                     "application/json": components["schemas"]["MutationView"];
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
                 headers: {
@@ -6185,24 +4177,6 @@ export interface operations {
             };
             /** @description Request not allowed */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6228,26 +4202,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Too many requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Internal server error */
             500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency failed */
-            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6264,21 +4220,14 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    undo_api_player_queue_undo_post: {
+    undoQueue: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -6297,15 +4246,6 @@ export interface operations {
                     "application/json": components["schemas"]["MutationView"];
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
                 headers: {
@@ -6317,24 +4257,6 @@ export interface operations {
             };
             /** @description Request not allowed */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6360,26 +4282,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Too many requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Internal server error */
             500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency failed */
-            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6396,21 +4300,14 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    start_radio_api_player_radio_post: {
+    startRadio: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -6429,15 +4326,6 @@ export interface operations {
                     "application/json": components["schemas"]["MutationView"];
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
                 headers: {
@@ -6465,15 +4353,6 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description State conflict */
             409: {
                 headers: {
@@ -6492,26 +4371,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Too many requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Internal server error */
             500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency failed */
-            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6528,21 +4389,14 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    retry_radio_api_player_radio_retry_post: {
+    stopRadio: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -6561,15 +4415,6 @@ export interface operations {
                     "application/json": components["schemas"]["MutationView"];
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
                 headers: {
@@ -6581,24 +4426,6 @@ export interface operations {
             };
             /** @description Request not allowed */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6624,26 +4451,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Too many requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Internal server error */
             500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency failed */
-            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6660,21 +4469,14 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    stop_radio_api_player_radio_stop_post: {
+    retryRadio: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -6693,15 +4495,6 @@ export interface operations {
                     "application/json": components["schemas"]["MutationView"];
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
                 headers: {
@@ -6713,24 +4506,6 @@ export interface operations {
             };
             /** @description Request not allowed */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6756,26 +4531,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Too many requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Internal server error */
             500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency failed */
-            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6792,285 +4549,14 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    seek_api_player_seek_post: {
+    setSleepTimer: {
         parameters: {
             query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SeekInput"];
+            header: {
+                "Idempotency-Key": string;
             };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MutationView"];
-                };
-            };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Request not allowed */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Validation failed */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Too many requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Internal server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency failed */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Dependency unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-        };
-    };
-    skip_api_player_skip_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["OperationInput"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MutationView"];
-                };
-            };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Request not allowed */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Validation failed */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Too many requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Internal server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency failed */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Dependency unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-        };
-    };
-    set_sleep_timer_api_player_sleep_timer_put: {
-        parameters: {
-            query?: never;
-            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -7089,15 +4575,6 @@ export interface operations {
                     "application/json": components["schemas"]["MutationView"];
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
                 headers: {
@@ -7109,24 +4586,6 @@ export interface operations {
             };
             /** @description Request not allowed */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7152,26 +4611,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Too many requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Internal server error */
             500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency failed */
-            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7188,8 +4629,75 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
+        };
+    };
+    cancelSleepTimer: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MutationView"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Request not allowed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description State conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Dependency unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7199,16 +4707,18 @@ export interface operations {
             };
         };
     };
-    cancel_sleep_timer_api_player_sleep_timer_delete: {
+    joinVoice: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
             path?: never;
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["OperationInput"];
+                "application/json": components["schemas"]["VoiceInput"];
             };
         };
         responses: {
@@ -7221,15 +4731,6 @@ export interface operations {
                     "application/json": components["schemas"]["MutationView"];
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
                 headers: {
@@ -7241,24 +4742,6 @@ export interface operations {
             };
             /** @description Request not allowed */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7284,26 +4767,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Too many requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Internal server error */
             500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency failed */
-            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7320,29 +4785,18 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    stop_api_player_stop_post: {
+    leaveVoice: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["OperationInput"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -7353,15 +4807,6 @@ export interface operations {
                     "application/json": components["schemas"]["MutationView"];
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
                 headers: {
@@ -7373,24 +4818,6 @@ export interface operations {
             };
             /** @description Request not allowed */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7416,26 +4843,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Too many requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Internal server error */
             500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency failed */
-            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7452,18 +4861,9 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    voice_channels_api_player_voice_channels_get: {
+    listVoiceChannels: {
         parameters: {
             query?: never;
             header?: never;
@@ -7481,71 +4881,8 @@ export interface operations {
                     "application/json": components["schemas"]["VoiceChannelView"][];
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Request not allowed */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Validation failed */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Too many requests */
-            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7562,15 +4899,6 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency failed */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Dependency unavailable */
             503: {
                 headers: {
@@ -7580,414 +4908,9 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    join_voice_api_player_voice_join_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["JoinVoiceInput"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MutationView"];
-                };
-            };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Request not allowed */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Validation failed */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Too many requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Internal server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency failed */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Dependency unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-        };
-    };
-    leave_voice_api_player_voice_leave_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["OperationInput"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MutationView"];
-                };
-            };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Request not allowed */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Validation failed */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Too many requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Internal server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency failed */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Dependency unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-        };
-    };
-    set_volume_api_player_volume_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["VolumeInput"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MutationView"];
-                };
-            };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Request not allowed */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Validation failed */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Too many requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Internal server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency failed */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Dependency unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-        };
-    };
-    profile_api_profiles__user_id__get: {
+    getProfile: {
         parameters: {
             query?: {
                 period?: components["schemas"]["StatisticsPeriod"];
@@ -8009,26 +4932,8 @@ export interface operations {
                     "application/json": components["schemas"]["ProfilePageView"];
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Request not allowed */
-            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8045,35 +4950,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Validation failed */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Too many requests */
-            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8090,15 +4968,6 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency failed */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Dependency unavailable */
             503: {
                 headers: {
@@ -8108,18 +4977,9 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    own_profile_api_profiles_me_get: {
+    getCurrentProfile: {
         parameters: {
             query?: {
                 period?: components["schemas"]["StatisticsPeriod"];
@@ -8139,53 +4999,8 @@ export interface operations {
                     "application/json": components["schemas"]["ProfilePageView"];
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Request not allowed */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8202,26 +5017,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Too many requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Internal server error */
             500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency failed */
-            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8238,18 +5035,9 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    overview_api_statistics_overview_get: {
+    getStatistics: {
         parameters: {
             query?: {
                 period?: components["schemas"]["StatisticsPeriod"];
@@ -8269,53 +5057,8 @@ export interface operations {
                     "application/json": components["schemas"]["GroupStatisticsView"];
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Request not allowed */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8332,26 +5075,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Too many requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Internal server error */
             500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency failed */
-            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8368,150 +5093,9 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    user_statistics_api_statistics_users__user_id__get: {
-        parameters: {
-            query?: {
-                period?: components["schemas"]["StatisticsPeriod"];
-            };
-            header?: never;
-            path: {
-                user_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PersonalStatisticsView"];
-                };
-            };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Request not allowed */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Validation failed */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Too many requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Internal server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency failed */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Dependency unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-        };
-    };
-    own_account_api_users_me_get: {
+    getCurrentUser: {
         parameters: {
             query?: never;
             header?: never;
@@ -8529,71 +5113,8 @@ export interface operations {
                     "application/json": components["schemas"]["UserView"];
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Request not allowed */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Validation failed */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Too many requests */
-            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8610,15 +5131,6 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency failed */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Dependency unavailable */
             503: {
                 headers: {
@@ -8628,18 +5140,9 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
         };
     };
-    update_appearance_api_users_me_appearance_put: {
+    updateCurrentUser: {
         parameters: {
             query?: never;
             header?: never;
@@ -8648,7 +5151,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["AppearanceUpdate"];
+                "application/json": components["schemas"]["CurrentUserUpdate"];
             };
         };
         responses: {
@@ -8661,15 +5164,6 @@ export interface operations {
                     "application/json": components["schemas"]["UserView"];
                 };
             };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Authentication required */
             401: {
                 headers: {
@@ -8688,44 +5182,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Validation failed */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Too many requests */
-            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8742,158 +5200,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
-            /** @description Upstream dependency failed */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
             /** @description Dependency unavailable */
             503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-        };
-    };
-    update_profile_api_users_me_profile_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ProfileUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UserView"];
-                };
-            };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Request not allowed */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Validation failed */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Too many requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Internal server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency failed */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Dependency unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency timed out */
-            504: {
                 headers: {
                     [name: string]: unknown;
                 };

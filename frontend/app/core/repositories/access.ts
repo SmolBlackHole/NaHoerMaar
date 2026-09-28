@@ -2,22 +2,36 @@
 // SPDX-License-Identifier: MPL-2.0
 
 import type { Transport } from "../api/transport";
-import type { AccessEvent, AccessState, DiscordMembers } from "../models/access";
-
 export function createAccessRepository(request: Transport) {
 	return {
 		state: (historyLimit = 100, signal?: AbortSignal) =>
-			request<AccessState>(`/api/access?history_limit=${historyLimit}`, { signal }),
-		members: (signal?: AbortSignal) =>
-			request<DiscordMembers>("/api/access/members", { signal }),
+			request((api) =>
+				api.GET("/api/access", {
+					params: { query: { history_limit: historyLimit } },
+					signal,
+				}),
+			),
+		members: (filters: { query?: string; guildId?: string } = {}, signal?: AbortSignal) =>
+			request((api) =>
+				api.GET("/api/access/members", {
+					params: {
+						query: { q: filters.query, guild_id: filters.guildId },
+					},
+					signal,
+				}),
+			),
 		grant: (discordId: string) =>
-			request<AccessEvent | null>(`/api/access/${encodeURIComponent(discordId)}`, {
-				method: "PUT",
-			}),
+			request((api) =>
+				api.PUT("/api/access/{discord_id}", {
+					params: { path: { discord_id: discordId } },
+				}),
+			),
 		revoke: (discordId: string) =>
-			request<AccessEvent | null>(`/api/access/${encodeURIComponent(discordId)}`, {
-				method: "DELETE",
-			}),
+			request((api) =>
+				api.DELETE("/api/access/{discord_id}", {
+					params: { path: { discord_id: discordId } },
+				}),
+			),
 	};
 }
 

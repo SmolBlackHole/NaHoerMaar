@@ -25,6 +25,7 @@ from nahoermaar.users.service import (
     SESSION_LIFETIME,
 )
 
+from .errors import error_responses
 from .middleware import authenticated
 
 _BROWSER_ORIGIN_HEADER = "x-nahormaar-browser-origin"
@@ -55,7 +56,12 @@ def router(application: Application) -> APIRouter:
     routes = APIRouter(prefix="/api/auth", tags=["auth"])
     settings = application.settings.auth
 
-    @routes.get("/discord", response_class=RedirectResponse)
+    @routes.get(
+        "/discord",
+        response_class=RedirectResponse,
+        operation_id="beginDiscordLogin",
+        responses=error_responses(403, 429, 500, 503),
+    )
     async def begin(request: Request) -> RedirectResponse:
         origin = _browser_origin(request, settings)
         result = await application.bus.execute(
@@ -76,7 +82,12 @@ def router(application: Application) -> APIRouter:
         )
         return response
 
-    @routes.get("/discord/callback", response_class=RedirectResponse)
+    @routes.get(
+        "/discord/callback",
+        response_class=RedirectResponse,
+        operation_id="completeDiscordLogin",
+        responses=error_responses(403, 422, 500),
+    )
     async def callback(
         request: Request,
         state: str | None = None,
@@ -117,7 +128,11 @@ def router(application: Application) -> APIRouter:
         )
         return response
 
-    @routes.get("/session")
+    @routes.get(
+        "/session",
+        operation_id="getSession",
+        responses=error_responses(401, 500, 503),
+    )
     async def session(request: Request) -> SessionView:
         current = authenticated(request)
         role = current.user.role
@@ -132,7 +147,12 @@ def router(application: Application) -> APIRouter:
             csrf=current.csrf,
         )
 
-    @routes.post("/logout", status_code=204)
+    @routes.post(
+        "/logout",
+        status_code=204,
+        operation_id="logout",
+        responses=error_responses(401, 403, 500, 503),
+    )
     async def logout(request: Request) -> Response:
         await application.bus.execute(Logout(request.cookies.get(SESSION_COOKIE)))
         response = Response(status_code=204)

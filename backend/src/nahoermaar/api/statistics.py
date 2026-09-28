@@ -30,8 +30,9 @@ from nahoermaar.statistics.models import (
     StatisticsPeriod,
     StatisticsReport,
 )
-from nahoermaar.users.domain import DiscordMember, UserId
+from nahoermaar.users.domain import DiscordMember
 
+from .errors import error_responses
 from .middleware import authenticated
 
 
@@ -335,8 +336,12 @@ class PersonalStatisticsView(StatisticsView):
 def router(application: Application) -> APIRouter:
     routes = APIRouter(prefix="/api/statistics", tags=["statistics"])
 
-    @routes.get("/overview")
-    async def overview(
+    @routes.get(
+        "",
+        operation_id="getStatistics",
+        responses=error_responses(401, 422, 500, 503),
+    )
+    async def statistics(
         request: Request,
         period: Annotated[StatisticsPeriod, Query()] = StatisticsPeriod.DAYS_7,
     ) -> GroupStatisticsView:
@@ -345,17 +350,6 @@ def router(application: Application) -> APIRouter:
             await application.statistics.service.overview(period),
             application.integrations.avatars,
             _discord_members(application),
-        )
-
-    @routes.get("/users/{user_id}")
-    async def user_statistics(
-        request: Request,
-        user_id: UUID,
-        period: Annotated[StatisticsPeriod, Query()] = StatisticsPeriod.DAYS_30,
-    ) -> PersonalStatisticsView:
-        authenticated(request)
-        return personal_statistics_view(
-            await application.statistics.service.user(UserId(user_id), period),
         )
 
     return routes

@@ -3,27 +3,25 @@
 
 import type { SessionAuthority } from "../api/transport";
 import type { BackendClient } from "../client";
-import type { LogPage } from "../models/logs";
+import type { LogFilters, LogPage } from "../models/logs";
 import { createQueryState } from "./queryState";
 
 export function createLogsWorkflow(client: BackendClient, authority: SessionAuthority) {
 	const page = createQueryState<LogPage>(authority);
 
-	function loadLatest(limit = 200) {
-		return page.load((signal) => client.logs.recent(undefined, limit, signal));
+	function loadLatest(filters: LogFilters = {}, limit = 200) {
+		return page.load((signal) => client.logs.recent({ ...filters, limit }, signal));
 	}
 
-	async function poll(limit = 200) {
+	async function poll(filters: LogFilters = {}, limit = 200) {
 		const previous = page.data.value;
 		const next = await page.load((signal) =>
-			client.logs.recent(previous?.cursor, limit, signal),
+			client.logs.recent({ ...filters, after: previous?.cursor, limit }, signal),
 		);
 		if (!next || !previous) return next;
-		const entries = new Map(
-			[...previous.entries, ...next.entries].map((entry) => [entry.id, entry]),
-		);
+		const items = new Map([...previous.items, ...next.items].map((entry) => [entry.id, entry]));
 		const combined = {
-			entries: [...entries.values()].sort((left, right) => left.id - right.id),
+			items: [...items.values()].sort((left, right) => left.id - right.id),
 			cursor: Math.max(previous.cursor, next.cursor),
 		};
 		page.set(combined);

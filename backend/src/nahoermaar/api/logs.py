@@ -7,13 +7,17 @@
 from datetime import datetime
 from uuid import UUID
 
+from typing import Annotated
+
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, ConfigDict
 
 from nahoermaar.bootstrap import Application
 from nahoermaar.operations.logs import LogEntry
 
+from .errors import error_responses
 from .middleware import authenticated
+from .pagination import LiveDeltaView
 
 
 class LogEntryView(BaseModel):
@@ -31,27 +35,45 @@ class LogEntryView(BaseModel):
     actor_id: UUID | None
 
 
-class LogsView(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    entries: tuple[LogEntryView, ...]
-    cursor: int
+class LogsView(LiveDeltaView[LogEntryView]):
+    pass
 
 
 def router(application: Application) -> APIRouter:
     """Build the admin-only process log endpoint."""
     routes = APIRouter(prefix="/api/logs", tags=["logs"])
 
-    @routes.get("")
+    @routes.get(
+        "",
+        operation_id="listLogs",
+        responses=error_responses(401, 403, 422, 500, 503),
+    )
     async def recent_logs(
         request: Request,
         after: int | None = Query(default=None, ge=0),
         limit: int = Query(default=200, ge=1, le=200),
+        q: Annotated[str | None, Query(max_length=500)] = None,
+        level: Annotated[str | None, Query(max_length=20)] = None,
+        source: Annotated[str | None, Query(max_length=200)] = None,
+        actor_id: UUID | None = None,
+        request_id: Annotated[str | None, Query(max_length=200)] = None,
+        correlation_id: UUID | None = None,
+        causation_id: UUID | None = None,
     ) -> LogsView:
         await application.users.access.require_admin(authenticated(request).user.id)
-        entries = application.operations.logs.entries(after=after, limit=limit)
+        entries = application.operations.logs.entries(
+            after=after,
+            limit=limit,
+            query=q,
+            level=level,
+            source=source,
+            actor_id=actor_id,
+            request_id=request_id,
+            correlation_id=correlation_id,
+            causation_id=causation_id,
+        )
         return LogsView(
-            entries=tuple(_entry_view(entry) for entry in entries),
+            items=tuple(_entry_view(entry) for entry in entries),
             cursor=entries[-1].id if entries else (after or 0),
         )
 

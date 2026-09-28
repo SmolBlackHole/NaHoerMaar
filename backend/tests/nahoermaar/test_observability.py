@@ -51,6 +51,12 @@ def test_recent_logs_are_bounded_sanitized_and_correlated() -> None:
     assert entries[0].actor_id == actor_id
     assert entries[1].actor_id == actor_id
     assert logs.entries(after=entries[0].id) == (entries[1],)
+    assert logs.entries(query="SECOND") == (entries[0],)
+    assert logs.entries(level="info", source="test.observability") == entries
+    assert logs.entries(actor_id=actor_id, request_id="request-1") == entries
+    assert logs.entries(correlation_id=correlation_id) == entries
+    assert logs.entries(causation_id=uuid4()) == ()
+    assert logs.entries(query="second", limit=1) == (entries[0],)
     assert safe_log_value("hello\r\nworld", limit=20) == "hello world"
     assert (
         sanitize_log_message(

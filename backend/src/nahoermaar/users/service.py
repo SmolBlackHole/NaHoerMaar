@@ -149,6 +149,15 @@ class LoginCompletion:
 
 
 @dataclass(frozen=True, slots=True)
+class AccessSnapshot:
+    """Consistent Users-owned projection for the access administration page."""
+
+    operators: tuple[User, ...]
+    grants: tuple[User, ...]
+    history: tuple[AccessEvent, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class BeginLogin(Command[LoginStart]):
     browser_token: str | None = dataclass_field(repr=False)
     redirect_uri: str = dataclass_field(repr=False)
@@ -187,15 +196,10 @@ class RevokeAccess(Command[AccessEvent | None]):
 
 
 @dataclass(frozen=True, slots=True)
-class SaveProfile(Command[User]):
+class UpdateUser(Command[User]):
     user_id: UserId
-    profile: UserProfile
-
-
-@dataclass(frozen=True, slots=True)
-class SaveAppearance(Command[User]):
-    user_id: UserId
-    appearance: Appearance
+    profile: UserProfile | None = None
+    appearance: Appearance | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -366,27 +370,26 @@ class AccessService:
         )
         return user
 
-    async def operator_users(self) -> tuple[User, ...]:
-        """Return persisted operators in their configuration order."""
+    async def snapshot(self, history_limit: int = 100) -> AccessSnapshot:
+        """Return one consistent access-administration projection."""
         async with self._units() as work:
-            users = await UserRepository(work.session).privileged()
+            users = UserRepository(work.session)
+            operators = await users.privileged()
+            grants = await users.grants()
+            history = await users.access_history(history_limit)
         order = {
             discord_id: index for index, discord_id in enumerate(self._operators.roles)
         }
-        return tuple(
-            sorted(
-                users,
-                key=lambda user: order.get(user.discord.discord_id, len(order)),
-            )
+        return AccessSnapshot(
+            tuple(
+                sorted(
+                    operators,
+                    key=lambda user: order.get(user.discord.discord_id, len(order)),
+                )
+            ),
+            grants,
+            history,
         )
-
-    async def grants(self) -> tuple[User, ...]:
-        async with self._units() as work:
-            return await UserRepository(work.session).grants()
-
-    async def history(self, limit: int = 100) -> tuple[AccessEvent, ...]:
-        async with self._units() as work:
-            return await UserRepository(work.session).access_history(limit)
 
     async def grant(self, actor_id: UserId, discord_id: str) -> AccessEvent | None:
         _validate_discord_id(discord_id)
@@ -654,44 +657,34 @@ class AuthService:
             raise AuthError(AuthErrorCode.PROFILE_NOT_FOUND, 404)
         return user
 
-    async def save_profile(self, user_id: UserId, profile: UserProfile) -> User:
+    async def update_user(
+        self,
+        user_id: UserId,
+        *,
+        profile: UserProfile | None = None,
+        appearance: Appearance | None = None,
+    ) -> User:
+        if profile is None and appearance is None:
+            raise ValueError("A user update requires profile or appearance changes.")
         now = self._clock()
         async with self._units() as work:
             users = UserRepository(work.session)
             user = await users.get(user_id)
             if user is None:
                 raise AuthError(AuthErrorCode.PROFILE_NOT_FOUND, 404)
-            user = replace(user, profile=profile, updated_at=now)
+            user = replace(
+                user,
+                profile=profile if profile is not None else user.profile,
+                appearance=appearance if appearance is not None else user.appearance,
+                updated_at=now,
+            )
             await users.update(user)
             await work.commit()
         _LOGGER.info(
-            "profile.saved user_id=%s complete=%s",
+            "user.updated user_id=%s profile=%s appearance=%s",
             user.id,
-            user.profile.complete,
-        )
-        return user
-
-    async def save_appearance(self, user_id: UserId, appearance: Appearance) -> User:
-        now = self._clock()
-        async with self._units() as work:
-            users = UserRepository(work.session)
-            user = await users.get(user_id)
-            if user is None:
-                raise AuthError(AuthErrorCode.PROFILE_NOT_FOUND, 404)
-            user = replace(user, appearance=appearance, updated_at=now)
-            await users.update(user)
-            await work.commit()
-        _LOGGER.info(
-            "appearance.saved user_id=%s mode=%s primary=%s neutral=%s "
-            "font=%s icons=%s text_size=%s artwork_colors=%s",
-            user.id,
-            appearance.mode.value,
-            appearance.primary_color.value,
-            appearance.neutral_color.value,
-            appearance.font_family.value,
-            appearance.icon_set.value,
-            appearance.text_size.value,
-            appearance.artwork_colors,
+            profile is not None,
+            appearance is not None,
         )
         return user
 

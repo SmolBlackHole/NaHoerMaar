@@ -71,6 +71,7 @@ function changeEvent(operationId: string, current = player(11)) {
 
 function mutationResult(current = player(11), action = "skip"): MutationResult {
 	return {
+		operation_id: "operation-id",
 		player: current,
 		replayed: false,
 		outcome: {
@@ -301,7 +302,7 @@ describe("new backend Pinia stores", () => {
 		await nextTick();
 
 		await fixture.playerStore.run("queue.move", async () => {
-			throw new ApiFailure(409, { error: "queue_conflict", retryable: true }, "request-id");
+			throw new ApiFailure(409, { code: "queue_conflict", retryable: true }, "request-id");
 		});
 
 		expect(fixture.playerStore.uncertainOperation).toBeNull();
@@ -337,8 +338,9 @@ describe("new backend Pinia stores", () => {
 			"queue-a",
 			"queue-b",
 		]);
+		await vi.waitFor(() => expect(fixture.fetcher).toHaveBeenCalledOnce());
 		const [, init] = fixture.fetcher.mock.calls[0]!;
-		expect(init?.method).toBe("PUT");
+		expect(init?.method).toBe("PATCH");
 		expect(JSON.parse(String(init?.body))).toMatchObject({
 			expected_queue_revision: 7,
 			before_entry_id: "queue-a",

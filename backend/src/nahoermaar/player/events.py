@@ -40,6 +40,7 @@ class TrackSelection:
 class MutationReply:
     state: PlayerState
     outcome: MutationOutcome
+    operation_id: OperationId
     replayed: bool = False
 
 
@@ -149,17 +150,11 @@ class Seek(Command[MutationReply]):
 
 
 @dataclass(frozen=True, slots=True)
-class SetVolume(Command[MutationReply]):
+class SetPlayerSettings(Command[MutationReply]):
     session_id: ListeningSessionId
     operation_id: OperationId
-    volume: float
-
-
-@dataclass(frozen=True, slots=True)
-class SetCrossfade(Command[MutationReply]):
-    session_id: ListeningSessionId
-    operation_id: OperationId
-    seconds: int
+    volume: float | None = None
+    crossfade_seconds: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -232,8 +227,7 @@ type PlayerCommand = (
     | Skip
     | StopPlayback
     | Seek
-    | SetVolume
-    | SetCrossfade
+    | SetPlayerSettings
     | JoinVoice
     | LeaveVoice
     | SetSleepTimer

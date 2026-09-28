@@ -6,12 +6,13 @@ import type { SessionAuthority } from "../api/transport";
 import { createQueryState } from "./queryState";
 
 export interface CursorPage<T> {
-	entries: T[];
+	items: T[];
+	page_size: number;
 	next_cursor: string | null;
 }
 
 type CursorReader<TPage> = (
-	limit: number,
+	pageSize: number,
 	cursor: string | undefined,
 	signal: AbortSignal,
 ) => Promise<TPage>;
@@ -25,26 +26,24 @@ export function createCursorPagination<T, TPage extends CursorPage<T>>(
 	const page = createQueryState<TPage>(authority);
 	const hasMore = computed(() => Boolean(page.data.value?.next_cursor));
 
-	function load(limit = 20) {
-		return page.load((signal) => read(limit, undefined, signal));
+	function load(pageSize = 20) {
+		return page.load((signal) => read(pageSize, undefined, signal));
 	}
 
-	async function more(limit = 20) {
+	async function more(pageSize = 20) {
 		const previous = page.data.value;
 		if (!previous?.next_cursor) return previous;
-		const next = await page.load((signal) => read(limit, previous.next_cursor!, signal));
+		const next = await page.load((signal) => read(pageSize, previous.next_cursor!, signal));
 		if (!next) return null;
-		page.set(withEntries(next, merge(previous.entries, next.entries, key), next.next_cursor));
+		page.set(withItems(next, merge(previous.items, next.items, key), next.next_cursor));
 		return page.data.value;
 	}
 
-	async function refresh(limit = 20) {
+	async function refresh(pageSize = 20) {
 		const previous = page.data.value;
-		const latest = await page.load((signal) => read(limit, undefined, signal));
+		const latest = await page.load((signal) => read(pageSize, undefined, signal));
 		if (!latest || !previous) return latest;
-		page.set(
-			withEntries(latest, merge(latest.entries, previous.entries, key), previous.next_cursor),
-		);
+		page.set(withItems(latest, merge(latest.items, previous.items, key), previous.next_cursor));
 		return page.data.value;
 	}
 
@@ -61,10 +60,10 @@ function merge<T>(first: T[], second: T[], key: (entry: T) => string): T[] {
 	});
 }
 
-function withEntries<T, TPage extends CursorPage<T>>(
+function withItems<T, TPage extends CursorPage<T>>(
 	page: TPage,
-	entries: T[],
+	items: T[],
 	nextCursor: string | null,
 ): TPage {
-	return { ...page, entries, next_cursor: nextCursor };
+	return { ...page, items, next_cursor: nextCursor };
 }

@@ -11,10 +11,34 @@ import {
 import { fixture } from "./fixture";
 
 describe("new backend HTTP boundary", () => {
-	it.each(["POST", "PUT", "PATCH", "DELETE"])("adds session CSRF to %s", async (method) => {
+	it.each([
+		[
+			"POST",
+			(request: ReturnType<typeof createTransport>) =>
+				request((api) => api.POST("/api/auth/logout")),
+		],
+		[
+			"PATCH",
+			(request: ReturnType<typeof createTransport>) =>
+				request((api) =>
+					api.PATCH("/api/users/me", {
+						body: { profile: { display_name: "Listener" } },
+					}),
+				),
+		],
+		[
+			"DELETE",
+			(request: ReturnType<typeof createTransport>) =>
+				request((api) =>
+					api.DELETE("/api/player/sleep-timer", {
+						params: { header: { "Idempotency-Key": "operation" } },
+					}),
+				),
+		],
+	] as const)("adds session CSRF to %s", async (_method, execute) => {
 		const { auth, fetcher } = fixture();
 		fetcher.mockResolvedValue(new Response(null, { status: 204 }));
-		await createTransport(fetcher, auth)("/api/example", { method });
+		await execute(createTransport(fetcher, auth));
 		const options = fetcher.mock.calls[0]![1]!;
 		expect(new Headers(options.headers).get("X-CSRF-Token")).toBe("session-token");
 		expect(options.credentials).toBe("same-origin");
@@ -27,7 +51,7 @@ describe("new backend HTTP boundary", () => {
 		fetcher.mockResolvedValue(Response.json({ csrf: "restored" }));
 		expect(await client.account.session()).toMatchObject({ csrf: "restored" });
 		expect(new Headers(fetcher.mock.calls[0]![1]?.headers).has("X-CSRF-Token")).toBe(false);
-		await expect(client.player.play({ operation_id: "op" })).rejects.toBeInstanceOf(
+		await expect(client.player.control("op", { action: "play" })).rejects.toBeInstanceOf(
 			SessionLost,
 		);
 		expect(fetcher).toHaveBeenCalledOnce();
@@ -37,7 +61,7 @@ describe("new backend HTTP boundary", () => {
 		const { client, credentials, fetcher, auth } = fixture();
 		fetcher.mockImplementation(async () => {
 			credentials.generation++;
-			return Response.json({ error: "signed_out" }, { status: 401 });
+			return Response.json({ code: "signed_out" }, { status: 401 });
 		});
 		await expect(client.account.session()).rejects.toBeInstanceOf(SessionLost);
 		expect(auth.lost).not.toHaveBeenCalled();
@@ -46,9 +70,9 @@ describe("new backend HTTP boundary", () => {
 	it("also checks the account after asynchronous JSON decoding", async () => {
 		const { client, credentials, fetcher, auth } = fixture();
 		const response = Response.json({}, { status: 401 });
-		vi.spyOn(response, "json").mockImplementation(async () => {
+		vi.spyOn(response, "text").mockImplementation(async () => {
 			credentials.generation++;
-			return { error: "signed_out" };
+			return JSON.stringify({ code: "signed_out" });
 		});
 		fetcher.mockResolvedValue(response);
 		await expect(client.account.profile()).rejects.toBeInstanceOf(SessionLost);
@@ -59,7 +83,7 @@ describe("new backend HTTP boundary", () => {
 		const { client, fetcher, auth } = fixture();
 		fetcher.mockResolvedValueOnce(
 			Response.json(
-				{ error: "csrf_failed" },
+				{ code: "csrf_failed" },
 				{
 					status: 403,
 					headers: { "x-request-id": "diagnostic-id" },
@@ -69,16 +93,16 @@ describe("new backend HTTP boundary", () => {
 		await expect(client.account.profile()).rejects.toMatchObject({
 			status: 403,
 			requestId: "diagnostic-id",
-			error: { error: "csrf_failed" },
+			error: { code: "csrf_failed" },
 		});
 		expect(auth.lost).not.toHaveBeenCalled();
-		fetcher.mockResolvedValueOnce(Response.json({ error: "access_denied" }, { status: 403 }));
+		fetcher.mockResolvedValueOnce(Response.json({ code: "access_denied" }, { status: 403 }));
 		await expect(client.account.profile()).rejects.toMatchObject({
 			status: 403,
-			error: { error: "access_denied" },
+			error: { code: "access_denied" },
 		});
 		expect(auth.lost).not.toHaveBeenCalled();
-		fetcher.mockResolvedValueOnce(Response.json({ error: "access_denied" }, { status: 401 }));
+		fetcher.mockResolvedValueOnce(Response.json({ code: "access_denied" }, { status: 401 }));
 		await expect(client.account.profile()).rejects.toBeInstanceOf(SessionLost);
 		expect(auth.lost).toHaveBeenCalledWith("access_denied");
 	});
@@ -88,7 +112,9 @@ describe("new backend HTTP boundary", () => {
 		fetcher.mockResolvedValueOnce(new Response("<html>proxy</html>"));
 		await expect(client.account.profile()).rejects.toBeInstanceOf(InvalidResponse);
 		fetcher.mockResolvedValueOnce(new Response("<html>unavailable</html>", { status: 502 }));
-		await expect(client.player.skip({ operation_id: "op" })).rejects.toBeInstanceOf(ApiFailure);
+		await expect(client.player.control("op", { action: "skip" })).rejects.toBeInstanceOf(
+			ApiFailure,
+		);
 		expect(fetcher).toHaveBeenCalledTimes(2);
 	});
 
@@ -101,9 +127,34 @@ describe("new backend HTTP boundary", () => {
 			return Response.json([]);
 		});
 		await expect(
-			client.listening.recent({ pageSize: 5 }, controller.signal),
+			client.playbacks.list({ pageSize: 5 }, controller.signal),
 		).rejects.toMatchObject({
 			name: "AbortError",
 		});
+	});
+
+	it("enforces the shared request timeout", async () => {
+		const { client, fetcher } = fixture();
+		const timeout = new AbortController();
+		const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockReturnValue(timeout.signal);
+		let forwardedSignal: AbortSignal | undefined;
+		fetcher.mockImplementation(async (_url, options) => {
+			forwardedSignal = options?.signal ?? undefined;
+			return await new Promise<Response>((_resolve, reject) => {
+				forwardedSignal?.addEventListener("abort", () => reject(forwardedSignal?.reason), {
+					once: true,
+				});
+			});
+		});
+
+		try {
+			const pending = client.account.profile();
+			await vi.waitFor(() => expect(forwardedSignal).toBeDefined());
+			timeout.abort(new DOMException("Request timed out.", "TimeoutError"));
+			await expect(pending).rejects.toMatchObject({ name: "TimeoutError" });
+			expect(timeoutSpy).toHaveBeenCalledWith(35_000);
+		} finally {
+			timeoutSpy.mockRestore();
+		}
 	});
 });

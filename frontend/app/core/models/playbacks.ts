@@ -5,3 +5,4 @@ import type { components } from "../api/schema.generated";
 
 export type PlaybackHistoryEntry = components["schemas"]["PlaybackHistoryEntryView"];
 export type PlaybackHistoryPage = components["schemas"]["PlaybackHistoryPageView"];
+export type PlaybackEndReason = components["schemas"]["PlaybackEndReason"];

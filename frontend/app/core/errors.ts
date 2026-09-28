@@ -399,7 +399,7 @@ export function failureForCode(
 
 export function presentFailure(failure: unknown): FailurePresentation {
 	if (failure instanceof ApiFailure)
-		return failureForCode(failure.error.error, {
+		return failureForCode(failure.error.code, {
 			status: failure.status,
 			retryable: failure.error.retryable,
 			requestId: failure.requestId,

@@ -18,7 +18,7 @@ async function load() {
 	await profile.loadMine(period.value);
 }
 async function save(value: ProfileUpdate) {
-	const updated = await account.updateProfile(value);
+	const updated = await account.update({ profile: value });
 	if (!updated) return;
 	profile.mergeAccount(updated);
 	toast.add({

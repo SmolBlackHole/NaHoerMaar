@@ -11,7 +11,7 @@ import {
 	presentFailure,
 	type FailurePresentation,
 } from "../errors";
-import type { Account, AccountSession, AppearanceUpdate, ProfileUpdate } from "../models/account";
+import type { Account, AccountSession, CurrentUserUpdate } from "../models/account";
 import type {
 	MutationResult,
 	PlayerChange,
@@ -97,7 +97,7 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 					) {
 						status.value =
 							failure instanceof ApiFailure &&
-							(failure.status === 403 || failure.error.error === "access_denied")
+							(failure.status === 403 || failure.error.code === "access_denied")
 								? "forbidden"
 								: "unavailable";
 						error.value = failureMessage(failure);
@@ -224,9 +224,7 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 			error,
 			load,
 			refresh: () => load(true),
-			updateProfile: (body: ProfileUpdate) => save(() => client.account.updateProfile(body)),
-			updateAppearance: (body: AppearanceUpdate) =>
-				save(() => client.account.updateAppearance(body)),
+			update: (body: CurrentUserUpdate) => save(() => client.account.update(body)),
 		};
 	});
 
@@ -471,8 +469,7 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 			);
 		const add = (tracks: PlayerCommands["add"]["tracks"], skipDuplicates = false) =>
 			run("queue.add", (operationId) =>
-				client.player.add({
-					operation_id: operationId,
+				client.player.add(operationId, {
 					skip_duplicates: skipDuplicates,
 					tracks,
 				}),
@@ -481,8 +478,7 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 			const revision = state.value?.queue_revision;
 			if (revision === undefined) return Promise.resolve(null);
 			return run("queue.remove", (operationId) =>
-				client.player.remove(entryId, {
-					operation_id: operationId,
+				client.player.remove(operationId, entryId, {
 					expected_queue_revision: revision,
 				}),
 			);
@@ -491,8 +487,7 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 			const revision = state.value?.queue_revision;
 			if (revision === undefined) return Promise.resolve(null);
 			return run("queue.move", (operationId) =>
-				client.player.move(entryId, {
-					operation_id: operationId,
+				client.player.move(operationId, entryId, {
 					expected_queue_revision: revision,
 					before_entry_id: beforeEntryId,
 				}),
@@ -502,8 +497,7 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 			const revision = state.value?.queue_revision;
 			if (revision === undefined) return Promise.resolve(null);
 			return run("queue.clear", (operationId) =>
-				client.player.clear({
-					operation_id: operationId,
+				client.player.clear(operationId, {
 					expected_queue_revision: revision,
 					requested_by: requestedBy,
 				}),
@@ -511,52 +505,50 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 		};
 		const undo = (undoId: string) =>
 			run("queue.undo", (operationId) =>
-				client.player.undo({ operation_id: operationId, undo_id: undoId }),
+				client.player.undo(operationId, { undo_id: undoId }),
 			);
-		const operation = (
-			action: "play" | "pause" | "skip" | "stop" | "voice.leave",
-			write: (body: { operation_id: string }) => Promise<MutationResult>,
-		) => run(action, (operationId) => write({ operation_id: operationId }));
+		const control = (action: "play" | "pause" | "skip" | "stop") =>
+			run(action, (operationId) => client.player.control(operationId, { action }));
 		const seek = (seconds: number) =>
 			run("seek", (operationId) =>
-				client.player.seek({ operation_id: operationId, seconds }),
+				client.player.control(operationId, { action: "seek", seconds }),
 			);
 		const setVolume = (volume: number) =>
-			run("volume", (operationId) =>
-				client.player.setVolume({ operation_id: operationId, volume }),
-			);
+			run("volume", (operationId) => client.player.update(operationId, { volume }));
 		const setCrossfade = (seconds: number) =>
 			run("crossfade", (operationId) =>
-				client.player.setCrossfade({ operation_id: operationId, seconds }),
+				client.player.update(operationId, { crossfade_seconds: seconds }),
 			);
 		const setSleepTimer = (seconds: number) =>
 			run("sleep_timer.set", (operationId) =>
-				client.player.setSleepTimer({ operation_id: operationId, seconds }),
+				client.player.setSleepTimer(operationId, { seconds }),
 			);
 		const cancelSleepTimer = () =>
 			run("sleep_timer.cancelled", (operationId) =>
-				client.player.cancelSleepTimer({ operation_id: operationId }),
+				client.player.cancelSleepTimer(operationId),
 			);
 		const join = (channelId: string) =>
 			run("voice.join", (operationId) =>
-				client.player.join({ operation_id: operationId, channel_id: channelId }),
+				client.player.join(operationId, { channel_id: channelId }),
 			);
 		const startRadio = (seed: PlayerCommands["startRadio"]["seed"]) =>
 			run("radio.start", (operationId) =>
-				client.player.startRadio({
-					operation_id: operationId,
+				client.player.startRadio(operationId, {
 					expected_generation: state.value?.radio?.generation,
 					seed,
 				}),
 			);
 		const radioOperation = (
 			action: "radio.stop" | "radio.retry",
-			write: (body: PlayerCommands["stopRadio"]) => Promise<MutationResult>,
+			write: (
+				operationId: string,
+				body: PlayerCommands["stopRadio"],
+			) => Promise<MutationResult>,
 		) => {
 			const generation = state.value?.radio?.generation;
 			if (!generation) return Promise.resolve(null);
 			return run(action, (operationId) =>
-				write({ operation_id: operationId, expected_generation: generation }),
+				write(operationId, { expected_generation: generation }),
 			);
 		};
 
@@ -584,17 +576,17 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 			move,
 			clear,
 			undo,
-			play: () => operation("play", client.player.play),
-			pause: () => operation("pause", client.player.pause),
-			skip: () => operation("skip", client.player.skip),
-			stop: () => operation("stop", client.player.stop),
+			play: () => control("play"),
+			pause: () => control("pause"),
+			skip: () => control("skip"),
+			stop: () => control("stop"),
 			seek,
 			setVolume,
 			setCrossfade,
 			setSleepTimer,
 			cancelSleepTimer,
 			join,
-			leave: () => operation("voice.leave", client.player.leave),
+			leave: () => run("voice.leave", client.player.leave),
 			startRadio,
 			stopRadio: () => radioOperation("radio.stop", client.player.stopRadio),
 			retryRadio: () => radioOperation("radio.retry", client.player.retryRadio),

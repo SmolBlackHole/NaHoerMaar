@@ -11,6 +11,7 @@ export type ListenerProfile = Schema["ProfilePageView"];
 export type Appearance = Schema["AppearanceView"];
 export type ProfileUpdate = Schema["ProfileUpdate"];
 export type AppearanceUpdate = Schema["AppearanceUpdate"];
+export type CurrentUserUpdate = Schema["CurrentUserUpdate"];
 export type StatisticsPeriod = Schema["StatisticsPeriod"];
 
 export const defaultAppearance: Readonly<Appearance> = {

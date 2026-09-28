@@ -230,7 +230,12 @@ class PlayerSession:
                     context.actor_id,
                     receipt.outcome.action.value,
                 )
-                return MutationReply(self._state, receipt.outcome, replayed=True)
+                return MutationReply(
+                    self._state,
+                    receipt.outcome,
+                    command.operation_id,
+                    replayed=True,
+                )
 
             undo = (
                 await repository.undo(command.undo_id)
@@ -285,7 +290,7 @@ class PlayerSession:
             self._state.session.queue_revision,
             change.outcome.action.value,
         )
-        return MutationReply(self._state, change.outcome)
+        return MutationReply(self._state, change.outcome, command.operation_id)
 
     async def _publish(
         self,

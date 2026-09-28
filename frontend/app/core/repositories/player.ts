@@ -3,42 +3,110 @@
 
 import type { SubscribePlayer } from "../api/events";
 import type { Transport } from "../api/transport";
-import type { MutationResult, PlayerCommands, PlayerState, VoiceChannel } from "../models/player";
+import type { PlayerCommands } from "../models/player";
 
 export function createPlayerRepository(request: Transport, subscribe: SubscribePlayer) {
-	function command(path: string, body: object, method = "POST") {
-		return request<MutationResult>(`/api/player${path}`, {
-			method,
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(body),
-		});
-	}
+	const header = (operationId: string) => ({ "Idempotency-Key": operationId });
 	return {
-		state: (signal?: AbortSignal) => request<PlayerState>("/api/player", { signal }),
+		state: (signal?: AbortSignal) => request((api) => api.GET("/api/player", { signal })),
 		channels: (signal?: AbortSignal) =>
-			request<VoiceChannel[]>("/api/player/voice/channels", { signal }),
-		add: (body: PlayerCommands["add"]) => command("/queue", body),
-		remove: (entryId: string, body: PlayerCommands["remove"]) =>
-			command(`/queue/${encodeURIComponent(entryId)}`, body, "DELETE"),
-		move: (entryId: string, body: PlayerCommands["move"]) =>
-			command(`/queue/${encodeURIComponent(entryId)}`, body, "PUT"),
-		clear: (body: PlayerCommands["clear"]) => command("/queue/clear", body),
-		undo: (body: PlayerCommands["undo"]) => command("/queue/undo", body),
-		play: (body: PlayerCommands["play"]) => command("/play", body),
-		pause: (body: PlayerCommands["pause"]) => command("/pause", body),
-		skip: (body: PlayerCommands["skip"]) => command("/skip", body),
-		stop: (body: PlayerCommands["stop"]) => command("/stop", body),
-		seek: (body: PlayerCommands["seek"]) => command("/seek", body),
-		setVolume: (body: PlayerCommands["volume"]) => command("/volume", body, "PUT"),
-		setCrossfade: (body: PlayerCommands["crossfade"]) => command("/crossfade", body, "PUT"),
-		setSleepTimer: (body: PlayerCommands["sleepTimer"]) => command("/sleep-timer", body, "PUT"),
-		cancelSleepTimer: (body: PlayerCommands["cancelSleepTimer"]) =>
-			command("/sleep-timer", body, "DELETE"),
-		join: (body: PlayerCommands["join"]) => command("/voice/join", body),
-		leave: (body: PlayerCommands["leave"]) => command("/voice/leave", body),
-		startRadio: (body: PlayerCommands["startRadio"]) => command("/radio", body),
-		stopRadio: (body: PlayerCommands["stopRadio"]) => command("/radio/stop", body),
-		retryRadio: (body: PlayerCommands["retryRadio"]) => command("/radio/retry", body),
+			request((api) => api.GET("/api/player/voice/channels", { signal })),
+		add: (operationId: string, body: PlayerCommands["add"]) =>
+			request((api) =>
+				api.POST("/api/player/queue", {
+					params: { header: header(operationId) },
+					body,
+				}),
+			),
+		remove: (operationId: string, entryId: string, body: PlayerCommands["remove"]) =>
+			request((api) =>
+				api.DELETE("/api/player/queue/{entry_id}", {
+					params: { path: { entry_id: entryId }, header: header(operationId) },
+					body,
+				}),
+			),
+		move: (operationId: string, entryId: string, body: PlayerCommands["move"]) =>
+			request((api) =>
+				api.PATCH("/api/player/queue/{entry_id}", {
+					params: { path: { entry_id: entryId }, header: header(operationId) },
+					body,
+				}),
+			),
+		clear: (operationId: string, body: PlayerCommands["clear"]) =>
+			request((api) =>
+				api.POST("/api/player/queue/clear", {
+					params: { header: header(operationId) },
+					body,
+				}),
+			),
+		undo: (operationId: string, body: PlayerCommands["undo"]) =>
+			request((api) =>
+				api.POST("/api/player/queue/undo", {
+					params: { header: header(operationId) },
+					body,
+				}),
+			),
+		control: (operationId: string, body: PlayerCommands["control"]) =>
+			request((api) =>
+				api.POST("/api/player/control", {
+					params: { header: header(operationId) },
+					body,
+				}),
+			),
+		update: (operationId: string, body: PlayerCommands["settings"]) =>
+			request((api) =>
+				api.PATCH("/api/player", {
+					params: { header: header(operationId) },
+					body,
+				}),
+			),
+		setSleepTimer: (operationId: string, body: PlayerCommands["sleepTimer"]) =>
+			request((api) =>
+				api.PUT("/api/player/sleep-timer", {
+					params: { header: header(operationId) },
+					body,
+				}),
+			),
+		cancelSleepTimer: (operationId: string) =>
+			request((api) =>
+				api.DELETE("/api/player/sleep-timer", {
+					params: { header: header(operationId) },
+				}),
+			),
+		join: (operationId: string, body: PlayerCommands["voice"]) =>
+			request((api) =>
+				api.PUT("/api/player/voice", {
+					params: { header: header(operationId) },
+					body,
+				}),
+			),
+		leave: (operationId: string) =>
+			request((api) =>
+				api.DELETE("/api/player/voice", {
+					params: { header: header(operationId) },
+				}),
+			),
+		startRadio: (operationId: string, body: PlayerCommands["startRadio"]) =>
+			request((api) =>
+				api.PUT("/api/player/radio", {
+					params: { header: header(operationId) },
+					body,
+				}),
+			),
+		stopRadio: (operationId: string, body: PlayerCommands["stopRadio"]) =>
+			request((api) =>
+				api.DELETE("/api/player/radio", {
+					params: { header: header(operationId) },
+					body,
+				}),
+			),
+		retryRadio: (operationId: string, body: PlayerCommands["retryRadio"]) =>
+			request((api) =>
+				api.POST("/api/player/radio/retry", {
+					params: { header: header(operationId) },
+					body,
+				}),
+			),
 		subscribe,
 	};
 }

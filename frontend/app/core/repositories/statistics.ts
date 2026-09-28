@@ -3,16 +3,16 @@
 
 import type { Transport } from "../api/transport";
 import type { StatisticsPeriod } from "../models/account";
-import type { GroupStatistics, PersonalStatistics } from "../models/statistics";
+import type { GroupStatistics } from "../models/statistics";
 
 export function createStatisticsRepository(request: Transport) {
 	return {
-		overview: (period: StatisticsPeriod = "7d", signal?: AbortSignal) =>
-			request<GroupStatistics>(`/api/statistics/overview?period=${period}`, { signal }),
-		user: (userId: string, period: StatisticsPeriod = "30d", signal?: AbortSignal) =>
-			request<PersonalStatistics>(
-				`/api/statistics/users/${encodeURIComponent(userId)}?period=${period}`,
-				{ signal },
+		get: (period: StatisticsPeriod = "7d", signal?: AbortSignal) =>
+			request((api) =>
+				api.GET("/api/statistics", {
+					params: { query: { period } },
+					signal,
+				}),
 			),
 	};
 }

@@ -33,6 +33,7 @@
 		"@vueuse/nuxt": "^14.4.0",
 		"h3": "^1.15.11",
 		"nuxt": "^4.5.2",
+		"openapi-fetch": "^0.17.0",
 		"pinia": "^3.0.4",
 		"reka-ui": "2.10.4",
 		"sortablejs": "^1.15.7",

@@ -174,7 +174,7 @@ def test_job_runs_persist_failures_recovery_and_interruption() -> None:
         assert report.totals.warnings == 2
         assert report.totals.errors == 1
         assert report.totals.recoveries == 1
-        assert {incident.error_code for incident in report.recent} == {
+        assert {incident.error_code for incident in report.items} == {
             "catalog_maintenance_partial",
             "job_interrupted",
         }

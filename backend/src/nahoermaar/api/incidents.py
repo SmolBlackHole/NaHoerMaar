@@ -19,10 +19,14 @@ from nahoermaar.operations.incidents import (
     IncidentOperationCount,
     IncidentPeriod,
     IncidentReport,
+    IncidentSeverity,
     IncidentTotals,
 )
+from nahoermaar.users.domain import UserId
 
+from .errors import error_responses
 from .middleware import authenticated
+from .pagination import NumberedPageView
 
 
 class IncidentTotalsView(BaseModel):
@@ -80,9 +84,7 @@ class IncidentView(BaseModel):
     trigger: str
 
 
-class IncidentReportView(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class IncidentReportView(NumberedPageView[IncidentView]):
     period: IncidentPeriod
     started_at: datetime
     ended_at: datetime
@@ -94,20 +96,39 @@ class IncidentReportView(BaseModel):
     associated_users: tuple[AssociatedUserCountView, ...]
     current_failure_free_seconds: float | None
     longest_failure_free_seconds: float | None
-    recent: tuple[IncidentView, ...]
 
 
 def router(application: Application) -> APIRouter:
     """Build the admin-only incident report endpoint."""
     routes = APIRouter(prefix="/api/incidents", tags=["incidents"])
 
-    @routes.get("")
+    @routes.get(
+        "",
+        operation_id="getIncidentReport",
+        responses=error_responses(401, 403, 422, 500, 503),
+    )
     async def incident_report(
         request: Request,
         period: Annotated[IncidentPeriod, Query()] = IncidentPeriod.HOURS_24,
+        severity: IncidentSeverity | None = None,
+        component: Annotated[str | None, Query(max_length=80)] = None,
+        code: Annotated[str | None, Query(max_length=120)] = None,
+        actor_id: UUID | None = None,
+        page: Annotated[int, Query(ge=1)] = 1,
+        page_size: Annotated[int, Query(ge=1, le=100)] = 20,
     ) -> IncidentReportView:
         await application.users.access.require_admin(authenticated(request).user.id)
-        return _report_view(await application.operations.incidents.report(period))
+        return _report_view(
+            await application.operations.incidents.report(
+                period,
+                page=page,
+                page_size=page_size,
+                severity=severity,
+                component=component,
+                error_code=code,
+                actor_id=UserId(actor_id) if actor_id is not None else None,
+            )
+        )
 
     return routes
 
@@ -125,7 +146,12 @@ def _report_view(report: IncidentReport) -> IncidentReportView:
         associated_users=tuple(_user_view(item) for item in report.associated_users),
         current_failure_free_seconds=report.current_failure_free_seconds,
         longest_failure_free_seconds=report.longest_failure_free_seconds,
-        recent=tuple(_incident_view(item) for item in report.recent),
+        items=tuple(_incident_view(item) for item in report.items),
+        page=report.page,
+        page_size=report.page_size,
+        total=report.total,
+        page_count=report.page_count,
+        snapshot=None,
     )
 
 

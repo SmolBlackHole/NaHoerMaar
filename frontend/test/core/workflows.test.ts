@@ -38,16 +38,16 @@ describe("new backend page workflows", () => {
 			.mockImplementation(() => new Promise<Response>((resolve) => (finishRead = resolve)));
 		const core = createBackendCore({ fetch: fetcher });
 		core.authority.replace("session-token", "restored");
-		const recent = core.workflows.recent();
-		const pending = recent.load();
+		const history = core.workflows.playbackHistory();
+		const pending = history.load();
 		const signal = fetcher.mock.calls[0]![1]?.signal;
-		expect(fetcher.mock.calls[0]![0]).toBe("/api/listening/recent?page=1&page_size=20");
+		expect(fetcher.mock.calls[0]![0]).toBe("/api/playbacks?page=1&page_size=20");
 
 		core.authority.lost("signed_out");
 		expect(signal?.aborted).toBe(true);
 		finishRead(
 			Response.json({
-				entries: [],
+				items: [],
 				page: 1,
 				page_size: 20,
 				total: 0,
@@ -56,9 +56,9 @@ describe("new backend page workflows", () => {
 			}),
 		);
 		expect(await pending).toBeNull();
-		expect(recent.history.data.value).toBeNull();
-		expect(recent.history.loading.value).toBe(false);
-		recent.dispose();
+		expect(history.history.data.value).toBeNull();
+		expect(history.history.loading.value).toBe(false);
+		history.dispose();
 	});
 
 	it("keeps numbered history pages on one stable snapshot", async () => {
@@ -68,7 +68,7 @@ describe("new backend page workflows", () => {
 		fetcher
 			.mockResolvedValueOnce(
 				Response.json({
-					entries: [{ playback_id: "first" }],
+					items: [{ playback_id: "first" }],
 					page: 1,
 					page_size: 1,
 					total: 2,
@@ -78,7 +78,7 @@ describe("new backend page workflows", () => {
 			)
 			.mockResolvedValueOnce(
 				Response.json({
-					entries: [{ playback_id: "second" }],
+					items: [{ playback_id: "second" }],
 					page: 2,
 					page_size: 1,
 					total: 2,
@@ -88,7 +88,7 @@ describe("new backend page workflows", () => {
 			)
 			.mockResolvedValueOnce(
 				Response.json({
-					entries: [{ playback_id: "radio" }],
+					items: [{ playback_id: "radio" }],
 					contributors: [],
 					page: 1,
 					page_size: 1,
@@ -97,25 +97,100 @@ describe("new backend page workflows", () => {
 					snapshot: "snapshot-two",
 				}),
 			);
-		const workflow = core.workflows.recent();
+		const workflow = core.workflows.playbackHistory();
 
 		await workflow.load({ pageSize: 1, query: "Still Alive", newSnapshot: true });
 		await workflow.load({ page: 2, pageSize: 1, query: "Still Alive" });
 		await workflow.load({
 			pageSize: 1,
 			query: "Still Alive",
-			filters: { radio: true, requestedBy: "user-one" },
+			filters: {
+				radio: true,
+				requestedBy: "user-one",
+				startedFrom: "2026-09-28T10:00:00Z",
+				startedTo: "2026-09-28T11:00:00Z",
+				endReason: "completed",
+			},
 		});
 
 		expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
-			"/api/listening/recent?page=1&page_size=1&q=Still+Alive",
-			"/api/listening/recent?page=2&page_size=1&q=Still+Alive&snapshot=snapshot-one",
-			"/api/listening/recent?page=1&page_size=1&q=Still+Alive&radio=true&requested_by=user-one",
+			"/api/playbacks?page=1&page_size=1&q=Still%20Alive",
+			"/api/playbacks?page=2&page_size=1&q=Still%20Alive&snapshot=snapshot-one",
+			"/api/playbacks?page=1&page_size=1&q=Still%20Alive&radio=true&requested_by=user-one&started_from=2026-09-28T10%3A00%3A00Z&started_to=2026-09-28T11%3A00%3A00Z&end_reason=completed",
 		]);
-		expect(workflow.history.data.value?.entries.map(({ playback_id }) => playback_id)).toEqual([
+		expect(workflow.history.data.value?.items.map(({ playback_id }) => playback_id)).toEqual([
 			"radio",
 		]);
 		expect(workflow.history.data.value?.page).toBe(1);
+		workflow.dispose();
+	});
+
+	it("pages a filtered incident report without replacing full-period totals", async () => {
+		const fetcher = vi
+			.fn<typeof fetch>()
+			.mockResolvedValueOnce(
+				Response.json({
+					items: [{ id: "incident-one" }],
+					page: 1,
+					page_size: 1,
+					total: 2,
+					page_count: 2,
+					snapshot: null,
+					totals: { errors: 2 },
+				}),
+			)
+			.mockResolvedValueOnce(
+				Response.json({
+					items: [{ id: "incident-two" }],
+					page: 2,
+					page_size: 1,
+					total: 2,
+					page_count: 2,
+					snapshot: null,
+					totals: { errors: 2 },
+				}),
+			);
+		const core = createBackendCore({ fetch: fetcher });
+		core.authority.replace("session-token", "restored");
+		const workflow = core.workflows.incidents();
+		const filters = {
+			period: "7d" as const,
+			severity: "error" as const,
+			component: "player",
+			code: "queue_stalled",
+			actorId: "user-one",
+		};
+
+		await workflow.load({ pageSize: 1, filters });
+		await workflow.load({ page: 2, pageSize: 1, filters });
+
+		expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+			"/api/incidents?period=7d&severity=error&component=player&code=queue_stalled&actor_id=user-one&page=1&page_size=1",
+			"/api/incidents?period=7d&severity=error&component=player&code=queue_stalled&actor_id=user-one&page=2&page_size=1",
+		]);
+		expect(workflow.report.data.value?.items).toEqual([{ id: "incident-two" }]);
+		expect(workflow.report.data.value?.totals.errors).toBe(2);
+		workflow.dispose();
+	});
+
+	it("applies log filters before polling from the current cursor", async () => {
+		const fetcher = vi
+			.fn<typeof fetch>()
+			.mockResolvedValueOnce(Response.json({ items: [{ id: 10 }], cursor: 10 }))
+			.mockResolvedValueOnce(Response.json({ items: [{ id: 11 }], cursor: 11 }));
+		const core = createBackendCore({ fetch: fetcher });
+		core.authority.replace("session-token", "restored");
+		const workflow = core.workflows.logs();
+		const filters = { query: "queue", level: "ERROR", source: "player" };
+
+		await workflow.loadLatest(filters, 5);
+		await workflow.poll(filters, 5);
+
+		expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+			"/api/logs?limit=5&q=queue&level=ERROR&source=player",
+			"/api/logs?after=10&limit=5&q=queue&level=ERROR&source=player",
+		]);
+		expect(workflow.page.data.value?.items).toEqual([{ id: 10 }, { id: 11 }]);
 		workflow.dispose();
 	});
 
@@ -133,12 +208,12 @@ describe("new backend page workflows", () => {
 
 		expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
 			"/api/catalog/search?q=ambient",
-			"/api/catalog/search/version-id?offset=1&limit=20",
+			"/api/catalog/discoveries/version-id?offset=1&page_size=20",
 		]);
-		expect(workflow.results.data.value?.entries.map(({ position }) => position)).toEqual([
+		expect(workflow.results.data.value?.items.map(({ position }) => position)).toEqual([
 			0, 1, 2,
 		]);
-		expect(workflow.results.data.value?.entries[1]?.track.title).toBe("page-two-1");
+		expect(workflow.results.data.value?.items[1]?.track.title).toBe("page-two-1");
 		workflow.dispose();
 	});
 
@@ -162,11 +237,11 @@ describe("new backend page workflows", () => {
 		await workflow.more();
 
 		expect(fetcher.mock.calls.map(([url, options]) => [url, options?.method])).toEqual([
-			["/api/catalog/search?q=ambient", undefined],
-			["/api/catalog/search/version-id/continue?offset=2&limit=20", "POST"],
+			["/api/catalog/search?q=ambient", "GET"],
+			["/api/catalog/discoveries/version-id/continuations?offset=2&page_size=20", "POST"],
 		]);
 		expect(workflow.results.data.value?.version).toBe("continued-version");
-		expect(workflow.results.data.value?.entries.map(({ position }) => position)).toEqual([
+		expect(workflow.results.data.value?.items.map(({ position }) => position)).toEqual([
 			0, 1, 2,
 		]);
 		expect(workflow.results.data.value?.source_has_more).toBe(false);
@@ -185,7 +260,7 @@ describe("new backend page workflows", () => {
 		};
 		fetcher
 			.mockResolvedValueOnce(Response.json({ jobs: [idle], history_retention_days: 30 }))
-			.mockResolvedValueOnce(Response.json({ entries: [], next_cursor: null }))
+			.mockResolvedValueOnce(Response.json({ items: [], page_size: 20, next_cursor: null }))
 			.mockResolvedValueOnce(
 				Response.json({
 					...idle,
@@ -204,8 +279,8 @@ describe("new backend page workflows", () => {
 			active_options: { batch_size: 25 },
 		});
 		expect(fetcher.mock.calls.map(([url, options]) => [url, options?.method])).toEqual([
-			["/api/jobs", undefined],
-			["/api/jobs/runs?limit=20", undefined],
+			["/api/jobs", "GET"],
+			["/api/jobs/runs?page_size=20", "GET"],
 			["/api/jobs/catalog-maintenance/runs", "POST"],
 		]);
 		workflow.dispose();
@@ -239,7 +314,9 @@ describe("new backend page workflows", () => {
 					history_retention_days: 30,
 				}),
 			)
-			.mockResolvedValueOnce(Response.json({ entries: [runSummary], next_cursor: null }))
+			.mockResolvedValueOnce(
+				Response.json({ items: [runSummary], page_size: 20, next_cursor: null }),
+			)
 			.mockResolvedValueOnce(
 				Response.json({
 					...idle,
@@ -260,13 +337,13 @@ describe("new backend page workflows", () => {
 			running: true,
 			active_options: { batch_size: 500 },
 		});
-		expect(workflow.runs.data.value?.entries).toEqual([runSummary]);
+		expect(workflow.runs.data.value?.items).toEqual([runSummary]);
 		expect(workflow.runDetail("run-one").data.value?.details).toEqual(recentRun.details);
 		expect(fetcher.mock.calls.map(([url, options]) => [url, options?.method])).toEqual([
-			["/api/jobs", undefined],
-			["/api/jobs/runs?limit=20", undefined],
+			["/api/jobs", "GET"],
+			["/api/jobs/runs?page_size=20", "GET"],
 			["/api/jobs/housekeeping/runs", "POST"],
-			["/api/jobs/runs/run-one", undefined],
+			["/api/jobs/runs/run-one", "GET"],
 		]);
 		workflow.dispose();
 	});
@@ -279,15 +356,16 @@ describe("new backend page workflows", () => {
 		fetcher
 			.mockResolvedValueOnce(Response.json(status))
 			.mockResolvedValueOnce(
-				Response.json({ entries: [{ id: "run-two" }], next_cursor: "older" }),
+				Response.json({ items: [{ id: "run-two" }], page_size: 20, next_cursor: "older" }),
 			)
 			.mockResolvedValueOnce(
-				Response.json({ entries: [{ id: "run-one" }], next_cursor: null }),
+				Response.json({ items: [{ id: "run-one" }], page_size: 20, next_cursor: null }),
 			)
 			.mockResolvedValueOnce(Response.json(status))
 			.mockResolvedValueOnce(
 				Response.json({
-					entries: [{ id: "run-three" }, { id: "run-two", status: "succeeded" }],
+					items: [{ id: "run-three" }, { id: "run-two", status: "succeeded" }],
+					page_size: 20,
 					next_cursor: "older-again",
 				}),
 			);
@@ -298,19 +376,16 @@ describe("new backend page workflows", () => {
 		await workflow.load();
 
 		expect(workflow.runs.data.value).toEqual({
-			entries: [
-				{ id: "run-three" },
-				{ id: "run-two", status: "succeeded" },
-				{ id: "run-one" },
-			],
+			items: [{ id: "run-three" }, { id: "run-two", status: "succeeded" }, { id: "run-one" }],
 			next_cursor: null,
+			page_size: 20,
 		});
 		expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
 			"/api/jobs",
-			"/api/jobs/runs?limit=20",
-			"/api/jobs/runs?limit=20&cursor=older",
+			"/api/jobs/runs?page_size=20",
+			"/api/jobs/runs?page_size=20&cursor=older",
 			"/api/jobs",
-			"/api/jobs/runs?limit=20",
+			"/api/jobs/runs?page_size=20",
 		]);
 		workflow.dispose();
 	});
@@ -324,18 +399,19 @@ function discovery(
 	return {
 		kind: "search",
 		version: "version-id",
-		entries: positions.map((position) => ({
+		items: positions.map((position) => ({
 			position,
-			source: {} as Discovery["entries"][number]["source"],
+			source: {} as Discovery["items"][number]["source"],
 			track: {
 				id: `track-${position}`,
 				title: `page-${nextOffset === null ? "two" : "one"}-${position}`,
-			} as Discovery["entries"][number]["track"],
+			} as Discovery["items"][number]["track"],
 		})),
 		expires_at: "2026-09-26T00:00:00Z",
 		fetched_at: "2026-09-25T00:00:00Z",
 		next_offset: nextOffset,
 		offset: nextOffset === null ? 1 : 0,
+		page_size: positions.length,
 		playlist_title: null,
 		provider: "youtube_music",
 		query: "ambient",

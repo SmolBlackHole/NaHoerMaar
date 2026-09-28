@@ -71,7 +71,7 @@ def test_incidents_are_deduplicated_summarized_and_expire() -> None:
             component="http",
             error_code="nothing_to_play",
             actor_id=user_id,
-            operation_type="POST /api/player/play",
+            operation_type="POST /api/player/control",
             correlation_id=user_context,
             trigger=IncidentTrigger.USER,
         )
@@ -118,12 +118,44 @@ def test_incidents_are_deduplicated_summarized_and_expire() -> None:
         assert report.associated_users[0].rejected_commands == 1
         assert report.common_errors[0].count == 2
         assert report.current_failure_free_seconds == 0
-        assert len(report.recent) == 4
+        assert len(report.items) == 4
+        assert report.total == 4
+        assert report.page_count == 1
+
+        second_page = await service.report(
+            IncidentPeriod.HOURS_24,
+            page=2,
+            page_size=2,
+        )
+        assert len(second_page.items) == 2
+        assert second_page.total == 4
+        assert second_page.page_count == 2
+        assert second_page.totals == report.totals
+
+        failed_playback = await service.report(
+            IncidentPeriod.HOURS_24,
+            severity=IncidentSeverity.ERROR,
+            component="playback",
+            error_code="VoiceConnectionError",
+            page_size=1,
+        )
+        assert failed_playback.total == 1
+        assert failed_playback.totals.errors == 1
+        assert failed_playback.totals.warnings == 0
+        assert failed_playback.items[0].error_code == "VoiceConnectionError"
+
+        user_report = await service.report(
+            IncidentPeriod.HOURS_24,
+            actor_id=user_id,
+        )
+        assert user_report.total == 1
+        assert user_report.associated_users[0].identity.user_id == user_id
 
         current[0] = NOW + timedelta(days=15)
         expired = await service.report(IncidentPeriod.DAYS_14)
         assert expired.recorded_since is None
-        assert expired.recent == ()
+        assert expired.items == ()
+        assert expired.total == 0
 
     try:
         asyncio.run(scenario())

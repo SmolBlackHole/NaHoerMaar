@@ -15,11 +15,11 @@ import { createQueryState, type QueryState } from "./queryState";
 export function createJobsWorkflow(client: BackendClient, authority: SessionAuthority) {
 	const jobs = createQueryState<BackgroundJobs>(authority);
 	const runHistory = createCursorPagination<
-		BackgroundJobRunPage["entries"][number],
+		BackgroundJobRunPage["items"][number],
 		BackgroundJobRunPage
 	>(
 		authority,
-		(limit, cursor, signal) => client.jobs.runs({ limit, cursor }, signal),
+		(pageSize, cursor, signal) => client.jobs.runs({ pageSize, cursor }, signal),
 		({ id }) => id,
 	);
 	const runs = runHistory.page;

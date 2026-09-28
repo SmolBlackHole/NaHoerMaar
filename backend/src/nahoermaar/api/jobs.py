@@ -29,9 +29,14 @@ from nahoermaar.operations.scheduler import (
     JobStatus,
 )
 
-from .errors import ApiError, ApiErrorCode
+from .errors import ApiError, ApiErrorCode, error_responses
 from .middleware import authenticated
-from .pagination import TimestampPosition, decode_position, encode_position
+from .pagination import (
+    CursorPageView,
+    TimestampPosition,
+    decode_position,
+    encode_position,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -147,11 +152,8 @@ class BackgroundJobRunSummaryView(BaseModel):
     error_code: str | None
 
 
-class BackgroundJobRunPageView(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    entries: tuple[BackgroundJobRunSummaryView, ...]
-    next_cursor: str | None
+class BackgroundJobRunPageView(CursorPageView[BackgroundJobRunSummaryView]):
+    pass
 
 
 class BackgroundJobsView(BaseModel):
@@ -176,7 +178,11 @@ def router(application: Application) -> APIRouter:
     """Build admin-only status and trigger endpoints for background work."""
     routes = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
-    @routes.get("")
+    @routes.get(
+        "",
+        operation_id="listBackgroundJobs",
+        responses=error_responses(401, 403, 500, 503),
+    )
     async def background_jobs(request: Request) -> BackgroundJobsView:
         await application.users.access.require_admin(authenticated(request).user.id)
         jobs = await application.operations.jobs.statuses()
@@ -185,27 +191,36 @@ def router(application: Application) -> APIRouter:
             history_retention_days=HISTORY_RETENTION_DAYS,
         )
 
-    @routes.get("/runs")
+    @routes.get(
+        "/runs",
+        operation_id="listBackgroundJobRuns",
+        responses=error_responses(401, 403, 422, 500, 503),
+    )
     async def background_job_runs(
         request: Request,
-        limit: Annotated[int, Query(ge=1, le=100)] = 20,
+        page_size: Annotated[int, Query(ge=1, le=100)] = 20,
         cursor: str | None = None,
         job_id: JobId | None = None,
         run_status: Annotated[JobRunStatus | None, Query(alias="status")] = None,
     ) -> BackgroundJobRunPageView:
         await application.users.access.require_admin(authenticated(request).user.id)
         page = await application.operations.job_runs.runs(
-            limit=limit,
+            limit=page_size,
             cursor=_decode_cursor(cursor),
             job_id=job_id,
             status=run_status,
         )
         return BackgroundJobRunPageView(
-            entries=tuple(_run_summary_view(run) for run in page.entries),
+            items=tuple(_run_summary_view(run) for run in page.entries),
+            page_size=page_size,
             next_cursor=_encode_cursor(page.next_cursor),
         )
 
-    @routes.get("/runs/{run_id}")
+    @routes.get(
+        "/runs/{run_id}",
+        operation_id="getBackgroundJobRun",
+        responses=error_responses(401, 403, 404, 422, 500, 503),
+    )
     async def background_job_run(
         run_id: UUID,
         request: Request,
@@ -219,6 +234,8 @@ def router(application: Application) -> APIRouter:
     @routes.post(
         "/{job_id}/runs",
         status_code=status.HTTP_202_ACCEPTED,
+        operation_id="runBackgroundJob",
+        responses=error_responses(401, 403, 404, 409, 422, 500, 503),
     )
     async def run_job(
         job_id: str,

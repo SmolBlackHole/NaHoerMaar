@@ -1,7 +1,12 @@
 // SPDX-FileCopyrightText: 2026 SmolBlackHole
 // SPDX-License-Identifier: MPL-2.0
 
-import type { components } from "./schema.generated";
+import createClient, { type Client } from "openapi-fetch";
+import type { components, paths } from "./schema.generated";
+
+const CLIENT_ORIGIN = "http://nahoermaar.invalid";
+const REQUEST_TIMEOUT_MS = 35_000;
+const SESSION_PATH = "/api/auth/session";
 
 export interface SessionCredentials {
 	/** Increment whenever the session is cleared or replaced, even for the same user. */
@@ -66,44 +71,71 @@ export class InvalidResponse extends Error {
 	}
 }
 
-interface RequestOptions extends RequestInit {
-	/** Only session discovery may run before local credentials have been restored. */
-	allowSignedOut?: boolean;
-	timeoutMs?: number;
-}
+export type GeneratedApiClient = Client<paths>;
 
+type OpenApiResult = { data?: unknown; error?: unknown; response: Response };
+type ApiOperation = (client: GeneratedApiClient) => Promise<OpenApiResult>;
+type OperationData<TOperation extends ApiOperation> = Extract<
+	Awaited<ReturnType<TOperation>>,
+	{ data: unknown }
+>["data"];
+
+/** Execute one generated OpenAPI operation through the shared session boundary. */
 export function createTransport(fetcher: typeof fetch, auth: AuthBoundary) {
-	return async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-		const { allowSignedOut = false, timeoutMs = 35_000, ...init } = options;
-		const { generation, csrf } = auth.current();
-		if (!allowSignedOut && !csrf) throw new SessionLost();
-		const headers = new Headers(init.headers);
-		if (!["GET", "HEAD", "OPTIONS"].includes((init.method ?? "GET").toUpperCase())) {
-			if (!csrf) throw new SessionLost();
-			headers.set("X-CSRF-Token", csrf);
+	const client = createClient<paths>({
+		baseUrl: CLIENT_ORIGIN,
+		fetch: async (request) => {
+			const url = new URL(request.url);
+			const { csrf } = auth.current();
+			const method = request.method.toUpperCase();
+			const allowSignedOut = method === "GET" && url.pathname === SESSION_PATH;
+			if (!allowSignedOut && !csrf) throw new SessionLost();
+
+			const headers = new Headers(request.headers);
+			if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
+				if (!csrf) throw new SessionLost();
+				headers.set("X-CSRF-Token", csrf);
+			}
+			const signal = AbortSignal.any([
+				request.signal,
+				AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+			]);
+			const body = ["GET", "HEAD"].includes(method) ? undefined : await request.text();
+			return fetcher(url.pathname + url.search, {
+				method,
+				headers,
+				body: body || undefined,
+				credentials: "same-origin",
+				cache: "no-store",
+				signal,
+			});
+		},
+	});
+
+	return async function request<TOperation extends ApiOperation>(
+		operation: TOperation,
+	): Promise<OperationData<TOperation>> {
+		const generation = auth.current().generation;
+		let result: OpenApiResult;
+		try {
+			result = await operation(client);
+		} catch (error) {
+			if (generation !== auth.current().generation) throw new SessionLost();
+			if (error instanceof SyntaxError) throw new InvalidResponse(null);
+			throw error;
 		}
-		const timeout = AbortSignal.timeout(timeoutMs);
-		const response = await fetcher(path, {
-			...init,
-			headers,
-			credentials: "same-origin",
-			cache: "no-store",
-			signal: init.signal ? AbortSignal.any([init.signal, timeout]) : timeout,
-		});
 		if (generation !== auth.current().generation) throw new SessionLost();
-		if (response.status === 204) return undefined as T;
-		const requestId = response.headers.get("x-request-id");
-		const body: unknown = await response.json().catch(() => undefined);
-		// Reading the response body is asynchronous too: the user may have logged out.
-		if (generation !== auth.current().generation) throw new SessionLost();
-		if (!response.ok) {
+
+		const requestId = result.response.headers.get("x-request-id");
+		if (!("data" in result)) {
+			const body: unknown = result.error;
 			const error = {
-				error:
+				code:
 					body &&
 					typeof body === "object" &&
-					"error" in body &&
-					typeof body.error === "string"
-						? body.error
+					"code" in body &&
+					typeof body.code === "string"
+						? body.code
 						: "invalid_response",
 				retryable:
 					body &&
@@ -111,16 +143,18 @@ export function createTransport(fetcher: typeof fetch, auth: AuthBoundary) {
 					"retryable" in body &&
 					typeof body.retryable === "boolean"
 						? body.retryable
-						: response.status >= 500,
+						: result.response.status >= 500,
 			} satisfies components["schemas"]["ErrorView"];
-			if (response.status === 401) {
-				auth.lost(error.error);
+			if (result.response.status === 401) {
+				auth.lost(error.code);
 				throw new SessionLost();
 			}
-			throw new ApiFailure(response.status, error, requestId);
+			throw new ApiFailure(result.response.status, error, requestId);
 		}
-		if (body === undefined) throw new InvalidResponse(requestId);
-		return body as T;
+		if (result.data === undefined && result.response.status !== 204) {
+			throw new InvalidResponse(requestId);
+		}
+		return result.data as OperationData<TOperation>;
 	};
 }
 

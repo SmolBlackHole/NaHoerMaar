@@ -11,13 +11,15 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel, ConfigDict
 
 from nahoermaar.catalog.domain import (
-    DiscoveryKind,
     DiscoveryResult,
     DiscoverySnapshotId,
     Track,
     TrackSource,
 )
 from nahoermaar.catalog.service import CatalogService
+
+from .errors import error_responses
+from .pagination import OffsetPageView
 
 
 class View(BaseModel):
@@ -56,7 +58,7 @@ class DiscoveryEntryView(View):
     source: TrackSourceView
 
 
-class DiscoveryView(View):
+class DiscoveryView(OffsetPageView[DiscoveryEntryView]):
     version: UUID
     kind: str
     provider: str
@@ -67,17 +69,18 @@ class DiscoveryView(View):
     expires_at: datetime
     stale: bool
     refreshing: bool
-    offset: int
-    total: int
-    next_offset: int | None
     source_has_more: bool
-    entries: tuple[DiscoveryEntryView, ...]
 
 
 def router(catalog: CatalogService) -> APIRouter:
     api = APIRouter(prefix="/api/catalog", tags=["catalog"])
 
-    @api.get("/search", response_model=DiscoveryView)
+    @api.get(
+        "/search",
+        response_model=DiscoveryView,
+        operation_id="searchCatalog",
+        responses=error_responses(401, 422, 500, 502, 503),
+    )
     async def search(
         q: str = Query(min_length=1, max_length=200),
         limit: int = Query(default=50, ge=1, le=100),
@@ -88,10 +91,15 @@ def router(catalog: CatalogService) -> APIRouter:
             await catalog.search(
                 q, limit=limit, provider_key=provider, refresh=refresh
             ),
-            limit=min(20, limit),
+            page_size=min(20, limit),
         )
 
-    @api.get("/playlist", response_model=DiscoveryView)
+    @api.get(
+        "/playlist",
+        response_model=DiscoveryView,
+        operation_id="discoverCatalogPlaylist",
+        responses=error_responses(401, 422, 500, 502, 503),
+    )
     async def playlist(
         url: str = Query(min_length=1, max_length=2048),
         limit: int = Query(default=100, ge=1, le=100),
@@ -107,41 +115,53 @@ def router(catalog: CatalogService) -> APIRouter:
             )
         )
 
-    @api.get("/link", response_model=TrackView)
+    @api.get(
+        "/link",
+        response_model=TrackView,
+        operation_id="resolveCatalogLink",
+        responses=error_responses(401, 404, 422, 500, 502, 503),
+    )
     async def link(
         url: str = Query(min_length=1, max_length=2048),
         provider: str | None = Query(default=None, min_length=1, max_length=64),
     ) -> TrackView:
         return track_view(await catalog.track(url, provider_key=provider))
 
-    @api.get("/{kind}/{version}", response_model=DiscoveryView)
+    @api.get(
+        "/discoveries/{version}",
+        response_model=DiscoveryView,
+        operation_id="getCatalogDiscovery",
+        responses=error_responses(401, 404, 422, 500, 503),
+    )
     async def snapshot(
-        kind: DiscoveryKind,
         version: UUID,
         offset: int = Query(default=0, ge=0),
-        limit: int = Query(default=20, ge=1, le=100),
+        page_size: int = Query(default=20, ge=1, le=100),
     ) -> DiscoveryView:
         return _discovery(
-            await catalog.snapshot(DiscoverySnapshotId(version), kind),
+            await catalog.snapshot(DiscoverySnapshotId(version)),
             offset=offset,
-            limit=limit,
+            page_size=page_size,
         )
 
-    @api.post("/{kind}/{version}/continue", response_model=DiscoveryView)
+    @api.post(
+        "/discoveries/{version}/continuations",
+        response_model=DiscoveryView,
+        operation_id="continueCatalogDiscovery",
+        responses=error_responses(401, 404, 422, 500, 502, 503),
+    )
     async def continue_snapshot(
-        kind: DiscoveryKind,
         version: UUID,
         offset: int = Query(ge=0),
-        limit: int = Query(default=20, ge=1, le=100),
+        page_size: int = Query(default=20, ge=1, le=100),
     ) -> DiscoveryView:
         return _discovery(
             await catalog.continue_snapshot(
                 DiscoverySnapshotId(version),
-                kind,
-                limit=limit,
+                limit=page_size,
             ),
             offset=offset,
-            limit=limit,
+            page_size=page_size,
         )
 
     return api
@@ -179,11 +199,11 @@ def _discovery(
     result: DiscoveryResult,
     *,
     offset: int = 0,
-    limit: int | None = None,
+    page_size: int | None = None,
 ) -> DiscoveryView:
     snapshot = result.snapshot
     total = len(snapshot.entries)
-    end = None if limit is None else offset + limit
+    end = None if page_size is None else offset + page_size
     entries = snapshot.entries[offset:end]
     next_offset = offset + len(entries)
     return DiscoveryView(
@@ -198,10 +218,11 @@ def _discovery(
         stale=result.stale,
         refreshing=result.refreshing,
         offset=offset,
+        page_size=len(entries),
         total=total,
         next_offset=next_offset if next_offset < total else None,
         source_has_more=snapshot.source_has_more,
-        entries=tuple(
+        items=tuple(
             DiscoveryEntryView(
                 position=entry.position,
                 track=track_view(entry.track),

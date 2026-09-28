@@ -84,8 +84,13 @@ class Provider:
 
 
 class Gateway:
-    def members(self) -> tuple[DiscordMember, ...]:
-        return (
+    def members(
+        self,
+        *,
+        query: str | None = None,
+        guild_id: str | None = None,
+    ) -> tuple[DiscordMember, ...]:
+        members = (
             DiscordMember(
                 "9",
                 "owner",
@@ -94,6 +99,19 @@ class Gateway:
                 "1",
                 "Spoon's server",
             ),
+        )
+        needle = query.casefold() if query else ""
+        return tuple(
+            member
+            for member in members
+            if (guild_id is None or member.guild_id == guild_id)
+            and (
+                not needle
+                or needle in member.username.casefold()
+                or needle in member.display_name.casefold()
+                or needle in member.discord_id
+                or needle in member.guild_name.casefold()
+            )
         )
 
 
@@ -251,8 +269,24 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
         raise RuntimeError("test failure")
 
     contract = app.openapi()
+    operation_ids = [
+        operation["operationId"]
+        for path in contract["paths"].values()
+        for method, operation in path.items()
+        if method
+        in {"delete", "get", "head", "options", "patch", "post", "put", "trace"}
+    ]
+    assert all(
+        identifier[0].islower() and "_" not in identifier
+        for identifier in operation_ids
+    )
+    assert len(operation_ids) == len(set(operation_ids))
     assert "/api/events" in contract["paths"]
-    assert "/api/listening/recent" in contract["paths"]
+    assert "/api/playbacks" in contract["paths"]
+    assert not any(path.startswith("/api/listening") for path in contract["paths"])
+    assert "/api/catalog/discoveries/{version}" in contract["paths"]
+    assert "/api/catalog/discoveries/{version}/continuations" in contract["paths"]
+    assert not any("{kind}" in path for path in contract["paths"])
     assert "/api/logs" in contract["paths"]
     assert "/api/jobs" in contract["paths"]
     assert "/api/jobs/runs" in contract["paths"]
@@ -260,13 +294,35 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
     assert "/api/jobs/{job_id}/runs" in contract["paths"]
     assert "/api/jobs/housekeeping" not in contract["paths"]
     assert "/api/incidents" in contract["paths"]
+    assert "/api/player/control" in contract["paths"]
+    assert "/api/player/voice" in contract["paths"]
+    assert "/api/player/radio" in contract["paths"]
     assert "/api/player/sleep-timer" in contract["paths"]
-    assert "/api/statistics/overview" in contract["paths"]
-    assert "/api/statistics/users/{user_id}" in contract["paths"]
+    assert "/api/player/play" not in contract["paths"]
+    assert "/api/player/voice/join" not in contract["paths"]
+    assert "/api/player/radio/stop" not in contract["paths"]
+    assert "/api/statistics" in contract["paths"]
+    assert not any(path.startswith("/api/statistics/") for path in contract["paths"])
+    assert "/api/users/me/profile" not in contract["paths"]
+    assert "/api/users/me/appearance" not in contract["paths"]
     assert "ErrorView" in contract["components"]["schemas"]
     assert contract["paths"]["/api/player"]["get"]["responses"]["401"]["content"][
         "application/json"
     ]["schema"] == {"$ref": "#/components/schemas/ErrorView"}
+    assert set(contract["paths"]["/api/player"]["get"]["responses"]) == {
+        "200",
+        "401",
+        "500",
+        "503",
+    }
+    assert set(contract["paths"]["/api/jobs"]["get"]["responses"]) == {
+        "200",
+        "401",
+        "403",
+        "500",
+        "503",
+    }
+    assert "502" not in contract["paths"]["/api/jobs/runs"]["get"]["responses"]
     assert contract["paths"]["/api/events"]["get"]["x-sse-payloads"] == {
         "state": {"$ref": "#/components/schemas/PlayerView"},
         "change": {"$ref": "#/components/schemas/ChangeView"},
@@ -308,7 +364,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
             assert session.status_code == 200
             assert session.json()["role"] == "owner"
 
-            overview = await client.get("/api/statistics/overview")
+            overview = await client.get("/api/statistics")
             assert overview.status_code == 200
             assert overview.json()["totals"]["playback"]["overall"]["started"] == 0
             assert overview.json()["totals"]["playback_seconds"] == 0.0
@@ -326,31 +382,6 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
                 "average_listeners": None,
             }
             assert "user_id" not in overview.json()
-            own_statistics = await client.get(
-                f"/api/statistics/users/{current.user.id}"
-            )
-            assert own_statistics.status_code == 200
-            assert own_statistics.json()["user_id"] == str(current.user.id)
-            assert "active_listeners" not in own_statistics.json()
-            assert "top_listeners" not in own_statistics.json()
-            assert "requested_tracks" not in own_statistics.json()
-            assert "requested_artists" not in own_statistics.json()
-            assert own_statistics.json()["top_tracks_by_listening"] == []
-            assert own_statistics.json()["top_artists_by_listening"] == []
-            personal_highlights = own_statistics.json()["highlights"]
-            assert personal_highlights["group_listening_share"] is None
-            assert personal_highlights["request_outcomes"] == {
-                "manual_requests": 0,
-                "played_requests": 0,
-                "completed_requests": 0,
-                "play_rate": None,
-                "completion_rate": None,
-            }
-            assert personal_highlights["radio_discoveries"] == []
-            assert personal_highlights["influenced_tracks"] == []
-            assert personal_highlights["badges"] == []
-            assert len(personal_highlights["listening_pattern"]["weekdays"]) == 7
-            assert len(personal_highlights["listening_pattern"]["hours"]) == 24
             own_profile = await client.get(f"/api/profiles/{current.user.id}")
             assert own_profile.status_code == 200
             assert own_profile.json()["id"] == str(current.user.id)
@@ -362,6 +393,11 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
                 )
             )
             assert own_profile.json()["statistics"]["user_id"] == str(current.user.id)
+            personal_highlights = own_profile.json()["statistics"]["highlights"]
+            assert personal_highlights["group_listening_share"] is None
+            assert personal_highlights["badges"] == []
+            assert len(personal_highlights["listening_pattern"]["weekdays"]) == 7
+            assert len(personal_highlights["listening_pattern"]["hours"]) == 24
             assert own_profile.json()["recent_tracks"] == []
             current_profile = await client.get("/api/profiles/me")
             assert current_profile.status_code == 200
@@ -403,8 +439,8 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
                 },
                 "last_error_code": None,
             }
-            assert (await client.get("/api/listening/recent")).json() == {
-                "entries": [],
+            assert (await client.get("/api/playbacks")).json() == {
+                "items": [],
                 "contributors": [],
                 "page": 1,
                 "page_size": 20,
@@ -412,11 +448,9 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
                 "page_count": 0,
                 "snapshot": None,
             }
-            invalid_recent = await client.get(
-                "/api/listening/recent", params={"page_size": 0}
-            )
-            assert invalid_recent.status_code == 422
-            assert invalid_recent.json() == {"error": "validation_failed"}
+            invalid_page = await client.get("/api/playbacks", params={"page_size": 0})
+            assert invalid_page.status_code == 422
+            assert invalid_page.json() == {"code": "validation_failed"}
             events = event_stream(application, session_token)
             initial = await anext(events)
             assert initial.event == "state"
@@ -424,16 +458,20 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
             assert isinstance(initial.data, PlayerView)
             assert initial.data.queue == ()
 
-            rejected = await client.put(
-                "/api/users/me/profile",
-                json={"display_name": "Owner"},
+            rejected = await client.patch(
+                "/api/users/me",
+                json={"profile": {"display_name": "Owner"}},
             )
             assert rejected.status_code == 403
-            assert rejected.json() == {"error": "csrf_failed"}
+            assert rejected.json() == {"code": "csrf_failed"}
 
             incident_report = await client.get("/api/incidents")
             assert incident_report.status_code == 200
             assert incident_report.json()["retention_days"] == 14
+            assert incident_report.json()["page"] == 1
+            assert incident_report.json()["page_size"] == 20
+            assert incident_report.json()["total"] >= 1
+            assert "recent" not in incident_report.json()
             assert incident_report.json()["totals"]["rejected"] >= 1
             assert incident_report.json()["associated_users"][0]["user_id"] == str(
                 current.user.id
@@ -462,11 +500,15 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
             assert jobs_response.json()["history_retention_days"] == 30
             job_runs = await client.get("/api/jobs/runs")
             assert job_runs.status_code == 200
-            assert job_runs.json() == {"entries": [], "next_cursor": None}
+            assert job_runs.json() == {
+                "items": [],
+                "page_size": 20,
+                "next_cursor": None,
+            }
             missing_job_run = await client.get(f"/api/jobs/runs/{uuid4()}")
             assert missing_job_run.status_code == 404
             assert missing_job_run.json() == {
-                "error": "not_found",
+                "code": "not_found",
                 "retryable": False,
             }
             invalid_job_cursor = await client.get(
@@ -475,7 +517,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
             )
             assert invalid_job_cursor.status_code == 422
             assert invalid_job_cursor.json() == {
-                "error": "validation_failed",
+                "code": "validation_failed",
                 "retryable": False,
             }
             first_run = await application.operations.job_runs.start_run(
@@ -504,24 +546,24 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
             )
             first_run_page = await client.get(
                 "/api/jobs/runs",
-                params={"limit": 1, "job_id": "housekeeping"},
+                params={"page_size": 1, "job_id": "housekeeping"},
             )
             assert first_run_page.status_code == 200
-            assert len(first_run_page.json()["entries"]) == 1
-            assert "details" not in first_run_page.json()["entries"][0]
+            assert len(first_run_page.json()["items"]) == 1
+            assert "details" not in first_run_page.json()["items"][0]
             assert first_run_page.json()["next_cursor"] is not None
             second_run_page = await client.get(
                 "/api/jobs/runs",
                 params={
-                    "limit": 1,
+                    "page_size": 1,
                     "job_id": "housekeeping",
                     "cursor": first_run_page.json()["next_cursor"],
                 },
             )
             assert second_run_page.status_code == 200
             paged_ids = {
-                first_run_page.json()["entries"][0]["id"],
-                second_run_page.json()["entries"][0]["id"],
+                first_run_page.json()["items"][0]["id"],
+                second_run_page.json()["items"][0]["id"],
             }
             assert paged_ids == {str(first_run.id), str(second_run.id)}
             assert second_run_page.json()["next_cursor"] is None
@@ -560,13 +602,13 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
             operation_id = uuid4()
             queued = await client.post(
                 "/api/player/queue",
-                headers=headers,
+                headers={**headers, "Idempotency-Key": str(operation_id)},
                 json={
-                    "operation_id": str(operation_id),
                     "tracks": [{"track_id": str(track_id)}],
                 },
             )
             assert queued.status_code == 200
+            assert queued.json()["operation_id"] == str(operation_id)
             assert queued.json()["player"]["queue"][0]["request"][
                 "requested_by"
             ] == str(current.user.id)
@@ -616,7 +658,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
                     )
                 )
                 await work.commit()
-            enriched_overview = await client.get("/api/statistics/overview")
+            enriched_overview = await client.get("/api/statistics")
             assert enriched_overview.status_code == 200
             top_listener = enriched_overview.json()["top_listeners"][0]
             assert top_listener["discord_username"] == "Owner"
@@ -627,13 +669,13 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
                 "9",
                 source_url="https://cdn.discordapp.com/avatars/9/test.png",
             )
-            recent = await client.get("/api/listening/recent", params={"page_size": 1})
+            recent = await client.get("/api/playbacks", params={"page_size": 1})
             assert recent.status_code == 200
             recent_payload = recent.json()
             snapshot = recent_payload.pop("snapshot")
             assert snapshot
             assert recent_payload == {
-                "entries": [
+                "items": [
                     {
                         "playback_id": str(playback_id),
                         "request_id": request_id,
@@ -679,26 +721,44 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
                 "page_count": 2,
             }
             older = await client.get(
-                "/api/listening/recent",
+                "/api/playbacks",
                 params={"page": 2, "page_size": 1, "snapshot": snapshot},
             )
             assert older.status_code == 200
-            assert older.json()["entries"][0]["playback_id"] == str(prior_playback_id)
+            assert older.json()["items"][0]["playback_id"] == str(prior_playback_id)
             assert older.json()["snapshot"] == snapshot
-            search = await client.get(
-                "/api/listening/recent", params={"q": "api TRACK"}
-            )
+            search = await client.get("/api/playbacks", params={"q": "api TRACK"})
             assert search.status_code == 200
             assert search.json()["total"] == 2
             manual = await client.get(
-                "/api/listening/recent",
+                "/api/playbacks",
                 params={"radio": False, "requested_by": str(current.user.id)},
             )
             assert manual.status_code == 200
             assert manual.json()["total"] == 2
-            assert all(
-                entry["origin"] == "manual" for entry in manual.json()["entries"]
+            assert all(entry["origin"] == "manual" for entry in manual.json()["items"])
+            recent_window = await client.get(
+                "/api/playbacks",
+                params={
+                    "started_from": (NOW - timedelta(seconds=30)).isoformat(),
+                    "started_to": (NOW + timedelta(seconds=1)).isoformat(),
+                    "end_reason": "completed",
+                },
             )
+            assert recent_window.status_code == 200
+            assert recent_window.json()["total"] == 1
+            invalid_window = await client.get(
+                "/api/playbacks",
+                params={
+                    "started_from": NOW.isoformat(),
+                    "started_to": (NOW - timedelta(seconds=1)).isoformat(),
+                },
+            )
+            assert invalid_window.status_code == 422
+            assert invalid_window.json() == {
+                "code": "validation_failed",
+                "retryable": False,
+            }
             change = await anext(events)
             assert change.event == "change"
             assert change.id == "1"
@@ -721,9 +781,8 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
             assert runtime.data.revision == 1
             replayed = await client.post(
                 "/api/player/queue",
-                headers=headers,
+                headers={**headers, "Idempotency-Key": str(operation_id)},
                 json={
-                    "operation_id": str(operation_id),
                     "tracks": [{"track_id": str(track_id)}],
                 },
             )
@@ -731,11 +790,11 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
             assert replayed.json()["replayed"] is True
             assert len(replayed.json()["player"]["queue"]) == 1
 
+            clear_operation_id = uuid4()
             cleared = await client.post(
                 "/api/player/queue/clear",
-                headers=headers,
+                headers={**headers, "Idempotency-Key": str(clear_operation_id)},
                 json={
-                    "operation_id": str(uuid4()),
                     "expected_queue_revision": replayed.json()["player"][
                         "queue_revision"
                     ],
@@ -746,11 +805,11 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
             assert cleared.json()["player"]["queue"] == []
             assert cleared.json()["outcome"]["removed_count"] == 1
             await anext(events)
+            undo_operation_id = uuid4()
             restored = await client.post(
                 "/api/player/queue/undo",
-                headers=headers,
+                headers={**headers, "Idempotency-Key": str(undo_operation_id)},
                 json={
-                    "operation_id": str(uuid4()),
                     "undo_id": cleared.json()["outcome"]["undo_id"],
                 },
             )
@@ -758,20 +817,49 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
             assert len(restored.json()["player"]["queue"]) == 1
             await anext(events)
 
-            profile = await client.put(
-                "/api/users/me/profile",
+            profile = await client.patch(
+                "/api/users/me",
                 headers=headers,
-                json={"display_name": "Local owner"},
+                json={
+                    "profile": {"display_name": "Local owner"},
+                    "appearance": {
+                        "mode": "dark",
+                        "artwork_colors": True,
+                        "primary_color": "cyan",
+                        "neutral_color": "zinc",
+                        "font_family": "Geist",
+                        "icon_set": "lucide",
+                        "text_size": "md",
+                    },
+                },
             )
             assert profile.status_code == 200
             assert profile.json()["profile"]["display_name"] == "Local owner"
             assert profile.json()["discord"]["username"] == "Owner"
+            assert profile.json()["appearance"]["primary_color"] == "cyan"
             assert "statistics" not in profile.json()
-
-            played = await client.post(
-                "/api/player/play",
+            appearance = await client.patch(
+                "/api/users/me",
                 headers=headers,
-                json={"operation_id": str(uuid4())},
+                json={
+                    "appearance": {
+                        **profile.json()["appearance"],
+                        "primary_color": "teal",
+                    }
+                },
+            )
+            assert appearance.status_code == 200
+            assert appearance.json()["profile"]["display_name"] == "Local owner"
+            assert appearance.json()["appearance"]["primary_color"] == "teal"
+            empty_update = await client.patch("/api/users/me", headers=headers, json={})
+            assert empty_update.status_code == 422
+            assert empty_update.json() == {"code": "validation_failed"}
+
+            play_operation_id = uuid4()
+            played = await client.post(
+                "/api/player/control",
+                headers={**headers, "Idempotency-Key": str(play_operation_id)},
+                json={"action": "play"},
             )
             assert played.status_code == 200
             runtime = played.json()["player"]["runtime"]
@@ -785,7 +873,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
 
             operator = await client.put("/api/access/9", headers=headers)
             assert operator.status_code == 409
-            assert operator.json() == {"error": "operator_access_managed_in_config"}
+            assert operator.json() == {"code": "operator_access_managed_in_config"}
 
             grant = await client.put("/api/access/7", headers=headers)
             assert grant.status_code == 200
@@ -798,6 +886,12 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
             members = await client.get("/api/access/members")
             assert members.status_code == 200
             assert members.json()["members"][0]["display_name"] == "Andrey"
+            assert (
+                await client.get("/api/access/members", params={"q": "missing"})
+            ).json() == {"members": []}
+            assert (
+                await client.get("/api/access/members", params={"guild_id": "1"})
+            ).json() == members.json()
             granted_user_id = access_state.json()["grants"][0]["user"]["id"]
             granted_profile = await client.get(f"/api/profiles/{granted_user_id}")
             assert granted_profile.status_code == 200
@@ -806,11 +900,11 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
             assert revoked.status_code == 200
             hidden_profile = await client.get(f"/api/profiles/{granted_user_id}")
             assert hidden_profile.status_code == 404
-            assert hidden_profile.json() == {"error": "profile_not_found"}
+            assert hidden_profile.json() == {"code": "profile_not_found"}
 
             process_logs = await client.get("/api/logs", params={"limit": 200})
             assert process_logs.status_code == 200
-            entries = process_logs.json()["entries"]
+            entries = process_logs.json()["items"]
             assert entries
             assert any(entry["actor_id"] == str(current.user.id) for entry in entries)
             assert all("q=test" not in entry["message"] for entry in entries)
@@ -820,15 +914,15 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
                 "/api/users/me", headers={"origin": "https://evil.example"}
             )
             assert wrong_origin.status_code == 403
-            assert wrong_origin.json() == {"error": "origin_forbidden"}
+            assert wrong_origin.json() == {"code": "origin_forbidden"}
 
-            development_origin = await client.put(
-                "/api/users/me/profile",
+            development_origin = await client.patch(
+                "/api/users/me",
                 headers={
                     "origin": "http://localhost:3001",
                     "x-csrf-token": current.csrf,
                 },
-                json={"display_name": "Local owner"},
+                json={"profile": {"display_name": "Local owner"}},
             )
             assert development_origin.status_code == 200
 
@@ -846,20 +940,23 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
                 headers={"x-nahormaar-browser-origin": "https://evil.example"},
             )
             assert rejected_login_origin.status_code == 403
-            assert rejected_login_origin.json() == {"error": "origin_forbidden"}
+            assert rejected_login_origin.json() == {"code": "origin_forbidden"}
 
             missing = await client.get("/api/_test/missing")
             assert missing.status_code == 404
-            assert missing.json() == {"error": "not_found", "retryable": False}
+            assert missing.json() == {"code": "not_found", "retryable": False}
 
             broken = await client.get("/api/_test/broken")
             assert broken.status_code == 500
-            assert broken.json() == {"error": "internal_error", "retryable": True}
+            assert broken.json() == {"code": "internal_error", "retryable": True}
 
-            incident_report = await client.get("/api/incidents")
+            incident_report = await client.get(
+                "/api/incidents",
+                params={"page_size": 100},
+            )
             http_incidents = [
                 item
-                for item in incident_report.json()["recent"]
+                for item in incident_report.json()["items"]
                 if item["component"] == "http"
             ]
             http_codes = {item["error_code"] for item in http_incidents}
@@ -876,21 +973,41 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
                 sum(item["error_code"] == "internal_error" for item in http_incidents)
                 == 1
             )
+            filtered_incidents = await client.get(
+                "/api/incidents",
+                params={
+                    "severity": "error",
+                    "component": "http",
+                    "code": "internal_error",
+                    "page": 1,
+                    "page_size": 1,
+                },
+            )
+            assert filtered_incidents.status_code == 200
+            assert filtered_incidents.json()["total"] == 1
+            assert filtered_incidents.json()["totals"]["errors"] == 1
+            assert filtered_incidents.json()["items"][0]["error_code"] == (
+                "internal_error"
+            )
 
+            sleep_operation_id = uuid4()
             sleep_timer = await client.put(
                 "/api/player/sleep-timer",
-                headers=headers,
-                json={"operation_id": str(uuid4()), "seconds": 900},
+                headers={**headers, "Idempotency-Key": str(sleep_operation_id)},
+                json={"seconds": 900},
             )
             assert sleep_timer.status_code == 200
             assert sleep_timer.json()["outcome"]["action"] == "sleep_timer.set"
             assert sleep_timer.json()["player"]["sleep_timer_expires_at"] is not None
             await anext(events)
+            cancel_sleep_operation_id = uuid4()
             cancelled_sleep_timer = await client.request(
                 "DELETE",
                 "/api/player/sleep-timer",
-                headers=headers,
-                json={"operation_id": str(uuid4())},
+                headers={
+                    **headers,
+                    "Idempotency-Key": str(cancel_sleep_operation_id),
+                },
             )
             assert cancelled_sleep_timer.status_code == 200
             assert (

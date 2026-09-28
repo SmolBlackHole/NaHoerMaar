@@ -41,7 +41,7 @@ export const useSettingsStore = defineStore("settings", () => {
 		const body = { ...settings };
 		saving = true;
 		error.value = "";
-		const updated = await accountStore.updateAppearance(body);
+		const updated = await accountStore.update({ appearance: body });
 		saving = false;
 		if (!updated) {
 			error.value =

@@ -1,18 +1,20 @@
 <script setup lang="ts">
 const core = useNuxtApp().$backendCore;
 const player = core.stores.usePlayerStore();
-const recent = core.workflows.recent();
+const playbackHistory = core.workflows.playbackHistory();
 const { icons } = useTheme();
-const history = computed(() => recent.history.data.value?.entries ?? []);
+const history = computed(() => playbackHistory.history.data.value?.items ?? []);
 
-onMounted(() => void recent.load({ pageSize: 10, newSnapshot: true }));
+onMounted(() => void playbackHistory.load({ pageSize: 10, newSnapshot: true }));
 watch(
 	() => player.state?.runtime.playback_id,
 	(value, previous) => {
-		if (previous && value !== previous) void recent.load({ pageSize: 10, newSnapshot: true });
+		if (previous && value !== previous) {
+			void playbackHistory.load({ pageSize: 10, newSnapshot: true });
+		}
 	},
 );
-onScopeDispose(recent.dispose);
+onScopeDispose(playbackHistory.dispose);
 </script>
 
 <template>
@@ -29,15 +31,15 @@ onScopeDispose(recent.dispose);
 				:trailing-icon="icons.arrowRight"
 			/>
 		</div>
-		<div v-if="recent.history.loading.value && !history.length" aria-busy="true">
+		<div v-if="playbackHistory.history.loading.value && !history.length" aria-busy="true">
 			<PlayerRecentList :entries="[]" loading />
 		</div>
 		<p
-			v-else-if="recent.history.error.value && !history.length"
+			v-else-if="playbackHistory.history.error.value && !history.length"
 			role="alert"
 			class="text-sm text-warning"
 		>
-			{{ recent.history.error.value }}
+			{{ playbackHistory.history.error.value }}
 		</p>
 		<div v-else id="history-tracks" class="history-scroll">
 			<PlayerRecentList :entries="history" />

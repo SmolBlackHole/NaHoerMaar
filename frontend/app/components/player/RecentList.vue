@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { formatTime } from "~/core/models/player";
-import type { PlaybackHistoryEntry } from "~/core/models/listening";
+import type { PlaybackHistoryEntry } from "~/core/models/playbacks";
 
 const props = withDefaults(
 	defineProps<{

@@ -2,15 +2,34 @@
 // SPDX-License-Identifier: MPL-2.0
 
 import type { Transport } from "../api/transport";
-import type { LogPage } from "../models/logs";
+import type { LogFilters } from "../models/logs";
+
+export interface LogsQuery extends LogFilters {
+	after?: number;
+	limit?: number;
+}
 
 export function createLogsRepository(request: Transport) {
 	return {
-		recent: (after?: number, limit = 200, signal?: AbortSignal) => {
-			const params = new URLSearchParams({ limit: String(limit) });
-			if (after !== undefined) params.set("after", String(after));
-			return request<LogPage>(`/api/logs?${params}`, { signal });
-		},
+		recent: (query: LogsQuery = {}, signal?: AbortSignal) =>
+			request((api) =>
+				api.GET("/api/logs", {
+					params: {
+						query: {
+							after: query.after,
+							limit: query.limit ?? 200,
+							q: query.query,
+							level: query.level,
+							source: query.source,
+							actor_id: query.actorId,
+							request_id: query.requestId,
+							correlation_id: query.correlationId,
+							causation_id: query.causationId,
+						},
+					},
+					signal,
+				}),
+			),
 	};
 }
 

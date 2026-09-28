@@ -284,13 +284,12 @@ class CatalogService:
     async def snapshot(
         self,
         snapshot_id: DiscoverySnapshotId,
-        kind: DiscoveryKind,
     ) -> DiscoveryResult:
         """Load one immutable discovery version without provider I/O."""
         self._ensure_open()
         async with self._units() as work:
             snapshot = await DiscoveryRepository(work.session).get(snapshot_id)
-        if snapshot is None or snapshot.kind is not kind:
+        if snapshot is None:
             raise CatalogError(CatalogErrorCode.SNAPSHOT_NOT_FOUND, 404)
         key = (
             snapshot.kind,
@@ -307,14 +306,13 @@ class CatalogService:
     async def continue_snapshot(
         self,
         snapshot_id: DiscoverySnapshotId,
-        kind: DiscoveryKind,
         *,
         limit: int = 20,
     ) -> DiscoveryResult:
         """Extend one immutable snapshot with the provider's next result page."""
         self._ensure_open()
         self._validate_limit(limit)
-        current_result = await self.snapshot(snapshot_id, kind)
+        current_result = await self.snapshot(snapshot_id)
         current = current_result.snapshot
         if current.continuation is None:
             return current_result
@@ -322,13 +320,13 @@ class CatalogService:
         provider = self._provider(current.provider_key)
         _LOGGER.info(
             "catalog.continuation_requested kind=%s provider=%s snapshot_id=%s limit=%d",
-            kind.value,
+            current.kind.value,
             provider.key,
             current.id,
             limit,
         )
         try:
-            if kind is DiscoveryKind.SEARCH:
+            if current.kind is DiscoveryKind.SEARCH:
                 page = await provider.search(
                     current.locator,
                     limit=limit,
@@ -393,7 +391,7 @@ class CatalogService:
         _LOGGER.info(
             "catalog.continuation_completed kind=%s provider=%s snapshot_id=%s "
             "entries=%d has_more=%s",
-            kind.value,
+            current.kind.value,
             provider.key,
             snapshot.id,
             len(snapshot.entries),

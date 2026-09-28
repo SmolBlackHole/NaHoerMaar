@@ -75,15 +75,54 @@ class RecentLogBuffer(logging.Handler):
             self.handleError(record)
 
     def entries(
-        self, *, after: int | None = None, limit: int = 200
+        self,
+        *,
+        after: int | None = None,
+        limit: int = 200,
+        query: str | None = None,
+        level: str | None = None,
+        source: str | None = None,
+        actor_id: UUID | None = None,
+        request_id: str | None = None,
+        correlation_id: UUID | None = None,
+        causation_id: UUID | None = None,
     ) -> tuple[LogEntry, ...]:
-        """Return entries newer than an optional cursor, oldest first."""
+        """Return matching entries newer than a cursor, oldest first."""
         if not 1 <= limit <= 200:
             raise ValueError("Log limit must be between 1 and 200.")
         cursor = after or 0
+        needle = query.strip().casefold() if query else None
+        expected_level = level.strip().upper() if level else None
+        expected_source = source.strip() if source else None
+        expected_request = request_id.strip() if request_id else None
         with self._entry_lock:
-            matches = tuple(entry for entry in self._entries if entry.id > cursor)
+            matches = tuple(
+                entry
+                for entry in self._entries
+                if entry.id > cursor
+                and (expected_level is None or entry.level == expected_level)
+                and (expected_source is None or entry.source == expected_source)
+                and (actor_id is None or entry.actor_id == actor_id)
+                and (expected_request is None or entry.request_id == expected_request)
+                and (correlation_id is None or entry.correlation_id == correlation_id)
+                and (causation_id is None or entry.causation_id == causation_id)
+                and (needle is None or _search_text(entry, needle))
+            )
         return matches[-limit:]
+
+
+def _search_text(entry: LogEntry, needle: str) -> bool:
+    values = (
+        entry.level,
+        entry.source,
+        entry.message,
+        entry.request_id,
+        entry.message_id,
+        entry.correlation_id,
+        entry.causation_id,
+        entry.actor_id,
+    )
+    return any(needle in str(value).casefold() for value in values if value is not None)
 
 
 def _source(name: str) -> str:

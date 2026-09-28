@@ -30,6 +30,7 @@ from nahoermaar.player.automation import PlaybackAutomation
 from nahoermaar.player.domain import ListeningSessionId
 from nahoermaar.player.main import PlayerModule, SummonHandler
 from nahoermaar.player.playback import PlaybackCoordinator
+from nahoermaar.player.read_model import PlayerReader
 from nahoermaar.player.session import PlayerSessionManager
 from nahoermaar.statistics.main import StatisticsModule
 from nahoermaar.statistics.service import StatisticsService
@@ -197,6 +198,7 @@ def _application(
     )
     player_module = PlayerModule(
         service=cast(PlayerSessionManager, player),
+        reader=cast(PlayerReader, object()),
         automation=cast(PlaybackAutomation, automation),
         playback=cast(PlaybackCoordinator, playback),
         housekeeping=cast(HousekeepingContribution, object()),

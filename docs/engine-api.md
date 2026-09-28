@@ -15,10 +15,12 @@ that contract. The live Discord check is documented under
 - [Engine API](#engine-api)
   - [Table of contents](#table-of-contents)
   - [Authentication](#authentication)
+  - [Process health](#process-health)
   - [State and mutations](#state-and-mutations)
+  - [Playback history](#playback-history)
   - [Discovery and stable selections](#discovery-and-stable-selections)
   - [Events](#events)
-  - [Diagnostics](#diagnostics)
+  - [Operations](#operations)
   - [Verification](#verification)
 
 ## Authentication
@@ -31,14 +33,17 @@ Authentication routes are:
 
 - `GET /api/auth/discord` and `GET /api/auth/discord/callback`
 - `GET /api/auth/session`, `POST /api/auth/logout`
-- `GET /api/users/me`, `PUT /api/users/me/profile`
-- `PUT /api/users/me/appearance`
+- `GET /api/users/me`, `PATCH /api/users/me`
 - `GET /api/profiles/me`, `GET /api/profiles/{user_id}`
+- `GET /api/statistics`
 
-The user routes return account state only. Profile routes combine that identity
-with recent listening and statistics for the selected period. Overview and
-profile statistics use `7d`, `30d`, `year` or `all` and return display-ready
-daily or monthly activity buckets.
+The PATCH document accepts optional nested `profile` and `appearance` objects
+and requires at least one of them. It updates both atomically when both are
+present. The cheap user document contains account state only. Profile routes
+combine that identity with recent listening and personal statistics for the
+selected period. `GET /api/statistics` returns the group report. Statistics use
+`7d`, `30d`, `year` or `all` and return display-ready daily or monthly activity
+buckets.
 
 All other `/api/` requests need a valid session cookie. Mutations also require
 the configured `Origin` and `X-CSRF-Token`. Replies are private and `no-store`.
@@ -56,30 +61,40 @@ Owners and admins use these administration routes:
 | `GET /api/access` | Operators, listener grants and recent access history |
 | `PUT /api/access/{discord_id}` | Grant listener access |
 | `DELETE /api/access/{discord_id}` | Revoke listener access and sessions |
-| `GET /api/access/members` | Cached Discord members with guild details |
+| `GET /api/access/members?q=...&guild_id=...` | Cached Discord members with optional text and guild filters |
 
 The owner may revoke any normal grant. An admin may revoke only a grant created
 by that admin. The backend enforces this rule. Owner and admin roles cannot be
 changed through the API.
 
+## Process health
+
+`GET /health` reports `{ "status": "alive" }` as soon as the HTTP process can
+answer. `GET /ready` additionally checks PostgreSQL, the restored Player and
+Listening services, and, when Discord is enabled, the gateway and playback
+coordinator. It returns `200` only when every enabled component is ready and
+otherwise returns `503` with the individual component states. These two
+container probes are deliberately outside the authenticated `/api/` contract
+and the generated OpenAPI schema.
+
 ## State and mutations
 
-`GET /api/session` returns `session`, `queue`, `checkpoint`, `playback`, `history`,
-`radio` and a `tracks` dictionary keyed by internal track ID. Entries and history
-reference that dictionary; metadata is not independently copied into every row.
-Channel and guild snowflakes are decimal strings at the HTTP boundary.
-The public models live in `engine/api_models.py`. Playback exposes a connection
-state, not internal connection or preparation tokens. Track responses contain
-identity, source URL and metadata, without storage timestamps or provenance.
+`GET /api/player` returns the complete Player projection: Session and queue
+revisions, settings, Queue, checkpoint, Radio and the current playback and voice
+runtime. Queue and current requests include their canonical Track and known
+requester. The Player module builds this projection once; ordinary reads,
+mutation replies and SSE serialize that same read model. Channel and guild
+snowflakes are decimal strings at the HTTP boundary. Playback exposes public
+phases and stable error codes, without internal connection or preparation
+tokens.
 
-Every queue, playback, connection and radio mutation requires an
-`Idempotency-Key` UUID. Responses contain `request_id`, `action`, `state`,
-`outcome` and `replayed`. The semantic action (for example `queue.removed` or
-`playback.seek`) is shared with SSE. Outcomes include affected entries and actor
-information. `state.tracks` also supplies metadata for outcome entries that have
-already left the queue, including replayed removals. The same key with a
-different command or actor conflicts. Repeated accepted requests return the
-original outcome and current state without applying another mutation.
+Every queue, playback, voice and Radio mutation requires an `Idempotency-Key`
+UUID header. Responses contain `operation_id`, `player`, `outcome` and
+`replayed`. The semantic action (for example `queue.removed` or
+`playback.seeked`) is shared with SSE. Outcomes include counts, affected entry
+IDs and optional Undo information. The same key with a different command or
+actor conflicts. Repeated accepted requests return the original outcome and
+current Player projection without applying another mutation.
 Once the Session accepts a command, cancellation of its HTTP caller does not
 cancel the committed work. A client retry keeps the same idempotency key.
 
@@ -91,24 +106,26 @@ from the `Idempotency-Key`, which identifies a mutation for replay protection.
 
 | Endpoint | Body / meaning |
 | --- | --- |
-| `POST /api/queue` | `track_ids` in desired order (1..100), optional `skip_duplicates` |
-| `DELETE /api/queue/{entry_id}` | Remove one occurrence |
-| `PUT /api/queue/{entry_id}/position` | `before_entry_id` (null means end), `expected_queue_revision` |
-| `POST /api/queue/clear` | `expected_queue_revision`, optional `contributor_id` |
-| `POST /api/queue/undo/{undo_id}` | Restore within the queue's existing Undo deadline |
-| `POST /api/playback/control` | `action`: play, pause, skip, stop or leave; optional `expected_attempt_id` |
-| `PUT /api/playback/position` | `seconds`, required `expected_attempt_id` |
-| `PUT /api/playback/volume` | `volume`, 0..1 |
-| `PUT /api/playback/crossfade` | `seconds`, 0 or 3..7 |
-| `GET /api/channels` | Available channels with server names and permissions |
-| `PUT /api/connection` | `channel_id` |
-| `POST /api/radio` | `seed` MediaReference, `expected_generation` (null for manual mode) |
-| `POST /api/radio/{generation}/stop` | Stop automatic queue filling |
-| `POST /api/radio/{generation}/retry` | Retry an exhausted/failed radio fetch |
+| `GET /api/player` | Complete current Player projection |
+| `POST /api/player/queue` | `tracks` in desired order (1..100), optional `skip_duplicates` |
+| `DELETE /api/player/queue/{entry_id}` | Remove one occurrence at `expected_queue_revision` |
+| `PATCH /api/player/queue/{entry_id}` | Move before `before_entry_id`, or to the end when null |
+| `POST /api/player/queue/clear` | Clear at `expected_queue_revision`, optionally for one `requested_by` User ID |
+| `POST /api/player/queue/undo` | Restore `undo_id` within the Queue's existing Undo deadline |
+| `POST /api/player/control` | `action`: play, pause, skip, stop or seek; only seek also accepts `seconds` |
+| `PATCH /api/player` | Update `volume` and/or `crossfade_seconds` atomically |
+| `PUT /api/player/sleep-timer` | Set the remaining `seconds`, from 60 to 86400 |
+| `DELETE /api/player/sleep-timer` | Cancel the active sleep timer |
+| `GET /api/player/voice/channels` | Available channels with server names and permissions |
+| `PUT /api/player/voice` | Join or move to `channel_id` |
+| `DELETE /api/player/voice` | Leave voice |
+| `PUT /api/player/radio` | Start or replace Radio from `seed` and optional `expected_generation` |
+| `DELETE /api/player/radio` | Stop the matching `expected_generation` |
+| `POST /api/player/radio/retry` | Retry the matching exhausted or failed generation |
 
-Pause, skip and stop require the currently displayed attempt ID. Seek changes
-that ID. The Session checks it inside its ordered transaction, so a delayed
-control cannot affect a newer attempt. Play may omit it when there is no output.
+Volume accepts 0..1. Crossfade accepts 0 or 3..7 seconds. Queue revisions and
+Radio generations prevent stale writes from changing newer state. The ordered
+Player Session applies the same checks for HTTP and internal commands.
 
 HTTP success confirms the committed command, not successful external audio or
 voice output. Subsequent states report resolving/starting/playing or connection
@@ -117,24 +134,50 @@ failure. History begins only after confirmed audio output.
 Conflicts return 409, missing entries 404, invalid actions 422, unavailable
 providers 502, and unavailable storage/runtime 503. Private provider URLs and
 exception details are not returned.
-Errors outside a committed command use `{code, message, retryable}`. A rejected
+Errors outside a committed command use `{code, retryable}`. A rejected
 command may return its mutation envelope with a non-`ok` outcome and current state.
+
+## Playback history
+
+`GET /api/playbacks` is the single collection of confirmed playback starts.
+The Queue requests its first ten items, while the History page uses the same
+resource with numbered navigation. Repeated starts of the same track remain
+separate items.
+
+The collection accepts these optional filters:
+
+- `q` searches track titles and artist names case-insensitively;
+- `radio=true` returns Radio requests, while `radio=false` excludes them;
+- `requested_by` filters by the requesting User ID;
+- `started_from` and `started_to` are inclusive timezone-aware boundaries;
+- `end_reason` is `completed`, `skipped`, `stopped` or `failed`.
+
+`page` and `page_size` select a numbered page. The first response returns an
+opaque `snapshot`; later pages send that value back so newly started playback
+cannot shift or duplicate existing results. Changing search text or filters
+starts a new snapshot. The response uses `items`, `page`, `page_size`, `total`,
+`page_count` and `snapshot`, plus the known requesters used by the History
+filter.
 
 ## Discovery and stable selections
 
 - `GET /api/catalog/search?q=...&provider=youtube_music&refresh=false`
 - `GET /api/catalog/playlist?url=...` with optional `provider` and `refresh`
 - `GET /api/catalog/link?url=...` with an optional `provider`
-- `GET /api/catalog/{search|playlist}/{version}?offset=0&limit=20`
+- `GET /api/catalog/discoveries/{version}?offset=0&page_size=20`
+- `POST /api/catalog/discoveries/{version}/continuations?offset=...&page_size=20`
 
 Search defaults to Music. Explicit `youtube` selects Videos when registered.
 Search and playlist observations remain bounded to 100 occurrences. Responses
-carry `version`, `offset`, `total`, `next_offset`, `source_has_more`, `entries`,
+carry `version`, `offset`, `page_size`, `total`, `next_offset`,
+`source_has_more`, `items`,
 `stale` and `refreshing`. Playlist responses additionally carry `source_url`
 and `playlist_title`; search responses carry the normalized query.
 `next_offset` paginates the pinned snapshot, while `source_has_more` reports an
-upstream continuation beyond its bounded contents. Each entry contains its
-stable position, canonical track and selected provider source.
+upstream continuation beyond its bounded contents. Creating a continuation does
+bounded provider work and returns the requested page from the new immutable
+version. Each entry contains its stable position, canonical track and selected
+provider source.
 
 Clients select the track IDs from the displayed snapshot and submit them to
 `POST /api/player/queue`. Repeated playlist occurrences may supply the same
@@ -155,9 +198,11 @@ process lifetime belong to [Catalog and metadata](engine/catalog.md#cache-and-re
 
 `GET /api/events` is SSE. Each connection first receives `event: state` containing
 a complete current snapshot, including when `Last-Event-ID` is present. Later
-`event: change` messages contain `request_id`, `action`, `outcome`, and committed
-`state`. HTTP and SSE report the same request ID for a command. Clients deduplicate
-by that ID regardless of arrival order. Internal state updates use `session.updated`;
+`event: change` messages contain `message_id`, `correlation_id`, optional
+`causation_id`, `operation_id`, `action`, `outcome`, and committed `state`.
+HTTP and SSE report the same operation ID for a command. Clients deduplicate by
+that ID regardless of arrival order. The message identifiers preserve causal
+tracing across internal work. Runtime-only state updates arrive as `event: state`;
 they do not imply a listener requested a queue edit.
 The event ID is the Session revision. This is a resynchronizing state stream,
 not a durable activity log or a promise to replay every historical notification.
@@ -168,25 +213,37 @@ subscribers disconnect on overflow and resynchronize on reconnect. Authenticatio
 is rechecked during idle periods and immediately before data delivery; revocation
 emits `event: auth` and closes the stream. Shutdown closes subscriptions.
 
-## Diagnostics
+## Operations
 
-`GET /api/diagnostics/logs` returns up to 200 recent bot log entries. Only
-owner and admin accounts may call it; other authenticated users receive
-403. `?after={id}` returns newer entries for the Logs page. The server keeps at
-most 500 entries in memory and discards that view on restart. Each entry also
-contains `actor_id` and `actor_name` when an authenticated user caused the
-operation. Background work leaves both fields empty. `trace_id` connects the
-Nuxt proxy request, HTTP handler, Session command and playback effects where a
-single action caused them. The Logs page can filter by trace, actor, source or
-message and copies the full trace ID from its shortened display.
+Every Operations endpoint requires an owner or admin account. Other
+authenticated users receive `403`.
 
-The endpoint does not expose the log files or provide a durable audit history.
-The backend writes its own operational log to `data/logs/backend.log` as well.
-That file rotates at midnight UTC and keeps 14 rotated files. Search text,
-media URLs, tokens and OAuth callback query strings stay out of these logs.
-The Nuxt proxy records method, path, status, duration, origin rewriting and
-client aborts. It logs only the URL path, never its query string, request body,
-cookies or headers.
+`GET /api/jobs` returns the registered jobs and their current state.
+`POST /api/jobs/{job_id}/runs` accepts one bounded manual run. Persisted run
+history is available through `GET /api/jobs/runs`, ordered newest first with
+`page_size`, `cursor`, `job_id` and `status` queries. Its response uses the
+shared cursor document. `GET /api/jobs/runs/{run_id}` returns the complete
+details for one run.
+
+`GET /api/incidents` combines a full-period summary with one numbered page of
+matching incident items. `period`, `severity`, `component`, `code` and
+`actor_id` filter both the summary and the page. `page` and `page_size` select
+the visible items. Changing pages alone does not change totals, common error
+counts, affected operations or associated-user counts.
+
+`GET /api/logs` reads the bounded in-memory process log. `after` and `limit`
+support incremental polling. `q`, `level`, `source`, `actor_id`, `request_id`,
+`correlation_id` and `causation_id` are applied before `limit`, so an older
+matching entry remains searchable while it is retained. The process keeps at
+most 500 entries and discards this in-memory view on restart.
+
+The Logs endpoint does not expose log files or provide a durable audit history.
+The backend also writes its operational log to `data/logs/backend.log`. That
+file rotates at midnight UTC and keeps 14 rotated files. Search text, media
+URLs, tokens and OAuth callback query strings stay out of these logs. The Nuxt
+proxy records method, path, status, duration, origin rewriting and client
+aborts. It logs only the URL path, never its query string, request body, cookies
+or headers.
 
 ## Verification
 

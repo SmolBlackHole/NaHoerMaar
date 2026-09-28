@@ -1118,8 +1118,14 @@ class DiscordGateway(discord.Client):
             and not self.is_closed()
         )
 
-    def members(self) -> tuple[DiscordMember, ...]:
-        """Return human guild members as transport-neutral values."""
+    def members(
+        self,
+        *,
+        query: str | None = None,
+        guild_id: str | None = None,
+    ) -> tuple[DiscordMember, ...]:
+        """Query cached human guild members as transport-neutral values."""
+        needle = query.strip().casefold() if query else ""
         return tuple(
             sorted(
                 (
@@ -1134,6 +1140,14 @@ class DiscordGateway(discord.Client):
                     for guild in self.guilds
                     for member in guild.members
                     if not member.bot
+                    and (guild_id is None or str(guild.id) == guild_id)
+                    and (
+                        not needle
+                        or needle in member.name.casefold()
+                        or needle in member.display_name.casefold()
+                        or needle in str(member.id)
+                        or needle in guild.name.casefold()
+                    )
                 ),
                 key=lambda member: (
                     member.guild_name.casefold(),

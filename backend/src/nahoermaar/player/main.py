@@ -22,7 +22,7 @@ from nahoermaar.operations.maintenance import HousekeepingContribution
 from nahoermaar.users.service import AccessService, UserAccessChanged
 
 from .automation import PlaybackAutomation
-from .domain import OperationId, PlayerError, PlayerErrorCode
+from .domain import OperationId, PlayerError, PlayerErrorCode, VoiceConnectionState
 from .events import (
     AddTracks,
     ApplyRadioCandidates,
@@ -44,9 +44,8 @@ from .events import (
     RemoveQueueEntry,
     RetryRadio,
     Seek,
-    SetCrossfade,
+    SetPlayerSettings,
     SetSleepTimer,
-    SetVolume,
     Skip,
     StartRadio,
     StopPlayback,
@@ -56,7 +55,13 @@ from .events import (
     VoiceConnectionChanged,
 )
 from .maintenance import PlayerMaintenance
-from .playback import PlaybackCoordinator, PlaybackTransport
+from .playback import (
+    PlaybackCoordinator,
+    PlaybackPhase,
+    PlaybackRuntimeState,
+    PlaybackTransport,
+)
+from .read_model import PlayerReader
 from .session import CatalogRadioResolver, PlayerSessionManager
 
 type UnitOfWorkFactory = Callable[[], UnitOfWork]
@@ -77,8 +82,7 @@ _COMMAND_TYPES: tuple[type[PlayerCommand], ...] = (
     Skip,
     StopPlayback,
     Seek,
-    SetVolume,
-    SetCrossfade,
+    SetPlayerSettings,
     SetSleepTimer,
     CancelSleepTimer,
     SuspendPlayback,
@@ -96,6 +100,7 @@ class PlayerPreparation:
 
     service: PlayerSessionManager
     automation: PlaybackAutomation
+    users: AccessService
     housekeeping: HousekeepingContribution
     summon: SummonHandler
     session_lifecycle: LifecycleResource
@@ -107,6 +112,7 @@ class PlayerModule:
     """Completed Player runtime and all of its lifecycle resources."""
 
     service: PlayerSessionManager
+    reader: PlayerReader
     automation: PlaybackAutomation
     playback: PlaybackCoordinator | None
     housekeeping: HousekeepingContribution
@@ -190,6 +196,7 @@ def prepare_player_module(
     return PlayerPreparation(
         service=service,
         automation=automation,
+        users=access,
         housekeeping=PlayerMaintenance(units).contribution(),
         summon=summon,
         session_lifecycle=LifecycleResource(
@@ -230,8 +237,26 @@ def complete_player_module(
     if playback is not None:
         bus.subscribe(PlayerChanged, playback.player_changed)
 
+    disabled_runtime = PlaybackRuntimeState(
+        PlaybackPhase.DISABLED,
+        None,
+        None,
+        None,
+        0.0,
+        None,
+        None,
+        VoiceConnectionState(),
+        None,
+    )
+    reader = PlayerReader(
+        catalog,
+        preparation.users,
+        lambda: playback.status if playback is not None else disabled_runtime,
+    )
+
     return PlayerModule(
         service=preparation.service,
+        reader=reader,
         automation=preparation.automation,
         playback=playback,
         housekeeping=preparation.housekeeping,

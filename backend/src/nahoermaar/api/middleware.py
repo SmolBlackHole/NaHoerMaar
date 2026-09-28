@@ -183,7 +183,7 @@ def authenticated(request: Request) -> Authenticated:
 
 def _error(code: AuthErrorCode, status: int, request_id: str) -> JSONResponse:
     response = JSONResponse(
-        ErrorView(error=code.value).model_dump(exclude_none=True),
+        ErrorView(code=code.value).model_dump(exclude_none=True),
         status_code=status,
     )
     _secure(response, request_id)

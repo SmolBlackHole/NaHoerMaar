@@ -29,8 +29,7 @@ from .service import (
     Operators,
     ReconcileOperators,
     RevokeAccess,
-    SaveAppearance,
-    SaveProfile,
+    UpdateUser,
     UserAccessChanged,
     UserLoggedIn,
     UserProfileChanged,
@@ -117,16 +116,12 @@ def create_users_module(
             await bus.publish(UserAccessChanged(change), context.child())
         return change
 
-    async def save_profile(command: SaveProfile, context: MessageContext) -> User:
-        user = await auth.save_profile(command.user_id, command.profile)
-        await bus.publish(UserProfileChanged(user.id), context.child())
-        return user
-
-    async def save_appearance(
-        command: SaveAppearance,
-        context: MessageContext,
-    ) -> User:
-        user = await auth.save_appearance(command.user_id, command.appearance)
+    async def update_user(command: UpdateUser, context: MessageContext) -> User:
+        user = await auth.update_user(
+            command.user_id,
+            profile=command.profile,
+            appearance=command.appearance,
+        )
         await bus.publish(UserProfileChanged(user.id), context.child())
         return user
 
@@ -136,8 +131,7 @@ def create_users_module(
     bus.register_command(ReconcileOperators, reconcile)
     bus.register_command(GrantAccess, grant)
     bus.register_command(RevokeAccess, revoke)
-    bus.register_command(SaveProfile, save_profile)
-    bus.register_command(SaveAppearance, save_appearance)
+    bus.register_command(UpdateUser, update_user)
 
     async def reconcile_operators() -> None:
         await bus.execute(ReconcileOperators())

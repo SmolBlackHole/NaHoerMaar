@@ -39,30 +39,30 @@ def test_http_boundary_returns_stable_error_documents() -> None:
         ) as client:
             missing = await client.get("/missing")
             assert missing.status_code == 404
-            assert missing.json() == {"error": "not_found", "retryable": False}
+            assert missing.json() == {"code": "not_found", "retryable": False}
 
             wrong_method = await client.post("/resource")
             assert wrong_method.status_code == 405
             assert wrong_method.json() == {
-                "error": "method_not_allowed",
+                "code": "method_not_allowed",
                 "retryable": False,
             }
 
             invalid = await client.get("/validated", params={"value": "nope"})
             assert invalid.status_code == 422
-            assert invalid.json() == {"error": "validation_failed"}
+            assert invalid.json() == {"code": "validation_failed"}
 
             unavailable = await client.get("/avatar")
             assert unavailable.status_code == 404
             assert unavailable.json() == {
-                "error": "avatar_unavailable",
+                "code": "avatar_unavailable",
                 "retryable": False,
             }
 
             unexpected = await client.get("/broken")
             assert unexpected.status_code == 500
             assert unexpected.json() == {
-                "error": "internal_error",
+                "code": "internal_error",
                 "retryable": True,
             }
             assert "private implementation detail" not in unexpected.text

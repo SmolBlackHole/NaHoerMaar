@@ -14,7 +14,14 @@ import pytest
 from nahoermaar.database.core import Database
 from nahoermaar.database.uow import UnitOfWork
 from nahoermaar.messaging import MessageBus, MessageContext
-from nahoermaar.users.domain import AccessRole, AuthError, AuthErrorCode, UserProfile
+from nahoermaar.users.domain import (
+    AccessRole,
+    Appearance,
+    AuthError,
+    AuthErrorCode,
+    PrimaryColor,
+    UserProfile,
+)
 from nahoermaar.users.main import create_users_module
 from nahoermaar.users.repository import UserRepository
 from nahoermaar.users.service import (
@@ -134,9 +141,9 @@ def test_operators_grant_login_profile_and_revocation_share_internal_users() -> 
             owner = await UserRepository(work.session).get_by_discord_id("9")
         assert owner is not None
         assert owner.role is AccessRole.OWNER
+        access_snapshot = await access.snapshot()
         assert [
-            (user.discord.discord_id, user.role)
-            for user in await access.operator_users()
+            (user.discord.discord_id, user.role) for user in access_snapshot.operators
         ] == [
             ("9", AccessRole.OWNER),
             ("8", AccessRole.ADMIN),
@@ -165,8 +172,13 @@ def test_operators_grant_login_profile_and_revocation_share_internal_users() -> 
         assert completed.user.discord.username == "Discord name"
         assert not completed.user.profile_complete
 
-        saved = await auth.save_profile(completed.user.id, UserProfile("Local name"))
+        saved = await auth.update_user(
+            completed.user.id,
+            profile=UserProfile("Local name"),
+            appearance=Appearance(primary_color=PrimaryColor.CYAN),
+        )
         assert saved.profile.display_name == "Local name"
+        assert saved.appearance.primary_color is PrimaryColor.CYAN
         assert saved.discord.username == "Discord name"
         assert (await auth.authenticate(completed.session_token)).user == saved
 

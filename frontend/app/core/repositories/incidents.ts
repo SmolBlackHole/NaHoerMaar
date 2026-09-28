@@ -2,12 +2,32 @@
 // SPDX-License-Identifier: MPL-2.0
 
 import type { Transport } from "../api/transport";
-import type { IncidentPeriod, IncidentReport } from "../models/incidents";
+import type { IncidentFilters } from "../models/incidents";
+
+export interface IncidentReportQuery extends IncidentFilters {
+	page?: number;
+	pageSize?: number;
+}
 
 export function createIncidentsRepository(request: Transport) {
 	return {
-		report: (period: IncidentPeriod, signal?: AbortSignal) =>
-			request<IncidentReport>(`/api/incidents?period=${period}`, { signal }),
+		report: (query: IncidentReportQuery, signal?: AbortSignal) =>
+			request((api) =>
+				api.GET("/api/incidents", {
+					params: {
+						query: {
+							period: query.period,
+							severity: query.severity,
+							component: query.component,
+							code: query.code,
+							actor_id: query.actorId,
+							page: query.page,
+							page_size: query.pageSize,
+						},
+					},
+					signal,
+				}),
+			),
 	};
 }
 

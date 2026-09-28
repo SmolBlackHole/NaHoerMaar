@@ -21,7 +21,7 @@ const expandedJobs = ref<string[]>([]);
 const expandedRun = ref<string>();
 const allowed = computed(() => ["owner", "admin"].includes(session.account?.role ?? ""));
 const jobs = computed(() => workflow.jobs.data.value?.jobs ?? []);
-const runs = computed(() => workflow.runs.data.value?.entries ?? []);
+const runs = computed(() => workflow.runs.data.value?.items ?? []);
 const runningJobs = computed(() => jobs.value.filter(({ running }) => running).length);
 const latestRun = computed(() => runs.value[0]);
 const attentionRuns = computed(

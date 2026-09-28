@@ -15,7 +15,7 @@ class ErrorView(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    error: str
+    code: str
     retryable: bool | None = None
 
 
@@ -68,3 +68,18 @@ ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     503: {"model": ErrorView, "description": "Dependency unavailable"},
     504: {"model": ErrorView, "description": "Upstream dependency timed out"},
 }
+
+
+def error_responses(*statuses: int) -> dict[int | str, dict[str, Any]]:
+    """Select the public errors one operation can actually return."""
+    return {
+        status: {
+            **ERROR_RESPONSES[status],
+            "content": {
+                "application/json": {
+                    "schema": {"$ref": "#/components/schemas/ErrorView"}
+                }
+            },
+        }
+        for status in statuses
+    }

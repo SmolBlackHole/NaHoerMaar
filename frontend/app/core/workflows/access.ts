@@ -46,7 +46,7 @@ export function createAccessWorkflow(client: BackendClient, authority: SessionAu
 		return page.load(async (signal) => {
 			const [access, members] = await Promise.all([
 				client.access.state(100, signal),
-				client.access.members(signal),
+				client.access.members({}, signal),
 			]);
 			return { access, members: members.members };
 		});

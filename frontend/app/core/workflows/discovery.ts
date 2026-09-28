@@ -4,7 +4,7 @@
 import { shallowRef } from "vue";
 import type { SessionAuthority } from "../api/transport";
 import type { BackendClient } from "../client";
-import type { Discovery, DiscoveryKind, Track } from "../models/catalog";
+import type { Discovery, Track } from "../models/catalog";
 import { createQueryState } from "./queryState";
 
 export function createDiscoveryWorkflow(client: BackendClient, authority: SessionAuthority) {
@@ -32,44 +32,42 @@ export function createDiscoveryWorkflow(client: BackendClient, authority: Sessio
 		return read(options.refresh ?? false);
 	}
 
-	function snapshot(kind: DiscoveryKind, version: string, offset = 0, limit = 20) {
+	function snapshot(version: string, offset = 0, pageSize = 20) {
 		const read = (nextOffset: number) =>
 			results.load((signal) =>
-				client.catalog.snapshot(kind, version, nextOffset, limit, signal),
+				client.catalog.discovery(version, nextOffset, pageSize, signal),
 			);
 		lastRead.value = () => read(offset);
 		return read(offset);
 	}
 
-	async function more(limit = 20) {
+	async function more(pageSize = 20) {
 		const previous = results.data.value;
 		if (!previous || (previous.next_offset === null && !previous.source_has_more)) return null;
 		const extendsProviderSnapshot = previous.next_offset === null;
 		const page = await results.load((signal) =>
 			extendsProviderSnapshot
-				? client.catalog.continueSnapshot(
-						previous.kind as DiscoveryKind,
+				? client.catalog.continueDiscovery(
 						previous.version,
 						previous.total,
-						limit,
+						pageSize,
 						signal,
 					)
-				: client.catalog.snapshot(
-						previous.kind as DiscoveryKind,
+				: client.catalog.discovery(
 						previous.version,
 						previous.next_offset!,
-						limit,
+						pageSize,
 						signal,
 					),
 		);
 		if (!page) return page;
 		if (!extendsProviderSnapshot && page.version !== previous.version) return page;
-		const entries = new Map(
-			[...previous.entries, ...page.entries].map((entry) => [entry.position, entry]),
+		const items = new Map(
+			[...previous.items, ...page.items].map((entry) => [entry.position, entry]),
 		);
 		results.set({
 			...page,
-			entries: [...entries.values()].sort((a, b) => a.position - b.position),
+			items: [...items.values()].sort((a, b) => a.position - b.position),
 		});
 		return results.data.value;
 	}

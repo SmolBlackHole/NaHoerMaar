@@ -36,7 +36,7 @@ export function useBackendDiscovery() {
 	const radioTitle = ref("");
 
 	const page = computed(() => catalog.results.data.value);
-	const entries = computed(() => page.value?.entries ?? []);
+	const entries = computed(() => page.value?.items ?? []);
 	const availableEntries = computed(() =>
 		entries.value.filter(({ source }) => source.availability !== "unavailable"),
 	);
@@ -93,10 +93,10 @@ export function useBackendDiscovery() {
 			refresh,
 		});
 		if (!result) return;
-		if (!refresh) resetSelection(result.entries);
+		if (!refresh) resetSelection(result.items);
 		else
 			selected.value = new Set(
-				result.entries
+				result.items
 					.filter(
 						({ source: trackSource, track }) =>
 							trackSource.availability !== "unavailable" &&

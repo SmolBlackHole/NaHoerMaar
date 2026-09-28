@@ -23,14 +23,14 @@ from nahoermaar.users.domain import AuthError
 
 from .auth import router as auth_router
 from .catalog import router as catalog_router
-from .errors import ERROR_RESPONSES, ApiError, ApiErrorCode, ErrorView
+from .errors import ApiError, ApiErrorCode, ErrorView, error_responses
 from .events import router as events_router
-from .listening import router as listening_router
 from .logs import router as logs_router
 from .jobs import router as jobs_router
 from .incidents import router as incidents_router
 from .middleware import install_auth_middleware
 from .player import router as player_router
+from .playbacks import router as playbacks_router
 from .statistics import router as statistics_router
 from .users import router as users_router
 
@@ -52,7 +52,7 @@ def create_app(application: Application | None = None) -> FastAPI:
     app = FastAPI(
         title="NaHörMaar",
         lifespan=lifespan,
-        responses=ERROR_RESPONSES,
+        responses=error_responses(500),
     )
     app.state.application = container
     install_error_handlers(app)
@@ -66,7 +66,7 @@ def create_app(application: Application | None = None) -> FastAPI:
     app.include_router(users_router(container))
     app.include_router(catalog_router(container.catalog.service))
     app.include_router(player_router(container))
-    app.include_router(listening_router(container))
+    app.include_router(playbacks_router(container))
     app.include_router(statistics_router(container))
     app.include_router(events_router(container))
     app.include_router(logs_router(container))
@@ -222,7 +222,7 @@ def _error_response(
     request.state.error_code = value
     request.state.error_retryable = retryable
     return JSONResponse(
-        ErrorView(error=value, retryable=retryable).model_dump(exclude_none=True),
+        ErrorView(code=value, retryable=retryable).model_dump(exclude_none=True),
         status_code=status,
         headers={"cache-control": "no-store"},
     )

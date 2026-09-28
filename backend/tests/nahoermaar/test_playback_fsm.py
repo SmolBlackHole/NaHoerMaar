@@ -20,6 +20,7 @@ from nahoermaar.player.events import (
     JoinVoice,
     LeaveVoice,
     Play,
+    SetPlayerSettings,
     SetSleepTimer,
     StopPlayback,
     SuspendPlayback,
@@ -127,6 +128,26 @@ def test_voice_target_is_persisted_by_the_same_fsm() -> None:
     assert joined.outcome.action is PlayerAction.VOICE_JOINED
     assert left.state.session.channel_id is None
     assert left.outcome.action is PlayerAction.VOICE_LEFT
+
+
+def test_player_settings_are_updated_atomically() -> None:
+    state, actor_id = _queued_state(1)
+
+    updated = transition(
+        state,
+        SetPlayerSettings(
+            state.session.id,
+            _operation(),
+            volume=0.35,
+            crossfade_seconds=6,
+        ),
+        actor_id,
+        NOW,
+    )
+
+    assert updated.state.session.volume == 0.35
+    assert updated.state.session.crossfade_seconds == 6
+    assert updated.outcome.action is PlayerAction.SETTINGS_UPDATED
 
 
 def test_unattended_suspend_preserves_queue_checkpoint_and_sleep_timer() -> None:

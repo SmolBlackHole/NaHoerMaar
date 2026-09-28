@@ -10,7 +10,53 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
+from pydantic import BaseModel, ConfigDict
+
 from .errors import ApiError, ApiErrorCode
+
+
+class NumberedPageView[ItemT](BaseModel):
+    """Stable numbered page pinned to an optional read snapshot."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: tuple[ItemT, ...]
+    page: int
+    page_size: int
+    total: int
+    page_count: int
+    snapshot: str | None
+
+
+class CursorPageView[ItemT](BaseModel):
+    """Descending cursor page whose next position is opaque to clients."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: tuple[ItemT, ...]
+    page_size: int
+    next_cursor: str | None
+
+
+class OffsetPageView[ItemT](BaseModel):
+    """Offset page used by bounded immutable discovery snapshots."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: tuple[ItemT, ...]
+    offset: int
+    page_size: int
+    total: int
+    next_offset: int | None
+
+
+class LiveDeltaView[ItemT](BaseModel):
+    """Incremental live feed with the latest observed cursor."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: tuple[ItemT, ...]
+    cursor: int
 
 
 @dataclass(frozen=True, slots=True)

@@ -10,11 +10,13 @@ from uuid import uuid4
 
 from alembic import command
 from alembic.config import Config
+import pytest
 from sqlalchemy import insert
 
 from nahoermaar.database.core import Database
 from nahoermaar.database.schema import Base
 from nahoermaar.database.uow import UnitOfWork
+from nahoermaar.listening.domain import PlaybackEndReason
 from nahoermaar.users.domain import (
     AccessRole,
     DiscordIdentity,
@@ -233,7 +235,7 @@ def test_history_keeps_repeated_starts_searchable_and_snapshot_stable() -> None:
                             "ended_at": NOW
                             - timedelta(minutes=index)
                             + timedelta(seconds=120),
-                            "end_reason": "completed",
+                            "end_reason": "skipped" if index == 0 else "completed",
                         }
                         for index, playback_id in enumerate(playback_ids)
                     ),
@@ -300,6 +302,32 @@ def test_history_keeps_repeated_starts_searchable_and_snapshot_stable() -> None:
         assert all(
             entry.artist_names == ("Mt. Eden",) for entry in artist_search.entries
         )
+
+        time_window = await view.get(
+            page=1,
+            page_size=10,
+            started_from=NOW - timedelta(minutes=4),
+            started_to=NOW - timedelta(minutes=2),
+        )
+        assert time_window.total == 3
+        assert all(
+            NOW - timedelta(minutes=4) <= entry.started_at <= NOW - timedelta(minutes=2)
+            for entry in time_window.entries
+        )
+
+        skipped = await view.get(
+            page=1,
+            page_size=10,
+            end_reason=PlaybackEndReason.SKIPPED,
+        )
+        assert skipped.total == 1
+        assert skipped.entries[0].end_reason is PlaybackEndReason.SKIPPED
+
+        with pytest.raises(ValueError, match="start cannot follow"):
+            await view.get(
+                started_from=NOW,
+                started_to=NOW - timedelta(seconds=1),
+            )
 
         radio_only = await view.get(page=1, page_size=10, radio=True)
         assert radio_only.total == 1
