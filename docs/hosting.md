@@ -200,15 +200,19 @@ Coordinate a backend restart with listeners because it interrupts Discord
 audio. The engine saves its checkpoint during a clean stop and restores the
 session on startup.
 
-To deploy a newer checkout:
+To deploy a newer checkout from a Windows path that contains non-ASCII
+characters, keep the database backup separate and use the repository rebuild
+command for the images and stack restart:
 
 ```powershell
 docker compose --profile maintenance run --rm backup
 git pull --ff-only
-docker compose build
-docker compose up -d
+.\scripts\rebuild-stack.ps1
 docker compose ps
 ```
+
+On hosts with an ASCII-only checkout path, `docker compose build` followed by
+`docker compose up -d` remains equivalent.
 
 Read the logs after the update and check sign-in, the active channel, queue,
 playback position and Radio state. `docker compose down` removes the containers
