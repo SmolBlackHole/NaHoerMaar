@@ -235,6 +235,10 @@ class CatalogService:
         try:
             observation = await provider.track(reference)
         except ProviderError as error:
+            await self._record_source_failure(
+                reference,
+                CatalogErrorCode.PROVIDER_FAILED.value,
+            )
             raise CatalogError(
                 CatalogErrorCode.PROVIDER_FAILED,
                 502,
@@ -244,6 +248,10 @@ class CatalogService:
             observation.provider != reference.provider
             or observation.external_id != reference.external_id
         ):
+            await self._record_source_failure(
+                reference,
+                "provider_identity_mismatch",
+            )
             raise CatalogError(CatalogErrorCode.PROVIDER_FAILED, 502)
         observed_at = self._clock()
         async with self._units() as work:
@@ -473,6 +481,10 @@ class CatalogService:
         try:
             audio: ProviderAudio = await provider.resolve_audio(reference)
         except ProviderError as error:
+            await self._record_source_failure(
+                reference,
+                CatalogErrorCode.PROVIDER_FAILED.value,
+            )
             raise CatalogError(
                 CatalogErrorCode.PROVIDER_FAILED,
                 502,
@@ -903,6 +915,32 @@ class CatalogService:
     def _ensure_open(self) -> None:
         if self._closed:
             raise CatalogError(CatalogErrorCode.CATALOG_CLOSED, 503)
+
+    async def _record_source_failure(
+        self,
+        reference: MediaReference,
+        code: str,
+    ) -> None:
+        failed_at = self._clock()
+        async with self._units() as work:
+            source = await CatalogRepository(work.session).record_source_failure(
+                reference.provider,
+                reference.external_id,
+                failed_at=failed_at,
+                error_code=code,
+            )
+            await work.commit()
+        if source is not None:
+            _LOGGER.warning(
+                "catalog.source_failure_recorded source_id=%s provider=%s "
+                "external_id=%s failures=%d retry_at=%s error_code=%s",
+                source.id,
+                source.provider,
+                safe_log_value(source.external_id),
+                source.failure_count,
+                source.retry_at.isoformat() if source.retry_at is not None else None,
+                code,
+            )
 
     @staticmethod
     def _validate_limit(limit: int) -> None:

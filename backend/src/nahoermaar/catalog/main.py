@@ -12,7 +12,12 @@ from nahoermaar.operations.maintenance import HousekeepingContribution
 from nahoermaar.operations.scheduler import JobDefinition
 from nahoermaar.views.catalog import CatalogCleanupView
 
-from .maintenance import CatalogCleanup, CatalogHousekeeping, CatalogMaintenance
+from .maintenance import (
+    CatalogCleanup,
+    CatalogHousekeeping,
+    CatalogMaintenance,
+    SourceRevalidation,
+)
 from .providers import CatalogProvider
 from .service import CatalogService
 
@@ -37,9 +42,14 @@ def create_catalog_module(
     service = CatalogService(units, providers)
     maintenance = CatalogMaintenance(units, service)
     cleanup = CatalogCleanup(units, cleanup_view)
+    revalidation = SourceRevalidation(units, service)
     housekeeping = CatalogHousekeeping(units)
     return CatalogModule(
         service,
-        (maintenance.definition(), cleanup.definition()),
+        (
+            maintenance.definition(),
+            cleanup.definition(),
+            revalidation.definition(),
+        ),
         housekeeping.contribution(),
     )

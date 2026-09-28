@@ -124,7 +124,7 @@ services:
             PGDATABASE: ${POSTGRES_DB:-nahormaar}
             PGUSER: ${POSTGRES_USER:-nahormaar}
             PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
-            EXPECTED_SCHEMA_REVISION: 0009_catalog_cleanup_job
+            EXPECTED_SCHEMA_REVISION: 0010_source_revalidation_job
             BACKUP_KEEP: ${BACKUP_KEEP:-14}
         volumes:
             - ./data/backups:/backups

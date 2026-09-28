@@ -62,6 +62,9 @@ def test_bootstrap_loads_settings_and_composes_auth(
     assert cleanup_job.module == "catalog"
     assert cleanup_job.controls.preview is not None
     assert cleanup_job.controls.age_days is not None
+    revalidation_job = application.jobs.descriptor(JobId.SOURCE_REVALIDATION)
+    assert revalidation_job.module == "catalog"
+    assert revalidation_job.controls.batch_size.default == 10
     paths = create_app(application).openapi()["paths"]
     assert {
         "/api/catalog/search",

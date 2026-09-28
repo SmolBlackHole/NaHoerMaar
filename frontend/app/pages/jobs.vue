@@ -806,8 +806,8 @@ onBeforeUnmount(() => {
 													</div>
 												</div>
 												<p v-else class="mt-5 text-sm text-muted">
-													Item-level details were not recorded for this
-													earlier run.
+													No item-level changes were recorded for this
+													run.
 												</p>
 											</div>
 										</div>

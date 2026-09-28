@@ -37,7 +37,7 @@ from nahoermaar.operations.scheduler import (
 )
 from nahoermaar.views.catalog import CatalogCleanupCandidates, CatalogCleanupView
 
-from .domain import TrackSource
+from .domain import SourceAvailability, TrackSource
 from .repository import (
     CatalogRepository,
     DiscoveryRefreshCandidate,
@@ -131,7 +131,7 @@ class CatalogMaintenance:
         async def repair(source: TrackSource) -> _ItemResult:
             nonlocal processed
             try:
-                return await self._repair_source(source, now, semaphore)
+                return await self._repair_source(source, semaphore)
             finally:
                 processed += 1
                 execution.report_progress(
@@ -197,21 +197,8 @@ class CatalogMaintenance:
     async def _repair_source(
         self,
         source: TrackSource,
-        now: datetime,
         semaphore: asyncio.Semaphore,
     ) -> _ItemResult:
-        retry_key = f"source:{source.id}"
-        if not self._ready(retry_key, now):
-            return _ItemResult(
-                JobRunDetail(
-                    kind=JobRunDetailKind.TRACK_METADATA,
-                    outcome=JobRunDetailOutcome.SKIPPED,
-                    label=source.observed_title,
-                    summary="Waiting for the provider retry window.",
-                    subject_id=str(source.track_id),
-                    source=source.provider.value,
-                )
-            )
         async with semaphore:
             try:
                 track = await self._service.track(
@@ -221,7 +208,6 @@ class CatalogMaintenance:
             except asyncio.CancelledError:
                 raise
             except Exception as error:
-                self._failed(retry_key, now)
                 code = error_code(error)
                 _LOGGER.warning(
                     "catalog.maintenance_metadata_failed track_id=%s title=%r "
@@ -247,7 +233,6 @@ class CatalogMaintenance:
             finally:
                 await self._pause()
 
-        self._failures.pop(retry_key, None)
         stored_source = next(
             (candidate for candidate in track.sources if candidate.id == source.id),
             None,
@@ -604,3 +589,193 @@ class CatalogCleanup:
             for artist in candidates.artists
         )
         return tuple(details)
+
+
+class SourceRevalidation:
+    """Retry unavailable and repeatedly failing provider sources with backoff."""
+
+    __slots__ = (
+        "_clock",
+        "_delay",
+        "_interval",
+        "_parallel_requests",
+        "_service",
+        "_units",
+    )
+
+    def __init__(
+        self,
+        units: UnitOfWorkFactory,
+        service: CatalogService,
+        *,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        interval: timedelta = timedelta(hours=1),
+        delay: float = 1.0,
+        parallel_requests: int = 4,
+    ) -> None:
+        if interval <= timedelta(0):
+            raise ValueError("Source revalidation interval must be positive.")
+        if delay < 0:
+            raise ValueError("Source revalidation delay must not be negative.")
+        if not 1 <= parallel_requests <= 10:
+            raise ValueError(
+                "Source revalidation parallel requests must be between 1 and 10."
+            )
+        self._units = units
+        self._service = service
+        self._clock = clock
+        self._interval = interval
+        self._delay = delay
+        self._parallel_requests = parallel_requests
+
+    def definition(self) -> JobDefinition:
+        return JobDefinition(
+            JobDescriptor(
+                id=JobId.SOURCE_REVALIDATION,
+                module="catalog",
+                label="Source revalidation",
+                description=(
+                    "Retries unavailable or failing provider sources after their "
+                    "backoff window."
+                ),
+                scope=("unavailable sources", "provider failures"),
+                interval=self._interval,
+                controls=JobControls(IntegerJobControl(10, 1, 100)),
+                parallel_requests=self._parallel_requests,
+            ),
+            self.run,
+            run_on_startup=False,
+        )
+
+    async def run(self, execution: JobExecution) -> JobResult:
+        now = self._clock()
+        async with self._units() as work:
+            sources = await CatalogRepository(work.session).revalidation_candidates(
+                now=now,
+                limit=execution.options.batch_size,
+            )
+
+        total = len(sources)
+        processed = 0
+        execution.report_progress(0, total, JobProgressUnit.RECORDS)
+        semaphore = asyncio.Semaphore(self._parallel_requests)
+
+        async def revalidate(source: TrackSource) -> _ItemResult:
+            nonlocal processed
+            try:
+                return await self._revalidate(source, semaphore)
+            finally:
+                processed += 1
+                execution.report_progress(processed, total, JobProgressUnit.RECORDS)
+
+        results = await asyncio.gather(*(revalidate(source) for source in sources))
+        failures = sum(result.failed for result in results)
+        changed = sum(result.changed for result in results)
+        _LOGGER.info(
+            "catalog.source_revalidation_completed trigger=%s batch=%d "
+            "candidates=%d restored=%d failures=%d",
+            execution.trigger,
+            execution.options.batch_size,
+            total,
+            changed,
+            failures,
+        )
+        return JobResult(
+            candidate_count=total,
+            processed_count=processed,
+            changed_count=changed,
+            failure_count=failures,
+            error_code="source_revalidation_partial" if failures else None,
+            details=tuple(result.detail for result in results),
+        )
+
+    async def _revalidate(
+        self,
+        source: TrackSource,
+        semaphore: asyncio.Semaphore,
+    ) -> _ItemResult:
+        async with semaphore:
+            try:
+                track = await self._service.track(
+                    source.source_url,
+                    provider_key=source.provider.value,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:
+                code = error_code(error)
+                async with self._units() as work:
+                    failed_source = await CatalogRepository(work.session).source(
+                        source.id
+                    )
+                retry_at = (
+                    failed_source.retry_at
+                    if failed_source is not None
+                    else source.retry_at
+                )
+                retry_summary = (
+                    f" Next retry after {retry_at.isoformat()}."
+                    if retry_at is not None
+                    else ""
+                )
+                _LOGGER.warning(
+                    "catalog.source_revalidation_failed source_id=%s provider=%s "
+                    "external_id=%s retry_at=%s error=%s",
+                    source.id,
+                    source.provider,
+                    safe_log_value(source.external_id),
+                    retry_at.isoformat() if retry_at is not None else None,
+                    code,
+                )
+                return _ItemResult(
+                    JobRunDetail(
+                        kind=JobRunDetailKind.SOURCE_REVALIDATION,
+                        outcome=JobRunDetailOutcome.FAILED,
+                        label=source.observed_title,
+                        summary=(
+                            f"The provider source is still unavailable.{retry_summary}"
+                        ),
+                        subject_id=str(source.id),
+                        source=source.provider.value,
+                        error_code=code,
+                    ),
+                    failed=True,
+                )
+            finally:
+                if self._delay:
+                    await asyncio.sleep(self._delay)
+
+        stored = next(
+            (candidate for candidate in track.sources if candidate.id == source.id),
+            None,
+        )
+        restored = (
+            stored is not None
+            and stored.availability is SourceAvailability.AVAILABLE
+            and stored.failure_count == 0
+        )
+        if not restored:
+            return _ItemResult(
+                JobRunDetail(
+                    kind=JobRunDetailKind.SOURCE_REVALIDATION,
+                    outcome=JobRunDetailOutcome.FAILED,
+                    label=source.observed_title,
+                    summary="The provider response did not restore this source.",
+                    subject_id=str(source.id),
+                    source=source.provider.value,
+                    error_code="source_not_restored",
+                ),
+                failed=True,
+            )
+        return _ItemResult(
+            JobRunDetail(
+                kind=JobRunDetailKind.SOURCE_REVALIDATION,
+                outcome=JobRunDetailOutcome.CHANGED,
+                label=track.title,
+                summary="Restored the provider source and cleared its retry state.",
+                affected_count=1,
+                subject_id=str(source.id),
+                source=source.provider.value,
+            ),
+            changed=True,
+        )

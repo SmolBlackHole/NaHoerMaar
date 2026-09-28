@@ -12,10 +12,23 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import insert
 
-from nahoermaar.catalog.domain import ProviderName
-from nahoermaar.catalog.maintenance import CatalogCleanup
-from nahoermaar.catalog.providers import ProviderArtist, ProviderTrack
+from nahoermaar.catalog.domain import (
+    MediaKind,
+    MediaReference,
+    ProviderName,
+    SourceAvailability,
+)
+from nahoermaar.catalog.maintenance import CatalogCleanup, SourceRevalidation
+from nahoermaar.catalog.providers import (
+    ProviderArtist,
+    ProviderAudio,
+    ProviderError,
+    ProviderPage,
+    ProviderPlaylist,
+    ProviderTrack,
+)
 from nahoermaar.catalog.repository import CatalogRepository
+from nahoermaar.catalog.service import CatalogService
 from nahoermaar.database.core import Database
 from nahoermaar.database.schema import Base
 from nahoermaar.database.uow import UnitOfWork
@@ -25,7 +38,7 @@ from nahoermaar.operations.scheduler import (
     JobProgress,
     JobProgressUnit,
 )
-from nahoermaar.operations.jobs import JobTrigger
+from nahoermaar.operations.jobs import JobRunDetailOutcome, JobTrigger
 from nahoermaar.users.domain import UserId
 from nahoermaar.views.catalog import CatalogCleanupView
 
@@ -58,6 +71,75 @@ def _track(external_id: str, title: str, artist_id: str, isrc: str) -> ProviderT
         duration_seconds=180.0,
         isrc=isrc,
     )
+
+
+class _RevalidationProvider:
+    key = "youtube"
+
+    def __init__(self) -> None:
+        self.fail = True
+        self.track_calls = 0
+
+    def identify(
+        self,
+        source_url: str,
+        *,
+        kind: MediaKind | None = None,
+    ) -> MediaReference | None:
+        if source_url != "https://music.youtube.com/watch?v=retry000001":
+            return None
+        return MediaReference(
+            ProviderName.YOUTUBE,
+            "retry000001",
+            kind or MediaKind.TRACK,
+            source_url,
+        )
+
+    async def track(self, reference: MediaReference) -> ProviderTrack:
+        self.track_calls += 1
+        if self.fail:
+            raise ProviderError("Still unavailable.", retryable=True)
+        return ProviderTrack(
+            provider=ProviderName.YOUTUBE,
+            external_id=reference.external_id,
+            source_url=reference.source_url,
+            title="Recovered track",
+            artist_text="Recovered artist",
+            duration_seconds=181.0,
+        )
+
+    async def search(
+        self,
+        query: str,
+        *,
+        limit: int,
+        continuation: str | None = None,
+    ) -> ProviderPage:
+        raise AssertionError("Search is not used by source revalidation.")
+
+    async def playlist(
+        self,
+        reference: MediaReference,
+        *,
+        limit: int,
+        continuation: str | None = None,
+    ) -> ProviderPlaylist:
+        raise AssertionError("Playlist is not used by source revalidation.")
+
+    async def radio(
+        self,
+        reference: MediaReference,
+        *,
+        limit: int,
+        continuation: str | None = None,
+    ) -> ProviderPage:
+        raise AssertionError("Radio is not used by source revalidation.")
+
+    async def resolve_audio(self, reference: MediaReference) -> ProviderAudio:
+        raise AssertionError("Audio is not used by source revalidation.")
+
+    async def close(self) -> None:
+        return None
 
 
 def test_catalog_cleanup_preview_matches_execution_and_preserves_playback() -> None:
@@ -206,6 +288,117 @@ def test_catalog_cleanup_preview_matches_execution_and_preserves_playback() -> N
                 )
                 is not None
             )
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        asyncio.run(database.close())
+
+
+def test_source_revalidation_persists_backoff_and_restores_availability() -> None:
+    database = _database()
+    now = [NOW]
+    provider = _RevalidationProvider()
+
+    def units() -> UnitOfWork:
+        return UnitOfWork(database.sessions)
+
+    service = CatalogService(
+        units,
+        (provider,),
+        clock=lambda: now[0],
+    )
+    revalidation = SourceRevalidation(
+        units,
+        service,
+        clock=lambda: now[0],
+        delay=0,
+    )
+    progress: list[JobProgress] = []
+
+    def report(current: int, total: int, unit: JobProgressUnit) -> None:
+        progress.append(JobProgress(current, total, unit))
+
+    execution = JobExecution(
+        JobOptions(batch_size=10),
+        JobTrigger.MANUAL,
+        None,
+        report,
+    )
+
+    async def scenario() -> None:
+        async with units() as work:
+            stored = await CatalogRepository(work.session).upsert(
+                ProviderTrack(
+                    provider=ProviderName.YOUTUBE,
+                    external_id="retry000001",
+                    source_url="https://music.youtube.com/watch?v=retry000001",
+                    title="Unavailable track",
+                    availability=SourceAvailability.UNAVAILABLE,
+                ),
+                NOW - timedelta(days=1),
+            )
+            source_id = stored.sources[0].id
+            await work.commit()
+
+        failed = await revalidation.run(execution)
+        assert failed.candidate_count == 1
+        assert failed.processed_count == 1
+        assert failed.changed_count == 0
+        assert failed.failure_count == 1
+        assert failed.error_code == "source_revalidation_partial"
+        assert failed.details[0].subject_id == str(source_id)
+        assert failed.details[0].source == "youtube"
+        assert failed.details[0].outcome is JobRunDetailOutcome.FAILED
+
+        async with units() as work:
+            source = await CatalogRepository(work.session).source(source_id)
+            assert source is not None
+            assert source.availability is SourceAvailability.UNAVAILABLE
+            assert source.failure_count == 1
+            assert source.retry_at == NOW + timedelta(hours=1)
+            assert source.last_failure_code == "provider_failed"
+
+        waiting = await revalidation.run(execution)
+        assert waiting.candidate_count == 0
+        assert provider.track_calls == 1
+
+        now[0] += timedelta(hours=1)
+        failed_again = await revalidation.run(execution)
+        assert failed_again.candidate_count == 1
+        assert failed_again.failure_count == 1
+        assert provider.track_calls == 2
+
+        async with units() as work:
+            source = await CatalogRepository(work.session).source(source_id)
+            assert source is not None
+            assert source.failure_count == 2
+            assert source.retry_at == now[0] + timedelta(hours=2)
+
+        waiting_again = await revalidation.run(execution)
+        assert waiting_again.candidate_count == 0
+        assert provider.track_calls == 2
+
+        now[0] += timedelta(hours=2)
+        provider.fail = False
+        recovered = await revalidation.run(execution)
+        assert recovered.candidate_count == 1
+        assert recovered.processed_count == 1
+        assert recovered.changed_count == 1
+        assert recovered.failure_count == 0
+        assert recovered.details[0].subject_id == str(source_id)
+        assert recovered.details[0].outcome is JobRunDetailOutcome.CHANGED
+        assert provider.track_calls == 3
+        assert progress[-1] == JobProgress(1, 1, JobProgressUnit.RECORDS)
+
+        async with units() as work:
+            source = await CatalogRepository(work.session).source(source_id)
+            assert source is not None
+            assert source.availability is SourceAvailability.AVAILABLE
+            assert source.failure_count == 0
+            assert source.retry_at is None
+            assert source.last_failure_code is None
+        await service.close()
 
     try:
         asyncio.run(scenario())

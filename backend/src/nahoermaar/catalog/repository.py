@@ -58,6 +58,7 @@ from .domain import (
     TrackId,
     TrackSource,
     TrackSourceId,
+    source_retry_delay,
 )
 from .providers import ProviderArtist, ProviderTrack
 
@@ -216,6 +217,7 @@ class _TrackSourceRow(Base):
         CheckConstraint(
             "checked_at >= first_seen_at", name="check_not_before_discovery"
         ),
+        CheckConstraint("failure_count >= 0", name="failure_count_non_negative"),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
@@ -238,6 +240,11 @@ class _TrackSourceRow(Base):
     availability: Mapped[SourceAvailability] = mapped_column(_AVAILABILITY)
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    failure_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    retry_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), index=True
+    )
+    last_failure_code: Mapped[str | None] = mapped_column(String(120))
     track: Mapped[_TrackRow] = relationship(back_populates="sources")
     artist_links: Mapped[list[_TrackSourceArtistRow]] = relationship(
         back_populates="source",
@@ -394,6 +401,7 @@ class CatalogRepository:
             select(_TrackSourceRow)
             .where(
                 _TrackSourceRow.availability == SourceAvailability.AVAILABLE,
+                _TrackSourceRow.failure_count == 0,
                 _TrackSourceRow.checked_at <= checked_before,
                 or_(
                     missing_artist,
@@ -413,6 +421,34 @@ class CatalogRepository:
                     (_TrackSourceRow.quality == ObservationQuality.DETAIL, 0),
                     else_=1,
                 ),
+                _TrackSourceRow.checked_at,
+                _TrackSourceRow.id,
+            )
+            .limit(limit)
+        )
+        return tuple(_to_source(row) for row in rows)
+
+    async def revalidation_candidates(
+        self,
+        *,
+        now: datetime,
+        limit: int,
+    ) -> tuple[TrackSource, ...]:
+        """Return unavailable or failing sources whose retry window has opened."""
+        rows = await self._session.scalars(
+            select(_TrackSourceRow)
+            .where(
+                or_(
+                    _TrackSourceRow.availability == SourceAvailability.UNAVAILABLE,
+                    _TrackSourceRow.failure_count > 0,
+                ),
+                or_(
+                    _TrackSourceRow.retry_at.is_(None),
+                    _TrackSourceRow.retry_at <= now,
+                ),
+            )
+            .order_by(
+                _TrackSourceRow.retry_at.asc().nullsfirst(),
                 _TrackSourceRow.checked_at,
                 _TrackSourceRow.id,
             )
@@ -548,6 +584,10 @@ class CatalogRepository:
         if observed_at >= source.checked_at:
             source.checked_at = observed_at
             source.availability = observation.availability
+            if observation.availability is SourceAvailability.AVAILABLE:
+                source.failure_count = 0
+                source.retry_at = None
+                source.last_failure_code = None
         if replace_metadata:
             source.source_url = observation.source_url
             source.observed_title = observation.title
@@ -597,6 +637,32 @@ class CatalogRepository:
         source.availability = SourceAvailability.UNAVAILABLE
         source.checked_at = checked_at
         return True
+
+    async def record_source_failure(
+        self,
+        provider: ProviderName,
+        external_id: str,
+        *,
+        failed_at: datetime,
+        error_code: str,
+    ) -> TrackSource | None:
+        """Persist consecutive provider failure state and its next retry window."""
+        source = await self._session.scalar(
+            select(_TrackSourceRow)
+            .where(
+                _TrackSourceRow.provider == provider,
+                _TrackSourceRow.external_id == external_id,
+            )
+            .with_for_update()
+        )
+        if source is None:
+            return None
+        source.failure_count += 1
+        source.checked_at = max(source.checked_at, failed_at)
+        source.last_failure_code = error_code
+        source.retry_at = failed_at + source_retry_delay(source.failure_count)
+        await self._session.flush()
+        return _to_source(source)
 
     async def delete_orphans(
         self,
@@ -1062,6 +1128,9 @@ def _to_source(row: _TrackSourceRow) -> TrackSource:
         row.availability,
         row.first_seen_at,
         row.checked_at,
+        row.failure_count,
+        row.retry_at,
+        row.last_failure_code,
     )
 
 

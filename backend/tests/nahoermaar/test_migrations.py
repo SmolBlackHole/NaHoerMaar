@@ -26,7 +26,7 @@ def test_alembic_uses_packaged_schema_revisions() -> None:
         Path(scripts.dir).resolve()
         == (root / "backend/src/nahoermaar/database/migrations").resolve()
     )
-    assert scripts.get_heads() == ["0009_catalog_cleanup_job"]
+    assert scripts.get_heads() == ["0010_source_revalidation_job"]
 
 
 def test_runtime_migration_uses_packaged_scripts() -> None:
@@ -42,7 +42,7 @@ def test_runtime_migration_uses_packaged_scripts() -> None:
     finally:
         asyncio.run(database.close())
 
-    assert revision == "0009_catalog_cleanup_job"
+    assert revision == "0010_source_revalidation_job"
 
 
 def _current_revision(connection: Connection) -> str | None:

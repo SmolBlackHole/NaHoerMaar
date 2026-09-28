@@ -5,7 +5,7 @@
 """Canonical artists, tracks, provider sources and discovery snapshots."""
 
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from enum import StrEnum
 from math import isfinite
 from typing import NewType
@@ -131,6 +131,9 @@ class TrackSource:
     availability: SourceAvailability
     first_seen_at: datetime
     checked_at: datetime
+    failure_count: int = 0
+    retry_at: datetime | None = None
+    last_failure_code: str | None = None
 
     def __post_init__(self) -> None:
         _text(self.external_id, "Track external ID", maximum=200)
@@ -151,6 +154,27 @@ class TrackSource:
         _aware(self.checked_at, "Track source checked_at")
         if self.checked_at.astimezone(UTC) < self.first_seen_at.astimezone(UTC):
             raise ValueError("Track source check cannot precede discovery.")
+        if self.failure_count < 0:
+            raise ValueError("Track source failure count must not be negative.")
+        if self.retry_at is not None:
+            _aware(self.retry_at, "Track source retry_at")
+        _optional_text(
+            self.last_failure_code,
+            "Track source last failure code",
+            maximum=120,
+        )
+        if self.failure_count == 0 and (
+            self.retry_at is not None or self.last_failure_code is not None
+        ):
+            raise ValueError("Healthy track sources cannot retain retry state.")
+
+
+def source_retry_delay(failure_count: int) -> timedelta:
+    """Return the persisted retry delay after a consecutive source failure."""
+    if failure_count < 1:
+        raise ValueError("Source retry failure count must be positive.")
+    hours = min(24 * 7, 2 ** min(failure_count - 1, 8))
+    return timedelta(hours=hours)
 
 
 @dataclass(frozen=True, slots=True)

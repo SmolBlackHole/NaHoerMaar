@@ -54,6 +54,7 @@ _HISTORY_RETENTION = timedelta(days=HISTORY_RETENTION_DAYS)
 class JobId(StrEnum):
     CATALOG_MAINTENANCE = "catalog-maintenance"
     CATALOG_CLEANUP = "catalog-cleanup"
+    SOURCE_REVALIDATION = "source-revalidation"
     HOUSEKEEPING = "housekeeping"
 
 
@@ -79,6 +80,7 @@ class JobHealth(StrEnum):
 class JobRunDetailKind(StrEnum):
     TRACK_METADATA = "track_metadata"
     DISCOVERY_REFRESH = "discovery_refresh"
+    SOURCE_REVALIDATION = "source_revalidation"
     DATA_CLEANUP = "data_cleanup"
 
 
