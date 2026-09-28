@@ -19,6 +19,7 @@ from nahoermaar.database.core import Database
 from nahoermaar.messaging import MessageBus
 from nahoermaar.database.uow import UnitOfWork
 from nahoermaar.operations.logs import RecentLogBuffer
+from nahoermaar.operations.jobs import JobId
 from nahoermaar.users.domain import AccessRole
 from nahoermaar.users.repository import UserRepository
 
@@ -53,6 +54,10 @@ def test_bootstrap_loads_settings_and_composes_auth(
     assert application.access.operators.owner_id == "9"
     assert isinstance(application.bus, MessageBus)
     assert isinstance(application.catalog, CatalogService)
+    assert not hasattr(application.catalog, "start")
+    catalog_job = application.jobs.descriptor(JobId.CATALOG_MAINTENANCE)
+    assert catalog_job.module == "catalog"
+    assert catalog_job.controls.batch_size.default == 10
     paths = create_app(application).openapi()["paths"]
     assert {
         "/api/catalog/search",

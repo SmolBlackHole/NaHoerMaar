@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import asyncio
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 import logging
 import os
@@ -19,6 +20,7 @@ from sqlalchemy import insert
 from nahoermaar.api.app import create_app
 from nahoermaar.api.events import AuthEventView, ChangeView, event_stream
 from nahoermaar.api.player import PlayerView
+from nahoermaar.catalog.maintenance import CatalogMaintenance
 from nahoermaar.catalog.service import CatalogService
 from nahoermaar.bootstrap import (  # pyright: ignore[reportPrivateUsage]
     Application,
@@ -37,6 +39,7 @@ from nahoermaar.operations.incidents import IncidentService
 from nahoermaar.operations.jobs import JobId, JobRunService, JobTrigger
 from nahoermaar.operations.housekeeping import HousekeepingService
 from nahoermaar.operations.logs import RecentLogBuffer
+from nahoermaar.operations.scheduler import JobCoordinator
 from nahoermaar.player.automation import PlaybackAutomation
 from nahoermaar.player.events import PlaybackRuntimeChanged
 from nahoermaar.player.session import CatalogRadioResolver, PlayerSessionManager
@@ -111,9 +114,20 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
     access = AccessService(units, Operators("9", ()), clock=lambda: NOW)
     auth = AuthService(units, provider, clock=lambda: NOW)
     incidents = IncidentService(units, clock=lambda: NOW)
-    jobs = JobRunService(units, incidents, clock=lambda: NOW)
+    job_runs = JobRunService(units, incidents, clock=lambda: NOW)
     bus = MessageBus(incidents)
-    catalog = CatalogService(units, (), jobs=jobs)
+    catalog = CatalogService(units, ())
+    catalog_maintenance = CatalogMaintenance(
+        units,
+        catalog,
+        clock=lambda: NOW,
+        delay=0,
+    )
+    jobs = JobCoordinator(
+        job_runs,
+        (replace(catalog_maintenance.definition(), run_on_startup=False),),
+        clock=lambda: NOW,
+    )
     player = PlayerSessionManager(units, bus, CatalogRadioResolver(catalog))
     listening = ListeningService(
         units,
@@ -151,7 +165,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
         ),
     )
     avatars = DiscordAvatarStore(Path("data/avatars"))
-    housekeeping = HousekeepingService(units, jobs, avatars, clock=lambda: NOW)
+    housekeeping = HousekeepingService(units, job_runs, avatars, clock=lambda: NOW)
     application = Application(
         settings,
         database,
@@ -166,6 +180,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
         history,
         incidents,
         automation,
+        job_runs,
         jobs,
         housekeeping,
         logs,
@@ -185,7 +200,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
     assert "/api/jobs" in contract["paths"]
     assert "/api/jobs/runs" in contract["paths"]
     assert "/api/jobs/runs/{run_id}" in contract["paths"]
-    assert "/api/jobs/catalog-maintenance" in contract["paths"]
+    assert "/api/jobs/{job_id}/runs" in contract["paths"]
     assert "/api/jobs/housekeeping" in contract["paths"]
     assert "/api/incidents" in contract["paths"]
     assert "/api/player/sleep-timer" in contract["paths"]
@@ -204,6 +219,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
     async def scenario() -> None:
         await access.reconcile()
         await player.start()
+        await jobs.start()
         transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
         async with httpx.AsyncClient(
             transport=transport,
@@ -370,19 +386,19 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
                 "origin": ORIGIN,
                 "x-csrf-token": current.csrf,
             }
-            jobs = await client.get("/api/jobs")
-            assert jobs.status_code == 200
-            assert [item["id"] for item in jobs.json()["jobs"]] == [
+            jobs_response = await client.get("/api/jobs")
+            assert jobs_response.status_code == 200
+            assert [item["id"] for item in jobs_response.json()["jobs"]] == [
                 "catalog-maintenance",
                 "housekeeping",
             ]
-            assert jobs.json()["jobs"][0]["default_batch_size"] == 10
-            assert [item["health"] for item in jobs.json()["jobs"]] == [
+            assert jobs_response.json()["jobs"][0]["default_batch_size"] == 10
+            assert [item["health"] for item in jobs_response.json()["jobs"]] == [
                 "unknown",
                 "unknown",
             ]
-            assert "recent_runs" not in jobs.json()
-            assert jobs.json()["history_retention_days"] == 30
+            assert "recent_runs" not in jobs_response.json()
+            assert jobs_response.json()["history_retention_days"] == 30
             job_runs = await client.get("/api/jobs/runs")
             assert job_runs.status_code == 200
             assert job_runs.json() == {"entries": [], "next_cursor": None}
@@ -401,25 +417,25 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
                 "error": "validation_failed",
                 "retryable": False,
             }
-            first_run = await application.jobs.start_run(
+            first_run = await application.job_runs.start_run(
                 JobId.HOUSEKEEPING,
                 JobTrigger.MANUAL,
                 1,
                 current.user.id,
             )
-            first_run = await application.jobs.finish_run(
+            first_run = await application.job_runs.finish_run(
                 first_run,
                 candidate_count=1,
                 processed_count=1,
                 changed_count=1,
             )
-            second_run = await application.jobs.start_run(
+            second_run = await application.job_runs.start_run(
                 JobId.HOUSEKEEPING,
                 JobTrigger.MANUAL,
                 1,
                 current.user.id,
             )
-            second_run = await application.jobs.finish_run(
+            second_run = await application.job_runs.finish_run(
                 second_run,
                 candidate_count=1,
                 processed_count=1,
@@ -453,7 +469,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             assert run_detail.json()["id"] == str(first_run.id)
             assert run_detail.json()["details"] == []
             started_job = await client.post(
-                "/api/jobs/catalog-maintenance",
+                "/api/jobs/catalog-maintenance/runs",
                 headers=headers,
                 json={"batch_size": 3},
             )
@@ -826,6 +842,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             assert isinstance(auth_event.data, AuthEventView)
             assert auth_event.data.error == "signed_out"
             await events.aclose()
+        await jobs.close()
         await player.close()
         await catalog.close()
 

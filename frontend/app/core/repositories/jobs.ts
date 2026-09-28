@@ -7,7 +7,7 @@ import type {
 	BackgroundJobRun,
 	BackgroundJobRunPage,
 	BackgroundJobs,
-	RunCatalogMaintenance,
+	RunJob,
 	RunHousekeeping,
 } from "../models/jobs";
 
@@ -31,8 +31,8 @@ export function createJobsRepository(request: Transport) {
 		},
 		run: (id: string, signal?: AbortSignal) =>
 			request<BackgroundJobRun>(`/api/jobs/runs/${encodeURIComponent(id)}`, { signal }),
-		runCatalogMaintenance: (body: RunCatalogMaintenance, signal?: AbortSignal) =>
-			request<BackgroundJob>("/api/jobs/catalog-maintenance", {
+		runJob: (id: string, body: RunJob, signal?: AbortSignal) =>
+			request<BackgroundJob>(`/api/jobs/${encodeURIComponent(id)}/runs`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify(body),

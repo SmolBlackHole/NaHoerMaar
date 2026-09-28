@@ -181,7 +181,7 @@ async function runNow(job: BackgroundJob) {
 	submitting[job.id] = true;
 	try {
 		if (job.id === "housekeeping") await workflow.runHousekeeping(requested);
-		else await workflow.runCatalogMaintenance(requested);
+		else await workflow.runJob(job.id, requested);
 	} finally {
 		submitting[job.id] = false;
 		schedule();

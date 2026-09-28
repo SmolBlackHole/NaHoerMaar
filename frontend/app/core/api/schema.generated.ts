@@ -260,7 +260,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/jobs/catalog-maintenance": {
+    "/api/jobs/{job_id}/runs": {
         parameters: {
             query?: never;
             header?: never;
@@ -269,8 +269,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Run Catalog Maintenance */
-        post: operations["run_catalog_maintenance_api_jobs_catalog_maintenance_post"];
+        /** Run Job */
+        post: operations["run_job_api_jobs__job_id__runs_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2215,14 +2215,6 @@ export interface components {
              */
             operation_id: string;
         };
-        /** RunCatalogMaintenance */
-        RunCatalogMaintenance: {
-            /**
-             * Batch Size
-             * @default 10
-             */
-            batch_size: number;
-        };
         /** RunHousekeeping */
         RunHousekeeping: {
             /**
@@ -2230,6 +2222,15 @@ export interface components {
              * @default 10000
              */
             batch_size: number;
+        };
+        /** RunJob */
+        RunJob: {
+            /** Age Days */
+            age_days?: number | null;
+            /** Batch Size */
+            batch_size?: number | null;
+            /** Preview */
+            preview?: boolean | null;
         };
         /** SeekInput */
         SeekInput: {
@@ -4549,16 +4550,18 @@ export interface operations {
             };
         };
     };
-    run_catalog_maintenance_api_jobs_catalog_maintenance_post: {
+    run_job_api_jobs__job_id__runs_post: {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                job_id: string;
+            };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["RunCatalogMaintenance"];
+                "application/json": components["schemas"]["RunJob"];
             };
         };
         responses: {

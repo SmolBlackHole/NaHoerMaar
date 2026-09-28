@@ -13,7 +13,6 @@ from fastapi import APIRouter, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from nahoermaar.bootstrap import Application
-from nahoermaar.catalog.service import CatalogMaintenanceStatus
 from nahoermaar.operations.housekeeping import HousekeepingStatus
 from nahoermaar.operations.jobs import (
     HISTORY_RETENTION_DAYS,
@@ -23,6 +22,12 @@ from nahoermaar.operations.jobs import (
     JobRunCursor,
     JobRunDetail,
     JobRunStatus,
+)
+from nahoermaar.operations.scheduler import (
+    JobCoordinatorError,
+    JobCoordinatorErrorCode,
+    JobRunRequest,
+    JobStatus,
 )
 
 from .errors import ApiError, ApiErrorCode
@@ -129,10 +134,12 @@ CatalogBatchSize = Annotated[int, Field(ge=1, le=100)]
 HousekeepingBatchSize = Annotated[int, Field(ge=1, le=10_000)]
 
 
-class RunCatalogMaintenance(BaseModel):
+class RunJob(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    batch_size: CatalogBatchSize = 10
+    batch_size: CatalogBatchSize | None = None
+    preview: bool | None = None
+    age_days: Annotated[int, Field(ge=1, le=3650)] | None = None
 
 
 class RunHousekeeping(BaseModel):
@@ -148,14 +155,11 @@ def router(application: Application) -> APIRouter:
     @routes.get("")
     async def background_jobs(request: Request) -> BackgroundJobsView:
         await application.access.require_admin(authenticated(request).user.id)
-        job_ids = (JobId.CATALOG_MAINTENANCE, JobId.HOUSEKEEPING)
-        health = await application.jobs.health(job_ids)
+        catalog_jobs = await application.jobs.statuses()
+        health = await application.job_runs.health((JobId.HOUSEKEEPING,))
         return BackgroundJobsView(
             jobs=(
-                _catalog_maintenance_view(
-                    application.catalog.maintenance_status(),
-                    health[JobId.CATALOG_MAINTENANCE],
-                ),
+                *(_coordinated_job_view(current) for current in catalog_jobs),
                 _housekeeping_view(
                     application.housekeeping.status(),
                     health[JobId.HOUSEKEEPING],
@@ -173,7 +177,7 @@ def router(application: Application) -> APIRouter:
         run_status: Annotated[JobRunStatus | None, Query(alias="status")] = None,
     ) -> BackgroundJobRunPageView:
         await application.access.require_admin(authenticated(request).user.id)
-        page = await application.jobs.runs(
+        page = await application.job_runs.runs(
             limit=limit,
             cursor=_decode_cursor(cursor),
             job_id=job_id,
@@ -190,35 +194,43 @@ def router(application: Application) -> APIRouter:
         request: Request,
     ) -> BackgroundJobRunView:
         await application.access.require_admin(authenticated(request).user.id)
-        run = await application.jobs.run(run_id)
+        run = await application.job_runs.run(run_id)
         if run is None:
             raise ApiError(ApiErrorCode.NOT_FOUND, status.HTTP_404_NOT_FOUND)
         return _run_view(run)
 
     @routes.post(
-        "/catalog-maintenance",
+        "/{job_id}/runs",
         status_code=status.HTTP_202_ACCEPTED,
     )
-    async def run_catalog_maintenance(
-        body: RunCatalogMaintenance,
+    async def run_job(
+        job_id: str,
+        body: RunJob,
         request: Request,
     ) -> BackgroundJobView:
         actor = authenticated(request).user
         await application.access.require_admin(actor.id)
-        current = application.catalog.trigger_maintenance(
-            batch_size=body.batch_size,
-            actor_id=actor.id,
-        )
+        try:
+            current = await application.jobs.trigger(
+                job_id,
+                JobRunRequest(
+                    batch_size=body.batch_size,
+                    preview=body.preview,
+                    age_days=body.age_days,
+                ),
+                actor.id,
+            )
+        except JobCoordinatorError as error:
+            raise _job_error(error) from error
         _LOGGER.info(
-            "jobs.catalog_maintenance_requested actor_id=%s batch=%d",
+            "jobs.run_requested job=%s actor_id=%s batch=%s preview=%s age_days=%s",
+            job_id,
             actor.id,
             body.batch_size,
+            body.preview,
+            body.age_days,
         )
-        health = await application.jobs.health((JobId.CATALOG_MAINTENANCE,))
-        return _catalog_maintenance_view(
-            current,
-            health[JobId.CATALOG_MAINTENANCE],
-        )
+        return _coordinated_job_view(current)
 
     @routes.post(
         "/housekeeping",
@@ -236,49 +248,57 @@ def router(application: Application) -> APIRouter:
             actor.id,
             body.batch_size,
         )
-        health = await application.jobs.health((JobId.HOUSEKEEPING,))
+        health = await application.job_runs.health((JobId.HOUSEKEEPING,))
         return _housekeeping_view(current, health[JobId.HOUSEKEEPING])
 
     return routes
 
 
-def _catalog_maintenance_view(
-    current: CatalogMaintenanceStatus,
-    health: JobHealth,
-) -> BackgroundJobView:
+def _coordinated_job_view(current: JobStatus) -> BackgroundJobView:
+    descriptor = current.descriptor
+    progress = current.progress
     return BackgroundJobView(
-        id="catalog-maintenance",
-        label="Catalog maintenance",
-        description=(
-            "Repairs incomplete track metadata and refreshes stale search results."
-        ),
-        health=health,
+        id=descriptor.id,
+        label=descriptor.label,
+        description=descriptor.description,
+        health=current.health,
         running=current.running,
-        interval_seconds=current.interval_seconds,
-        default_batch_size=current.default_batch_size,
-        max_batch_size=100,
-        parallel_requests=current.parallel_requests,
-        active_batch_size=current.active_batch_size,
+        interval_seconds=descriptor.interval.total_seconds(),
+        default_batch_size=descriptor.controls.batch_size.default,
+        max_batch_size=descriptor.controls.batch_size.maximum,
+        parallel_requests=descriptor.parallel_requests,
+        active_batch_size=(
+            current.active_options.batch_size
+            if current.active_options is not None
+            else None
+        ),
         active_trigger=current.active_trigger,
-        active_candidates=current.active_candidates,
-        active_processed=current.active_processed,
+        active_candidates=progress.total if progress is not None else 0,
+        active_processed=progress.current if progress is not None else 0,
         last_trigger=current.last_trigger,
         last_started_at=current.last_started_at,
         last_finished_at=current.last_finished_at,
         next_run_at=current.next_run_at,
-        last_candidates=(
-            current.last_metadata_candidates + current.last_discovery_candidates
-        ),
-        last_processed=(
-            current.last_metadata_repaired
-            + current.last_discovery_refreshed
-            + current.last_failures
-        ),
-        last_changed=(
-            current.last_metadata_repaired + current.last_discovery_refreshed
-        ),
+        last_candidates=current.last_candidates,
+        last_processed=current.last_processed,
+        last_changed=current.last_changed,
         last_failures=current.last_failures,
         last_error=current.last_error,
+    )
+
+
+def _job_error(error: JobCoordinatorError) -> ApiError:
+    if error.code is JobCoordinatorErrorCode.UNKNOWN_JOB:
+        return ApiError(ApiErrorCode.NOT_FOUND, status.HTTP_404_NOT_FOUND)
+    if error.code is JobCoordinatorErrorCode.ALREADY_RUNNING:
+        return ApiError(ApiErrorCode.CONFLICT, status.HTTP_409_CONFLICT)
+    if error.code is JobCoordinatorErrorCode.INVALID_OPTIONS:
+        return ApiError(
+            ApiErrorCode.VALIDATION_FAILED,
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    return ApiError(
+        ApiErrorCode.SERVICE_UNAVAILABLE, status.HTTP_503_SERVICE_UNAVAILABLE
     )
 
 

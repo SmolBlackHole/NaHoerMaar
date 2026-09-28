@@ -145,7 +145,7 @@ describe("new backend repositories", () => {
 			status: "failed",
 		});
 		await client.jobs.run("run/id");
-		await client.jobs.runCatalogMaintenance({ batch_size: 25 });
+		await client.jobs.runJob("catalog-maintenance", { batch_size: 25 });
 		await client.jobs.runHousekeeping({ batch_size: 500 });
 
 		expect(fetcher.mock.calls.map(([url, options]) => [url, options?.method])).toEqual([
@@ -155,7 +155,7 @@ describe("new backend repositories", () => {
 				undefined,
 			],
 			["/api/jobs/runs/run%2Fid", undefined],
-			["/api/jobs/catalog-maintenance", "POST"],
+			["/api/jobs/catalog-maintenance/runs", "POST"],
 			["/api/jobs/housekeeping", "POST"],
 		]);
 		expect(JSON.parse(fetcher.mock.calls[3]![1]!.body as string)).toEqual({

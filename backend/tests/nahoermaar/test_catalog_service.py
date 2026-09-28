@@ -22,6 +22,7 @@ from nahoermaar.catalog.domain import (
     ObservationQuality,
     ProviderName,
 )
+from nahoermaar.catalog.maintenance import CatalogMaintenance
 from nahoermaar.catalog.providers import (
     ProviderArtist,
     ProviderAudio,
@@ -35,6 +36,8 @@ from nahoermaar.catalog.service import CatalogError, CatalogErrorCode, CatalogSe
 from nahoermaar.database.core import Database
 from nahoermaar.database.schema import Base
 from nahoermaar.database.uow import UnitOfWork
+from nahoermaar.operations.jobs import JobTrigger
+from nahoermaar.operations.scheduler import JobExecution, JobOptions, JobProgressUnit
 
 ROOT = Path(__file__).parents[3]
 NOW = datetime(2026, 9, 24, 12, tzinfo=UTC)
@@ -50,6 +53,19 @@ PLAYLIST = MediaReference(
     MediaKind.PLAYLIST,
     "https://www.youtube.com/playlist?list=PLabcdefghijk",
 )
+
+
+def _job_execution(
+    batch_size: int,
+    progress: list[tuple[int, int, JobProgressUnit]] | None = None,
+) -> JobExecution:
+    updates = progress if progress is not None else []
+    return JobExecution(
+        JobOptions(batch_size),
+        JobTrigger.MANUAL,
+        None,
+        lambda current, total, unit: updates.append((current, total, unit)),
+    )
 
 
 class Provider:
@@ -383,8 +399,12 @@ def test_catalog_maintenance_repairs_metadata_and_refreshes_recent_stale_searche
         units,
         (music, youtube),
         clock=lambda: now[0],
-        maintenance_batch=2,
-        maintenance_delay=0,
+    )
+    maintenance = CatalogMaintenance(
+        units,
+        service,
+        clock=lambda: now[0],
+        delay=0,
     )
 
     async def scenario() -> None:
@@ -392,10 +412,11 @@ def test_catalog_maintenance_repairs_metadata_and_refreshes_recent_stale_searche
         assert discovered.snapshot.entries[0].track.duration_seconds is None
 
         now[0] += timedelta(minutes=6)
-        caplog.set_level("INFO", logger="nahoermaar.catalog.service")
-        repaired, refreshed = await service.maintain()
+        caplog.set_level("INFO", logger="nahoermaar.catalog.maintenance")
+        result = await maintenance.run(_job_execution(2))
 
-        assert (repaired, refreshed) == (1, 1)
+        assert result.changed_count == 2
+        assert result.failure_count == 0
         assert youtube.track_calls == 1
         assert music.search_calls == 2
         stored = await service.track_for_source(
@@ -446,19 +467,24 @@ def test_catalog_maintenance_does_not_count_still_incomplete_metadata(
         units,
         (music, youtube),
         clock=lambda: now[0],
-        maintenance_delay=0,
+    )
+    maintenance = CatalogMaintenance(
+        units,
+        service,
+        clock=lambda: now[0],
+        delay=0,
     )
 
     async def scenario() -> None:
         discovered = await service.search("Zara Larsson")
         now[0] += timedelta(minutes=6)
-        caplog.set_level("INFO", logger="nahoermaar.catalog.service")
+        caplog.set_level("INFO", logger="nahoermaar.catalog.maintenance")
 
-        repaired, refreshed = await service.maintain(batch_size=1)
+        result = await maintenance.run(_job_execution(1))
 
-        assert (repaired, refreshed) == (0, 0)
+        assert result.changed_count == 0
+        assert result.failure_count == 0
         assert youtube.track_calls == 1
-        assert service.maintenance_status().last_metadata_repaired == 0
         assert any(
             "catalog.maintenance_metadata_incomplete" in message
             and f"source_id={discovered.snapshot.entries[0].source.id}" in message
@@ -473,7 +499,7 @@ def test_catalog_maintenance_does_not_count_still_incomplete_metadata(
         asyncio.run(database.close())
 
 
-def test_manual_catalog_maintenance_reports_status_and_rejects_overlap() -> None:
+def test_catalog_maintenance_exposes_one_typed_job_definition() -> None:
     database = _database()
     music = Provider()
     youtube = YouTubeProvider()
@@ -495,47 +521,23 @@ def test_manual_catalog_maintenance_reports_status_and_rejects_overlap() -> None
         units,
         (music, youtube),
         clock=lambda: now[0],
-        maintenance_delay=0,
+    )
+    maintenance = CatalogMaintenance(
+        units,
+        service,
+        clock=lambda: now[0],
+        delay=0,
     )
 
     async def scenario() -> None:
-        initial = service.maintenance_status()
-        assert not initial.running
-        assert initial.interval_seconds == 300
-        assert initial.default_batch_size == 10
-        assert initial.parallel_requests == 4
-
-        await service.search("Zara Larsson")
-        now[0] += timedelta(minutes=6)
-        youtube.track_started = asyncio.Event()
-        youtube.track_release = asyncio.Event()
-
-        requested = service.trigger_maintenance(batch_size=7)
-        assert requested.running
-        assert requested.active_batch_size == 7
-        assert requested.active_trigger == "manual"
-        await youtube.track_started.wait()
-        while service.maintenance_status().active_processed < 1:
-            await asyncio.sleep(0)
-        active = service.maintenance_status()
-        assert active.active_candidates == 2
-        assert active.active_processed == 1
-
-        with pytest.raises(CatalogError) as failure:
-            service.trigger_maintenance(batch_size=1)
-        assert failure.value.code is CatalogErrorCode.MAINTENANCE_BUSY
-        assert failure.value.status == 409
-
-        youtube.track_release.set()
-        while service.maintenance_status().running:
-            await asyncio.sleep(0)
-        completed = service.maintenance_status()
-        assert completed.last_trigger == "manual"
-        assert completed.last_metadata_candidates == 1
-        assert completed.last_metadata_repaired == 1
-        assert completed.active_candidates == 0
-        assert completed.active_processed == 0
-        assert completed.last_error is None
+        definition = maintenance.definition()
+        assert definition.descriptor.id.value == "catalog-maintenance"
+        assert definition.descriptor.module == "catalog"
+        assert definition.descriptor.interval == timedelta(minutes=5)
+        assert definition.descriptor.controls.batch_size.default == 10
+        assert definition.descriptor.controls.batch_size.maximum == 100
+        assert definition.descriptor.parallel_requests == 4
+        assert definition.run_on_startup
         await service.close()
 
     try:
@@ -566,29 +568,30 @@ def test_catalog_maintenance_processes_a_bounded_parallel_batch() -> None:
         units,
         (music, youtube),
         clock=lambda: now[0],
-        maintenance_delay=0,
-        maintenance_parallel_requests=3,
+    )
+    maintenance = CatalogMaintenance(
+        units,
+        service,
+        clock=lambda: now[0],
+        delay=0,
+        parallel_requests=3,
     )
 
     async def scenario() -> None:
         await service.search("Zara Larsson")
         now[0] += timedelta(minutes=6)
-        service.trigger_maintenance(batch_size=4)
+        progress: list[tuple[int, int, JobProgressUnit]] = []
+        task = asyncio.create_task(maintenance.run(_job_execution(4, progress)))
         await youtube.parallel_started.wait()
-
-        running = service.maintenance_status()
-        assert running.active_candidates == 4
-        assert running.active_processed == 0
-        assert running.parallel_requests == 3
+        assert progress[-1] == (0, 4, JobProgressUnit.RECORDS)
 
         youtube.parallel_release.set()
-        while service.maintenance_status().running:
-            await asyncio.sleep(0)
-
-        completed = service.maintenance_status()
+        completed = await task
         assert youtube.max_active_tracks == 3
-        assert completed.last_metadata_candidates == 4
-        assert completed.last_metadata_repaired == 4
+        assert completed.candidate_count == 4
+        assert completed.processed_count == 4
+        assert completed.changed_count == 4
+        assert progress[-1] == (4, 4, JobProgressUnit.RECORDS)
         await service.close()
 
     try:

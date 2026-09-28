@@ -14,6 +14,7 @@ from uuid import UUID, uuid5
 from time import perf_counter
 from zoneinfo import ZoneInfo
 
+from .catalog.main import create_catalog_module
 from .catalog.service import CatalogService
 
 from .config import Settings
@@ -40,6 +41,7 @@ from .operations.housekeeping import HousekeepingService
 from .operations.incidents import IncidentService
 from .operations.jobs import JobRunService
 from .operations.logs import RecentLogBuffer
+from .operations.scheduler import JobCoordinator
 from .player.domain import OperationId, PlayerError, PlayerErrorCode
 from .player.automation import PlaybackAutomation
 from .player.events import (
@@ -132,7 +134,8 @@ class Application:
     history: PlaybackHistoryView
     incidents: IncidentService
     automation: PlaybackAutomation
-    jobs: JobRunService
+    job_runs: JobRunService
+    jobs: JobCoordinator
     housekeeping: HousekeepingService
     logs: RecentLogBuffer
     avatars: DiscordAvatarStore
@@ -172,15 +175,16 @@ class Application:
             _LOGGER.info("application.starting")
             try:
                 await migrate(self.database.engine)
-                await self.jobs.reconcile_interrupted_runs()
+                await self.job_runs.reconcile_interrupted_runs()
                 await self.bus.execute(ReconcileOperators())
-                await self.catalog.start()
                 self._runtime_closers.append(("player", self.player.close))
                 await self.player.start()
                 self._runtime_closers.append(("listening", self.listening.close))
                 await self.listening.start(self.player.state.session.id)
                 self._runtime_closers.append(("automation", self.automation.close))
                 await self.automation.start()
+                self._runtime_closers.append(("jobs", self.jobs.close))
+                await self.jobs.start()
                 self._runtime_closers.append(("housekeeping", self.housekeeping.close))
                 await self.housekeeping.start()
                 if self.gateway is not None:
@@ -262,15 +266,16 @@ def bootstrap(
     access = AccessService(units, Operators.load(settings.auth.access_path))
     auth = AuthService(units, DiscordOAuth(settings.auth))
     incidents = IncidentService(units)
-    jobs = JobRunService(units, incidents)
-    catalog = CatalogService(
+    job_runs = JobRunService(units, incidents)
+    catalog_module = create_catalog_module(
         units,
         (
             YouTubeProvider(settings.node_path),
             YouTubeMusicProvider(settings.node_path),
         ),
-        jobs=jobs,
     )
+    catalog = catalog_module.service
+    jobs = JobCoordinator(job_runs, catalog_module.jobs)
     bus = MessageBus(incidents)
     player = PlayerSessionManager(units, bus, CatalogRadioResolver(catalog))
     listening = ListeningService(units, bus, access)
@@ -286,7 +291,7 @@ def bootstrap(
     )
     profiles = ProfileView(units, statistics)
     history = PlaybackHistoryView(units)
-    housekeeping = HousekeepingService(units, jobs, avatars)
+    housekeeping = HousekeepingService(units, job_runs, avatars)
 
     async def summon(discord_id: str, channel_id: int, correlation_id: UUID) -> None:
         user = await access.require_discord_access(discord_id)
@@ -347,6 +352,7 @@ def bootstrap(
         history,
         incidents,
         automation,
+        job_runs,
         jobs,
         housekeeping,
         logs,

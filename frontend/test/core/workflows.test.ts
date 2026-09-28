@@ -192,7 +192,7 @@ describe("new backend page workflows", () => {
 		const workflow = core.workflows.jobs();
 
 		await workflow.load();
-		await workflow.runCatalogMaintenance(25);
+		await workflow.runJob("catalog-maintenance", 25);
 
 		expect(workflow.jobs.data.value?.jobs[0]).toMatchObject({
 			id: "catalog-maintenance",
@@ -202,7 +202,7 @@ describe("new backend page workflows", () => {
 		expect(fetcher.mock.calls.map(([url, options]) => [url, options?.method])).toEqual([
 			["/api/jobs", undefined],
 			["/api/jobs/runs?limit=20", undefined],
-			["/api/jobs/catalog-maintenance", "POST"],
+			["/api/jobs/catalog-maintenance/runs", "POST"],
 		]);
 		workflow.dispose();
 	});
