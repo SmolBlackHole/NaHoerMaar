@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
-from enum import StrEnum
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -40,7 +39,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column, relationship, selectinload
 
-from nahoermaar.database.schema import Base
+from nahoermaar.database.schema import Base, enum_values
 
 from .domain import (
     Artist,
@@ -78,17 +77,13 @@ class DiscoveryRefreshCandidate:
     source_url: str | None
 
 
-def _enum_values[EnumValue: StrEnum](members: type[EnumValue]) -> list[str]:
-    return [member.value for member in members]
-
-
 _PROVIDER = SqlEnum(
     ProviderName,
     name="catalog_provider",
     native_enum=False,
     create_constraint=True,
     validate_strings=True,
-    values_callable=_enum_values,
+    values_callable=enum_values,
 )
 _QUALITY = SqlEnum(
     ObservationQuality,
@@ -96,7 +91,7 @@ _QUALITY = SqlEnum(
     native_enum=False,
     create_constraint=True,
     validate_strings=True,
-    values_callable=_enum_values,
+    values_callable=enum_values,
 )
 _AVAILABILITY = SqlEnum(
     SourceAvailability,
@@ -104,7 +99,7 @@ _AVAILABILITY = SqlEnum(
     native_enum=False,
     create_constraint=True,
     validate_strings=True,
-    values_callable=_enum_values,
+    values_callable=enum_values,
 )
 _DISCOVERY_KIND = SqlEnum(
     DiscoveryKind,
@@ -112,7 +107,7 @@ _DISCOVERY_KIND = SqlEnum(
     native_enum=False,
     create_constraint=True,
     validate_strings=True,
-    values_callable=_enum_values,
+    values_callable=enum_values,
 )
 
 

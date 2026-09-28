@@ -9,13 +9,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
-from nahoermaar.database.uow import UnitOfWork
+from nahoermaar.database.uow import UnitOfWorkFactory
 from nahoermaar.users.service import AccessService
 
 from .service import StatisticsService
 
 type Clock = Callable[[], datetime]
-type UnitFactory = Callable[[], UnitOfWork]
 
 
 def _utc_now() -> datetime:
@@ -30,7 +29,7 @@ class StatisticsModule:
 
 
 def create_statistics_module(
-    units: UnitFactory,
+    units: UnitOfWorkFactory,
     timezone: str,
     access: AccessService,
     *,

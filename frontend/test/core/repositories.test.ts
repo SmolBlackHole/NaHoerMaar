@@ -120,6 +120,7 @@ describe("new backend repositories", () => {
 			actorId: "user-one",
 			page: 2,
 			pageSize: 25,
+			snapshot: "incident snapshot",
 		});
 
 		expect(fetcher.mock.calls.map(([url, options]) => [url, options?.method])).toEqual([
@@ -147,7 +148,7 @@ describe("new backend repositories", () => {
 				"GET",
 			],
 			[
-				"/api/incidents?period=7d&severity=error&component=player&code=queue_stalled&actor_id=user-one&page=2&page_size=25",
+				"/api/incidents?period=7d&severity=error&component=player&code=queue_stalled&actor_id=user-one&page=2&page_size=25&snapshot=incident%20snapshot",
 				"GET",
 			],
 		]);

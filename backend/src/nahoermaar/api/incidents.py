@@ -26,7 +26,11 @@ from nahoermaar.users.domain import UserId
 
 from .errors import error_responses
 from .middleware import authenticated
-from .pagination import NumberedPageView
+from .pagination import (
+    NumberedPageView,
+    decode_timestamp,
+    encode_timestamp,
+)
 
 
 class IncidentTotalsView(BaseModel):
@@ -116,6 +120,7 @@ def router(application: Application) -> APIRouter:
         actor_id: UUID | None = None,
         page: Annotated[int, Query(ge=1)] = 1,
         page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+        snapshot: str | None = None,
     ) -> IncidentReportView:
         await application.users.access.require_admin(authenticated(request).user.id)
         return _report_view(
@@ -127,6 +132,7 @@ def router(application: Application) -> APIRouter:
                 component=component,
                 error_code=code,
                 actor_id=UserId(actor_id) if actor_id is not None else None,
+                ended_at=decode_timestamp(snapshot),
             )
         )
 
@@ -151,7 +157,7 @@ def _report_view(report: IncidentReport) -> IncidentReportView:
         page_size=report.page_size,
         total=report.total,
         page_count=report.page_count,
-        snapshot=None,
+        snapshot=encode_timestamp(report.ended_at),
     )
 
 

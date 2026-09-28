@@ -4,22 +4,19 @@
 
 """Queryable read-only projection of confirmed shared playback."""
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, cast
 
-from sqlalchemy import Table, and_, func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 
 from nahoermaar.catalog.domain import ProviderName, TrackId, TrackSourceId
-from nahoermaar.database.schema import Base
-from nahoermaar.database.uow import UnitOfWork
+from nahoermaar.database.schema import registered_table
+from nahoermaar.database.uow import UnitOfWorkFactory
 from nahoermaar.listening.domain import PlaybackEndReason, PlaybackRecordId
 from nahoermaar.player.domain import RadioRunId, RequestOrigin, TrackRequestId
 from nahoermaar.users.domain import UserId
-
-type UnitFactory = Callable[[], UnitOfWork]
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,16 +85,22 @@ class PlaybackHistoryView:
         "_units",
     )
 
-    def __init__(self, units: UnitFactory) -> None:
+    def __init__(self, units: UnitOfWorkFactory) -> None:
         self._units = units
-        self._playbacks = _table("playback_records")
-        self._requests = _table("track_requests")
-        self._tracks = _table("tracks")
-        self._sources = _table("track_sources")
-        self._track_artists = _table("track_artists")
-        self._artists = _table("artists")
-        self._profiles = _table("user_profiles")
-        self._discord = _table("discord_identities")
+        self._playbacks = registered_table(
+            "playback_records", consumer="Playback history"
+        )
+        self._requests = registered_table("track_requests", consumer="Playback history")
+        self._tracks = registered_table("tracks", consumer="Playback history")
+        self._sources = registered_table("track_sources", consumer="Playback history")
+        self._track_artists = registered_table(
+            "track_artists", consumer="Playback history"
+        )
+        self._artists = registered_table("artists", consumer="Playback history")
+        self._profiles = registered_table("user_profiles", consumer="Playback history")
+        self._discord = registered_table(
+            "discord_identities", consumer="Playback history"
+        )
 
     async def get(
         self,
@@ -369,12 +372,3 @@ class PlaybackHistoryView:
             float(row["audio_seconds"]),
             float(row["group_audio_seconds"]),
         )
-
-
-def _table(name: str) -> Table:
-    try:
-        return Base.metadata.tables[name]
-    except KeyError as error:
-        raise RuntimeError(
-            f"Playback-history table is not registered: {name}"
-        ) from error

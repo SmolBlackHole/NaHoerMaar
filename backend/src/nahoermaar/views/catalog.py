@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol, cast
 
-from sqlalchemy import Table, exists, or_, select, union
+from sqlalchemy import exists, or_, select, union
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nahoermaar.catalog.domain import (
@@ -17,7 +17,7 @@ from nahoermaar.catalog.domain import (
     TrackId,
     TrackSourceId,
 )
-from nahoermaar.database.schema import Base
+from nahoermaar.database.schema import registered_table
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,16 +78,26 @@ class CatalogCleanupView:
     )
 
     def __init__(self) -> None:
-        self._artists = _table("artists")
-        self._tracks = _table("tracks")
-        self._sources = _table("track_sources")
-        self._track_artists = _table("track_artists")
-        self._source_artists = _table("track_source_artists")
-        self._discovery_results = _table("discovery_results")
-        self._requests = _table("track_requests")
-        self._radio_runs = _table("radio_runs")
-        self._radio_candidates = _table("radio_candidates")
-        self._radio_exclusions = _table("radio_exclusions")
+        self._artists = registered_table("artists", consumer="Catalog cleanup")
+        self._tracks = registered_table("tracks", consumer="Catalog cleanup")
+        self._sources = registered_table("track_sources", consumer="Catalog cleanup")
+        self._track_artists = registered_table(
+            "track_artists", consumer="Catalog cleanup"
+        )
+        self._source_artists = registered_table(
+            "track_source_artists", consumer="Catalog cleanup"
+        )
+        self._discovery_results = registered_table(
+            "discovery_results", consumer="Catalog cleanup"
+        )
+        self._requests = registered_table("track_requests", consumer="Catalog cleanup")
+        self._radio_runs = registered_table("radio_runs", consumer="Catalog cleanup")
+        self._radio_candidates = registered_table(
+            "radio_candidates", consumer="Catalog cleanup"
+        )
+        self._radio_exclusions = registered_table(
+            "radio_exclusions", consumer="Catalog cleanup"
+        )
 
     async def candidates(
         self,
@@ -230,12 +240,3 @@ class CatalogCleanupView:
             cast(str, row["external_id"]),
             row["checked_at"],
         )
-
-
-def _table(name: str) -> Table:
-    try:
-        return Base.metadata.tables[name]
-    except KeyError as error:
-        raise RuntimeError(
-            f"Catalog cleanup table is not registered: {name}"
-        ) from error

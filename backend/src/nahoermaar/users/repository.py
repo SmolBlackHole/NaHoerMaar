@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import datetime
-from enum import StrEnum
 from uuid import UUID
 
 from sqlalchemy import (
@@ -28,7 +27,7 @@ from sqlalchemy import (
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, joinedload, mapped_column, relationship
 
-from nahoermaar.database.schema import Base
+from nahoermaar.database.schema import Base, enum_values
 
 from .domain import (
     AccessAction,
@@ -50,17 +49,13 @@ from .domain import (
 )
 
 
-def _enum_values[EnumValue: StrEnum](members: type[EnumValue]) -> list[str]:
-    return [member.value for member in members]
-
-
 _ACCESS_ROLE = SqlEnum(
     AccessRole,
     name="access_role",
     native_enum=False,
     create_constraint=True,
     validate_strings=True,
-    values_callable=_enum_values,
+    values_callable=enum_values,
 )
 _ACCESS_ACTION = SqlEnum(
     AccessAction,
@@ -68,7 +63,7 @@ _ACCESS_ACTION = SqlEnum(
     native_enum=False,
     create_constraint=True,
     validate_strings=True,
-    values_callable=_enum_values,
+    values_callable=enum_values,
 )
 _ACCESS_ROLE_BEFORE = SqlEnum(
     AccessRole,
@@ -76,7 +71,7 @@ _ACCESS_ROLE_BEFORE = SqlEnum(
     native_enum=False,
     create_constraint=True,
     validate_strings=True,
-    values_callable=_enum_values,
+    values_callable=enum_values,
 )
 _ACCESS_ROLE_AFTER = SqlEnum(
     AccessRole,
@@ -84,7 +79,7 @@ _ACCESS_ROLE_AFTER = SqlEnum(
     native_enum=False,
     create_constraint=True,
     validate_strings=True,
-    values_callable=_enum_values,
+    values_callable=enum_values,
 )
 _APPEARANCE_MODE = SqlEnum(
     AppearanceMode,
@@ -92,7 +87,7 @@ _APPEARANCE_MODE = SqlEnum(
     native_enum=False,
     create_constraint=True,
     validate_strings=True,
-    values_callable=_enum_values,
+    values_callable=enum_values,
 )
 _PRIMARY_COLOR = SqlEnum(
     PrimaryColor,
@@ -100,7 +95,7 @@ _PRIMARY_COLOR = SqlEnum(
     native_enum=False,
     create_constraint=True,
     validate_strings=True,
-    values_callable=_enum_values,
+    values_callable=enum_values,
 )
 _NEUTRAL_COLOR = SqlEnum(
     NeutralColor,
@@ -108,7 +103,7 @@ _NEUTRAL_COLOR = SqlEnum(
     native_enum=False,
     create_constraint=True,
     validate_strings=True,
-    values_callable=_enum_values,
+    values_callable=enum_values,
 )
 _FONT_FAMILY = SqlEnum(
     FontFamily,
@@ -116,7 +111,7 @@ _FONT_FAMILY = SqlEnum(
     native_enum=False,
     create_constraint=True,
     validate_strings=True,
-    values_callable=_enum_values,
+    values_callable=enum_values,
 )
 _ICON_SET = SqlEnum(
     IconSet,
@@ -124,7 +119,7 @@ _ICON_SET = SqlEnum(
     native_enum=False,
     create_constraint=True,
     validate_strings=True,
-    values_callable=_enum_values,
+    values_callable=enum_values,
 )
 _TEXT_SIZE = SqlEnum(
     TextSize,
@@ -132,7 +127,7 @@ _TEXT_SIZE = SqlEnum(
     native_enum=False,
     create_constraint=True,
     validate_strings=True,
-    values_callable=_enum_values,
+    values_callable=enum_values,
 )
 
 

@@ -67,6 +67,33 @@ def test_recent_logs_are_bounded_sanitized_and_correlated() -> None:
     assert sanitize_log_message("token=secret") == "token=<redacted>"
 
 
+def test_recent_logs_keep_latest_window_and_drain_cursor_backlog() -> None:
+    logs = RecentLogBuffer(capacity=6)
+    logger = logging.getLogger("nahoermaar.test.log_backlog")
+    logger.handlers = [logs]
+    logger.propagate = False
+    logger.setLevel(logging.INFO)
+
+    for index in range(6):
+        logger.info("entry-%s", index)
+
+    assert [entry.message for entry in logs.entries(limit=2)] == [
+        "entry-4",
+        "entry-5",
+    ]
+    first = logs.entries(after=0, limit=2)
+    second = logs.entries(after=first[-1].id, limit=2)
+    third = logs.entries(after=second[-1].id, limit=2)
+    assert [entry.message for entry in (*first, *second, *third)] == [
+        "entry-0",
+        "entry-1",
+        "entry-2",
+        "entry-3",
+        "entry-4",
+        "entry-5",
+    ]
+
+
 def test_logging_configuration_uses_daily_rotation_and_retention(
     tmp_path: Path,
 ) -> None:

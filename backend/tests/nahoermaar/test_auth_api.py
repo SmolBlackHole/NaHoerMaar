@@ -471,11 +471,21 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
             assert incident_report.json()["page"] == 1
             assert incident_report.json()["page_size"] == 20
             assert incident_report.json()["total"] >= 1
+            assert incident_report.json()["snapshot"]
             assert "recent" not in incident_report.json()
             assert incident_report.json()["totals"]["rejected"] >= 1
             assert incident_report.json()["associated_users"][0]["user_id"] == str(
                 current.user.id
             )
+            invalid_incident_snapshot = await client.get(
+                "/api/incidents",
+                params={"snapshot": "not-a-snapshot"},
+            )
+            assert invalid_incident_snapshot.status_code == 422
+            assert invalid_incident_snapshot.json() == {
+                "code": "validation_failed",
+                "retryable": False,
+            }
 
             headers = {
                 "origin": ORIGIN,

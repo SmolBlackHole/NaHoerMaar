@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from nahoermaar.database.uow import UnitOfWork
+from nahoermaar.database.uow import UnitOfWorkFactory
 from nahoermaar.lifecycle import LifecycleResource
 from nahoermaar.messaging import MessageBus, MessageContext
 from nahoermaar.operations.maintenance import HousekeepingContribution
@@ -36,7 +36,6 @@ from .service import (
 )
 
 type Clock = Callable[[], datetime]
-type UnitOfWorkFactory = Callable[[], UnitOfWork]
 
 
 def _utc_now() -> datetime:

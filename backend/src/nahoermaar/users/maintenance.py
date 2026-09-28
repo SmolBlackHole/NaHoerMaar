@@ -4,9 +4,7 @@
 
 """Bounded cleanup owned by the Users module."""
 
-from collections.abc import Callable
-
-from nahoermaar.database.uow import UnitOfWork
+from nahoermaar.database.uow import UnitOfWorkFactory
 from nahoermaar.operations.maintenance import (
     HousekeepingContext,
     HousekeepingContribution,
@@ -16,7 +14,6 @@ from nahoermaar.operations.jobs import JobRunDetail
 
 from .repository import AuthRepository
 
-type UnitOfWorkFactory = Callable[[], UnitOfWork]
 _LABELS = ("Login attempts", "Browser sessions")
 
 

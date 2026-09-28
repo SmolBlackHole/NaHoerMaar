@@ -4,19 +4,18 @@
 
 """Combined user, listening and statistics projection for profile pages."""
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 import logging
 from time import perf_counter
 from typing import cast
 
-from sqlalchemy import Table, func, select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 
 from nahoermaar.catalog.domain import TrackId
-from nahoermaar.database.schema import Base
-from nahoermaar.database.uow import UnitOfWork
+from nahoermaar.database.schema import registered_table
+from nahoermaar.database.uow import UnitOfWork, UnitOfWorkFactory
 from nahoermaar.listening.domain import PlaybackEndReason, PlaybackRecordId
 from nahoermaar.statistics.models import (
     PersonalStatisticsReport,
@@ -38,8 +37,6 @@ from nahoermaar.users.domain import (
     UserId,
     UserProfile,
 )
-
-type UnitFactory = Callable[[], UnitOfWork]
 
 _LOGGER = logging.getLogger(__name__)
 _RECENT_TRACK_LIMIT = 10
@@ -96,19 +93,23 @@ class ProfileView:
         "_users",
     )
 
-    def __init__(self, units: UnitFactory, statistics: StatisticsService) -> None:
+    def __init__(
+        self,
+        units: UnitOfWorkFactory,
+        statistics: StatisticsService,
+    ) -> None:
         self._units = units
         self._statistics = statistics
-        self._users = _table("users")
-        self._discord = _table("discord_identities")
-        self._profiles = _table("user_profiles")
-        self._preferences = _table("user_preferences")
-        self._listeners = _table("playback_listeners")
-        self._playbacks = _table("playback_records")
-        self._requests = _table("track_requests")
-        self._tracks = _table("tracks")
-        self._track_artists = _table("track_artists")
-        self._artists = _table("artists")
+        self._users = registered_table("users", consumer="Profile")
+        self._discord = registered_table("discord_identities", consumer="Profile")
+        self._profiles = registered_table("user_profiles", consumer="Profile")
+        self._preferences = registered_table("user_preferences", consumer="Profile")
+        self._listeners = registered_table("playback_listeners", consumer="Profile")
+        self._playbacks = registered_table("playback_records", consumer="Profile")
+        self._requests = registered_table("track_requests", consumer="Profile")
+        self._tracks = registered_table("tracks", consumer="Profile")
+        self._track_artists = registered_table("track_artists", consumer="Profile")
+        self._artists = registered_table("artists", consumer="Profile")
 
     async def get(
         self,
@@ -293,10 +294,3 @@ class ProfileView:
             )
             for row in rows
         )
-
-
-def _table(name: str) -> Table:
-    try:
-        return Base.metadata.tables[name]
-    except KeyError as error:
-        raise RuntimeError(f"Profile table is not registered: {name}") from error

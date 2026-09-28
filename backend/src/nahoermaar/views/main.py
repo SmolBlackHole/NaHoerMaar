@@ -4,17 +4,14 @@
 
 """Composition boundary for cross-module read projections."""
 
-from collections.abc import Callable
 from dataclasses import dataclass
 
-from nahoermaar.database.uow import UnitOfWork
+from nahoermaar.database.uow import UnitOfWorkFactory
 from nahoermaar.statistics.main import StatisticsModule
 
 from .catalog import CatalogCleanupView
 from .history import PlaybackHistoryView
 from .profile import ProfileView
-
-type UnitFactory = Callable[[], UnitOfWork]
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,7 +24,7 @@ class ViewsModule:
 
 
 def create_views_module(
-    units: UnitFactory,
+    units: UnitOfWorkFactory,
     statistics: StatisticsModule,
 ) -> ViewsModule:
     """Construct all cross-module read projections."""

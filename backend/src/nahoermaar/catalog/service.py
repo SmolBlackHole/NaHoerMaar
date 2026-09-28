@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 
-from nahoermaar.database.uow import UnitOfWork
+from nahoermaar.database.uow import UnitOfWorkFactory
 from nahoermaar.observability import error_code, safe_log_value
 
 from .domain import (
@@ -43,7 +43,6 @@ from .repository import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-type UnitOfWorkFactory = Callable[[], UnitOfWork]
 type RefreshKey = tuple[DiscoveryKind, str, str, int]
 type RefreshLoader = Callable[[], Awaitable[ProviderPage | ProviderPlaylist]]
 

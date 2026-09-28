@@ -10,7 +10,6 @@ from typing import cast
 
 from sqlalchemy import (
     Date,
-    Table,
     and_,
     case,
     cast as sql_cast,
@@ -25,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import ColumnElement, FromClause
 from sqlalchemy.sql.selectable import ScalarSelect, Subquery
 
-from nahoermaar.database.schema import Base
+from nahoermaar.database.schema import registered_table
 from nahoermaar.users.domain import UserId
 
 from .models import (
@@ -81,16 +80,16 @@ class StatisticsRepository:
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
-        self._requests = _table("track_requests")
-        self._playbacks = _table("playback_records")
-        self._listeners = _table("playback_listeners")
-        self._presence = _table("listener_presence")
-        self._tracks = _table("tracks")
-        self._track_artists = _table("track_artists")
-        self._artists = _table("artists")
-        self._users = _table("users")
-        self._profiles = _table("user_profiles")
-        self._discord = _table("discord_identities")
+        self._requests = registered_table("track_requests", consumer="Statistics")
+        self._playbacks = registered_table("playback_records", consumer="Statistics")
+        self._listeners = registered_table("playback_listeners", consumer="Statistics")
+        self._presence = registered_table("listener_presence", consumer="Statistics")
+        self._tracks = registered_table("tracks", consumer="Statistics")
+        self._track_artists = registered_table("track_artists", consumer="Statistics")
+        self._artists = registered_table("artists", consumer="Statistics")
+        self._users = registered_table("users", consumer="Statistics")
+        self._profiles = registered_table("user_profiles", consumer="Statistics")
+        self._discord = registered_table("discord_identities", consumer="Statistics")
 
     async def recorded_since(self) -> datetime | None:
         events = union_all(
@@ -1833,13 +1832,6 @@ class StatisticsRepository:
         if user_id is not None:
             statement = statement.where(self._listeners.c.user_id == user_id)
         return statement.group_by(self._listeners.c.playback_id).subquery()
-
-
-def _table(name: str) -> Table:
-    try:
-        return Base.metadata.tables[name]
-    except KeyError as error:
-        raise RuntimeError(f"Statistics table is not registered: {name}") from error
 
 
 def _longest_consecutive_days(days: list[date]) -> int:

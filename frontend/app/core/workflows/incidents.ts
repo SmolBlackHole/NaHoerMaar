@@ -15,6 +15,7 @@ export function createIncidentsWorkflow(client: BackendClient, authority: Sessio
 					...request.filters,
 					page: request.page,
 					pageSize: request.pageSize,
+					snapshot: request.snapshot,
 				},
 				signal,
 			),

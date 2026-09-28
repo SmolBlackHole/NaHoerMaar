@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from uuid import UUID, uuid5
 
 from nahoermaar.catalog.service import CatalogService
-from nahoermaar.database.uow import UnitOfWork
+from nahoermaar.database.uow import UnitOfWorkFactory
 from nahoermaar.lifecycle import LifecycleResource
 from nahoermaar.listening.service import (
     AudienceChanged,
@@ -64,7 +64,6 @@ from .playback import (
 from .read_model import PlayerReader
 from .session import CatalogRadioResolver, PlayerSessionManager
 
-type UnitOfWorkFactory = Callable[[], UnitOfWork]
 type SummonHandler = Callable[[str, int, UUID], Awaitable[None]]
 
 _COMMAND_TYPES: tuple[type[PlayerCommand], ...] = (

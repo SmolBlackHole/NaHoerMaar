@@ -12,7 +12,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.exc import IntegrityError
 
-from nahoermaar.database.uow import UnitOfWork
+from nahoermaar.database.uow import UnitOfWorkFactory
 from nahoermaar.observability import error_code, safe_log_value
 from nahoermaar.operations.jobs import (
     JobId,
@@ -51,7 +51,6 @@ from .service import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-type UnitOfWorkFactory = Callable[[], UnitOfWork]
 
 
 @dataclass(frozen=True, slots=True)

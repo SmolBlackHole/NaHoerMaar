@@ -11,7 +11,7 @@ import logging
 from typing import overload
 from zoneinfo import ZoneInfo
 
-from nahoermaar.database.uow import UnitOfWork
+from nahoermaar.database.uow import UnitOfWorkFactory
 from nahoermaar.users.domain import AuthError, AuthErrorCode, UserId
 from nahoermaar.users.service import AccessService
 
@@ -36,7 +36,6 @@ from .models import (
 from .repository import PresenceInterval, StatisticsRepository
 
 type Clock = Callable[[], datetime]
-type UnitFactory = Callable[[], UnitOfWork]
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -74,7 +73,7 @@ class StatisticsService:
 
     def __init__(
         self,
-        units: UnitFactory,
+        units: UnitOfWorkFactory,
         timezone: ZoneInfo,
         access: AccessService,
         *,

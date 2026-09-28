@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import datetime
-from enum import StrEnum
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -41,7 +40,7 @@ from nahoermaar.catalog.domain import (
     TrackId,
     TrackSourceId,
 )
-from nahoermaar.database.schema import Base
+from nahoermaar.database.schema import Base, enum_values
 from nahoermaar.users.domain import UserId
 
 from .domain import (
@@ -74,17 +73,13 @@ from .domain import (
 _SESSION_KEY = "default"
 
 
-def _enum_values[EnumValue: StrEnum](members: type[EnumValue]) -> list[str]:
-    return [member.value for member in members]
-
-
 _MEDIA_KIND = SqlEnum(
     MediaKind,
     name="player_media_kind",
     native_enum=False,
     create_constraint=True,
     validate_strings=True,
-    values_callable=_enum_values,
+    values_callable=enum_values,
 )
 _RADIO_STATE = SqlEnum(
     RadioState,
@@ -92,7 +87,7 @@ _RADIO_STATE = SqlEnum(
     native_enum=False,
     create_constraint=True,
     validate_strings=True,
-    values_callable=_enum_values,
+    values_callable=enum_values,
 )
 _PLAYBACK_INTENT = SqlEnum(
     PlaybackIntent,
@@ -100,7 +95,7 @@ _PLAYBACK_INTENT = SqlEnum(
     native_enum=False,
     create_constraint=True,
     validate_strings=True,
-    values_callable=_enum_values,
+    values_callable=enum_values,
 )
 _PLAYER_ACTION = SqlEnum(
     PlayerAction,
@@ -108,7 +103,7 @@ _PLAYER_ACTION = SqlEnum(
     native_enum=False,
     create_constraint=True,
     validate_strings=True,
-    values_callable=_enum_values,
+    values_callable=enum_values,
 )
 _REQUEST_ORIGIN = SqlEnum(
     RequestOrigin,
@@ -116,7 +111,7 @@ _REQUEST_ORIGIN = SqlEnum(
     native_enum=False,
     create_constraint=True,
     validate_strings=True,
-    values_callable=_enum_values,
+    values_callable=enum_values,
 )
 
 

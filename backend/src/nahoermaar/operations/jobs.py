@@ -32,8 +32,8 @@ from sqlalchemy import (
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
-from nahoermaar.database.schema import Base
-from nahoermaar.database.uow import UnitOfWork
+from nahoermaar.database.schema import Base, enum_values
+from nahoermaar.database.uow import UnitOfWorkFactory
 from nahoermaar.users.domain import UserId
 
 from .incidents import (
@@ -44,7 +44,6 @@ from .incidents import (
 )
 
 type Clock = Callable[[], datetime]
-type UnitFactory = Callable[[], UnitOfWork]
 
 _LOGGER = logging.getLogger(__name__)
 HISTORY_RETENTION_DAYS = 30
@@ -139,17 +138,13 @@ class JobRunPage:
     next_cursor: JobRunCursor | None
 
 
-def _enum_values[EnumValue: StrEnum](members: type[EnumValue]) -> list[str]:
-    return [member.value for member in members]
-
-
 _JOB_ID = SqlEnum(
     JobId,
     name="background_job_id",
     native_enum=False,
     create_constraint=True,
     validate_strings=True,
-    values_callable=_enum_values,
+    values_callable=enum_values,
 )
 _TRIGGER = SqlEnum(
     JobTrigger,
@@ -157,7 +152,7 @@ _TRIGGER = SqlEnum(
     native_enum=False,
     create_constraint=True,
     validate_strings=True,
-    values_callable=_enum_values,
+    values_callable=enum_values,
 )
 _STATUS = SqlEnum(
     JobRunStatus,
@@ -165,7 +160,7 @@ _STATUS = SqlEnum(
     native_enum=False,
     create_constraint=True,
     validate_strings=True,
-    values_callable=_enum_values,
+    values_callable=enum_values,
 )
 _DETAIL_KIND = SqlEnum(
     JobRunDetailKind,
@@ -173,7 +168,7 @@ _DETAIL_KIND = SqlEnum(
     native_enum=False,
     create_constraint=True,
     validate_strings=True,
-    values_callable=_enum_values,
+    values_callable=enum_values,
 )
 _DETAIL_OUTCOME = SqlEnum(
     JobRunDetailOutcome,
@@ -181,7 +176,7 @@ _DETAIL_OUTCOME = SqlEnum(
     native_enum=False,
     create_constraint=True,
     validate_strings=True,
-    values_callable=_enum_values,
+    values_callable=enum_values,
 )
 
 
@@ -445,7 +440,7 @@ class JobRunService:
 
     def __init__(
         self,
-        units: UnitFactory,
+        units: UnitOfWorkFactory,
         incidents: IncidentService,
         *,
         clock: Clock = lambda: datetime.now(UTC),

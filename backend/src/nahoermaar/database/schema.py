@@ -5,12 +5,13 @@
 """Shared relational schema primitives and startup migration."""
 
 import logging
+from enum import StrEnum
 from pathlib import Path
 from time import perf_counter
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import Connection, MetaData
+from sqlalchemy import Connection, MetaData, Table
 from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -30,6 +31,19 @@ class Base(DeclarativeBase):
     """Base for private ORM mappings owned by feature repositories."""
 
     metadata = metadata
+
+
+def enum_values[EnumValue: StrEnum](members: type[EnumValue]) -> list[str]:
+    """Return persisted values for a string-backed SQLAlchemy enum."""
+    return [member.value for member in members]
+
+
+def registered_table(name: str, *, consumer: str) -> Table:
+    """Return one mapped table with a contextual registration failure."""
+    try:
+        return metadata.tables[name]
+    except KeyError as error:
+        raise RuntimeError(f"{consumer} table is not registered: {name}") from error
 
 
 async def migrate(

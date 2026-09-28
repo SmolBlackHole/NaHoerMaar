@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Protocol, cast
 from uuid import uuid4
 
-from nahoermaar.database.uow import UnitOfWork
+from nahoermaar.database.uow import UnitOfWorkFactory
 from nahoermaar.messaging import Command, Event
 
 from .domain import (
@@ -46,7 +46,6 @@ _TOKEN = re.compile(r"[A-Za-z0-9_-]{43}")
 _LOGGER = logging.getLogger(__name__)
 
 type Clock = Callable[[], datetime]
-type UnitOfWorkFactory = Callable[[], UnitOfWork]
 
 
 def _utc_now() -> datetime:

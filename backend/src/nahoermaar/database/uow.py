@@ -83,3 +83,6 @@ class UnitOfWork:
     def _duration_ms(self) -> float:
         started_at = self._started_at
         return 0.0 if started_at is None else (perf_counter() - started_at) * 1000
+
+
+type UnitOfWorkFactory = Callable[[], UnitOfWork]

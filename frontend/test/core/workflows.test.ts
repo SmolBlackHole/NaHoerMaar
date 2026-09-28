@@ -135,7 +135,7 @@ describe("new backend page workflows", () => {
 					page_size: 1,
 					total: 2,
 					page_count: 2,
-					snapshot: null,
+					snapshot: "incident-snapshot",
 					totals: { errors: 2 },
 				}),
 			)
@@ -146,7 +146,7 @@ describe("new backend page workflows", () => {
 					page_size: 1,
 					total: 2,
 					page_count: 2,
-					snapshot: null,
+					snapshot: "incident-snapshot",
 					totals: { errors: 2 },
 				}),
 			);
@@ -166,7 +166,7 @@ describe("new backend page workflows", () => {
 
 		expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
 			"/api/incidents?period=7d&severity=error&component=player&code=queue_stalled&actor_id=user-one&page=1&page_size=1",
-			"/api/incidents?period=7d&severity=error&component=player&code=queue_stalled&actor_id=user-one&page=2&page_size=1",
+			"/api/incidents?period=7d&severity=error&component=player&code=queue_stalled&actor_id=user-one&page=2&page_size=1&snapshot=incident-snapshot",
 		]);
 		expect(workflow.report.data.value?.items).toEqual([{ id: "incident-two" }]);
 		expect(workflow.report.data.value?.totals.errors).toBe(2);

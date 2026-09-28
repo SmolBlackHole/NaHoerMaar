@@ -228,14 +228,19 @@ details for one run.
 `GET /api/incidents` combines a full-period summary with one numbered page of
 matching incident items. `period`, `severity`, `component`, `code` and
 `actor_id` filter both the summary and the page. `page` and `page_size` select
-the visible items. Changing pages alone does not change totals, common error
-counts, affected operations or associated-user counts.
+the visible items. The first response returns an opaque `snapshot`; later pages
+send it back so new Incidents cannot shift the report window, totals or item
+offsets. Changing filters or explicitly refreshing starts a new snapshot.
+Changing pages alone does not change totals, common error counts, affected
+operations or associated-user counts.
 
 `GET /api/logs` reads the bounded in-memory process log. `after` and `limit`
 support incremental polling. `q`, `level`, `source`, `actor_id`, `request_id`,
 `correlation_id` and `causation_id` are applied before `limit`, so an older
 matching entry remains searchable while it is retained. The process keeps at
-most 500 entries and discards this in-memory view on restart.
+most 500 entries and discards this in-memory view on restart. An initial read
+returns the latest matching window. Reads with `after` return the oldest
+retained matches after that cursor so repeated polls drain a backlog in order.
 
 The Logs endpoint does not expose log files or provide a durable audit history.
 The backend also writes its operational log to `data/logs/backend.log`. That

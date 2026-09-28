@@ -7,6 +7,7 @@ import type { IncidentFilters } from "../models/incidents";
 export interface IncidentReportQuery extends IncidentFilters {
 	page?: number;
 	pageSize?: number;
+	snapshot?: string;
 }
 
 export function createIncidentsRepository(request: Transport) {
@@ -23,6 +24,7 @@ export function createIncidentsRepository(request: Transport) {
 							actor_id: query.actorId,
 							page: query.page,
 							page_size: query.pageSize,
+							snapshot: query.snapshot,
 						},
 					},
 					signal,

@@ -151,6 +151,32 @@ def test_incidents_are_deduplicated_summarized_and_expire() -> None:
         assert user_report.total == 1
         assert user_report.associated_users[0].identity.user_id == user_id
 
+        pinned = await service.report(
+            IncidentPeriod.HOURS_24,
+            page_size=2,
+        )
+        current[0] = NOW + timedelta(minutes=1)
+        assert await service.record(
+            severity=IncidentSeverity.ERROR,
+            kind=IncidentKind.FAILED,
+            component="catalog",
+            error_code="provider_unavailable",
+            actor_id=None,
+            operation_type="catalog.search",
+            correlation_id=uuid4(),
+            trigger=IncidentTrigger.SYSTEM,
+        )
+        pinned_second_page = await service.report(
+            IncidentPeriod.HOURS_24,
+            page=2,
+            page_size=2,
+            ended_at=pinned.ended_at,
+        )
+        fresh = await service.report(IncidentPeriod.HOURS_24)
+        assert pinned_second_page.total == pinned.total == 4
+        assert pinned_second_page.totals == pinned.totals
+        assert fresh.total == 5
+
         current[0] = NOW + timedelta(days=15)
         expired = await service.report(IncidentPeriod.DAYS_14)
         assert expired.recorded_since is None

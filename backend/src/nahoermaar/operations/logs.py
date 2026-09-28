@@ -108,7 +108,7 @@ class RecentLogBuffer(logging.Handler):
                 and (causation_id is None or entry.causation_id == causation_id)
                 and (needle is None or _search_text(entry, needle))
             )
-        return matches[-limit:]
+        return matches[:limit] if after is not None else matches[-limit:]
 
 
 def _search_text(entry: LogEntry, needle: str) -> bool:

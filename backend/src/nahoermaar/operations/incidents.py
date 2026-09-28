@@ -28,15 +28,14 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
-from nahoermaar.database.schema import Base
-from nahoermaar.database.uow import UnitOfWork
+from nahoermaar.database.schema import Base, enum_values, registered_table
+from nahoermaar.database.uow import UnitOfWorkFactory
 from nahoermaar.users.domain import UserId
 
 RETENTION_DAYS = 14
 _RETENTION = timedelta(days=RETENTION_DAYS)
 
 type Clock = Callable[[], datetime]
-type UnitFactory = Callable[[], UnitOfWork]
 
 
 class IncidentSeverity(StrEnum):
@@ -141,17 +140,13 @@ class IncidentReport:
     page_count: int
 
 
-def _enum_values[EnumValue: StrEnum](members: type[EnumValue]) -> list[str]:
-    return [member.value for member in members]
-
-
 _SEVERITY = SqlEnum(
     IncidentSeverity,
     name="incident_severity",
     native_enum=False,
     create_constraint=True,
     validate_strings=True,
-    values_callable=_enum_values,
+    values_callable=enum_values,
 )
 _KIND = SqlEnum(
     IncidentKind,
@@ -159,7 +154,7 @@ _KIND = SqlEnum(
     native_enum=False,
     create_constraint=True,
     validate_strings=True,
-    values_callable=_enum_values,
+    values_callable=enum_values,
 )
 _TRIGGER = SqlEnum(
     IncidentTrigger,
@@ -167,7 +162,7 @@ _TRIGGER = SqlEnum(
     native_enum=False,
     create_constraint=True,
     validate_strings=True,
-    values_callable=_enum_values,
+    values_callable=enum_values,
 )
 
 
@@ -269,39 +264,6 @@ class IncidentRepository:
         )
         return tuple(_incident(row) for row in rows)
 
-    async def identities(
-        self,
-        user_ids: set[UserId],
-    ) -> dict[UserId, IncidentIdentity]:
-        if not user_ids:
-            return {}
-        users = Base.metadata.tables["users"]
-        profiles = Base.metadata.tables["user_profiles"]
-        discord = Base.metadata.tables["discord_identities"]
-        rows = (
-            await self._session.execute(
-                select(
-                    users.c.id,
-                    profiles.c.display_name,
-                    discord.c.username,
-                )
-                .select_from(
-                    users.outerjoin(
-                        profiles, profiles.c.user_id == users.c.id
-                    ).outerjoin(discord, discord.c.user_id == users.c.id)
-                )
-                .where(users.c.id.in_(user_ids))
-            )
-        ).all()
-        return {
-            UserId(row.id): IncidentIdentity(
-                UserId(row.id),
-                row.display_name,
-                row.username,
-            )
-            for row in rows
-        }
-
 
 class IncidentService:
     """Record and summarize a bounded operational incident history."""
@@ -309,7 +271,7 @@ class IncidentService:
     __slots__ = ("_clock", "_units")
 
     def __init__(
-        self, units: UnitFactory, *, clock: Clock = lambda: datetime.now(UTC)
+        self, units: UnitOfWorkFactory, *, clock: Clock = lambda: datetime.now(UTC)
     ) -> None:
         self._units = units
         self._clock = clock
@@ -364,6 +326,7 @@ class IncidentService:
         component: str | None = None,
         error_code: str | None = None,
         actor_id: UserId | None = None,
+        ended_at: datetime | None = None,
     ) -> IncidentReport:
         if page < 1:
             raise ValueError("Incident page must be positive.")
@@ -371,7 +334,12 @@ class IncidentService:
             raise ValueError("Incident page size must be between 1 and 100.")
         component = component.strip() if component else None
         error_code = error_code.strip() if error_code else None
-        ended_at = self._clock().astimezone(UTC)
+        if ended_at is None:
+            ended_at = self._clock().astimezone(UTC)
+        elif ended_at.tzinfo is None or ended_at.utcoffset() is None:
+            raise ValueError("Incident report boundary must include a timezone.")
+        else:
+            ended_at = ended_at.astimezone(UTC)
         started_at = ended_at - _period_delta(period)
         retention_cutoff = ended_at - _RETENTION
         if started_at < retention_cutoff:
@@ -387,12 +355,13 @@ class IncidentService:
                 error_code=error_code,
                 actor_id=actor_id,
             )
-            identities = await repository.identities(
+            identities = await _load_incident_identities(
+                work.session,
                 {
                     incident.actor_id
                     for incident in incidents
                     if incident.actor_id is not None
-                }
+                },
             )
             await work.commit()
         return _report(
@@ -404,6 +373,40 @@ class IncidentService:
             page=page,
             page_size=page_size,
         )
+
+
+async def _load_incident_identities(
+    session: AsyncSession,
+    user_ids: set[UserId],
+) -> dict[UserId, IncidentIdentity]:
+    if not user_ids:
+        return {}
+    users = registered_table("users", consumer="Incident report")
+    profiles = registered_table("user_profiles", consumer="Incident report")
+    discord = registered_table("discord_identities", consumer="Incident report")
+    rows = (
+        await session.execute(
+            select(
+                users.c.id,
+                profiles.c.display_name,
+                discord.c.username,
+            )
+            .select_from(
+                users.outerjoin(profiles, profiles.c.user_id == users.c.id).outerjoin(
+                    discord, discord.c.user_id == users.c.id
+                )
+            )
+            .where(users.c.id.in_(user_ids))
+        )
+    ).all()
+    return {
+        UserId(row.id): IncidentIdentity(
+            UserId(row.id),
+            row.display_name,
+            row.username,
+        )
+        for row in rows
+    }
 
 
 def _incident(row: _IncidentRow) -> Incident:

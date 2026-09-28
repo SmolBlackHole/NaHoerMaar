@@ -7,7 +7,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from nahoermaar.database.uow import UnitOfWork
+from nahoermaar.database.uow import UnitOfWorkFactory
 from nahoermaar.lifecycle import LifecycleResource
 from nahoermaar.messaging import MessageBus
 from nahoermaar.player.domain import ListeningSessionId
@@ -22,7 +22,6 @@ from .service import (
     ObserveAudience,
 )
 
-type UnitOfWorkFactory = Callable[[], UnitOfWork]
 type SessionIdSource = Callable[[], ListeningSessionId]
 
 

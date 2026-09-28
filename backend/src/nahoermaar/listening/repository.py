@@ -5,7 +5,6 @@
 """Relational persistence for requests, plays, presence and heard time."""
 
 from datetime import datetime, timedelta
-from enum import StrEnum
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -26,7 +25,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
-from nahoermaar.database.schema import Base
+from nahoermaar.database.schema import Base, enum_values
 from nahoermaar.player.domain import (
     ListeningSessionId,
     TrackRequestId,
@@ -48,17 +47,13 @@ from .domain import (
 )
 
 
-def _enum_values[EnumValue: StrEnum](members: type[EnumValue]) -> list[str]:
-    return [member.value for member in members]
-
-
 _PLAYBACK_END_REASON = SqlEnum(
     PlaybackEndReason,
     name="playback_end_reason",
     native_enum=False,
     create_constraint=True,
     validate_strings=True,
-    values_callable=_enum_values,
+    values_callable=enum_values,
 )
 
 

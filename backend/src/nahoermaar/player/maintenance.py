@@ -4,9 +4,7 @@
 
 """Bounded cleanup owned by the Player module."""
 
-from collections.abc import Callable
-
-from nahoermaar.database.uow import UnitOfWork
+from nahoermaar.database.uow import UnitOfWorkFactory
 from nahoermaar.operations.maintenance import (
     HousekeepingContext,
     HousekeepingContribution,
@@ -16,7 +14,6 @@ from nahoermaar.operations.jobs import JobRunDetail
 
 from .repository import SessionRepository
 
-type UnitOfWorkFactory = Callable[[], UnitOfWork]
 _LABELS = ("Queue undo records", "Operation receipts")
 
 

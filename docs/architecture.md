@@ -109,6 +109,8 @@ to no single feature: profiles, confirmed playback history and catalog cleanup
 candidates. The live Player projection stays with Player because Player owns its
 state and runtime. Jobs, incidents and logs stay with Operations. Views are
 read-only and never become an alternate command or repository layer.
+An owner-specific report may enrich its read result from registered foreign
+tables without importing or invoking the foreign feature's repository.
 
 The application uses the host event loop. A Session waits on its bounded inbox
 instead of polling. One backend worker owns one bot and one player; starting

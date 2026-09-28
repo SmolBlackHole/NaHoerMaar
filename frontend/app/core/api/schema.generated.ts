@@ -3169,6 +3169,7 @@ export interface operations {
                 page_size?: number;
                 period?: components["schemas"]["IncidentPeriod"];
                 severity?: components["schemas"]["IncidentSeverity"] | null;
+                snapshot?: string | null;
             };
             header?: never;
             path?: never;

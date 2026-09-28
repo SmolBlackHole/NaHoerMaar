@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -18,7 +17,7 @@ from typing import Protocol
 from uuid import UUID
 
 from nahoermaar.catalog.service import CatalogService
-from nahoermaar.database.uow import UnitOfWork
+from nahoermaar.database.uow import UnitOfWorkFactory
 from nahoermaar.messaging import MessageBus, MessageContext
 from nahoermaar.users.domain import UserId
 
@@ -49,7 +48,6 @@ from .repository import SessionRepository
 
 _LOGGER = logging.getLogger(__name__)
 _MAILBOX_CAPACITY = 128
-type UnitFactory = Callable[[], UnitOfWork]
 
 
 class RadioResolver(Protocol):
@@ -107,7 +105,7 @@ class PlayerSession:
     def __init__(
         self,
         state: PlayerState,
-        units: UnitFactory,
+        units: UnitOfWorkFactory,
         bus: MessageBus,
     ) -> None:
         self._state = state
@@ -324,7 +322,7 @@ class PlayerSessionManager:
 
     def __init__(
         self,
-        units: UnitFactory,
+        units: UnitOfWorkFactory,
         bus: MessageBus,
         radio: RadioResolver,
     ) -> None:

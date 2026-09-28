@@ -4,11 +4,10 @@
 
 """Operations foundation and completed runtime composition."""
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import timedelta
 
-from nahoermaar.database.uow import UnitOfWork
+from nahoermaar.database.uow import UnitOfWorkFactory
 from nahoermaar.lifecycle import LifecycleResource
 
 from .incidents import IncidentRepository, IncidentService, RETENTION_DAYS
@@ -21,8 +20,6 @@ from .maintenance import (
     cleanup_detail,
 )
 from .scheduler import JobCoordinator, JobDefinition
-
-type UnitOfWorkFactory = Callable[[], UnitOfWork]
 
 
 @dataclass(frozen=True, slots=True)

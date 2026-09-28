@@ -5,12 +5,11 @@
 """Serialized use cases for durable playback and listener facts."""
 
 import asyncio
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 import logging
 
-from nahoermaar.database.uow import UnitOfWork
+from nahoermaar.database.uow import UnitOfWorkFactory
 from nahoermaar.messaging import Command, Event, MessageBus, MessageContext
 from nahoermaar.player.domain import ListeningSessionId, TrackRequestId
 from nahoermaar.users.domain import DiscordIdentity, UserId
@@ -27,8 +26,6 @@ from .domain import (
     PlaybackRecordId,
 )
 from .repository import ListeningRepository
-
-type UnitFactory = Callable[[], UnitOfWork]
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -165,7 +162,7 @@ class ListeningService:
 
     def __init__(
         self,
-        units: UnitFactory,
+        units: UnitOfWorkFactory,
         bus: MessageBus,
         access: AccessService,
     ) -> None:

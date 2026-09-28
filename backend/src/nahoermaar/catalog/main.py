@@ -4,10 +4,9 @@
 
 """Catalog module composition."""
 
-from collections.abc import Callable
 from dataclasses import dataclass
 
-from nahoermaar.database.uow import UnitOfWork
+from nahoermaar.database.uow import UnitOfWorkFactory
 from nahoermaar.lifecycle import LifecycleResource
 from nahoermaar.operations.maintenance import HousekeepingContribution
 from nahoermaar.operations.scheduler import JobDefinition
@@ -21,8 +20,6 @@ from .maintenance import (
 )
 from .providers import CatalogProvider
 from .service import CatalogService
-
-type UnitOfWorkFactory = Callable[[], UnitOfWork]
 
 
 @dataclass(frozen=True, slots=True)
