@@ -11,22 +11,7 @@ and current listening evidence belongs in
 [Testing and acceptance](docs/testing.md#live-acceptance). Completed work leaves
 this page once implementation, tests and its owning documentation agree.
 
-## Next: lyrics
-
-Add an optional lyrics view for the current track. Prefer synchronized lyrics
-and fall back to plain text. Playback position, pause, resume, seek and track
-changes must move the active line without making lyrics part of the audio path.
-Listeners should be able to scroll away and return to the current line.
-
-Evaluate [LRCLIB](https://github.com/tranxuanthang/lrclib) for coverage,
-attribution and caching terms before choosing it. Match on title, artist,
-duration and album where available, distinguish remixes and live versions, and
-allow another match when metadata is ambiguous. Cache successful matches and
-temporary misses with bounded retention. Instrumental tracks, missing lyrics and
-provider failures need different states, and an old result must never appear for
-the next song.
-
-## Later: reactions
+## Next: reactions
 
 Let each user like or dislike a persistent track, change the reaction or remove
 it. Show totals and the people behind them on demand. Reactions belong to stable
@@ -41,9 +26,8 @@ server sessions are introduced.
 
 Create personal playlists and shared server playlists with saved order,
 ownership and editing permissions. A playlist may be a local copy or remain
-linked to YouTube Music, YouTube or a future Spotify importer. Store provider
-identity, playlist identity and reusable track metadata; resolve temporary audio
-sources only when playing.
+linked to YouTube Music or YouTube. Store provider identity, playlist identity
+and reusable track metadata; resolve temporary audio sources only when playing.
 
 Show cached contents immediately, refresh on open and before queueing, and allow
 bounded periodic synchronization. Reconcile additions, removals, reordering and
@@ -93,8 +77,6 @@ songs while an ordinary YouTube link keeps an explicit video choice.
 
 ## Later directions
 
-- Import Spotify tracks and playlists as metadata, then resolve a playable
-  equivalent through the catalog instead of treating Spotify as an audio source.
 - Add shuffle, repeat and voting after their interaction with manual requests,
   Radio and server-specific queues is defined.
 - Consider YouTube livestreams and media that requires a personal YouTube login

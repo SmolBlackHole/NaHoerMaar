@@ -19,6 +19,7 @@ that contract. The live Discord check is documented under
   - [State and mutations](#state-and-mutations)
   - [Playback history](#playback-history)
   - [Discovery and stable selections](#discovery-and-stable-selections)
+  - [Lyrics](#lyrics)
   - [Events](#events)
   - [Operations](#operations)
   - [Verification](#verification)
@@ -193,6 +194,21 @@ selection; an unchanged source keeps its version. A failed refresh leaves the
 last known version available. Pagination stays within the observed snapshot; it
 does not fetch beyond that limit. Freshness, retention and
 process lifetime belong to [Catalog and metadata](engine/catalog.md#cache-and-refresh-behavior).
+
+## Lyrics
+
+`GET /api/tracks/{track_id}/lyrics` reads lyrics for one canonical Catalog
+track. `refresh=true` bypasses a fresh cache entry. The response states are
+`available`, `instrumental` and `not_found`; available lyrics contain ordered
+lines with optional start and end seconds and report whether synchronization is
+available. Provider attribution, cache freshness and stale fallback are explicit
+response fields.
+
+A missing Catalog track returns `404`. LRCLIB transport, rate-limit or response
+failures return `502` unless a successful cached copy for the same track
+metadata can be served as stale. The endpoint is a track-keyed read and is not
+part of Player SSE. Matching, retention and fallback behavior belong in
+[Lyrics](engine/lyrics.md).
 
 ## Events
 

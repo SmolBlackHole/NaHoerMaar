@@ -10,6 +10,7 @@ import { createPlaybacksRepository } from "./repositories/playbacks";
 import { createIncidentsRepository } from "./repositories/incidents";
 import { createLogsRepository } from "./repositories/logs";
 import { createJobsRepository } from "./repositories/jobs";
+import { createLyricsRepository } from "./repositories/lyrics";
 import { createPlayerRepository } from "./repositories/player";
 import { createStatisticsRepository } from "./repositories/statistics";
 
@@ -30,6 +31,7 @@ export function createBackendClient(dependencies: BackendDependencies) {
 		incidents: createIncidentsRepository(request),
 		logs: createLogsRepository(request),
 		jobs: createJobsRepository(request),
+		lyrics: createLyricsRepository(request),
 		player: createPlayerRepository(
 			request,
 			createPlayerEvents(dependencies.auth, dependencies.openEvents),

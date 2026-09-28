@@ -588,6 +588,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tracks/{track_id}/lyrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Lyrics */
+        get: operations["getTrackLyrics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/users/me": {
         parameters: {
             query?: never;
@@ -1452,6 +1469,51 @@ export interface components {
             cursor: number;
             /** Items */
             items: components["schemas"]["LogEntryView"][];
+        };
+        /** LyricLineView */
+        LyricLineView: {
+            /** End Seconds */
+            end_seconds: number | null;
+            /** Start Seconds */
+            start_seconds: number | null;
+            /** Text */
+            text: string;
+        };
+        /**
+         * LyricsState
+         * @enum {string}
+         */
+        LyricsState: "available" | "instrumental" | "not_found";
+        /** LyricsView */
+        LyricsView: {
+            /** Cached */
+            cached: boolean;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /**
+             * Fetched At
+             * Format: date-time
+             */
+            fetched_at: string;
+            /** Lines */
+            lines: components["schemas"]["LyricLineView"][];
+            /** Provider */
+            provider: string;
+            /** Provider Url */
+            provider_url: string;
+            /** Stale */
+            stale: boolean;
+            state: components["schemas"]["LyricsState"];
+            /** Synchronized */
+            synchronized: boolean;
+            /**
+             * Track Id
+             * Format: uuid
+             */
+            track_id: string;
         };
         /**
          * MediaKind
@@ -5087,6 +5149,75 @@ export interface operations {
             };
             /** @description Dependency unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+        };
+    };
+    getTrackLyrics: {
+        parameters: {
+            query?: {
+                refresh?: boolean;
+            };
+            header?: never;
+            path: {
+                track_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LyricsView"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };

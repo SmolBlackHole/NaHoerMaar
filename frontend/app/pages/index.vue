@@ -141,6 +141,7 @@ async function openQueue() {
 	font-variant-numeric: tabular-nums;
 }
 .music-tab-content {
+	min-height: 0;
 	min-width: 0;
 	outline-offset: 4px;
 }

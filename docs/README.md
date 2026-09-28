@@ -27,6 +27,7 @@ other pages keep the context they need and link to that owner.
 | Run NaHörMaar locally | [Development](development.md) | [Hosting](hosting.md) |
 | Understand the system | [Architecture](architecture.md) | [Engine](engine/) or [frontend](frontend.md) |
 | Change search or metadata | [Catalog](engine/catalog.md) | [Engine API][api-discovery] |
+| Change lyrics lookup or caching | [Lyrics](engine/lyrics.md) | [Engine API](engine-api.md#lyrics) |
 | Change queue order or history | [Queue](engine/queue.md) | [Database](engine/database.md) |
 | Change Radio | [Radio](engine/radio.md) | [Catalog](engine/catalog.md) |
 | Change Discord audio or restart | [Playback](engine/playback.md) | [Testing][playback-diagnostics] |

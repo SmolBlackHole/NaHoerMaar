@@ -6,7 +6,7 @@
 
 import asyncio
 import logging
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
 from enum import StrEnum
 
@@ -18,6 +18,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from nahoermaar.catalog.service import CatalogError
 from nahoermaar.bootstrap import Application, bootstrap
+from nahoermaar.lyrics.service import LyricsError
 from nahoermaar.player.domain import PlayerError
 from nahoermaar.users.domain import AuthError
 
@@ -26,6 +27,7 @@ from .catalog import router as catalog_router
 from .errors import ApiError, ApiErrorCode, ErrorView, error_responses
 from .events import router as events_router
 from .logs import router as logs_router
+from .lyrics import router as lyrics_router
 from .jobs import router as jobs_router
 from .incidents import router as incidents_router
 from .middleware import install_auth_middleware
@@ -65,6 +67,7 @@ def create_app(application: Application | None = None) -> FastAPI:
     app.include_router(auth_router(container))
     app.include_router(users_router(container))
     app.include_router(catalog_router(container.catalog.service))
+    app.include_router(lyrics_router(container.lyrics.service))
     app.include_router(player_router(container))
     app.include_router(playbacks_router(container))
     app.include_router(statistics_router(container))
@@ -146,6 +149,21 @@ def install_error_handlers(app: FastAPI) -> None:
             retryable=error.retryable,
         )
 
+    @app.exception_handler(LyricsError)
+    async def lyrics_error(request: Request, error: LyricsError) -> JSONResponse:
+        headers = (
+            {"retry-after": str(error.retry_after_seconds)}
+            if error.retry_after_seconds is not None
+            else None
+        )
+        return _error_response(
+            request,
+            error.code.value,
+            error.status,
+            retryable=error.retryable,
+            headers=headers,
+        )
+
     @app.exception_handler(ApiError)
     async def api_error(request: Request, error: ApiError) -> JSONResponse:
         return _error_response(
@@ -217,6 +235,7 @@ def _error_response(
     status: int,
     *,
     retryable: bool | None = None,
+    headers: Mapping[str, str] | None = None,
 ) -> JSONResponse:
     value = code.value if isinstance(code, StrEnum) else code
     request.state.error_code = value
@@ -224,5 +243,5 @@ def _error_response(
     return JSONResponse(
         ErrorView(code=value, retryable=retryable).model_dump(exclude_none=True),
         status_code=status,
-        headers={"cache-control": "no-store"},
+        headers={"cache-control": "no-store", **(headers or {})},
     )

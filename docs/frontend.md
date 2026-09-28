@@ -44,7 +44,7 @@ of the Python package `nahoermaar`. It is a transport artifact and must not be
 edited or reformatted by hand.
 
 Repositories are grouped by backend capability: account, access, catalog,
-playbacks, player, statistics, jobs, incidents and logs. They all use the same
+lyrics, playbacks, player, statistics, jobs, incidents and logs. They all use the same
 transport, which adds CSRF credentials, normalizes API errors and rejects
 responses that belong to an earlier account generation.
 
@@ -75,7 +75,7 @@ their operation ID.
 
 ## Page workflows
 
-Discovery, playback history, profiles, statistics, access, jobs, incidents and
+Discovery, lyrics, playback history, profiles, statistics, access, jobs, incidents and
 logs use local workflow instances. Each workflow owns its loading state, error,
 cancellation and current result. Leaving the page disposes that state.
 

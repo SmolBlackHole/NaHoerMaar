@@ -4,8 +4,66 @@
 import { describe, expect, it, vi } from "vitest";
 import { createBackendCore } from "../../app/core/bootstrap";
 import type { Discovery } from "../../app/core/models/catalog";
+import { activeLyricLine, activeLyricWord } from "../../app/core/models/lyrics";
 
 describe("new backend page workflows", () => {
+	it("keeps the latest track lyrics when the current track changes", async () => {
+		const responses: ((response: Response) => void)[] = [];
+		const fetcher = vi.fn<typeof fetch>(
+			() => new Promise<Response>((resolve) => responses.push(resolve)),
+		);
+		const core = createBackendCore({ fetch: fetcher });
+		core.authority.replace("session-token", "restored");
+		const lyrics = core.workflows.lyrics();
+
+		const older = lyrics.load("track-one");
+		const oldSignal = fetcher.mock.calls[0]![1]?.signal;
+		const newer = lyrics.load("track-two");
+		expect(oldSignal?.aborted).toBe(true);
+		responses[1]!(Response.json({ track_id: "track-two", lines: [] }));
+		expect((await newer)?.track_id).toBe("track-two");
+		responses[0]!(Response.json({ track_id: "track-one", lines: [] }));
+		expect(await older).toBeNull();
+		expect(lyrics.lyrics.data.value?.track_id).toBe("track-two");
+		expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+			"/api/tracks/track-one/lyrics",
+			"/api/tracks/track-two/lyrics",
+		]);
+		lyrics.dispose();
+	});
+
+	it("selects synchronized lyric lines at playback boundaries", () => {
+		const lines = [
+			{ text: "First", start_seconds: 1, end_seconds: 3 },
+			{ text: "Second", start_seconds: 3, end_seconds: null },
+		];
+		expect(activeLyricLine(lines, 0.9)).toBeNull();
+		expect(activeLyricLine(lines, 1)).toBe(0);
+		expect(activeLyricLine(lines, 2.9)).toBe(0);
+		expect(activeLyricLine(lines, 3)).toBe(1);
+	});
+
+	it("leaves long gaps between synchronized lyric lines empty", () => {
+		const lines = [
+			{ text: "Short opening line", start_seconds: 10, end_seconds: 30 },
+			{ text: "The song continues", start_seconds: 30, end_seconds: 34 },
+		];
+		expect(activeLyricLine(lines, 10)).toBe(0);
+		expect(activeLyricLine(lines, 12.9)).toBe(0);
+		expect(activeLyricLine(lines, 14)).toBeNull();
+		expect(activeLyricLine(lines, 18)).toBeNull();
+		expect(activeLyricLine(lines, 29.9)).toBeNull();
+		expect(activeLyricLine(lines, 30)).toBe(1);
+	});
+
+	it("estimates word progress inside synchronized lyric lines", () => {
+		const line = { text: "One word at a time", start_seconds: 10, end_seconds: null };
+		expect(activeLyricWord(line, 9.9, 15)).toBeNull();
+		expect(activeLyricWord(line, 10, 15)).toBe(0);
+		expect(activeLyricWord(line, 12.5, 15)).toBe(2);
+		expect(activeLyricWord(line, 15, 15)).toBe(4);
+	});
+
 	it("keeps the newest profile period when an older request finishes later", async () => {
 		const responses: ((response: Response) => void)[] = [];
 		const fetcher = vi.fn<typeof fetch>(

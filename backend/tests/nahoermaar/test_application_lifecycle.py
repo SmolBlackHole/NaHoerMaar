@@ -19,6 +19,9 @@ from nahoermaar.database.core import Database
 from nahoermaar.lifecycle import LifecycleResource
 from nahoermaar.listening.main import ListeningModule
 from nahoermaar.listening.service import ListeningService
+from nahoermaar.lyrics.main import LyricsModule
+from nahoermaar.lyrics.providers import LyricsProvider
+from nahoermaar.lyrics.service import LyricsService
 from nahoermaar.messaging import Command, MessageBus, MessageContext
 from nahoermaar.operations.logs import RecentLogBuffer
 from nahoermaar.operations.incidents import IncidentService
@@ -222,6 +225,7 @@ def _application(
     integrations = IntegrationsModule(
         identity=cast(IdentityProvider, object()),
         catalog_providers=(),
+        lyrics_provider=cast(LyricsProvider, object()),
         avatars=DiscordAvatarStore(Path("data/avatars")),
         housekeeping=cast(HousekeepingContribution, object()),
         gateway=cast(DiscordGateway, gateway),
@@ -258,6 +262,7 @@ def _application(
             cast(HousekeepingContribution, object()),
             LifecycleResource(catalog_resource_name, close=catalog.close),
         ),
+        LyricsModule(cast(LyricsService, object())),
         player_module,
         listening_module,
         StatisticsModule(cast(StatisticsService, object())),

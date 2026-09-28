@@ -10,6 +10,7 @@ from pathlib import Path
 from nahoermaar.catalog.providers import CatalogProvider
 from nahoermaar.config import AuthSettings, DiscordSettings
 from nahoermaar.lifecycle import LifecycleResource
+from nahoermaar.lyrics.providers import LyricsProvider
 from nahoermaar.operations.maintenance import HousekeepingContribution
 from nahoermaar.player.playback import PlaybackTransport
 from nahoermaar.users.service import IdentityProvider
@@ -18,6 +19,7 @@ from .avatars import DiscordAvatarStore
 from .discord import DiscordGateway, SummonHandler
 from .discord_oauth import DiscordOAuth
 from .maintenance import IntegrationsMaintenance
+from .lrclib import LrclibProvider
 from .youtube import YouTubeMusicProvider, YouTubeProvider
 
 
@@ -27,6 +29,7 @@ class IntegrationsPreparation:
 
     identity: IdentityProvider
     catalog_providers: tuple[CatalogProvider, ...]
+    lyrics_provider: LyricsProvider
     avatars: DiscordAvatarStore
     housekeeping: HousekeepingContribution
     discord: DiscordSettings
@@ -38,6 +41,7 @@ class IntegrationsModule:
 
     identity: IdentityProvider
     catalog_providers: tuple[CatalogProvider, ...]
+    lyrics_provider: LyricsProvider
     avatars: DiscordAvatarStore
     housekeeping: HousekeepingContribution
     gateway: DiscordGateway | None
@@ -60,6 +64,7 @@ def prepare_integrations_module(
             YouTubeProvider(node_path),
             YouTubeMusicProvider(node_path),
         ),
+        lyrics_provider=LrclibProvider(),
         avatars=avatars,
         housekeeping=IntegrationsMaintenance(avatars).contribution(),
         discord=discord,
@@ -84,6 +89,7 @@ def complete_integrations_module(
     return IntegrationsModule(
         identity=preparation.identity,
         catalog_providers=preparation.catalog_providers,
+        lyrics_provider=preparation.lyrics_provider,
         avatars=preparation.avatars,
         housekeeping=preparation.housekeeping,
         gateway=gateway,

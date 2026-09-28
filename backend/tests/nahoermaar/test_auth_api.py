@@ -33,6 +33,9 @@ from nahoermaar.integrations.main import IntegrationsModule
 from nahoermaar.lifecycle import LifecycleResource
 from nahoermaar.messaging import MessageBus
 from nahoermaar.listening.main import create_listening_module
+from nahoermaar.lyrics.main import LyricsModule
+from nahoermaar.lyrics.providers import LyricsProvider
+from nahoermaar.lyrics.service import LyricsService
 from nahoermaar.observability import ContextFilter
 from nahoermaar.operations.incidents import IncidentService
 from nahoermaar.operations.jobs import JobId, JobRunDetail, JobRunService, JobTrigger
@@ -212,6 +215,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
     integrations_module = IntegrationsModule(
         identity=provider,
         catalog_providers=(),
+        lyrics_provider=cast(LyricsProvider, object()),
         avatars=avatars,
         housekeeping=housekeeping_contribution,
         gateway=cast(DiscordGateway, Gateway()),
@@ -255,6 +259,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
         bus,
         users_module,
         catalog_module,
+        LyricsModule(cast(LyricsService, object())),
         player_module,
         listening_module,
         statistics_module,
@@ -294,6 +299,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
     assert "/api/jobs/{job_id}/runs" in contract["paths"]
     assert "/api/jobs/housekeeping" not in contract["paths"]
     assert "/api/incidents" in contract["paths"]
+    assert "/api/tracks/{track_id}/lyrics" in contract["paths"]
     assert "/api/player/control" in contract["paths"]
     assert "/api/player/voice" in contract["paths"]
     assert "/api/player/radio" in contract["paths"]

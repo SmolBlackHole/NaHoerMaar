@@ -82,6 +82,7 @@ new queue command. Neither SSE nor the event bus is a durable audit log.
 | Concern | Owner | Details |
 | --- | --- | --- |
 | Search, links and metadata | Catalog | [Catalog](engine/catalog.md) |
+| Track lyrics lookup and cache | Lyrics | [Lyrics](engine/lyrics.md) |
 | Queue order and request attribution | Player Session | [Queue](engine/queue.md) |
 | Confirmed playback history | Playback history view | [Engine API](engine-api.md#playback-history) |
 | Automatic queue supply | Radio strategy and observer | [Radio](engine/radio.md) |

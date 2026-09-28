@@ -5,7 +5,7 @@ Parent: [Documentation index](../README.md)
 The engine owns the shared listening session behind NaHörMaar. Its parts answer
 different questions: the catalog identifies music, the queue orders requests,
 Radio decides when to find more, playback turns committed intent into audio,
-and the database keeps durable state. This index routes to the owner of each
+Lyrics enriches a known track, and the database keeps durable state. This index routes to the owner of each
 part instead of repeating their rules in one architecture page.
 
 ## Table of contents
@@ -21,6 +21,7 @@ part instead of repeating their rules in one architecture page.
 | Question | Owner |
 | --- | --- |
 | Links, searches and providers become tracks? | [Catalog](catalog.md) |
+| Lyrics for a known track? | [Lyrics](lyrics.md) |
 | Queue entries and confirmed history? | [Queue](queue.md) |
 | Radio refill and manual priority? | [Radio](radio.md) |
 | FSM, audio, Discord and restart recovery? | [Playback](playback.md) |
@@ -38,6 +39,7 @@ pages describe the implementation boundaries behind that contract.
 | `catalog/domain.py` | [Catalog](catalog.md) |
 | `catalog/repository.py` and `catalog/service.py` | [Catalog](catalog.md) |
 | `catalog/providers.py` and `integrations/youtube.py` | [Catalog](catalog.md) |
+| `lyrics/` and `integrations/lrclib.py` | [Lyrics](lyrics.md) |
 | `player/domain.py` and `player/fsm.py` | [Queue](queue.md) and [Radio](radio.md) |
 | `player/session.py` and `player/events.py` | [Architecture](../architecture.md#command-and-event-flow) |
 | `player/playback.py` | [Playback](playback.md) |

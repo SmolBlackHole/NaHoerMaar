@@ -22,11 +22,13 @@ describe("new backend repositories", () => {
 			endReason: "completed",
 			snapshot: "snapshot one",
 		});
+		await client.lyrics.get("track-one", true);
 		expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
 			"/api/auth/session",
 			"/api/users/me",
 			"/api/profiles/me?period=7d",
 			"/api/playbacks?page=3&page_size=10&q=Still%20Alive&radio=true&requested_by=user-one&started_from=2026-09-28T10%3A00%3A00Z&started_to=2026-09-28T11%3A00%3A00Z&end_reason=completed&snapshot=snapshot%20one",
+			"/api/tracks/track-one/lyrics?refresh=true",
 		]);
 		expect(client.account.loginUrl).toBe("/api/auth/discord");
 	});

@@ -1,6 +1,7 @@
 export const iconMaps = {
 	lucide: {
 		music: "i-lucide-music-2",
+		lyrics: "i-lucide-mic-vocal",
 		radio: "i-lucide-radio-tower",
 		headphones: "i-lucide-headphones",
 		clock: "i-lucide-clock-3",
@@ -74,6 +75,7 @@ export const iconMaps = {
 	},
 	ph: {
 		music: "i-ph-music-notes",
+		lyrics: "i-ph-microphone-stage",
 		radio: "i-ph-broadcast",
 		headphones: "i-ph-headphones",
 		clock: "i-ph-clock",
@@ -147,6 +149,7 @@ export const iconMaps = {
 	},
 	tabler: {
 		music: "i-tabler-music",
+		lyrics: "i-tabler-microphone-2",
 		radio: "i-tabler-broadcast",
 		headphones: "i-tabler-headphones",
 		clock: "i-tabler-clock",
@@ -220,6 +223,7 @@ export const iconMaps = {
 	},
 	heroicons: {
 		music: "i-heroicons-musical-note-20-solid",
+		lyrics: "i-heroicons-language-20-solid",
 		radio: "i-heroicons-signal-20-solid",
 		headphones: "i-heroicons-speaker-wave-20-solid",
 		clock: "i-heroicons-clock-20-solid",

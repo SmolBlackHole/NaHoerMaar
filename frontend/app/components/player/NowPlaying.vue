@@ -20,7 +20,7 @@ const artwork = computed(() =>
 const nextArtwork = computed(() =>
 	consent.youtube ? (nextTrack.value?.track.artwork_url ?? null) : null,
 );
-const preview = ref<"cover" | "video">("cover");
+const preview = useState<"cover" | "video" | "lyrics">("player-preview-mode", () => "cover");
 const videoControls = ref(false);
 const browserVolume = useState<number>("browser-video-volume", () => 0);
 const visibility = useDocumentVisibility();
@@ -86,6 +86,7 @@ const coverMoving = computed(
 	() =>
 		props.active &&
 		visibility.value === "visible" &&
+		preview.value === "cover" &&
 		coverVisible.value &&
 		["starting", "playing", "transitioning"].includes(player.state?.runtime.phase ?? "idle") &&
 		!motionPaused.value &&
@@ -100,6 +101,9 @@ watch(
 		videoControls.value = false;
 	},
 );
+watch([preview, videoId], ([selectedPreview, currentVideoId]) => {
+	if (selectedPreview === "video" && !currentVideoId) preview.value = "cover";
+});
 function showVideo() {
 	if (!consent.youtube) {
 		consent.open = true;
@@ -194,25 +198,35 @@ watch(loadVideo, (visible) => {
 			</template>
 		</div>
 		<div v-if="current" class="media-toolbar">
-			<div class="media-preview-switch" role="group" aria-label="Preview mode">
-				<button
-					type="button"
-					:aria-pressed="preview === 'cover'"
-					@click="
-						preview = 'cover';
-						videoFailed = false;
-					"
-				>
-					Cover
-				</button>
-				<button
-					v-if="videoId"
-					type="button"
-					:aria-pressed="preview === 'video'"
-					@click="showVideo"
-				>
-					Video
-				</button>
+			<div class="media-preview-controls">
+				<div class="media-preview-switch" role="group" aria-label="Preview mode">
+					<button
+						type="button"
+						:aria-pressed="preview === 'cover'"
+						@click="
+							preview = 'cover';
+							videoFailed = false;
+						"
+					>
+						Cover
+					</button>
+					<button
+						v-if="videoId"
+						type="button"
+						:aria-pressed="preview === 'video'"
+						@click="showVideo"
+					>
+						Video
+					</button>
+					<button
+						type="button"
+						:aria-pressed="preview === 'lyrics'"
+						@click="preview = 'lyrics'"
+					>
+						Lyrics
+					</button>
+				</div>
+				<PlayerLyricsDisplayMenu v-if="preview === 'lyrics'" :track-id="current.track.id" />
 			</div>
 			<button
 				v-if="coverVisible && displayedArtwork && reducedMotion !== 'reduce'"
@@ -280,7 +294,13 @@ watch(loadVideo, (visible) => {
 				</UPopover>
 			</div>
 		</div>
-		<div v-show="!videoControls || videoFailed" class="media-details">
+		<PlayerLyrics
+			v-if="current"
+			v-show="preview === 'lyrics'"
+			:track-id="current.track.id"
+			:visible="preview === 'lyrics'"
+		/>
+		<div v-show="preview !== 'lyrics' && (!videoControls || videoFailed)" class="media-details">
 			<div v-if="loading" class="media-copy space-y-4" aria-busy="true">
 				<USkeleton class="h-5 w-36 rounded-full" />
 				<USkeleton class="h-12 w-full max-w-2xl" />
@@ -543,6 +563,11 @@ watch(loadVideo, (visible) => {
 	background: var(--player-control-bg);
 	border-radius: 0.5rem;
 	padding: 0.25rem;
+}
+.media-preview-controls {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
 }
 .media-preview-switch button,
 .media-tool-button {

@@ -8,6 +8,7 @@ import { createDiscoveryWorkflow } from "./discovery";
 import { createLogsWorkflow } from "./logs";
 import { createIncidentsWorkflow } from "./incidents";
 import { createJobsWorkflow } from "./jobs";
+import { createLyricsWorkflow } from "./lyrics";
 import { createProfileWorkflow } from "./profile";
 import { createPlaybackHistoryWorkflow } from "./playbackHistory";
 import { createStatisticsWorkflow } from "./statistics";
@@ -20,6 +21,7 @@ export function createBackendWorkflows(client: BackendClient, authority: Session
 		logs: () => createLogsWorkflow(client, authority),
 		incidents: () => createIncidentsWorkflow(client, authority),
 		jobs: () => createJobsWorkflow(client, authority),
+		lyrics: () => createLyricsWorkflow(client, authority),
 		profile: () => createProfileWorkflow(client, authority),
 		playbackHistory: () => createPlaybackHistoryWorkflow(client, authority),
 		statistics: () => createStatisticsWorkflow(client, authority),
