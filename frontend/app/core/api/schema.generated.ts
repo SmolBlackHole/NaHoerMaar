@@ -277,23 +277,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/jobs/housekeeping": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Run Housekeeping */
-        post: operations["run_housekeeping_api_jobs_housekeeping_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/jobs/runs": {
         parameters: {
             query?: never;
@@ -1116,12 +1099,18 @@ export interface components {
             last_trigger: string | null;
             /** Max Batch Size */
             max_batch_size: number;
+            /** Module */
+            module: string;
             /** Next Run At */
             next_run_at: string | null;
             /** Parallel Requests */
             parallel_requests: number;
+            /** Progress Unit */
+            progress_unit: string | null;
             /** Running */
             running: boolean;
+            /** Scope */
+            scope: string[];
         };
         /** BusiestHourView */
         BusiestHourView: {
@@ -2214,14 +2203,6 @@ export interface components {
              * Format: uuid
              */
             operation_id: string;
-        };
-        /** RunHousekeeping */
-        RunHousekeeping: {
-            /**
-             * Batch Size
-             * @default 10000
-             */
-            batch_size: number;
         };
         /** RunJob */
         RunJob: {
@@ -4562,138 +4543,6 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["RunJob"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BackgroundJobView"];
-                };
-            };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Request not allowed */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description State conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Validation failed */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Too many requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Internal server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency failed */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Dependency unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-            /** @description Upstream dependency timed out */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorView"];
-                };
-            };
-        };
-    };
-    run_housekeeping_api_jobs_housekeeping_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RunHousekeeping"];
             };
         };
         responses: {

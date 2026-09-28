@@ -10,8 +10,10 @@ from pathlib import Path
 from nahoermaar.database.core import Database
 from nahoermaar.database.schema import migrate
 from nahoermaar.database.uow import UnitOfWork
+from nahoermaar.catalog.maintenance import CatalogHousekeeping
+from nahoermaar.integrations.avatars import DiscordAvatarStore
+from nahoermaar.integrations.maintenance import IntegrationsMaintenance
 from nahoermaar.operations.incidents import IncidentPeriod, IncidentService
-from nahoermaar.operations.housekeeping import HousekeepingService
 from nahoermaar.operations.jobs import (
     JobHealth,
     JobId,
@@ -23,7 +25,25 @@ from nahoermaar.operations.jobs import (
     JobRunService,
     JobTrigger,
 )
-from nahoermaar.integrations.avatars import DiscordAvatarStore
+from nahoermaar.operations.main import (
+    ModuleHousekeeping,
+    OperationsServices,
+    create_operations_module,
+)
+from nahoermaar.operations.maintenance import (
+    HousekeepingContext,
+    HousekeepingContribution,
+    HousekeepingMaintenance,
+    cleanup_detail,
+)
+from nahoermaar.operations.scheduler import (
+    JobExecution,
+    JobOptions,
+    JobProgressUnit,
+    JobRunRequest,
+)
+from nahoermaar.player.maintenance import PlayerMaintenance
+from nahoermaar.users.maintenance import UsersMaintenance
 
 NOW = datetime(2026, 9, 27, 12, tzinfo=UTC)
 
@@ -218,18 +238,34 @@ def test_housekeeping_records_a_bounded_manual_run(tmp_path: Path) -> None:
 
     incidents = IncidentService(units, clock=lambda: NOW)
     jobs = JobRunService(units, incidents, clock=lambda: NOW)
-    housekeeping = HousekeepingService(
+    operations = create_operations_module(
         units,
-        jobs,
-        DiscordAvatarStore(tmp_path / "avatars"),
-        clock=lambda: NOW,
+        OperationsServices(incidents, jobs),
+        (),
+        ModuleHousekeeping(
+            users=UsersMaintenance(units).contribution(),
+            player=PlayerMaintenance(units).contribution(),
+            catalog=CatalogHousekeeping(units).contribution(),
+            integrations=IntegrationsMaintenance(
+                DiscordAvatarStore(tmp_path / "avatars")
+            ).contribution(),
+        ),
     )
+    coordinator = operations.jobs
 
     async def scenario() -> None:
         await migrate(database.engine)
-        assert await housekeeping.run(batch_size=10) == 0
+        await coordinator.start()
+        status = await coordinator.trigger(
+            JobId.HOUSEKEEPING,
+            JobRunRequest(batch_size=10),
+            None,
+        )
+        assert status.running
+        while (await coordinator.status(JobId.HOUSEKEEPING)).running:
+            await asyncio.sleep(0)
 
-        status = housekeeping.status()
+        status = await coordinator.status(JobId.HOUSEKEEPING)
         assert status.running is False
         assert status.last_trigger == JobTrigger.MANUAL
         assert status.last_processed == 0
@@ -254,8 +290,55 @@ def test_housekeeping_records_a_bounded_manual_run(tmp_path: Path) -> None:
             detail.outcome is JobRunDetailOutcome.UNCHANGED
             for detail in history[0].details
         )
+        await coordinator.close()
 
     try:
         asyncio.run(scenario())
     finally:
         asyncio.run(database.close())
+
+
+def test_housekeeping_continues_after_one_module_fails() -> None:
+    progress: list[tuple[int, int, JobProgressUnit]] = []
+
+    async def broken(_context: HousekeepingContext) -> tuple[JobRunDetail, ...]:
+        raise RuntimeError("database unavailable")
+
+    async def healthy(_context: HousekeepingContext) -> tuple[JobRunDetail, ...]:
+        return (cleanup_detail("catalog", "Discovery snapshots", 2),)
+
+    maintenance = HousekeepingMaintenance(
+        (
+            HousekeepingContribution("users", ("Browser sessions",), broken),
+            HousekeepingContribution(
+                "catalog",
+                ("Discovery snapshots",),
+                healthy,
+            ),
+        ),
+        clock=lambda: NOW,
+    )
+
+    async def scenario() -> None:
+        result = await maintenance.run(
+            JobExecution(
+                JobOptions(batch_size=10),
+                JobTrigger.MANUAL,
+                None,
+                lambda current, total, unit: progress.append((current, total, unit)),
+            )
+        )
+        assert result.changed_count == 2
+        assert result.failure_count == 1
+        assert result.error_code == "housekeeping_partial"
+        assert [detail.outcome for detail in result.details] == [
+            JobRunDetailOutcome.FAILED,
+            JobRunDetailOutcome.CHANGED,
+        ]
+        assert progress == [
+            (0, 2, JobProgressUnit.STEPS),
+            (1, 2, JobProgressUnit.STEPS),
+            (2, 2, JobProgressUnit.STEPS),
+        ]
+
+    asyncio.run(scenario())

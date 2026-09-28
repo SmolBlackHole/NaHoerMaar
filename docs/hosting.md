@@ -108,8 +108,15 @@ docker compose up -d
 
 Docker Compose on Windows may reject a build context whose checkout path
 contains non-ASCII characters. Moving the checkout to an ASCII-only path fixes
-that Docker client error. You can also build the same named images directly and
-let Compose start them without rebuilding:
+that Docker client error. This repository keeps its name, including the umlaut,
+so use the checked-in rebuild command on Windows. It builds the same named
+images directly and lets Compose start them without rebuilding:
+
+```powershell
+.\scripts\rebuild-stack.ps1
+```
+
+The equivalent individual commands are:
 
 ```powershell
 docker build --file docker/Dockerfile --target backend --tag nahormaar-backend:local .

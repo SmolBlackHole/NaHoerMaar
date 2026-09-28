@@ -13,7 +13,6 @@ from fastapi import APIRouter, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from nahoermaar.bootstrap import Application
-from nahoermaar.operations.housekeeping import HousekeepingStatus
 from nahoermaar.operations.jobs import (
     HISTORY_RETENTION_DAYS,
     JobHealth,
@@ -41,8 +40,10 @@ class BackgroundJobView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: str
+    module: str
     label: str
     description: str
+    scope: tuple[str, ...]
     health: JobHealth
     running: bool
     interval_seconds: float
@@ -53,6 +54,7 @@ class BackgroundJobView(BaseModel):
     active_trigger: str | None
     active_candidates: int
     active_processed: int
+    progress_unit: str | None
     last_trigger: str | None
     last_started_at: datetime | None
     last_finished_at: datetime | None
@@ -130,22 +132,15 @@ class BackgroundJobsView(BaseModel):
     history_retention_days: int
 
 
-CatalogBatchSize = Annotated[int, Field(ge=1, le=100)]
-HousekeepingBatchSize = Annotated[int, Field(ge=1, le=10_000)]
+JobBatchSize = Annotated[int, Field(ge=1, le=10_000)]
 
 
 class RunJob(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    batch_size: CatalogBatchSize | None = None
+    batch_size: JobBatchSize | None = None
     preview: bool | None = None
     age_days: Annotated[int, Field(ge=1, le=3650)] | None = None
-
-
-class RunHousekeeping(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    batch_size: HousekeepingBatchSize = 10_000
 
 
 def router(application: Application) -> APIRouter:
@@ -155,16 +150,9 @@ def router(application: Application) -> APIRouter:
     @routes.get("")
     async def background_jobs(request: Request) -> BackgroundJobsView:
         await application.access.require_admin(authenticated(request).user.id)
-        catalog_jobs = await application.jobs.statuses()
-        health = await application.job_runs.health((JobId.HOUSEKEEPING,))
+        jobs = await application.jobs.statuses()
         return BackgroundJobsView(
-            jobs=(
-                *(_coordinated_job_view(current) for current in catalog_jobs),
-                _housekeeping_view(
-                    application.housekeeping.status(),
-                    health[JobId.HOUSEKEEPING],
-                ),
-            ),
+            jobs=tuple(_coordinated_job_view(current) for current in jobs),
             history_retention_days=HISTORY_RETENTION_DAYS,
         )
 
@@ -232,25 +220,6 @@ def router(application: Application) -> APIRouter:
         )
         return _coordinated_job_view(current)
 
-    @routes.post(
-        "/housekeeping",
-        status_code=status.HTTP_202_ACCEPTED,
-    )
-    async def run_housekeeping(
-        body: RunHousekeeping,
-        request: Request,
-    ) -> BackgroundJobView:
-        actor = authenticated(request).user
-        await application.access.require_admin(actor.id)
-        current = application.housekeeping.trigger(body.batch_size, actor.id)
-        _LOGGER.info(
-            "jobs.housekeeping_requested actor_id=%s batch=%d",
-            actor.id,
-            body.batch_size,
-        )
-        health = await application.job_runs.health((JobId.HOUSEKEEPING,))
-        return _housekeeping_view(current, health[JobId.HOUSEKEEPING])
-
     return routes
 
 
@@ -259,8 +228,10 @@ def _coordinated_job_view(current: JobStatus) -> BackgroundJobView:
     progress = current.progress
     return BackgroundJobView(
         id=descriptor.id,
+        module=descriptor.module,
         label=descriptor.label,
         description=descriptor.description,
+        scope=descriptor.scope,
         health=current.health,
         running=current.running,
         interval_seconds=descriptor.interval.total_seconds(),
@@ -275,6 +246,7 @@ def _coordinated_job_view(current: JobStatus) -> BackgroundJobView:
         active_trigger=current.active_trigger,
         active_candidates=progress.total if progress is not None else 0,
         active_processed=progress.current if progress is not None else 0,
+        progress_unit=progress.unit if progress is not None else None,
         last_trigger=current.last_trigger,
         last_started_at=current.last_started_at,
         last_finished_at=current.last_finished_at,
@@ -299,39 +271,6 @@ def _job_error(error: JobCoordinatorError) -> ApiError:
         )
     return ApiError(
         ApiErrorCode.SERVICE_UNAVAILABLE, status.HTTP_503_SERVICE_UNAVAILABLE
-    )
-
-
-def _housekeeping_view(
-    current: HousekeepingStatus,
-    health: JobHealth,
-) -> BackgroundJobView:
-    return BackgroundJobView(
-        id="housekeeping",
-        label="Data housekeeping",
-        description=(
-            "Removes expired sessions, receipts, cache snapshots, incidents and "
-            "superseded avatars."
-        ),
-        health=health,
-        running=current.running,
-        interval_seconds=current.interval_seconds,
-        default_batch_size=current.default_batch_size,
-        max_batch_size=10_000,
-        parallel_requests=1,
-        active_batch_size=current.active_batch_size,
-        active_trigger=current.active_trigger,
-        active_candidates=current.active_candidates,
-        active_processed=current.active_processed,
-        last_trigger=current.last_trigger,
-        last_started_at=current.last_started_at,
-        last_finished_at=current.last_finished_at,
-        next_run_at=current.next_run_at,
-        last_candidates=current.last_candidates,
-        last_processed=current.last_processed,
-        last_changed=current.last_changed,
-        last_failures=current.last_failures,
-        last_error=current.last_error,
     )
 
 

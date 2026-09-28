@@ -11,6 +11,32 @@ and current listening evidence belongs in
 [Testing and acceptance](docs/testing.md#live-acceptance). Completed work leaves
 this page once implementation, tests and its owning documentation agree.
 
+## Next: module composition and initialization
+
+Complete the backend module boundaries before revising the HTTP API. Every
+active feature module owns a `main.py` that receives only external dependencies
+and configuration, constructs its internal repositories, services, maintenance
+definitions and lifecycle resources, and returns one typed module object.
+
+`bootstrap.py` connects those module objects and process-wide infrastructure. It
+must not assemble individual services, enumerate module cleanup steps or reach
+into a module to wire its internal dependencies. Package `__init__.py` files
+remain free of construction side effects. Where a real dependency cycle exists,
+use an explicit staged factory with typed inputs instead of globals, service
+locators or mutable late wiring.
+
+Keep Views as read-only cross-module projections. Modules may depend on the
+specific read contract they need, but write behavior remains owned by the
+responsible module service and repository. Finish the active Users, Catalog,
+Player, Listening, Statistics, Integrations and Operations boundaries one module
+at a time, with composition and lifecycle tests for each completed cutover. Do
+not add compatibility containers or parallel initialization paths.
+
+Acceptance requires that the composition root reads as a process-level map,
+each runtime resource has one clear owner, module initialization is independently
+testable, and the public API and runtime behavior remain unchanged. Only after
+this cutover is complete should route naming, verbs and queryability change.
+
 ## Next: API contract and queryability review
 
 Review the complete HTTP surface after the current TODO is finished. Consolidate

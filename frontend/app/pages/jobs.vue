@@ -101,27 +101,17 @@ function jobState(job: BackgroundJob) {
 }
 
 function jobIcon(job: BackgroundJob) {
-	return job.id === "housekeeping" ? icons.value.trash : icons.value.music;
+	return job.module === "operations" ? icons.value.trash : icons.value.music;
 }
 
 function jobSteps(job: BackgroundJob) {
-	if (job.id === "housekeeping")
-		return [
-			"Expires login attempts and browser sessions",
-			"Removes queue undo data and operation receipts",
-			"Drops expired search snapshots and incidents",
-			"Trims job history and superseded Discord avatars",
-		];
-	return [
-		"Completes missing titles, artists, artwork and durations",
-		"Refreshes recently used search and playlist results",
-	];
+	return job.scope;
 }
 
 function progressLabel(job: BackgroundJob) {
 	if (!job.active_candidates)
 		return `Preparing up to ${job.active_batch_size ?? job.default_batch_size} entries`;
-	if (job.id === "housekeeping")
+	if (job.progress_unit === "steps")
 		return `${job.active_processed} of ${job.active_candidates} cleanup stages complete`;
 	return `${job.active_processed} of ${job.active_candidates} candidates processed`;
 }
@@ -180,8 +170,7 @@ async function runNow(job: BackgroundJob) {
 	batchSizes[job.id] = requested;
 	submitting[job.id] = true;
 	try {
-		if (job.id === "housekeeping") await workflow.runHousekeeping(requested);
-		else await workflow.runJob(job.id, requested);
+		await workflow.runJob(job.id, requested);
 	} finally {
 		submitting[job.id] = false;
 		schedule();

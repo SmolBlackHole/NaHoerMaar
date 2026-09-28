@@ -243,7 +243,7 @@ describe("new backend page workflows", () => {
 		const workflow = core.workflows.jobs();
 
 		await workflow.load();
-		await workflow.runHousekeeping(500);
+		await workflow.runJob("housekeeping", 500);
 		await workflow.loadRun("run-one");
 		await workflow.loadRun("run-one");
 
@@ -257,7 +257,7 @@ describe("new backend page workflows", () => {
 		expect(fetcher.mock.calls.map(([url, options]) => [url, options?.method])).toEqual([
 			["/api/jobs", undefined],
 			["/api/jobs/runs?limit=20", undefined],
-			["/api/jobs/housekeeping", "POST"],
+			["/api/jobs/housekeeping/runs", "POST"],
 			["/api/jobs/runs/run-one", undefined],
 		]);
 		workflow.dispose();

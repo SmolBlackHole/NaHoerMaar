@@ -48,10 +48,6 @@ export function createJobsWorkflow(client: BackendClient, authority: SessionAuth
 		return start((signal) => client.jobs.runJob(id, { batch_size: batchSize }, signal));
 	}
 
-	function runHousekeeping(batchSize: number) {
-		return start((signal) => client.jobs.runHousekeeping({ batch_size: batchSize }, signal));
-	}
-
 	function start(start: (signal: AbortSignal) => Promise<BackgroundJobs["jobs"][number]>) {
 		return jobs.load(async (signal) => {
 			const updated = await start(signal);
@@ -76,7 +72,6 @@ export function createJobsWorkflow(client: BackendClient, authority: SessionAuth
 		runDetail,
 		loadRun,
 		runJob,
-		runHousekeeping,
 		dispose() {
 			jobs.dispose();
 			runHistory.dispose();

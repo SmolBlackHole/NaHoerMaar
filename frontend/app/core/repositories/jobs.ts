@@ -8,7 +8,6 @@ import type {
 	BackgroundJobRunPage,
 	BackgroundJobs,
 	RunJob,
-	RunHousekeeping,
 } from "../models/jobs";
 
 export interface JobRunsQuery {
@@ -33,13 +32,6 @@ export function createJobsRepository(request: Transport) {
 			request<BackgroundJobRun>(`/api/jobs/runs/${encodeURIComponent(id)}`, { signal }),
 		runJob: (id: string, body: RunJob, signal?: AbortSignal) =>
 			request<BackgroundJob>(`/api/jobs/${encodeURIComponent(id)}/runs`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify(body),
-				signal,
-			}),
-		runHousekeeping: (body: RunHousekeeping, signal?: AbortSignal) =>
-			request<BackgroundJob>("/api/jobs/housekeeping", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify(body),

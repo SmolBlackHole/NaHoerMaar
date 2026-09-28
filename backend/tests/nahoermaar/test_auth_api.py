@@ -36,9 +36,14 @@ from nahoermaar.messaging import MessageBus
 from nahoermaar.listening.service import ListeningService
 from nahoermaar.observability import ContextFilter
 from nahoermaar.operations.incidents import IncidentService
-from nahoermaar.operations.jobs import JobId, JobRunService, JobTrigger
-from nahoermaar.operations.housekeeping import HousekeepingService
+from nahoermaar.operations.jobs import JobId, JobRunDetail, JobRunService, JobTrigger
 from nahoermaar.operations.logs import RecentLogBuffer
+from nahoermaar.operations.maintenance import (
+    HousekeepingContext,
+    HousekeepingContribution,
+    HousekeepingMaintenance,
+    cleanup_detail,
+)
 from nahoermaar.operations.scheduler import JobCoordinator
 from nahoermaar.player.automation import PlaybackAutomation
 from nahoermaar.player.events import PlaybackRuntimeChanged
@@ -123,9 +128,27 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
         clock=lambda: NOW,
         delay=0,
     )
+
+    async def no_housekeeping_changes(
+        _context: HousekeepingContext,
+    ) -> tuple[JobRunDetail, ...]:
+        return (cleanup_detail("operations", "Expired data", 0),)
+
+    housekeeping = HousekeepingMaintenance(
+        (
+            HousekeepingContribution(
+                "operations",
+                ("Expired data",),
+                no_housekeeping_changes,
+            ),
+        )
+    )
     jobs = JobCoordinator(
         job_runs,
-        (replace(catalog_maintenance.definition(), run_on_startup=False),),
+        (
+            replace(catalog_maintenance.definition(), run_on_startup=False),
+            replace(housekeeping.definition(), run_on_startup=False),
+        ),
         clock=lambda: NOW,
     )
     player = PlayerSessionManager(units, bus, CatalogRadioResolver(catalog))
@@ -134,6 +157,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
         bus,
         access,
     )
+    avatars = DiscordAvatarStore(Path("data/avatars"))
     automation = PlaybackAutomation(
         player,
         bus,
@@ -164,8 +188,6 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             frozenset({"http://localhost:3001"}),
         ),
     )
-    avatars = DiscordAvatarStore(Path("data/avatars"))
-    housekeeping = HousekeepingService(units, job_runs, avatars, clock=lambda: NOW)
     application = Application(
         settings,
         database,
@@ -182,7 +204,6 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
         automation,
         job_runs,
         jobs,
-        housekeeping,
         logs,
         avatars,
         gateway=cast(DiscordGateway, Gateway()),
@@ -201,7 +222,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
     assert "/api/jobs/runs" in contract["paths"]
     assert "/api/jobs/runs/{run_id}" in contract["paths"]
     assert "/api/jobs/{job_id}/runs" in contract["paths"]
-    assert "/api/jobs/housekeeping" in contract["paths"]
+    assert "/api/jobs/housekeeping" not in contract["paths"]
     assert "/api/incidents" in contract["paths"]
     assert "/api/player/sleep-timer" in contract["paths"]
     assert "/api/statistics/overview" in contract["paths"]

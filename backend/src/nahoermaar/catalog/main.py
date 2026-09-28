@@ -8,9 +8,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from nahoermaar.database.uow import UnitOfWork
+from nahoermaar.operations.maintenance import HousekeepingContribution
 from nahoermaar.operations.scheduler import JobDefinition
 
-from .maintenance import CatalogMaintenance
+from .maintenance import CatalogHousekeeping, CatalogMaintenance
 from .providers import CatalogProvider
 from .service import CatalogService
 
@@ -23,6 +24,7 @@ class CatalogModule:
 
     service: CatalogService
     jobs: tuple[JobDefinition, ...]
+    housekeeping: HousekeepingContribution
 
 
 def create_catalog_module(
@@ -32,4 +34,9 @@ def create_catalog_module(
     """Build Catalog use cases and their module-owned bounded jobs."""
     service = CatalogService(units, providers)
     maintenance = CatalogMaintenance(units, service)
-    return CatalogModule(service, (maintenance.definition(),))
+    housekeeping = CatalogHousekeeping(units)
+    return CatalogModule(
+        service,
+        (maintenance.definition(),),
+        housekeeping.contribution(),
+    )

@@ -9,4 +9,3 @@ export type BackgroundJobRunPage = components["schemas"]["BackgroundJobRunPageVi
 export type BackgroundJobRunSummary = components["schemas"]["BackgroundJobRunSummaryView"];
 export type BackgroundJobs = components["schemas"]["BackgroundJobsView"];
 export type RunJob = components["schemas"]["RunJob"];
-export type RunHousekeeping = components["schemas"]["RunHousekeeping"];

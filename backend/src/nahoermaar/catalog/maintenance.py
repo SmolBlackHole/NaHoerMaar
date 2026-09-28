@@ -18,6 +18,11 @@ from nahoermaar.operations.jobs import (
     JobRunDetailKind,
     JobRunDetailOutcome,
 )
+from nahoermaar.operations.maintenance import (
+    HousekeepingContext,
+    HousekeepingContribution,
+    cleanup_detail,
+)
 from nahoermaar.operations.scheduler import (
     IntegerJobControl,
     JobControls,
@@ -403,3 +408,31 @@ class CatalogMaintenance:
     async def _pause(self) -> None:
         if self._delay:
             await asyncio.sleep(self._delay)
+
+
+class CatalogHousekeeping:
+    """Remove expired discovery snapshots owned by Catalog."""
+
+    __slots__ = ("_units",)
+
+    def __init__(self, units: UnitOfWorkFactory) -> None:
+        self._units = units
+
+    def contribution(self) -> HousekeepingContribution:
+        return HousekeepingContribution(
+            "catalog",
+            ("Discovery snapshots",),
+            self.run,
+        )
+
+    async def run(
+        self,
+        context: HousekeepingContext,
+    ) -> tuple[JobRunDetail, ...]:
+        async with self._units() as work:
+            removed = await DiscoveryRepository(work.session).prune_expired(
+                context.now,
+                limit=context.batch_size,
+            )
+            await work.commit()
+        return (cleanup_detail("catalog", "Discovery snapshots", removed),)

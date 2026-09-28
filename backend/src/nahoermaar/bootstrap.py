@@ -24,6 +24,7 @@ from .database.uow import UnitOfWork
 from .integrations.discord import DiscordGateway
 from .integrations.discord_oauth import DiscordOAuth
 from .integrations.avatars import DiscordAvatarStore
+from .integrations.main import create_integrations_module
 from .integrations.youtube import YouTubeMusicProvider, YouTubeProvider
 from .listening.service import (
     AdvancePlayback,
@@ -37,10 +38,14 @@ from .listening.service import (
 )
 from .messaging import MessageBus, MessageContext
 from .observability import configure_logging
-from .operations.housekeeping import HousekeepingService
 from .operations.incidents import IncidentService
 from .operations.jobs import JobRunService
 from .operations.logs import RecentLogBuffer
+from .operations.main import (
+    ModuleHousekeeping,
+    create_operations_module,
+    create_operations_services,
+)
 from .operations.scheduler import JobCoordinator
 from .player.domain import OperationId, PlayerError, PlayerErrorCode
 from .player.automation import PlaybackAutomation
@@ -77,9 +82,11 @@ from .player.events import (
     UndoQueue,
 )
 from .player.playback import PlaybackCoordinator
+from .player.main import create_player_module
 from .player.session import CatalogRadioResolver, PlayerSessionManager
 from .statistics.service import StatisticsService
 from .users.domain import AccessEvent, User
+from .users.main import create_users_module
 from .users.service import (
     AccessService,
     AuthService,
@@ -136,7 +143,6 @@ class Application:
     automation: PlaybackAutomation
     job_runs: JobRunService
     jobs: JobCoordinator
-    housekeeping: HousekeepingService
     logs: RecentLogBuffer
     avatars: DiscordAvatarStore
     gateway: DiscordGateway | None = None
@@ -185,8 +191,6 @@ class Application:
                 await self.automation.start()
                 self._runtime_closers.append(("jobs", self.jobs.close))
                 await self.jobs.start()
-                self._runtime_closers.append(("housekeeping", self.housekeeping.close))
-                await self.housekeeping.start()
                 if self.gateway is not None:
                     self._runtime_closers.append(("discord", self.gateway.close))
                     await self.gateway.open()
@@ -258,15 +262,19 @@ def bootstrap(
         settings.log_retention_days,
     )
     database = Database(settings.database_url)
-    avatars = DiscordAvatarStore(settings.avatar_directory)
+    integrations_module = create_integrations_module(settings.avatar_directory)
+    avatars = integrations_module.avatars
 
     def units() -> UnitOfWork:
         return UnitOfWork(database.sessions)
 
-    access = AccessService(units, Operators.load(settings.auth.access_path))
-    auth = AuthService(units, DiscordOAuth(settings.auth))
-    incidents = IncidentService(units)
-    job_runs = JobRunService(units, incidents)
+    users_module = create_users_module(
+        units,
+        DiscordOAuth(settings.auth),
+        Operators.load(settings.auth.access_path),
+    )
+    access = users_module.access
+    auth = users_module.auth
     catalog_module = create_catalog_module(
         units,
         (
@@ -275,15 +283,31 @@ def bootstrap(
         ),
     )
     catalog = catalog_module.service
-    jobs = JobCoordinator(job_runs, catalog_module.jobs)
+    operations_services = create_operations_services(units)
+    incidents = operations_services.incidents
     bus = MessageBus(incidents)
-    player = PlayerSessionManager(units, bus, CatalogRadioResolver(catalog))
-    listening = ListeningService(units, bus, access)
-    automation = PlaybackAutomation(
-        player,
+    player_module = create_player_module(
+        units,
         bus,
+        CatalogRadioResolver(catalog),
         empty_channel_grace_seconds=settings.empty_channel_grace_seconds,
     )
+    player = player_module.service
+    automation = player_module.automation
+    operations_module = create_operations_module(
+        units,
+        operations_services,
+        catalog_module.jobs,
+        ModuleHousekeeping(
+            users=users_module.housekeeping,
+            player=player_module.housekeeping,
+            catalog=catalog_module.housekeeping,
+            integrations=integrations_module.housekeeping,
+        ),
+    )
+    job_runs = operations_module.job_runs
+    jobs = operations_module.jobs
+    listening = ListeningService(units, bus, access)
     statistics = StatisticsService(
         units,
         ZoneInfo(settings.statistics_timezone),
@@ -291,7 +315,6 @@ def bootstrap(
     )
     profiles = ProfileView(units, statistics)
     history = PlaybackHistoryView(units)
-    housekeeping = HousekeepingService(units, job_runs, avatars)
 
     async def summon(discord_id: str, channel_id: int, correlation_id: UUID) -> None:
         user = await access.require_discord_access(discord_id)
@@ -354,7 +377,6 @@ def bootstrap(
         automation,
         job_runs,
         jobs,
-        housekeeping,
         logs,
         avatars,
         gateway,
