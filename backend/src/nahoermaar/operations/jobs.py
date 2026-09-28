@@ -435,7 +435,7 @@ class JobRunRepository:
         return len(removed.all())
 
 
-class JobService:
+class JobRunService:
     """Record bounded jobs and project their failures into incidents."""
 
     __slots__ = ("_clock", "_incidents", "_units")
@@ -451,7 +451,7 @@ class JobService:
         self._incidents = incidents
         self._clock = clock
 
-    async def start(self) -> None:
+    async def reconcile_interrupted_runs(self) -> None:
         now = self._clock().astimezone(UTC)
         async with self._units() as work:
             interrupted = await JobRunRepository(work.session).interrupt_running(now)

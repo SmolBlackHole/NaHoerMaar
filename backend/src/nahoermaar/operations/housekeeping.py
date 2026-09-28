@@ -25,7 +25,7 @@ from .jobs import (
     JobRunDetail,
     JobRunDetailKind,
     JobRunDetailOutcome,
-    JobService,
+    JobRunService,
     JobTrigger,
 )
 
@@ -86,7 +86,7 @@ class HousekeepingService:
     def __init__(
         self,
         units: UnitFactory,
-        jobs: JobService,
+        jobs: JobRunService,
         avatars: DiscordAvatarStore,
         *,
         clock: Clock = lambda: datetime.now(UTC),

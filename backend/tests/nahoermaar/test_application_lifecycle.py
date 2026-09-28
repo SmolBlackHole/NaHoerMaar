@@ -19,7 +19,7 @@ from nahoermaar.listening.service import ListeningService
 from nahoermaar.messaging import Command, MessageBus, MessageContext
 from nahoermaar.operations.logs import RecentLogBuffer
 from nahoermaar.operations.incidents import IncidentService
-from nahoermaar.operations.jobs import JobService
+from nahoermaar.operations.jobs import JobRunService
 from nahoermaar.operations.housekeeping import HousekeepingService
 from nahoermaar.player.automation import PlaybackAutomation
 from nahoermaar.player.domain import ListeningSessionId
@@ -124,8 +124,8 @@ class _Jobs:
     def __init__(self, calls: list[str]) -> None:
         self._calls = calls
 
-    async def start(self) -> None:
-        self._calls.append("jobs.start")
+    async def reconcile_interrupted_runs(self) -> None:
+        self._calls.append("job_runs.reconcile")
 
 
 class _Housekeeping:
@@ -174,7 +174,7 @@ def _application(calls: list[str], *, fail_gateway: bool = False) -> Application
         cast(PlaybackHistoryView, object()),
         cast(IncidentService, object()),
         cast(PlaybackAutomation, automation),
-        cast(JobService, jobs),
+        cast(JobRunService, jobs),
         cast(HousekeepingService, housekeeping),
         RecentLogBuffer(),
         DiscordAvatarStore(Path("data/avatars")),
@@ -200,7 +200,7 @@ def test_failed_start_closes_started_resources_in_reverse_order(
         assert application.lifecycle is ApplicationLifecycle.CLOSED
         assert calls == [
             "migrate",
-            "jobs.start",
+            "job_runs.reconcile",
             "operators",
             "catalog.start",
             "player.start",
@@ -241,7 +241,7 @@ def test_application_shutdown_is_reverse_ordered_and_idempotent(
     asyncio.run(scenario())
     assert calls == [
         "migrate",
-        "jobs.start",
+        "job_runs.reconcile",
         "operators",
         "catalog.start",
         "player.start",

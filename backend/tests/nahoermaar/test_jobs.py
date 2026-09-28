@@ -20,7 +20,7 @@ from nahoermaar.operations.jobs import (
     JobRunDetailKind,
     JobRunDetailOutcome,
     JobRunStatus,
-    JobService,
+    JobRunService,
     JobTrigger,
 )
 from nahoermaar.integrations.avatars import DiscordAvatarStore
@@ -36,11 +36,11 @@ def test_job_runs_persist_failures_recovery_and_interruption() -> None:
         return UnitOfWork(database.sessions)
 
     incidents = IncidentService(units, clock=lambda: current[0])
-    jobs = JobService(units, incidents, clock=lambda: current[0])
+    jobs = JobRunService(units, incidents, clock=lambda: current[0])
 
     async def scenario() -> None:
         await migrate(database.engine)
-        await jobs.start()
+        await jobs.reconcile_interrupted_runs()
         assert await jobs.health((JobId.CATALOG_MAINTENANCE, JobId.HOUSEKEEPING)) == {
             JobId.CATALOG_MAINTENANCE: JobHealth.UNKNOWN,
             JobId.HOUSEKEEPING: JobHealth.UNKNOWN,
@@ -101,7 +101,7 @@ def test_job_runs_persist_failures_recovery_and_interruption() -> None:
             1000,
         )
         current[0] += timedelta(seconds=1)
-        await jobs.start()
+        await jobs.reconcile_interrupted_runs()
 
         cancelled = await jobs.start_run(
             JobId.HOUSEKEEPING,
@@ -176,7 +176,7 @@ def test_job_run_cursor_is_stable_for_equal_timestamps() -> None:
         return UnitOfWork(database.sessions)
 
     incidents = IncidentService(units, clock=lambda: NOW)
-    jobs = JobService(units, incidents, clock=lambda: NOW)
+    jobs = JobRunService(units, incidents, clock=lambda: NOW)
 
     async def scenario() -> None:
         await migrate(database.engine)
@@ -217,7 +217,7 @@ def test_housekeeping_records_a_bounded_manual_run(tmp_path: Path) -> None:
         return UnitOfWork(database.sessions)
 
     incidents = IncidentService(units, clock=lambda: NOW)
-    jobs = JobService(units, incidents, clock=lambda: NOW)
+    jobs = JobRunService(units, incidents, clock=lambda: NOW)
     housekeeping = HousekeepingService(
         units,
         jobs,

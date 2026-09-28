@@ -19,7 +19,7 @@ from nahoermaar.operations.jobs import (
     JobRunDetail,
     JobRunDetailKind,
     JobRunDetailOutcome,
-    JobService,
+    JobRunService,
     JobTrigger,
 )
 from nahoermaar.users.domain import UserId
@@ -171,7 +171,7 @@ class CatalogService:
         maintenance_batch: int = 10,
         maintenance_delay: float = 1.0,
         maintenance_parallel_requests: int = 4,
-        jobs: JobService | None = None,
+        jobs: JobRunService | None = None,
     ) -> None:
         if len({provider.key for provider in providers}) != len(providers):
             raise ValueError("Catalog provider keys must be unique.")

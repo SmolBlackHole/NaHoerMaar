@@ -34,7 +34,7 @@ from nahoermaar.messaging import MessageBus
 from nahoermaar.listening.service import ListeningService
 from nahoermaar.observability import ContextFilter
 from nahoermaar.operations.incidents import IncidentService
-from nahoermaar.operations.jobs import JobId, JobService, JobTrigger
+from nahoermaar.operations.jobs import JobId, JobRunService, JobTrigger
 from nahoermaar.operations.housekeeping import HousekeepingService
 from nahoermaar.operations.logs import RecentLogBuffer
 from nahoermaar.player.automation import PlaybackAutomation
@@ -111,7 +111,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
     access = AccessService(units, Operators("9", ()), clock=lambda: NOW)
     auth = AuthService(units, provider, clock=lambda: NOW)
     incidents = IncidentService(units, clock=lambda: NOW)
-    jobs = JobService(units, incidents, clock=lambda: NOW)
+    jobs = JobRunService(units, incidents, clock=lambda: NOW)
     bus = MessageBus(incidents)
     catalog = CatalogService(units, (), jobs=jobs)
     player = PlayerSessionManager(units, bus, CatalogRadioResolver(catalog))
