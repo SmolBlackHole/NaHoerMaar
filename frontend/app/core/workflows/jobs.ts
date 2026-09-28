@@ -3,7 +3,12 @@
 
 import type { SessionAuthority } from "../api/transport";
 import type { BackendClient } from "../client";
-import type { BackgroundJobRun, BackgroundJobRunPage, BackgroundJobs } from "../models/jobs";
+import type {
+	BackgroundJobRun,
+	BackgroundJobRunPage,
+	BackgroundJobs,
+	RunJob,
+} from "../models/jobs";
 import { createCursorPagination } from "./cursorPagination";
 import { createQueryState, type QueryState } from "./queryState";
 
@@ -44,8 +49,8 @@ export function createJobsWorkflow(client: BackendClient, authority: SessionAuth
 		return detail.load((signal) => client.jobs.run(id, signal));
 	}
 
-	function runJob(id: string, batchSize: number) {
-		return start((signal) => client.jobs.runJob(id, { batch_size: batchSize }, signal));
+	function runJob(id: string, options: RunJob) {
+		return start((signal) => client.jobs.runJob(id, options, signal));
 	}
 
 	function start(start: (signal: AbortSignal) => Promise<BackgroundJobs["jobs"][number]>) {

@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: MPL-2.0 -->
 
 <script setup lang="ts">
-import type { BackgroundJob, BackgroundJobRunSummary } from "~/core/models/jobs";
+import type { BackgroundJob, BackgroundJobRunSummary, RunJob } from "~/core/models/jobs";
 import { failureForCode } from "~/core/errors";
 
 definePageMeta({ pageTransition: { name: "page", mode: "out-in" } });
@@ -14,6 +14,8 @@ const workflow = core.workflows.jobs();
 const { icons } = useTheme();
 const visibility = useDocumentVisibility();
 const batchSizes = reactive<Record<string, number>>({});
+const previewRuns = reactive<Record<string, boolean>>({});
+const ageDays = reactive<Record<string, number>>({});
 const submitting = reactive<Record<string, boolean>>({});
 const expandedJobs = ref<string[]>([]);
 const expandedRun = ref<string>();
@@ -110,7 +112,7 @@ function jobSteps(job: BackgroundJob) {
 
 function progressLabel(job: BackgroundJob) {
 	if (!job.active_candidates)
-		return `Preparing up to ${job.active_batch_size ?? job.default_batch_size} entries`;
+		return `Preparing up to ${job.active_options?.batch_size ?? job.controls.batch_size.default} entries`;
 	if (job.progress_unit === "steps")
 		return `${job.active_processed} of ${job.active_candidates} cleanup stages complete`;
 	return `${job.active_processed} of ${job.active_candidates} candidates processed`;
@@ -153,7 +155,11 @@ async function refresh() {
 	if (!allowed.value || visibility.value !== "visible" || Object.values(submitting).some(Boolean))
 		return;
 	await workflow.load();
-	for (const job of jobs.value) batchSizes[job.id] ??= job.default_batch_size;
+	for (const job of jobs.value) {
+		batchSizes[job.id] ??= job.controls.batch_size.default;
+		if (job.controls.preview) previewRuns[job.id] ??= job.controls.preview.default;
+		if (job.controls.age_days) ageDays[job.id] ??= job.controls.age_days.default;
+	}
 }
 
 function loadMoreRuns() {
@@ -163,14 +169,26 @@ function loadMoreRuns() {
 async function runNow(job: BackgroundJob) {
 	if (submitting[job.id] || job.running) return;
 	clearTimeout(timer);
+	const batchControl = job.controls.batch_size;
 	const requested = Math.min(
-		job.max_batch_size,
-		Math.max(1, Math.trunc(batchSizes[job.id] || job.default_batch_size)),
+		batchControl.maximum,
+		Math.max(batchControl.minimum, Math.trunc(batchSizes[job.id] || batchControl.default)),
 	);
 	batchSizes[job.id] = requested;
+	const options: RunJob = { batch_size: requested };
+	if (job.controls.preview) options.preview = previewRuns[job.id];
+	if (job.controls.age_days) {
+		const ageControl = job.controls.age_days;
+		const age = Math.min(
+			ageControl.maximum,
+			Math.max(ageControl.minimum, Math.trunc(ageDays[job.id] || ageControl.default)),
+		);
+		ageDays[job.id] = age;
+		options.age_days = age;
+	}
 	submitting[job.id] = true;
 	try {
-		await workflow.runJob(job.id, requested);
+		await workflow.runJob(job.id, options);
 	} finally {
 		submitting[job.id] = false;
 		schedule();
@@ -458,20 +476,41 @@ onBeforeUnmount(() => {
 												What it maintains
 											</button>
 
-											<div class="flex items-end gap-2">
+											<div class="flex flex-wrap items-end justify-end gap-3">
+												<UCheckbox
+													v-if="job.controls.preview"
+													v-model="previewRuns[job.id]"
+													label="Preview only"
+													:disabled="job.running || submitting[job.id]"
+													class="pb-2"
+												/>
+												<label
+													v-if="job.controls.age_days"
+													class="grid gap-1 text-xs text-muted"
+												>
+													Minimum age (days)
+													<UInput
+														v-model.number="ageDays[job.id]"
+														type="number"
+														:min="job.controls.age_days.minimum"
+														:max="job.controls.age_days.maximum"
+														class="w-28"
+														:aria-label="`${job.label} minimum age in days`"
+													/>
+												</label>
 												<label class="grid gap-1 text-xs text-muted">
 													Entries
 													<UInput
 														v-model.number="batchSizes[job.id]"
 														type="number"
-														:min="1"
-														:max="job.max_batch_size"
+														:min="job.controls.batch_size.minimum"
+														:max="job.controls.batch_size.maximum"
 														class="w-24"
 														:aria-label="`${job.label} batch size`"
 													/>
 												</label>
 												<UTooltip
-													:text="`Process at most ${job.max_batch_size} entries.`"
+													:text="`Process at most ${job.controls.batch_size.maximum} entries.`"
 												>
 													<UButton
 														label="Run now"

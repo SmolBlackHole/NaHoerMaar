@@ -413,7 +413,11 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
                 "catalog-maintenance",
                 "housekeeping",
             ]
-            assert jobs_response.json()["jobs"][0]["default_batch_size"] == 10
+            assert jobs_response.json()["jobs"][0]["controls"] == {
+                "batch_size": {"default": 10, "minimum": 1, "maximum": 100},
+                "preview": None,
+                "age_days": None,
+            }
             assert [item["health"] for item in jobs_response.json()["jobs"]] == [
                 "unknown",
                 "unknown",
@@ -496,7 +500,11 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary() -> None:
             )
             assert started_job.status_code == 202
             assert started_job.json()["running"] is True
-            assert started_job.json()["active_batch_size"] == 3
+            assert started_job.json()["active_options"] == {
+                "batch_size": 3,
+                "preview": None,
+                "age_days": None,
+            }
             track_id = uuid4()
             async with units() as work:
                 await work.session.execute(

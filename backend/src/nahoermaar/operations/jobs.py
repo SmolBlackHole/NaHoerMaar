@@ -53,6 +53,7 @@ _HISTORY_RETENTION = timedelta(days=HISTORY_RETENTION_DAYS)
 
 class JobId(StrEnum):
     CATALOG_MAINTENANCE = "catalog-maintenance"
+    CATALOG_CLEANUP = "catalog-cleanup"
     HOUSEKEEPING = "housekeeping"
 
 

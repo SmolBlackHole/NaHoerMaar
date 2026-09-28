@@ -36,6 +36,36 @@ from .pagination import TimestampPosition, decode_position, encode_position
 _LOGGER = logging.getLogger(__name__)
 
 
+class IntegerJobControlView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    default: int
+    minimum: int
+    maximum: int
+
+
+class BooleanJobControlView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    default: bool
+
+
+class BackgroundJobControlsView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    batch_size: IntegerJobControlView
+    preview: BooleanJobControlView | None
+    age_days: IntegerJobControlView | None
+
+
+class ActiveJobOptionsView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    batch_size: int
+    preview: bool | None
+    age_days: int | None
+
+
 class BackgroundJobView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -47,10 +77,9 @@ class BackgroundJobView(BaseModel):
     health: JobHealth
     running: bool
     interval_seconds: float
-    default_batch_size: int
-    max_batch_size: int
+    controls: BackgroundJobControlsView
     parallel_requests: int
-    active_batch_size: int | None
+    active_options: ActiveJobOptionsView | None
     active_trigger: str | None
     active_candidates: int
     active_processed: int
@@ -235,11 +264,34 @@ def _coordinated_job_view(current: JobStatus) -> BackgroundJobView:
         health=current.health,
         running=current.running,
         interval_seconds=descriptor.interval.total_seconds(),
-        default_batch_size=descriptor.controls.batch_size.default,
-        max_batch_size=descriptor.controls.batch_size.maximum,
+        controls=BackgroundJobControlsView(
+            batch_size=IntegerJobControlView(
+                default=descriptor.controls.batch_size.default,
+                minimum=descriptor.controls.batch_size.minimum,
+                maximum=descriptor.controls.batch_size.maximum,
+            ),
+            preview=(
+                BooleanJobControlView(default=descriptor.controls.preview.default)
+                if descriptor.controls.preview is not None
+                else None
+            ),
+            age_days=(
+                IntegerJobControlView(
+                    default=descriptor.controls.age_days.default,
+                    minimum=descriptor.controls.age_days.minimum,
+                    maximum=descriptor.controls.age_days.maximum,
+                )
+                if descriptor.controls.age_days is not None
+                else None
+            ),
+        ),
         parallel_requests=descriptor.parallel_requests,
-        active_batch_size=(
-            current.active_options.batch_size
+        active_options=(
+            ActiveJobOptionsView(
+                batch_size=current.active_options.batch_size,
+                preview=current.active_options.preview,
+                age_days=current.active_options.age_days,
+            )
             if current.active_options is not None
             else None
         ),

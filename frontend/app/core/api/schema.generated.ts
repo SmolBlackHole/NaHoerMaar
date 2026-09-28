@@ -858,6 +858,15 @@ export interface components {
             /** Longest */
             longest: number;
         };
+        /** ActiveJobOptionsView */
+        ActiveJobOptionsView: {
+            /** Age Days */
+            age_days: number | null;
+            /** Batch Size */
+            batch_size: number;
+            /** Preview */
+            preview: boolean | null;
+        };
         /** ActivityBucketView */
         ActivityBucketView: {
             granularity: components["schemas"]["ActivityGranularity"];
@@ -950,6 +959,12 @@ export interface components {
         AuthEventView: {
             /** Error */
             error: string;
+        };
+        /** BackgroundJobControlsView */
+        BackgroundJobControlsView: {
+            age_days: components["schemas"]["IntegerJobControlView"] | null;
+            batch_size: components["schemas"]["IntegerJobControlView"];
+            preview: components["schemas"]["BooleanJobControlView"] | null;
         };
         /** BackgroundJobRunDetailView */
         BackgroundJobRunDetailView: {
@@ -1062,16 +1077,14 @@ export interface components {
         };
         /** BackgroundJobView */
         BackgroundJobView: {
-            /** Active Batch Size */
-            active_batch_size: number | null;
             /** Active Candidates */
             active_candidates: number;
+            active_options: components["schemas"]["ActiveJobOptionsView"] | null;
             /** Active Processed */
             active_processed: number;
             /** Active Trigger */
             active_trigger: string | null;
-            /** Default Batch Size */
-            default_batch_size: number;
+            controls: components["schemas"]["BackgroundJobControlsView"];
             /** Description */
             description: string;
             health: components["schemas"]["JobHealth"];
@@ -1097,8 +1110,6 @@ export interface components {
             last_started_at: string | null;
             /** Last Trigger */
             last_trigger: string | null;
-            /** Max Batch Size */
-            max_batch_size: number;
             /** Module */
             module: string;
             /** Next Run At */
@@ -1111,6 +1122,11 @@ export interface components {
             running: boolean;
             /** Scope */
             scope: string[];
+        };
+        /** BooleanJobControlView */
+        BooleanJobControlView: {
+            /** Default */
+            default: boolean;
         };
         /** BusiestHourView */
         BusiestHourView: {
@@ -1510,6 +1526,15 @@ export interface components {
              */
             track_id: string;
         };
+        /** IntegerJobControlView */
+        IntegerJobControlView: {
+            /** Default */
+            default: number;
+            /** Maximum */
+            maximum: number;
+            /** Minimum */
+            minimum: number;
+        };
         /**
          * JobHealth
          * @enum {string}
@@ -1519,7 +1544,7 @@ export interface components {
          * JobId
          * @enum {string}
          */
-        JobId: "catalog-maintenance" | "housekeeping";
+        JobId: "catalog-maintenance" | "catalog-cleanup" | "housekeeping";
         /**
          * JobRunStatus
          * @enum {string}

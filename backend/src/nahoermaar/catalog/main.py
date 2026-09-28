@@ -10,8 +10,9 @@ from dataclasses import dataclass
 from nahoermaar.database.uow import UnitOfWork
 from nahoermaar.operations.maintenance import HousekeepingContribution
 from nahoermaar.operations.scheduler import JobDefinition
+from nahoermaar.views.catalog import CatalogCleanupView
 
-from .maintenance import CatalogHousekeeping, CatalogMaintenance
+from .maintenance import CatalogCleanup, CatalogHousekeeping, CatalogMaintenance
 from .providers import CatalogProvider
 from .service import CatalogService
 
@@ -30,13 +31,15 @@ class CatalogModule:
 def create_catalog_module(
     units: UnitOfWorkFactory,
     providers: tuple[CatalogProvider, ...],
+    cleanup_view: CatalogCleanupView,
 ) -> CatalogModule:
     """Build Catalog use cases and their module-owned bounded jobs."""
     service = CatalogService(units, providers)
     maintenance = CatalogMaintenance(units, service)
+    cleanup = CatalogCleanup(units, cleanup_view)
     housekeeping = CatalogHousekeeping(units)
     return CatalogModule(
         service,
-        (maintenance.definition(),),
+        (maintenance.definition(), cleanup.definition()),
         housekeeping.contribution(),
     )

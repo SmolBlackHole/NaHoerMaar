@@ -598,45 +598,55 @@ class CatalogRepository:
         source.checked_at = checked_at
         return True
 
-    async def prune_orphans(self, checked_before: datetime) -> tuple[int, int, int]:
-        source_values = tuple(
-            await self._session.scalars(
-                select(_TrackSourceRow.id).where(
-                    _TrackSourceRow.checked_at < checked_before,
-                    ~exists().where(
-                        _DiscoveryResultRow.track_source_id == _TrackSourceRow.id
-                    ),
+    async def delete_orphans(
+        self,
+        *,
+        source_ids: tuple[TrackSourceId, ...],
+        track_ids: tuple[TrackId, ...],
+        artist_ids: tuple[ArtistId, ...],
+    ) -> tuple[int, int, int]:
+        """Delete a locked cleanup projection selected outside the write model."""
+        removed_sources = 0
+        if source_ids:
+            result = await self._session.execute(
+                delete(_TrackSourceRow)
+                .where(_TrackSourceRow.id.in_(source_ids))
+                .returning(_TrackSourceRow.id)
+            )
+            removed_sources = len(result.all())
+
+        removed_tracks = 0
+        if track_ids:
+            result = await self._session.execute(
+                delete(_TrackRow)
+                .where(
+                    _TrackRow.id.in_(track_ids),
+                    ~exists().where(_TrackSourceRow.track_id == _TrackRow.id),
                 )
+                .returning(_TrackRow.id)
             )
-        )
-        if source_values:
-            await self._session.execute(
-                delete(_TrackSourceRow).where(_TrackSourceRow.id.in_(source_values))
-            )
-        track_values = tuple(
-            await self._session.scalars(
-                select(_TrackRow.id).where(
-                    ~exists().where(_TrackSourceRow.track_id == _TrackRow.id)
-                )
-            )
-        )
-        if track_values:
-            await self._session.execute(
-                delete(_TrackRow).where(_TrackRow.id.in_(track_values))
-            )
-        artist_values = tuple(
-            await self._session.scalars(
-                select(_ArtistRow.id).where(
+            removed_tracks = len(result.all())
+
+        removed_artists = 0
+        if artist_ids:
+            result = await self._session.execute(
+                delete(_ArtistRow)
+                .where(
+                    _ArtistRow.id.in_(artist_ids),
                     ~exists().where(_TrackArtistRow.artist_id == _ArtistRow.id),
                     ~exists().where(_TrackSourceArtistRow.artist_id == _ArtistRow.id),
                 )
+                .returning(_ArtistRow.id)
             )
-        )
-        if artist_values:
-            await self._session.execute(
-                delete(_ArtistRow).where(_ArtistRow.id.in_(artist_values))
+            removed_artists = len(result.all())
+
+        expected = (len(source_ids), len(track_ids), len(artist_ids))
+        removed = (removed_sources, removed_tracks, removed_artists)
+        if removed != expected:
+            raise RuntimeError(
+                "Catalog cleanup candidates changed inside the locked transaction."
             )
-        return len(source_values), len(track_values), len(artist_values)
+        return removed
 
     async def _matching_track(self, observation: ProviderTrack) -> TrackId:
         if observation.isrc is not None:

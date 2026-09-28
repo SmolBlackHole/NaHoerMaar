@@ -10,6 +10,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy.exc import IntegrityError
+
 from nahoermaar.database.uow import UnitOfWork
 from nahoermaar.observability import error_code, safe_log_value
 from nahoermaar.operations.jobs import (
@@ -24,6 +26,7 @@ from nahoermaar.operations.maintenance import (
     cleanup_detail,
 )
 from nahoermaar.operations.scheduler import (
+    BooleanJobControl,
     IntegerJobControl,
     JobControls,
     JobDefinition,
@@ -32,6 +35,7 @@ from nahoermaar.operations.scheduler import (
     JobProgressUnit,
     JobResult,
 )
+from nahoermaar.views.catalog import CatalogCleanupCandidates, CatalogCleanupView
 
 from .domain import TrackSource
 from .repository import (
@@ -436,3 +440,167 @@ class CatalogHousekeeping:
             )
             await work.commit()
         return (cleanup_detail("catalog", "Discovery snapshots", removed),)
+
+
+class CatalogCleanup:
+    """Remove old Catalog rows only after the reference view proves them unused."""
+
+    __slots__ = ("_clock", "_interval", "_units", "_view")
+
+    def __init__(
+        self,
+        units: UnitOfWorkFactory,
+        view: CatalogCleanupView,
+        *,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        interval: timedelta = timedelta(days=1),
+    ) -> None:
+        if interval <= timedelta(0):
+            raise ValueError("Catalog cleanup interval must be positive.")
+        self._units = units
+        self._view = view
+        self._clock = clock
+        self._interval = interval
+
+    def definition(self) -> JobDefinition:
+        return JobDefinition(
+            JobDescriptor(
+                id=JobId.CATALOG_CLEANUP,
+                module="catalog",
+                label="Catalog cleanup",
+                description=(
+                    "Removes old provider sources and the tracks or artists left "
+                    "unused after them."
+                ),
+                scope=("provider sources", "orphaned tracks", "orphaned artists"),
+                interval=self._interval,
+                controls=JobControls(
+                    IntegerJobControl(100, 1, 1000),
+                    preview=BooleanJobControl(False),
+                    age_days=IntegerJobControl(90, 7, 3650),
+                ),
+            ),
+            self.run,
+            run_on_startup=False,
+        )
+
+    async def run(self, execution: JobExecution) -> JobResult:
+        age_days = execution.options.age_days
+        if age_days is None:
+            raise RuntimeError("Catalog cleanup requires an age boundary.")
+        checked_before = self._clock().astimezone(UTC) - timedelta(days=age_days)
+        candidates = CatalogCleanupCandidates((), (), ())
+        try:
+            async with self._units() as work:
+                candidates = await self._view.candidates(
+                    work.session,
+                    checked_before=checked_before,
+                    limit=execution.options.batch_size,
+                )
+                source_count = len(candidates.sources)
+                execution.report_progress(0, source_count, JobProgressUnit.RECORDS)
+                if execution.options.preview:
+                    details = self._details(candidates, preview=True)
+                    execution.report_progress(
+                        source_count,
+                        source_count,
+                        JobProgressUnit.RECORDS,
+                    )
+                    return JobResult(
+                        candidate_count=source_count,
+                        processed_count=source_count,
+                        changed_count=0,
+                        details=details,
+                    )
+
+                removed = await CatalogRepository(work.session).delete_orphans(
+                    source_ids=tuple(item.id for item in candidates.sources),
+                    track_ids=tuple(item.id for item in candidates.tracks),
+                    artist_ids=tuple(item.id for item in candidates.artists),
+                )
+                await work.commit()
+        except IntegrityError:
+            _LOGGER.warning(
+                "catalog.cleanup_reference_conflict candidates=%d cutoff=%s",
+                len(candidates.sources),
+                checked_before.isoformat(),
+            )
+            return JobResult(
+                candidate_count=len(candidates.sources),
+                processed_count=0,
+                changed_count=0,
+                failure_count=1,
+                error_code="catalog_cleanup_reference_conflict",
+                details=(
+                    JobRunDetail(
+                        kind=JobRunDetailKind.DATA_CLEANUP,
+                        outcome=JobRunDetailOutcome.FAILED,
+                        label="Catalog cleanup",
+                        summary=(
+                            "A candidate gained a durable reference while cleanup "
+                            "was running. Nothing was removed."
+                        ),
+                        error_code="catalog_cleanup_reference_conflict",
+                    ),
+                ),
+            )
+
+        source_count = len(candidates.sources)
+        execution.report_progress(source_count, source_count, JobProgressUnit.RECORDS)
+        return JobResult(
+            candidate_count=source_count,
+            processed_count=source_count,
+            changed_count=sum(removed),
+            details=self._details(candidates, preview=False),
+        )
+
+    @staticmethod
+    def _details(
+        candidates: CatalogCleanupCandidates,
+        *,
+        preview: bool,
+    ) -> tuple[JobRunDetail, ...]:
+        outcome = (
+            JobRunDetailOutcome.SKIPPED if preview else JobRunDetailOutcome.CHANGED
+        )
+        prefix = "Would remove" if preview else "Removed"
+        details = [
+            JobRunDetail(
+                kind=JobRunDetailKind.DATA_CLEANUP,
+                outcome=outcome,
+                label=source.title,
+                summary=(
+                    f"{prefix} the unreferenced {source.provider.value} source "
+                    f"{source.external_id}."
+                ),
+                affected_count=1,
+                subject_id=str(source.id),
+                source=source.provider.value,
+            )
+            for source in candidates.sources
+        ]
+        details.extend(
+            JobRunDetail(
+                kind=JobRunDetailKind.DATA_CLEANUP,
+                outcome=outcome,
+                label=track.title,
+                summary=f"{prefix} the track left without a provider source.",
+                affected_count=1,
+                subject_id=str(track.id),
+                source="track",
+            )
+            for track in candidates.tracks
+        )
+        details.extend(
+            JobRunDetail(
+                kind=JobRunDetailKind.DATA_CLEANUP,
+                outcome=outcome,
+                label=artist.name,
+                summary=f"{prefix} the artist left without a catalog relation.",
+                affected_count=1,
+                subject_id=str(artist.id),
+                source="artist",
+            )
+            for artist in candidates.artists
+        )
+        return tuple(details)

@@ -24,6 +24,7 @@ from nahoermaar.catalog.repository import CatalogRepository, DiscoveryRepository
 from nahoermaar.database.core import Database
 from nahoermaar.database.schema import Base
 from nahoermaar.database.uow import UnitOfWork
+from nahoermaar.views.catalog import CatalogCleanupView
 
 ROOT = Path(__file__).parents[3]
 NOW = datetime(2026, 9, 24, 12, tzinfo=UTC)
@@ -291,7 +292,16 @@ def test_source_availability_and_orphan_pruning_preserve_referenced_tracks() -> 
                 pinned.sources[0].external_id,
                 NOW + timedelta(minutes=5),
             )
-            removed = await catalog.prune_orphans(NOW + timedelta(minutes=30))
+            candidates = await CatalogCleanupView().candidates(
+                work.session,
+                checked_before=NOW + timedelta(minutes=30),
+                limit=10,
+            )
+            removed = await catalog.delete_orphans(
+                source_ids=tuple(item.id for item in candidates.sources),
+                track_ids=tuple(item.id for item in candidates.tracks),
+                artist_ids=tuple(item.id for item in candidates.artists),
+            )
             await work.commit()
 
         assert removed == (1, 1, 0)

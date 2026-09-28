@@ -187,17 +187,21 @@ describe("new backend page workflows", () => {
 			.mockResolvedValueOnce(Response.json({ jobs: [idle], history_retention_days: 30 }))
 			.mockResolvedValueOnce(Response.json({ entries: [], next_cursor: null }))
 			.mockResolvedValueOnce(
-				Response.json({ ...idle, running: true, active_batch_size: 25 }),
+				Response.json({
+					...idle,
+					running: true,
+					active_options: { batch_size: 25, preview: null, age_days: null },
+				}),
 			);
 		const workflow = core.workflows.jobs();
 
 		await workflow.load();
-		await workflow.runJob("catalog-maintenance", 25);
+		await workflow.runJob("catalog-maintenance", { batch_size: 25 });
 
 		expect(workflow.jobs.data.value?.jobs[0]).toMatchObject({
 			id: "catalog-maintenance",
 			running: true,
-			active_batch_size: 25,
+			active_options: { batch_size: 25 },
 		});
 		expect(fetcher.mock.calls.map(([url, options]) => [url, options?.method])).toEqual([
 			["/api/jobs", undefined],
@@ -237,20 +241,24 @@ describe("new backend page workflows", () => {
 			)
 			.mockResolvedValueOnce(Response.json({ entries: [runSummary], next_cursor: null }))
 			.mockResolvedValueOnce(
-				Response.json({ ...idle, running: true, active_batch_size: 500 }),
+				Response.json({
+					...idle,
+					running: true,
+					active_options: { batch_size: 500, preview: null, age_days: null },
+				}),
 			)
 			.mockResolvedValueOnce(Response.json(recentRun));
 		const workflow = core.workflows.jobs();
 
 		await workflow.load();
-		await workflow.runJob("housekeeping", 500);
+		await workflow.runJob("housekeeping", { batch_size: 500 });
 		await workflow.loadRun("run-one");
 		await workflow.loadRun("run-one");
 
 		expect(workflow.jobs.data.value?.jobs[0]).toMatchObject({
 			id: "housekeeping",
 			running: true,
-			active_batch_size: 500,
+			active_options: { batch_size: 500 },
 		});
 		expect(workflow.runs.data.value?.entries).toEqual([runSummary]);
 		expect(workflow.runDetail("run-one").data.value?.details).toEqual(recentRun.details);

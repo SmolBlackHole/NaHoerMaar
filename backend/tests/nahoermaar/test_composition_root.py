@@ -58,6 +58,10 @@ def test_bootstrap_loads_settings_and_composes_auth(
     catalog_job = application.jobs.descriptor(JobId.CATALOG_MAINTENANCE)
     assert catalog_job.module == "catalog"
     assert catalog_job.controls.batch_size.default == 10
+    cleanup_job = application.jobs.descriptor(JobId.CATALOG_CLEANUP)
+    assert cleanup_job.module == "catalog"
+    assert cleanup_job.controls.preview is not None
+    assert cleanup_job.controls.age_days is not None
     paths = create_app(application).openapi()["paths"]
     assert {
         "/api/catalog/search",

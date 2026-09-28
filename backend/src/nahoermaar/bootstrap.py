@@ -107,6 +107,7 @@ from .users.service import (
 )
 from .views.profile import ProfileView
 from .views.history import PlaybackHistoryView
+from .views.catalog import CatalogCleanupView
 
 _LOGGER = logging.getLogger(__name__)
 type AsyncCloser = Callable[[], Awaitable[None]]
@@ -281,6 +282,7 @@ def bootstrap(
             YouTubeProvider(settings.node_path),
             YouTubeMusicProvider(settings.node_path),
         ),
+        CatalogCleanupView(),
     )
     catalog = catalog_module.service
     operations_services = create_operations_services(units)

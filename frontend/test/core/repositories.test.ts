@@ -147,6 +147,11 @@ describe("new backend repositories", () => {
 		await client.jobs.run("run/id");
 		await client.jobs.runJob("catalog-maintenance", { batch_size: 25 });
 		await client.jobs.runJob("housekeeping", { batch_size: 500 });
+		await client.jobs.runJob("catalog-cleanup", {
+			batch_size: 100,
+			preview: true,
+			age_days: 90,
+		});
 
 		expect(fetcher.mock.calls.map(([url, options]) => [url, options?.method])).toEqual([
 			["/api/jobs", undefined],
@@ -157,12 +162,18 @@ describe("new backend repositories", () => {
 			["/api/jobs/runs/run%2Fid", undefined],
 			["/api/jobs/catalog-maintenance/runs", "POST"],
 			["/api/jobs/housekeeping/runs", "POST"],
+			["/api/jobs/catalog-cleanup/runs", "POST"],
 		]);
 		expect(JSON.parse(fetcher.mock.calls[3]![1]!.body as string)).toEqual({
 			batch_size: 25,
 		});
 		expect(JSON.parse(fetcher.mock.calls[4]![1]!.body as string)).toEqual({
 			batch_size: 500,
+		});
+		expect(JSON.parse(fetcher.mock.calls[5]![1]!.body as string)).toEqual({
+			batch_size: 100,
+			preview: true,
+			age_days: 90,
 		});
 	});
 });
