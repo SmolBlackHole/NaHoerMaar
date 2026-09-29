@@ -62,7 +62,10 @@ class Runner:
             payload = {
                 "id": "PLabcdefghijk",
                 "title": "Playlist",
-                "entries": [{"id": "abcdefghijk", "title": "Playlist title"}],
+                "entries": [
+                    {"id": "abcdefghijk", "title": "Playlist title"},
+                    {},
+                ],
             }
         elif any("skeler00001" in argument for argument in args):
             payload = {
@@ -133,6 +136,7 @@ def test_youtube_provider_translates_search_playlist_and_details() -> None:
         playlist = await provider.playlist(playlist_reference, limit=10)
         assert playlist.title == "Playlist"
         assert playlist.page.entries[0].title == "Playlist title"
+        assert playlist.page.unavailable_entry_count == 1
 
         radio = await provider.radio(track_reference, limit=10)
         assert radio.entries[0].title == "Radio title"

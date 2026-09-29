@@ -16,7 +16,8 @@ from nahoermaar.users.domain import UserId
 PlaylistId = NewType("PlaylistId", UUID)
 PlaylistEntryId = NewType("PlaylistEntryId", UUID)
 
-MAX_PLAYLIST_ENTRIES = 100
+MAX_PLAYLIST_ENTRIES = 1_000
+MAX_PLAYLIST_MUTATION_ENTRIES = 100
 MAX_PLAYLIST_NAME_LENGTH = 100
 
 
@@ -54,6 +55,7 @@ class LibraryErrorCode(StrEnum):
     PLAYLIST_ACCESS_DENIED = "library_playlist_access_denied"
     PLAYLIST_COLLABORATOR_INVALID = "library_playlist_collaborator_invalid"
     PLAYLIST_COLLABORATOR_EXISTS = "library_playlist_collaborator_exists"
+    PLAYLIST_LINKED_READ_ONLY = "library_playlist_linked_read_only"
     USER_NOT_FOUND = "library_user_not_found"
 
 
@@ -82,11 +84,64 @@ class TrackReaction:
 
 
 @dataclass(frozen=True, slots=True)
+class PlaylistSource:
+    provider_key: str
+    external_id: str
+    canonical_url: str
+    last_attempt_at: datetime
+    last_successful_sync_at: datetime
+    last_error_code: str | None
+    unavailable_entry_count: int
+    truncated: bool
+
+    def __post_init__(self) -> None:
+        if (
+            not self.provider_key
+            or self.provider_key != self.provider_key.strip()
+            or len(self.provider_key) > 64
+        ):
+            raise ValueError(
+                "Playlist source provider key must be non-empty and trimmed."
+            )
+        if (
+            not self.external_id
+            or self.external_id != self.external_id.strip()
+            or len(self.external_id) > 200
+        ):
+            raise ValueError(
+                "Playlist source external ID must be non-empty and trimmed."
+            )
+        if (
+            not self.canonical_url
+            or self.canonical_url != self.canonical_url.strip()
+            or len(self.canonical_url) > 2048
+        ):
+            raise ValueError("Playlist source URL must be non-empty and trimmed.")
+        _aware(self.last_attempt_at, "Playlist source attempt time")
+        _aware(self.last_successful_sync_at, "Playlist source success time")
+        if self.last_successful_sync_at > self.last_attempt_at:
+            raise ValueError(
+                "Playlist source success cannot follow its latest attempt."
+            )
+        if self.last_error_code is not None and (
+            not self.last_error_code
+            or self.last_error_code != self.last_error_code.strip()
+            or len(self.last_error_code) > 200
+        ):
+            raise ValueError(
+                "Playlist source error code must be non-empty and trimmed."
+            )
+        if self.unavailable_entry_count < 0:
+            raise ValueError("Unavailable playlist entries must be non-negative.")
+
+
+@dataclass(frozen=True, slots=True)
 class Playlist:
     id: PlaylistId
     owner_id: UserId
     name: str
     visibility: PlaylistVisibility
+    source: PlaylistSource | None
     revision: int
     created_at: datetime
     updated_at: datetime

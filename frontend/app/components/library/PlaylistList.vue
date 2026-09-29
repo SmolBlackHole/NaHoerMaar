@@ -2,14 +2,60 @@
 <!-- SPDX-License-Identifier: MPL-2.0 -->
 
 <script setup lang="ts">
+import type { ContextMenuItem } from "@nuxt/ui";
 import type { Playlist } from "~/core/models/library";
 
 const props = withDefaults(
 	defineProps<{ items: Playlist[]; loading?: boolean; skeletonCount?: number }>(),
 	{ loading: false, skeletonCount: 6 },
 );
-const emit = defineEmits<{ select: [playlist: Playlist] }>();
+const emit = defineEmits<{
+	select: [playlist: Playlist];
+	queue: [playlist: Playlist];
+	rename: [playlist: Playlist];
+	duplicate: [playlist: Playlist];
+	delete: [playlist: Playlist];
+}>();
 const { icons } = useTheme();
+
+function contextItems(playlist: Playlist): ContextMenuItem[][] {
+	return [
+		[
+			{
+				label: "Open",
+				icon: icons.value.arrowRight,
+				onSelect: () => emit("select", playlist),
+			},
+			{
+				label: "Add to queue",
+				icon: icons.value.play,
+				disabled: !playlist.entry_count || playlist.entry_count > 100,
+				onSelect: () => emit("queue", playlist),
+			},
+		],
+		[
+			{
+				label: "Rename",
+				icon: icons.value.type,
+				disabled: playlist.access !== "owner",
+				onSelect: () => emit("rename", playlist),
+			},
+			{
+				label: "Duplicate",
+				icon: icons.value.copy,
+				disabled: playlist.access === "reader",
+				onSelect: () => emit("duplicate", playlist),
+			},
+			{
+				label: "Delete",
+				icon: icons.value.trash,
+				color: "error",
+				disabled: playlist.access !== "owner",
+				onSelect: () => emit("delete", playlist),
+			},
+		],
+	];
+}
 </script>
 
 <template>
@@ -25,33 +71,39 @@ const { icons } = useTheme();
 				<USkeleton class="h-5 w-2/3" /><USkeleton class="h-3 w-24" />
 			</div>
 		</li>
-		<li v-for="playlist in props.items" :key="playlist.playlist_id">
-			<button
-				type="button"
-				class="playlist-card group w-full text-left"
-				@click="emit('select', playlist)"
-			>
-				<div class="relative">
-					<LibraryPlaylistCover
-						:artwork-urls="playlist.artwork_urls"
-						:name="playlist.name"
-						class="playlist-card-cover aspect-square w-full rounded-2xl"
-					/>
-					<span
-						class="absolute bottom-3 right-3 grid size-10 place-items-center rounded-full bg-primary text-inverted opacity-0 shadow-lg transition-all duration-200 group-hover:opacity-100 group-focus-visible:opacity-100"
-					>
-						<UIcon :name="icons.arrowRight" class="size-5" />
-					</span>
-				</div>
-				<span class="mt-4 block truncate text-base font-semibold text-highlighted">{{
-					playlist.name
-				}}</span>
-				<span class="mt-1 block text-xs text-muted"
-					>{{ playlist.entry_count }}
-					{{ playlist.entry_count === 1 ? "track" : "tracks" }}</span
+		<UContextMenu
+			v-for="playlist in props.items"
+			:key="playlist.playlist_id"
+			:items="contextItems(playlist)"
+		>
+			<li>
+				<button
+					type="button"
+					class="playlist-card group w-full text-left"
+					@click="emit('select', playlist)"
 				>
-			</button>
-		</li>
+					<div class="relative">
+						<LibraryPlaylistCover
+							:artwork-urls="playlist.artwork_urls"
+							:name="playlist.name"
+							class="playlist-card-cover aspect-square w-full rounded-2xl"
+						/>
+						<span
+							class="absolute bottom-3 right-3 grid size-10 place-items-center rounded-full bg-primary text-inverted opacity-0 shadow-lg transition-opacity duration-200 group-hover:opacity-100 group-focus-visible:opacity-100"
+						>
+							<UIcon :name="icons.arrowRight" class="size-5" />
+						</span>
+					</div>
+					<span class="mt-4 block truncate text-base font-semibold text-highlighted">{{
+						playlist.name
+					}}</span>
+					<span class="mt-1 block text-xs text-muted"
+						>{{ playlist.entry_count }}
+						{{ playlist.entry_count === 1 ? "track" : "tracks" }}</span
+					>
+				</button>
+			</li>
+		</UContextMenu>
 	</ul>
 </template>
 

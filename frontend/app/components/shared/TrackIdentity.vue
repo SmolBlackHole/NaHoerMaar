@@ -20,6 +20,9 @@ const props = withDefaults(
 		size?: "sm" | "md" | "lg";
 		loading?: boolean;
 		multiline?: boolean;
+		position?: number | null;
+		reorderable?: boolean;
+		reorderDisabled?: boolean;
 	}>(),
 	{
 		entry: null,
@@ -31,10 +34,16 @@ const props = withDefaults(
 		size: "lg",
 		loading: false,
 		multiline: false,
+		position: null,
+		reorderable: false,
+		reorderDisabled: false,
 	},
 );
+const emit = defineEmits<{ move: [direction: -1 | 1] }>();
+const { icons } = useTheme();
 
 const artist = computed(() => props.artistNames.join(", ") || "Unknown artist");
+const orderLabel = computed(() => (props.title ? `Reorder ${props.title}` : "Reorder track"));
 </script>
 
 <template>
@@ -43,6 +52,33 @@ const artist = computed(() => props.artistNames.join(", ") || "Unknown artist");
 		class="track-identity"
 		:class="[`track-identity--${size}`, { 'track-identity--multiline': multiline }]"
 	>
+		<slot name="leading">
+			<USkeleton
+				v-if="loading && (reorderable || position !== null)"
+				class="track-identity__order-skeleton size-4"
+			/>
+			<button
+				v-else-if="reorderable"
+				type="button"
+				class="track-identity__order track-reorder-handle"
+				:disabled="reorderDisabled"
+				:aria-label="orderLabel"
+				aria-description="Drag to reorder. Use the up and down arrow keys for precise moves."
+				aria-keyshortcuts="ArrowUp ArrowDown"
+				@keydown.up.prevent="emit('move', -1)"
+				@keydown.down.prevent="emit('move', 1)"
+			>
+				<span v-if="position !== null" class="track-identity__position">{{
+					String(position).padStart(2, "0")
+				}}</span>
+				<UIcon :name="icons.drag" class="track-identity__grip size-4" />
+			</button>
+			<span
+				v-else-if="position !== null"
+				class="track-identity__static-position text-xs tabular-nums text-muted"
+				>{{ String(position).padStart(2, "0") }}</span
+			>
+		</slot>
 		<USkeleton v-if="loading" class="track-identity__artwork rounded-lg" />
 		<PlayerTrackArtwork v-else :entry="entry" class="track-identity__artwork" />
 		<div class="track-identity__copy">
@@ -101,6 +137,47 @@ const artist = computed(() => props.artistNames.join(", ") || "Unknown artist");
 .track-identity--md {
 	--track-artwork-size: 2.75rem;
 }
+.track-identity__order,
+.track-identity__static-position,
+.track-identity__order-skeleton {
+	position: relative;
+	display: grid;
+	width: 2.5rem;
+	height: 2.5rem;
+	flex: 0 0 2.5rem;
+	place-items: center;
+}
+.track-identity__order {
+	touch-action: none;
+	cursor: grab;
+	color: var(--ui-text-muted);
+	border-radius: 0.5rem;
+}
+.track-identity__order:active:not(:disabled) {
+	cursor: grabbing;
+}
+.track-identity__order:focus-visible {
+	outline: 2px solid var(--ui-primary);
+	outline-offset: 2px;
+}
+.track-identity__order:disabled {
+	cursor: default;
+	opacity: 0.45;
+}
+.track-identity__position,
+.track-identity__grip {
+	grid-area: 1 / 1;
+	transition: opacity 140ms ease-out;
+}
+.track-identity__grip {
+	opacity: 0;
+}
+.track-identity__order:focus-visible .track-identity__grip {
+	opacity: 1;
+}
+.track-identity__order:focus-visible .track-identity__position {
+	opacity: 0;
+}
 .track-identity__artwork {
 	width: var(--track-artwork-size);
 	height: var(--track-artwork-size);
@@ -157,8 +234,28 @@ const artist = computed(() => props.artistNames.join(", ") || "Unknown artist");
 	overflow-wrap: anywhere;
 }
 @media (prefers-reduced-motion: reduce) {
+	.track-identity__position,
+	.track-identity__grip {
+		transition: none;
+	}
 	.track-identity :deep(.animate-pulse) {
 		animation: none;
+	}
+}
+@media (hover: hover) and (pointer: fine) {
+	.track-identity:hover .track-identity__grip {
+		opacity: 1;
+	}
+	.track-identity:hover .track-identity__position {
+		opacity: 0;
+	}
+}
+@media (hover: none) {
+	.track-identity__grip {
+		opacity: 1;
+	}
+	.track-identity__position {
+		opacity: 0;
 	}
 }
 </style>

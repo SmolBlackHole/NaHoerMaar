@@ -53,6 +53,13 @@ export function createLibraryRepository(request: Transport) {
 			),
 		createPlaylist: (name: string, signal?: AbortSignal) =>
 			request((api) => api.POST("/api/library/playlists", { body: { name }, signal })),
+		importPlaylist: (sourceUrl: string, name?: string, signal?: AbortSignal) =>
+			request((api) =>
+				api.POST("/api/library/playlists/imports", {
+					body: { source_url: sourceUrl, name },
+					signal,
+				}),
+			),
 		renamePlaylist: (
 			playlistId: string,
 			name: string,
@@ -69,6 +76,18 @@ export function createLibraryRepository(request: Transport) {
 		deletePlaylist: (playlistId: string, expectedRevision: number, signal?: AbortSignal) =>
 			request((api) =>
 				api.DELETE("/api/library/playlists/{playlist_id}", {
+					params: { path: { playlist_id: playlistId } },
+					body: { expected_revision: expectedRevision },
+					signal,
+				}),
+			),
+		detachPlaylistSource: (
+			playlistId: string,
+			expectedRevision: number,
+			signal?: AbortSignal,
+		) =>
+			request((api) =>
+				api.DELETE("/api/library/playlists/{playlist_id}/source", {
 					params: { path: { playlist_id: playlistId } },
 					body: { expected_revision: expectedRevision },
 					signal,
@@ -132,16 +151,20 @@ export function createLibraryRepository(request: Transport) {
 					signal,
 				}),
 			),
-		replacePlaylistOrder: (
+		movePlaylistEntry: (
 			playlistId: string,
-			entryIds: string[],
+			entryId: string,
+			position: number,
 			expectedRevision: number,
 			signal?: AbortSignal,
 		) =>
 			request((api) =>
-				api.PUT("/api/library/playlists/{playlist_id}/order", {
-					params: { path: { playlist_id: playlistId } },
-					body: { entry_ids: entryIds, expected_revision: expectedRevision },
+				api.PUT("/api/library/playlists/{playlist_id}/entries/{entry_id}/position", {
+					params: { path: { playlist_id: playlistId, entry_id: entryId } },
+					body: {
+						position,
+						expected_revision: expectedRevision,
+					},
 					signal,
 				}),
 			),

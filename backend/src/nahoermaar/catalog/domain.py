@@ -277,3 +277,37 @@ class DiscoveryResult:
     snapshot: DiscoverySnapshot
     refreshing: bool
     stale: bool
+
+
+@dataclass(frozen=True, slots=True)
+class PlaylistMaterialization:
+    """One bounded provider playlist resolved to canonical Catalog entries."""
+
+    provider_key: str
+    external_id: str
+    canonical_url: str
+    title: str | None
+    entries: tuple[DiscoveryEntry, ...]
+    exhausted: bool
+    unavailable_entry_count: int
+    truncated: bool
+
+    def __post_init__(self) -> None:
+        _text(self.provider_key, "Playlist provider key", maximum=64)
+        _text(self.external_id, "Playlist external ID", maximum=200)
+        _text(self.canonical_url, "Playlist canonical URL", maximum=2048)
+        _optional_text(self.title, "Playlist title", maximum=500)
+        if type(self.entries) is not tuple:
+            raise ValueError(
+                "Materialized playlist entries must be an immutable tuple."
+            )
+        if tuple(entry.position for entry in self.entries) != tuple(
+            range(len(self.entries))
+        ):
+            raise ValueError("Materialized playlist entries must stay ordered.")
+        if self.unavailable_entry_count < 0:
+            raise ValueError("Unavailable playlist entries must be non-negative.")
+        if self.exhausted == self.truncated:
+            raise ValueError(
+                "A materialized playlist must be exhausted or visibly truncated."
+            )

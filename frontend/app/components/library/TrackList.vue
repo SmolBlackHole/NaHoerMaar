@@ -2,6 +2,7 @@
 <!-- SPDX-License-Identifier: MPL-2.0 -->
 
 <script setup lang="ts">
+import type { ContextMenuItem } from "@nuxt/ui";
 import type { LibraryTrack } from "~/core/models/library";
 import { formatDuration } from "~/core/models/catalog";
 
@@ -15,6 +16,7 @@ const props = withDefaults(
 	{ loading: false, skeletonCount: 8, startIndex: 0 },
 );
 const player = useNuxtApp().$backendCore.stores.usePlayerStore();
+const reactions = useNuxtApp().$backendCore.stores.useLibraryStore();
 const { icons } = useTheme();
 
 function reactedAt(value: string) {
@@ -28,6 +30,38 @@ function reactedAt(value: string) {
 function queue(track: LibraryTrack) {
 	return player.add([{ track_id: track.track_id, source_id: null }]);
 }
+
+function contextItems(track: LibraryTrack): ContextMenuItem[][] {
+	return [
+		[
+			{
+				label: "Add to queue",
+				icon: icons.value.plus,
+				disabled: !player.canControl,
+				onSelect: () => void queue(track),
+			},
+		],
+		[
+			{
+				label: "Like",
+				icon: icons.value.like,
+				disabled: track.reaction === "like",
+				onSelect: () => void reactions.setReaction(track.track_id, "like"),
+			},
+			{
+				label: "Dislike",
+				icon: icons.value.dislike,
+				disabled: track.reaction === "dislike",
+				onSelect: () => void reactions.setReaction(track.track_id, "dislike"),
+			},
+			{
+				label: "Remove reaction",
+				icon: icons.value.close,
+				onSelect: () => void reactions.removeReaction(track.track_id),
+			},
+		],
+	];
+}
 </script>
 
 <template>
@@ -40,79 +74,82 @@ function queue(track: LibraryTrack) {
 			<span></span>
 		</div>
 		<ol v-if="loading" class="library-list" aria-label="Loading library tracks">
-			<li
+			<SharedTrackRow
 				v-for="index in skeletonCount"
 				:key="index"
 				class="library-row library-grid"
-				aria-hidden="true"
+				identity-class="library-identity"
+				:position="startIndex + index"
+				loading
 			>
-				<USkeleton class="mx-auto size-4" />
-				<SharedTrackIdentity loading class="library-identity" />
-				<USkeleton class="h-3 w-20" />
-				<div class="library-actions flex items-center gap-1">
-					<USkeleton class="size-10 rounded-lg" />
-					<USkeleton class="size-10 rounded-lg" />
-				</div>
-				<USkeleton class="size-10 rounded-lg" />
-			</li>
+				<template #details><USkeleton class="library-saved h-3 w-20" /></template>
+				<template #actions>
+					<div class="library-actions flex items-center gap-1">
+						<USkeleton class="size-10 rounded-lg" />
+						<USkeleton class="size-10 rounded-lg" />
+					</div>
+				</template>
+				<template #menu><USkeleton class="library-menu size-10 rounded-lg" /></template>
+			</SharedTrackRow>
 		</ol>
 		<ol v-else class="library-list" aria-label="Library tracks">
-			<li
+			<SharedTrackRow
 				v-for="(track, index) in items"
 				:key="track.track_id"
 				class="library-row library-grid"
+				identity-class="library-identity"
+				:context-items="contextItems(track)"
+				:entry="track"
+				:title="track.title"
+				:artist-names="track.artist_names"
+				:metadata="
+					track.duration_seconds === null ? null : formatDuration(track.duration_seconds)
+				"
+				:position="startIndex + index + 1"
+				multiline
 			>
-				<span class="library-number text-center text-xs tabular-nums text-muted">
-					{{ String(startIndex + index + 1).padStart(2, "0") }}
-				</span>
-				<SharedTrackIdentity
-					:entry="track"
-					:title="track.title"
-					:artist-names="track.artist_names"
-					:metadata="
-						track.duration_seconds === null
-							? null
-							: formatDuration(track.duration_seconds)
-					"
-					class="library-identity"
-					multiline
-				/>
-				<time
-					:datetime="track.reacted_at"
-					class="library-saved text-xs tabular-nums text-muted"
-					>{{ reactedAt(track.reacted_at) }}</time
-				>
-				<div class="library-actions flex items-center gap-1">
-					<LibraryReactionActions
-						:track-id="track.track_id"
-						:title="track.title"
-						mode="menu"
-						:show-details="false"
-					/>
-					<LibraryPlaylistAction
-						:track="{ track_id: track.track_id, preferred_source_id: null }"
-						:title="track.title"
-					/>
-				</div>
-				<UTooltip :text="`Add ${track.title} to queue`">
-					<UButton
-						:icon="icons.plus"
-						:aria-label="`Add ${track.title} to queue`"
-						color="neutral"
-						variant="ghost"
-						class="size-10 justify-center"
-						:disabled="!player.canControl"
-						:loading="player.isPending('queue.add')"
-						@click="queue(track)"
-					/>
-				</UTooltip>
-			</li>
+				<template #details>
+					<time
+						:datetime="track.reacted_at"
+						class="library-saved text-xs tabular-nums text-muted"
+						>{{ reactedAt(track.reacted_at) }}</time
+					>
+				</template>
+				<template #actions>
+					<div class="library-actions flex items-center gap-1">
+						<LibraryReactionActions
+							:track-id="track.track_id"
+							:title="track.title"
+							mode="menu"
+							:show-details="false"
+						/>
+						<LibraryPlaylistAction
+							:track="{ track_id: track.track_id, preferred_source_id: null }"
+							:title="track.title"
+						/>
+					</div>
+				</template>
+				<template #menu>
+					<UTooltip :text="`Add ${track.title} to queue`">
+						<UButton
+							:icon="icons.plus"
+							:aria-label="`Add ${track.title} to queue`"
+							color="neutral"
+							variant="ghost"
+							class="size-10 justify-center"
+							:disabled="!player.canControl"
+							:loading="player.isPending('queue.add')"
+							@click="queue(track)"
+						/>
+					</UTooltip>
+				</template>
+			</SharedTrackRow>
 		</ol>
 	</div>
 </template>
 
 <style scoped>
-.library-grid {
+:deep(.library-grid) {
 	display: grid;
 	grid-template-columns: 2.5rem minmax(12rem, 1fr) 8rem auto 2.75rem;
 	align-items: center;
@@ -126,44 +163,34 @@ function queue(track: LibraryTrack) {
 	text-transform: uppercase;
 	color: var(--ui-text-dimmed);
 }
-.library-row {
-	min-height: 4.75rem;
-	padding: 0.75rem 0.5rem;
-	border-radius: 0.5rem;
-	transition: background-color 140ms ease-out;
-}
-.library-row:hover,
-.library-row:focus-within {
-	background: var(--ui-bg-muted);
+:deep(.library-identity) {
+	grid-column: 1 / span 2;
 }
 @container workspace (max-width: 760px) {
 	.library-columns {
 		display: none;
 	}
-	.library-row {
-		grid-template-columns: 2rem minmax(0, 1fr) 2.75rem;
+	:deep(.library-row) {
+		grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem;
 		gap: 0.75rem;
-		padding-block: 1rem;
 		padding-inline: 0;
 	}
-	.library-identity {
+	:deep(.library-identity) {
+		grid-column: 1 / -1;
+		grid-row: 1;
 		--track-artwork-size: 2.75rem;
 	}
 	.library-saved {
 		display: none;
 	}
 	.library-actions {
-		grid-column: 2 / 3;
-		justify-self: start;
+		grid-column: 2;
+		grid-row: 2;
+		justify-self: end;
 	}
-	.library-row > :last-child {
+	.library-menu {
 		grid-column: 3;
-		grid-row: 1;
-	}
-}
-@media (prefers-reduced-motion: reduce) {
-	.library-row {
-		transition: none;
+		grid-row: 2;
 	}
 }
 </style>

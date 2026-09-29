@@ -103,13 +103,16 @@ def test_bootstrap_loads_settings_and_composes_auth(
         "/api/library/tracks/{track_id}/reaction",
         "/api/library/tracks/{track_id}/reactions",
         "/api/library/playlists",
+        "/api/library/playlists/imports",
         "/api/library/playlists/{playlist_id}",
         "/api/library/playlists/{playlist_id}/duplicate",
+        "/api/library/playlists/{playlist_id}/source",
         "/api/library/playlists/{playlist_id}/entries",
         "/api/library/playlists/{playlist_id}/entries/{entry_id}",
-        "/api/library/playlists/{playlist_id}/order",
+        "/api/library/playlists/{playlist_id}/entries/{entry_id}/position",
         "/api/library/playlists/{playlist_id}/queue",
     } <= paths.keys()
+    assert "/api/library/playlists/{playlist_id}/order" not in paths
     assert configured == [(LogLevel.WARNING, (Path.cwd() / "data/logs").resolve(), 14)]
     asyncio.run(application.close())
 

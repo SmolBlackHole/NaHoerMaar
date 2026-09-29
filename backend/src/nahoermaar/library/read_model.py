@@ -25,6 +25,7 @@ from .domain import (
     PlaylistEntryId,
     PlaylistId,
     PlaylistScope,
+    PlaylistSource,
     PlaylistVisibility,
     ReactionValue,
 )
@@ -105,6 +106,7 @@ class PlaylistSummary:
     name: str
     visibility: PlaylistVisibility
     access: PlaylistAccess
+    source: PlaylistSource | None
     revision: int
     entry_count: int
     artwork_urls: tuple[str, ...]
@@ -629,6 +631,14 @@ class LibraryReadModel:
             self._playlists.c.owner_id,
             self._playlists.c.name,
             self._playlists.c.visibility,
+            self._playlists.c.source_provider_key,
+            self._playlists.c.source_external_id,
+            self._playlists.c.source_url,
+            self._playlists.c.source_last_attempt_at,
+            self._playlists.c.source_last_successful_sync_at,
+            self._playlists.c.source_last_error_code,
+            self._playlists.c.source_unavailable_entry_count,
+            self._playlists.c.source_truncated,
             self._playlists.c.revision,
             self._playlists.c.created_at,
             self._playlists.c.updated_at,
@@ -785,11 +795,28 @@ class LibraryReadModel:
             cast(str, row["name"]),
             visibility,
             access,
+            cls._playlist_source(row),
             int(row["revision"]),
             int(row["entry_count"]),
             artwork_urls,
             row["created_at"],
             row["updated_at"],
+        )
+
+    @staticmethod
+    def _playlist_source(row: Any) -> PlaylistSource | None:
+        provider_key = cast(str | None, row["source_provider_key"])
+        if provider_key is None:
+            return None
+        return PlaylistSource(
+            provider_key,
+            cast(str, row["source_external_id"]),
+            cast(str, row["source_url"]),
+            cast(datetime, row["source_last_attempt_at"]),
+            cast(datetime, row["source_last_successful_sync_at"]),
+            cast(str | None, row["source_last_error_code"]),
+            int(row["source_unavailable_entry_count"]),
+            bool(row["source_truncated"]),
         )
 
     @classmethod

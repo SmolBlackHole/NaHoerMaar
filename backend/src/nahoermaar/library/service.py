@@ -13,7 +13,7 @@ from nahoermaar.database.uow import UnitOfWorkFactory
 from nahoermaar.users.domain import UserId
 
 from .domain import (
-    MAX_PLAYLIST_ENTRIES,
+    MAX_PLAYLIST_MUTATION_ENTRIES,
     MAX_PLAYLIST_NAME_LENGTH,
     LibraryError,
     LibraryErrorCode,
@@ -140,6 +140,41 @@ class LibraryService:
                 owner_id,
                 normalized,
                 self._clock(),
+            )
+            await work.commit()
+        return await self._reader.playlist(owner_id, playlist.id)
+
+    async def import_playlist(
+        self,
+        owner_id: UserId,
+        source_url: str,
+        *,
+        name: str | None = None,
+    ) -> PlaylistSummary:
+        materialized = await self._catalog.materialize_playlist(source_url)
+        normalized = (
+            playlist_name(name)
+            if name is not None
+            else playlist_name(
+                (materialized.title or "Imported playlist")[:MAX_PLAYLIST_NAME_LENGTH]
+            )
+        )
+        selections = tuple(
+            PlaylistTrackSelection(entry.track.id, entry.source.id)
+            for entry in materialized.entries
+        )
+        now = self._clock()
+        async with self._units() as work:
+            playlist, _created = await PlaylistRepository(work.session).import_linked(
+                owner_id,
+                normalized,
+                provider_key=materialized.provider_key,
+                external_id=materialized.external_id,
+                canonical_url=materialized.canonical_url,
+                selections=selections,
+                unavailable_entry_count=materialized.unavailable_entry_count,
+                truncated=materialized.truncated,
+                now=now,
             )
             await work.commit()
         return await self._reader.playlist(owner_id, playlist.id)
@@ -291,20 +326,38 @@ class LibraryService:
             await work.commit()
         return await self._reader.playlist(actor_id, playlist_id)
 
-    async def reorder_playlist(
+    async def move_playlist_entry(
         self,
         actor_id: UserId,
         playlist_id: PlaylistId,
-        entry_ids: tuple[PlaylistEntryId, ...],
+        entry_id: PlaylistEntryId,
+        position: int,
         expected_revision: int,
     ) -> PlaylistSummary:
         async with self._units() as work:
-            await PlaylistRepository(work.session).reorder(
+            await PlaylistRepository(work.session).move(
                 actor_id,
                 playlist_id,
-                entry_ids,
+                entry_id,
+                position,
                 expected_revision,
                 self._clock(),
+            )
+            await work.commit()
+        return await self._reader.playlist(actor_id, playlist_id)
+
+    async def detach_playlist_source(
+        self,
+        actor_id: UserId,
+        playlist_id: PlaylistId,
+        expected_revision: int,
+    ) -> PlaylistSummary:
+        async with self._units() as work:
+            await PlaylistRepository(work.session).detach(
+                actor_id,
+                playlist_id,
+                expected_revision=expected_revision,
+                now=self._clock(),
             )
             await work.commit()
         return await self._reader.playlist(actor_id, playlist_id)
@@ -370,9 +423,10 @@ class LibraryService:
         self,
         selections: tuple[PlaylistTrackSelection, ...],
     ) -> None:
-        if not 1 <= len(selections) <= MAX_PLAYLIST_ENTRIES:
+        if not 1 <= len(selections) <= MAX_PLAYLIST_MUTATION_ENTRIES:
             raise ValueError(
-                f"Playlist additions require between 1 and {MAX_PLAYLIST_ENTRIES} tracks."
+                "Playlist additions require between 1 and "
+                f"{MAX_PLAYLIST_MUTATION_ENTRIES} tracks."
             )
         tracks = await self._catalog.tracks(
             {selection.track_id for selection in selections}

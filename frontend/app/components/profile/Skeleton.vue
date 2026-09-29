@@ -121,10 +121,7 @@ const metrics = [
 						:key="index"
 						class="flex items-center gap-3 rounded-xl p-2.5"
 					>
-						<USkeleton class="size-12 shrink-0 rounded-lg" />
-						<div class="flex-1 space-y-2">
-							<USkeleton class="h-4 w-32" /><USkeleton class="h-3 w-20" />
-						</div>
+						<SharedTrackIdentity loading :position="index" class="min-w-0 flex-1" />
 						<USkeleton class="h-3 w-14" />
 					</div>
 				</div>
@@ -138,12 +135,21 @@ const metrics = [
 			<USkeleton class="h-6 w-36" />
 			<USkeleton class="mt-2 h-3 w-80" />
 			<div class="mt-5 grid gap-3 xl:grid-cols-3">
-				<div v-for="index in 3" :key="index" class="h-52 rounded-2xl bg-elevated/40 p-5">
+				<div class="h-52 rounded-2xl bg-elevated/40 p-5">
 					<USkeleton class="h-4 w-32" />
 					<div class="mt-6 space-y-4">
 						<USkeleton class="h-10 w-full" /><USkeleton class="h-10 w-full" /><USkeleton
 							class="h-3 w-40"
 						/>
+					</div>
+				</div>
+				<div v-for="card in 2" :key="card" class="h-52 rounded-2xl bg-elevated/40 p-5">
+					<USkeleton class="h-4 w-32" />
+					<div class="mt-4 space-y-3">
+						<div v-for="row in 3" :key="row" class="flex items-center gap-3">
+							<SharedTrackIdentity loading size="sm" class="min-w-0 flex-1" />
+							<USkeleton class="h-3 w-12" />
+						</div>
 					</div>
 				</div>
 			</div>
@@ -158,10 +164,7 @@ const metrics = [
 					:key="index"
 					class="flex items-center gap-3 rounded-xl p-2.5"
 				>
-					<USkeleton class="size-12 shrink-0 rounded-lg" />
-					<div class="flex-1 space-y-2">
-						<USkeleton class="h-4 w-40" /><USkeleton class="h-3 w-24" />
-					</div>
+					<SharedTrackIdentity loading class="min-w-0 flex-1" />
 					<div class="space-y-2">
 						<USkeleton class="h-3 w-12" /><USkeleton class="h-3 w-20" />
 					</div>

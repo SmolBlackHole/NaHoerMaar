@@ -78,7 +78,7 @@ defineProps<{ metrics: readonly MetricItem[] }>();
 			<p class="mt-1 text-xs text-muted">The tracks and artists that kept coming back.</p>
 			<div class="mt-4 grid gap-8 xl:grid-cols-[minmax(17rem,30rem)_minmax(0,1fr)]">
 				<div
-					class="flex aspect-[4/3] min-h-56 min-w-0 w-full flex-col rounded-2xl bg-elevated/45 p-5 sm:aspect-video"
+					class="flex aspect-4/3 min-h-56 min-w-0 w-full flex-col rounded-2xl bg-elevated/45 p-5 sm:aspect-video"
 				>
 					<div class="flex items-center justify-between gap-3">
 						<USkeleton class="h-7 w-24 rounded-full" />
@@ -100,11 +100,7 @@ defineProps<{ metrics: readonly MetricItem[] }>();
 								:key="index"
 								class="flex items-center gap-3 rounded-lg px-2 py-1.5"
 							>
-								<USkeleton class="size-10 shrink-0 rounded-lg" />
-								<div class="min-w-0 flex-1 space-y-2">
-									<USkeleton class="h-4 w-full max-w-44" />
-									<USkeleton class="h-3 w-24" />
-								</div>
+								<SharedTrackIdentity loading size="sm" class="min-w-0 flex-1" />
 								<USkeleton class="h-3 w-6 shrink-0" />
 							</li>
 						</ol>

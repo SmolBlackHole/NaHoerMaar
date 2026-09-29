@@ -83,6 +83,8 @@ class Provider:
         self.continued_tracks: tuple[ProviderTrack, ...] = ()
         self.search_continuation: str | None = None
         self.playlist_continuation: str | None = None
+        self.playlist_unavailable_count = 0
+        self.continued_playlist_unavailable_count = 0
         self.fail = False
         self.started: asyncio.Event | None = None
         self.release: asyncio.Event | None = None
@@ -151,17 +153,26 @@ class Provider:
         limit: int,
         continuation: str | None = None,
     ) -> ProviderPlaylist:
-        assert reference == PLAYLIST and limit == 100
+        assert reference == PLAYLIST and 1 <= limit <= 100
         self.playlist_calls += 1
         if continuation is not None:
             assert continuation == self.playlist_continuation
             return ProviderPlaylist(
-                reference, "Playlist", ProviderPage(self.continued_tracks)
+                reference,
+                "Playlist",
+                ProviderPage(
+                    self.continued_tracks,
+                    unavailable_entry_count=self.continued_playlist_unavailable_count,
+                ),
             )
         return ProviderPlaylist(
             reference,
             "Playlist",
-            ProviderPage((TRACK,), self.playlist_continuation),
+            ProviderPage(
+                (TRACK,),
+                self.playlist_continuation,
+                self.playlist_unavailable_count,
+            ),
         )
 
     async def track(self, reference: MediaReference) -> ProviderTrack:
@@ -692,6 +703,48 @@ def test_provider_continuation_extends_snapshot_through_api(
         assert body["total"] == 2
         assert body["source_has_more"] is False
         assert [entry["track"]["title"] for entry in body["items"]] == ["Next title"]
+        await service.close()
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        asyncio.run(database.close())
+
+
+def test_playlist_materialization_preserves_occurrences_and_reports_truncation() -> (
+    None
+):
+    database = _database()
+    provider = Provider()
+    provider.playlist_continuation = "playlist-page-2"
+    provider.continued_tracks = (TRACK,)
+    provider.playlist_unavailable_count = 1
+    provider.continued_playlist_unavailable_count = 2
+
+    def units() -> UnitOfWork:
+        return UnitOfWork(database.sessions)
+
+    service = CatalogService(units, (provider,), clock=lambda: NOW)
+
+    async def scenario() -> None:
+        materialized = await service.materialize_playlist(PLAYLIST.source_url)
+        assert materialized.title == "Playlist"
+        assert materialized.exhausted is True
+        assert materialized.truncated is False
+        assert materialized.unavailable_entry_count == 3
+        assert tuple(entry.position for entry in materialized.entries) == (0, 1)
+        assert materialized.entries[0].track.id == materialized.entries[1].track.id
+        assert materialized.entries[0].source.id == materialized.entries[1].source.id
+
+        provider.playlist_unavailable_count = 0
+        provider.continued_playlist_unavailable_count = 0
+        bounded = await service.materialize_playlist(
+            PLAYLIST.source_url,
+            max_entries=1,
+        )
+        assert len(bounded.entries) == 1
+        assert bounded.exhausted is False
+        assert bounded.truncated is True
         await service.close()
 
     try:

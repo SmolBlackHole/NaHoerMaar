@@ -421,7 +421,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/library/playlists/{playlist_id}/order": {
+    "/api/library/playlists/{playlist_id}/entries/{entry_id}/position": {
         parameters: {
             query?: never;
             header?: never;
@@ -429,8 +429,8 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Replace Playlist Order */
-        put: operations["replaceLibraryPlaylistOrder"];
+        /** Move Playlist Entry */
+        put: operations["moveLibraryPlaylistEntry"];
         post?: never;
         delete?: never;
         options?: never;
@@ -449,6 +449,40 @@ export interface paths {
         put?: never;
         /** Queue Playlist */
         post: operations["queueLibraryPlaylist"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/library/playlists/{playlist_id}/source": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Detach Playlist Source */
+        delete: operations["detachLibraryPlaylistSource"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/library/playlists/imports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import Playlist */
+        post: operations["importLibraryPlaylist"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2156,12 +2190,19 @@ export interface components {
              */
             track_id: string;
         };
-        /** PlaylistOrderInput */
-        PlaylistOrderInput: {
-            /** Entry Ids */
-            entry_ids: string[];
+        /** PlaylistImportInput */
+        PlaylistImportInput: {
+            /** Name */
+            name?: string | null;
+            /** Source Url */
+            source_url: string;
+        };
+        /** PlaylistMoveInput */
+        PlaylistMoveInput: {
             /** Expected Revision */
             expected_revision: number;
+            /** Position */
+            position: number;
         };
         /** PlaylistPageView */
         PlaylistPageView: {
@@ -2188,6 +2229,31 @@ export interface components {
          * @enum {string}
          */
         PlaylistScope: "owned" | "shared" | "public";
+        /** PlaylistSourceView */
+        PlaylistSourceView: {
+            /** Canonical Url */
+            canonical_url: string;
+            /** External Id */
+            external_id: string;
+            /**
+             * Last Attempt At
+             * Format: date-time
+             */
+            last_attempt_at: string;
+            /** Last Error Code */
+            last_error_code: string | null;
+            /**
+             * Last Successful Sync At
+             * Format: date-time
+             */
+            last_successful_sync_at: string;
+            /** Provider Key */
+            provider_key: string;
+            /** Truncated */
+            truncated: boolean;
+            /** Unavailable Entry Count */
+            unavailable_entry_count: number;
+        };
         /** PlaylistTrackInput */
         PlaylistTrackInput: {
             /** Preferred Source Id */
@@ -2228,6 +2294,7 @@ export interface components {
             playlist_id: string;
             /** Revision */
             revision: number;
+            source: components["schemas"]["PlaylistSourceView"] | null;
             /**
              * Updated At
              * Format: date-time
@@ -4998,18 +5065,19 @@ export interface operations {
             };
         };
     };
-    replaceLibraryPlaylistOrder: {
+    moveLibraryPlaylistEntry: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                entry_id: string;
                 playlist_id: string;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["PlaylistOrderInput"];
+                "application/json": components["schemas"]["PlaylistMoveInput"];
             };
         };
         responses: {
@@ -5160,6 +5228,173 @@ export interface operations {
             };
             /** @description Internal server error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Dependency unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+        };
+    };
+    detachLibraryPlaylistSource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playlist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlaylistRevisionInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaylistView"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Request not allowed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description State conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Dependency unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+        };
+    };
+    importLibraryPlaylist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlaylistImportInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaylistView"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Upstream dependency failed */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };

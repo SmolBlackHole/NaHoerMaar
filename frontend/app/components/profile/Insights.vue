@@ -80,15 +80,14 @@ function percent(value: number | null) {
 						:key="track.track_id"
 						class="flex min-w-0 items-center gap-3"
 					>
-						<PlayerTrackArtwork :entry="track" class="size-10 shrink-0 rounded-lg" />
-						<div class="min-w-0 flex-1">
-							<p class="truncate text-sm font-medium text-highlighted">
-								{{ track.title }}
-							</p>
-							<p class="mt-0.5 truncate text-xs text-muted">
-								{{ track.artist_names.join(", ") || "Unknown artist" }}
-							</p>
-						</div>
+						<SharedTrackIdentity
+							:entry="track"
+							:title="track.title"
+							:artist-names="track.artist_names"
+							size="sm"
+							class="min-w-0 flex-1"
+							multiline
+						/>
 						<span class="text-xs tabular-nums text-muted">
 							{{ formatStatisticsDuration(track.listening_seconds) }}
 						</span>
@@ -108,15 +107,14 @@ function percent(value: number | null) {
 						:key="track.track_id"
 						class="flex min-w-0 items-center gap-3"
 					>
-						<PlayerTrackArtwork :entry="track" class="size-10 shrink-0 rounded-lg" />
-						<div class="min-w-0 flex-1">
-							<p class="truncate text-sm font-medium text-highlighted">
-								{{ track.title }}
-							</p>
-							<p class="mt-0.5 truncate text-xs text-muted">
-								{{ track.artist_names.join(", ") || "Unknown artist" }}
-							</p>
-						</div>
+						<SharedTrackIdentity
+							:entry="track"
+							:title="track.title"
+							:artist-names="track.artist_names"
+							size="sm"
+							class="min-w-0 flex-1"
+							multiline
+						/>
 						<span class="text-right text-xs text-muted">
 							{{ track.distinct_listeners }}
 							{{ track.distinct_listeners === 1 ? "listener" : "listeners" }}

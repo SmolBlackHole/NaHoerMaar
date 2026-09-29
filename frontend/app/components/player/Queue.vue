@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: MPL-2.0 -->
 
 <script setup lang="ts">
-import type { DropdownMenuItem } from "@nuxt/ui";
+import type { ContextMenuItem, DropdownMenuItem } from "@nuxt/ui";
 import Sortable, { type SortableEvent } from "sortablejs";
 import { formatTime, trackSource, type Contributor, type QueueEntry } from "~/core/models/player";
 
@@ -147,6 +147,46 @@ async function move(index: number, direction: -1 | 1) {
 	await player.move(entry.id, before);
 }
 
+function queueItems(entry: QueueEntry, index: number): ContextMenuItem[][] {
+	return [
+		[
+			{
+				label: "Start a radio from this track",
+				icon: icons.value.radio,
+				disabled: !player.canControl,
+				onSelect: () => requestRadio(entry),
+			},
+			{
+				label: "Move to position…",
+				icon: icons.value.drag,
+				disabled: !player.canControl || queue.value.length < 2,
+				onSelect: () => choosePosition(entry, index),
+			},
+			{
+				label: "Move up",
+				icon: icons.value.arrowUp,
+				disabled: !player.canControl || index === 0,
+				onSelect: () => move(index, -1),
+			},
+			{
+				label: "Move down",
+				icon: icons.value.arrowDown,
+				disabled: !player.canControl || index === queue.value.length - 1,
+				onSelect: () => move(index, 1),
+			},
+		],
+		[
+			{
+				label: "Remove",
+				icon: icons.value.trash,
+				color: "error",
+				disabled: !player.canControl,
+				onSelect: () => player.remove(entry.id),
+			},
+		],
+	];
+}
+
 async function finishDrag(event: SortableEvent) {
 	const moving = drag;
 	if (!moving) return;
@@ -177,7 +217,7 @@ onMounted(() => {
 			sortable = element
 				? new Sortable(element, {
 						draggable: ".queue-row",
-						handle: ".queue-handle",
+						handle: ".track-reorder-handle",
 						dataIdAttr: "data-entry-id",
 						animation: window.matchMedia("(prefers-reduced-motion: reduce)").matches
 							? 0
@@ -355,23 +395,35 @@ function formatWait(seconds: number) {
 				><span /><span />
 			</div>
 			<ol class="queue-list" aria-hidden="true">
-				<li v-for="row in 3" :key="row" class="queue-row queue-grid">
-					<USkeleton class="queue-handle mx-auto size-4" />
-					<SharedTrackIdentity loading class="queue-identity" />
-					<div class="queue-details">
-						<USkeleton class="queue-person h-5 w-28 max-w-full" />
-						<div class="queue-timing space-y-2 text-right">
-							<USkeleton class="ml-auto h-3 w-10" />
-							<USkeleton class="queue-wait ml-auto h-3 w-12" />
+				<SharedTrackRow
+					v-for="row in 3"
+					:key="row"
+					class="queue-row queue-grid"
+					identity-class="queue-identity"
+					loading
+					:position="row"
+					reorderable
+				>
+					<template #details>
+						<div class="queue-details">
+							<USkeleton class="queue-person h-5 w-28 max-w-full" />
+							<div class="queue-timing space-y-2 text-right">
+								<USkeleton class="ml-auto h-3 w-10" />
+								<USkeleton class="queue-wait ml-auto h-3 w-12" />
+							</div>
 						</div>
-					</div>
-					<div class="queue-actions flex items-center gap-1">
-						<USkeleton class="size-10 rounded-lg" />
-						<USkeleton class="size-10 rounded-lg" />
-						<USkeleton class="size-10 rounded-lg" />
-					</div>
-					<USkeleton class="queue-menu mx-auto size-4" />
-				</li>
+					</template>
+					<template #actions>
+						<div class="queue-actions flex items-center gap-1">
+							<USkeleton class="size-10 rounded-lg" />
+							<USkeleton class="size-10 rounded-lg" />
+							<USkeleton class="size-10 rounded-lg" />
+						</div>
+					</template>
+					<template #menu>
+						<USkeleton class="queue-menu mx-auto size-4" />
+					</template>
+				</SharedTrackRow>
 			</ol>
 		</div>
 		<template v-else-if="queue.length">
@@ -380,128 +432,95 @@ function formatWait(seconds: number) {
 				><span /><span />
 			</div>
 			<ol ref="list" aria-label="Upcoming tracks" class="queue-list">
-				<li
+				<SharedTrackRow
 					v-for="(entry, index) in queue"
 					:key="entry.id"
 					:data-entry-id="entry.id"
 					class="queue-row queue-grid"
+					identity-class="queue-identity"
+					:entry="entry.request.track"
+					:title="entry.request.track.title"
+					:source-url="trackSource(entry.request)?.source_url"
+					:position="index + 1"
+					:reorderable="!selecting"
+					:reorder-disabled="!player.canControl"
+					:context-items="queueItems(entry, index)"
+					multiline
+					@move="move(index, $event)"
 				>
-					<label v-if="selecting" class="queue-select grid size-11 place-items-center">
-						<input
-							type="checkbox"
-							:checked="selectedIds.has(entry.id)"
-							@change="toggleSelection(entry.id)"
-						/>
-						<span class="sr-only">Select {{ entry.request.track.title }}</span>
-					</label>
-					<button
-						v-else
-						type="button"
-						:disabled="!player.canControl"
-						:aria-label="`Drag ${entry.request.track.title} to reorder`"
-						class="queue-handle relative size-11 cursor-grab items-center justify-center text-muted"
-						tabindex="-1"
-					>
-						<span class="queue-number text-xs tabular-nums">
-							{{ String(index + 1).padStart(2, "0") }}
-						</span>
-						<UIcon :name="icons.drag" class="queue-grip absolute size-4" />
-					</button>
-					<SharedTrackIdentity
-						:entry="entry.request.track"
-						:title="entry.request.track.title"
-						:source-url="trackSource(entry.request)?.source_url"
-						class="queue-identity"
-						multiline
-					>
-						<template #artist>
-							<PlayerArtistLink :entry="entry.request.track" />
-						</template>
-					</SharedTrackIdentity>
-					<div class="queue-details">
-						<PlayerContributor
-							:contributor="entry.request.contributor"
-							:origin="entry.request.origin"
-							compact
-							class="queue-person"
-						/>
-						<div class="queue-timing text-xs text-muted">
-							<span class="tabular-nums">{{
-								formatTime(entry.request.track.duration_seconds)
-							}}</span>
-							<UTooltip
-								text="Estimated start, assuming the queue stays in this order"
-							>
-								<span class="queue-wait">{{ formatWait(waitUntil(index)) }}</span>
-							</UTooltip>
-						</div>
-					</div>
-					<div class="queue-actions flex items-center gap-1">
-						<LibraryReactionActions
-							:track-id="entry.request.track.id"
-							:title="entry.request.track.title"
-							compact
-							:show-counts="false"
-							:show-details="false"
-						/>
-						<LibraryPlaylistAction
-							:track="{
-								track_id: entry.request.track.id,
-								preferred_source_id: entry.request.source_id,
-							}"
-							:title="entry.request.track.title"
-						/>
-					</div>
-					<UDropdownMenu
-						:items="[
-							{
-								label: 'Start a radio from this track',
-								icon: icons.radio,
-								disabled: !player.canControl,
-								onSelect: () => requestRadio(entry),
-							},
-							{
-								label: 'Move to position…',
-								icon: icons.drag,
-								disabled: !player.canControl || queue.length < 2,
-								onSelect: () => choosePosition(entry, index),
-							},
-							{
-								label: 'Move up',
-								icon: icons.arrowUp,
-								disabled: !player.canControl || index === 0,
-								onSelect: () => move(index, -1),
-							},
-							{
-								label: 'Move down',
-								icon: icons.arrowDown,
-								disabled: !player.canControl || index === queue.length - 1,
-								onSelect: () => move(index, 1),
-							},
-							{
-								label: 'Remove',
-								icon: icons.trash,
-								color: 'error',
-								disabled: !player.canControl,
-								onSelect: () => player.remove(entry.id),
-							},
-						]"
-						:content="{ align: 'end' }"
-					>
-						<UTooltip :text="`Options for ${entry.request.track.title}`">
-							<UButton
-								:icon="icons.ellipsis"
-								:loading="
-									player.isPending('queue.remove') ||
-									player.isPending('queue.move')
-								"
-								:aria-label="`Options for ${entry.request.track.title}`"
-								color="neutral"
-								variant="ghost"
-								class="queue-menu size-11 justify-center"
+					<template v-if="selecting" #leading>
+						<label class="queue-select grid size-10 shrink-0 place-items-center">
+							<input
+								type="checkbox"
+								:checked="selectedIds.has(entry.id)"
+								@change="toggleSelection(entry.id)"
 							/>
-						</UTooltip>
-					</UDropdownMenu>
+							<span class="sr-only">Select {{ entry.request.track.title }}</span>
+						</label>
+					</template>
+					<template #artist>
+						<PlayerArtistLink :entry="entry.request.track" />
+					</template>
+					<template #details>
+						<div class="queue-details">
+							<PlayerContributor
+								:contributor="entry.request.contributor"
+								:origin="entry.request.origin"
+								compact
+								class="queue-person"
+							/>
+							<div class="queue-timing text-xs text-muted">
+								<span class="tabular-nums">{{
+									formatTime(entry.request.track.duration_seconds)
+								}}</span>
+								<UTooltip
+									text="Estimated start, assuming the queue stays in this order"
+								>
+									<span class="queue-wait">{{
+										formatWait(waitUntil(index))
+									}}</span>
+								</UTooltip>
+							</div>
+						</div>
+					</template>
+					<template #actions>
+						<div class="queue-actions flex items-center gap-1">
+							<LibraryReactionActions
+								:track-id="entry.request.track.id"
+								:title="entry.request.track.title"
+								compact
+								:show-counts="false"
+								:show-details="false"
+							/>
+							<LibraryPlaylistAction
+								:track="{
+									track_id: entry.request.track.id,
+									preferred_source_id: entry.request.source_id,
+								}"
+								:title="entry.request.track.title"
+							/>
+						</div>
+					</template>
+					<template #menu>
+						<UDropdownMenu
+							:items="queueItems(entry, index)"
+							:content="{ align: 'end' }"
+						>
+							<UTooltip :text="`Options for ${entry.request.track.title}`">
+								<UButton
+									:icon="icons.ellipsis"
+									:loading="
+										player.isPending('queue.remove') ||
+										player.isPending('queue.move')
+									"
+									:aria-label="`Options for ${entry.request.track.title}`"
+									color="neutral"
+									variant="ghost"
+									class="queue-menu size-11 justify-center"
+								/>
+							</UTooltip>
+						</UDropdownMenu>
+					</template>
 					<form
 						v-if="placing?.id === entry.id"
 						class="queue-placement"
@@ -536,7 +555,7 @@ function formatWait(seconds: number) {
 							@click="placing = null"
 						/>
 					</form>
-				</li>
+				</SharedTrackRow>
 			</ol>
 		</template>
 		<div v-else class="queue-empty flex items-start gap-4 py-9">
@@ -606,7 +625,7 @@ function formatWait(seconds: number) {
 .queue-details {
 	display: contents;
 }
-.queue-grid {
+:deep(.queue-grid) {
 	display: grid;
 	grid-template-columns: 2.75rem minmax(0, 1fr) 10rem 6rem 7.75rem 2.75rem;
 	align-items: center;
@@ -620,42 +639,28 @@ function formatWait(seconds: number) {
 .queue-timing {
 	text-align: right;
 }
-.queue-row {
-	min-height: 4.75rem;
-	padding-block: 0.75rem;
-	border-radius: 0.5rem;
-	transition: background-color 140ms ease-out;
-}
-.queue-row:hover,
-.queue-row:focus-within {
-	background: var(--ui-bg-muted);
-}
-.queue-handle {
-	display: flex;
-	touch-action: none;
+:deep(.queue-identity) {
+	grid-column: 1 / span 2;
 }
 .queue-select input {
 	width: 1rem;
 	height: 1rem;
 	accent-color: var(--ui-primary);
 }
-.queue-grip {
-	opacity: 0;
-}
-.queue-placeholder {
+:deep(.queue-placeholder) {
 	background: var(--ui-bg-elevated);
 	border-radius: 0.5rem;
 }
-.queue-placeholder > * {
+:deep(.queue-placeholder > *) {
 	opacity: 0.2;
 }
-.queue-floating {
+:deep(.queue-floating) {
 	background: var(--ui-bg-elevated);
 	border-radius: 0.5rem;
 	box-shadow: 0 12px 32px rgb(0 0 0 / 25%);
 	opacity: 0.97 !important;
 }
-.queue-chosen .queue-handle {
+:deep(.queue-chosen .track-reorder-handle) {
 	cursor: grabbing;
 }
 .queue-placement {
@@ -679,14 +684,6 @@ function formatWait(seconds: number) {
 	outline: 2px solid var(--ui-primary);
 	outline-offset: 2px;
 }
-@media (hover: hover) and (pointer: fine) {
-	.queue-row:hover .queue-grip {
-		opacity: 1;
-	}
-	.queue-row:hover .queue-number {
-		opacity: 0;
-	}
-}
 .queue-wait {
 	display: block;
 	margin-top: 0.35rem;
@@ -696,7 +693,7 @@ function formatWait(seconds: number) {
 	padding-block: 2rem;
 }
 @container workspace (max-width: 1000px) {
-	.queue-grid {
+	:deep(.queue-grid) {
 		grid-template-columns: 2.75rem minmax(0, 1fr) 7.5rem 5rem 7.75rem 2.75rem;
 		column-gap: 0.75rem;
 	}
@@ -706,30 +703,16 @@ function formatWait(seconds: number) {
 		flex-wrap: wrap;
 		gap: 0.125rem 0.75rem;
 	}
-	.queue-grid {
+	:deep(.queue-grid) {
 		grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem;
 		gap: 0.5rem;
 		padding-inline: 0;
 	}
-	.queue-row {
-		padding-block: 1rem;
-	}
 	.queue-columns {
 		display: none;
 	}
-	.queue-grip {
-		display: none;
-	}
-	.queue-row:hover .queue-number {
-		opacity: 1;
-	}
-	.queue-handle {
-		grid-column: 1;
-		grid-row: 1;
-		align-self: start;
-	}
-	.queue-identity {
-		grid-column: 2 / -1;
+	:deep(.queue-identity) {
+		grid-column: 1 / -1;
 		grid-row: 1;
 		--track-artwork-size: 2.75rem;
 	}

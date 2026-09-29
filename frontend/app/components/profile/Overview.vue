@@ -142,15 +142,13 @@ function formatDate(value: string) {
 					:key="track.playback_id"
 					class="flex min-w-0 items-center gap-3 rounded-xl bg-elevated/35 p-2.5"
 				>
-					<PlayerTrackArtwork :entry="track" class="size-12 shrink-0 rounded-lg" />
-					<div class="min-w-0 flex-1">
-						<p class="truncate text-sm font-medium text-highlighted">
-							{{ track.title }}
-						</p>
-						<p class="mt-0.5 truncate text-xs text-muted">
-							{{ track.artist_names.join(", ") || "Unknown artist" }}
-						</p>
-					</div>
+					<SharedTrackIdentity
+						:entry="track"
+						:title="track.title"
+						:artist-names="track.artist_names"
+						class="min-w-0 flex-1"
+						multiline
+					/>
 					<div class="shrink-0 text-right text-xs text-muted">
 						<p class="tabular-nums">
 							{{ formatStatisticsDuration(track.audio_seconds) }}

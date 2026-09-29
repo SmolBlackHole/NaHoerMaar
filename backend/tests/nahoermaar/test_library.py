@@ -19,8 +19,20 @@ from sqlalchemy import func, insert, select
 
 from nahoermaar.api import library as library_api
 from nahoermaar.bootstrap import Application
-from nahoermaar.catalog.domain import ProviderName, TrackId, TrackSourceId
-from nahoermaar.catalog.providers import ProviderArtist, ProviderTrack
+from nahoermaar.catalog.domain import (
+    MediaKind,
+    MediaReference,
+    ProviderName,
+    TrackId,
+    TrackSourceId,
+)
+from nahoermaar.catalog.providers import (
+    ProviderArtist,
+    ProviderAudio,
+    ProviderPage,
+    ProviderPlaylist,
+    ProviderTrack,
+)
 from nahoermaar.catalog.repository import CatalogRepository
 from nahoermaar.catalog.service import CatalogService
 from nahoermaar.database.core import Database
@@ -51,6 +63,80 @@ from nahoermaar.views.catalog import CatalogCleanupView
 
 ROOT = Path(__file__).parents[3]
 NOW = datetime(2026, 9, 29, 12, tzinfo=UTC)
+PLAYLIST_URL = "https://www.youtube.com/playlist?list=PLlibrarysource"
+
+
+class PlaylistProvider:
+    key = "youtube"
+
+    def __init__(self, tracks: tuple[ProviderTrack, ...]) -> None:
+        self.tracks = tracks
+
+    def identify(
+        self,
+        source_url: str,
+        *,
+        kind: MediaKind | None = None,
+    ) -> MediaReference | None:
+        if source_url != PLAYLIST_URL or kind not in {None, MediaKind.PLAYLIST}:
+            return None
+        return MediaReference(
+            ProviderName.YOUTUBE,
+            "PLlibrarysource",
+            MediaKind.PLAYLIST,
+            PLAYLIST_URL,
+        )
+
+    async def playlist(
+        self,
+        reference: MediaReference,
+        *,
+        limit: int,
+        continuation: str | None = None,
+    ) -> ProviderPlaylist:
+        assert reference.external_id == "PLlibrarysource"
+        assert limit >= 1
+        if continuation is None:
+            return ProviderPlaylist(
+                reference,
+                "Imported source",
+                ProviderPage((self.tracks[0], self.tracks[0]), "second", 1),
+            )
+        assert continuation == "second"
+        return ProviderPlaylist(
+            reference, "Imported source", ProviderPage((self.tracks[1],))
+        )
+
+    async def search(
+        self,
+        query: str,
+        *,
+        limit: int,
+        continuation: str | None = None,
+    ) -> ProviderPage:
+        del query, limit, continuation
+        return ProviderPage(())
+
+    async def track(self, reference: MediaReference) -> ProviderTrack:
+        del reference
+        return self.tracks[0]
+
+    async def radio(
+        self,
+        reference: MediaReference,
+        *,
+        limit: int,
+        continuation: str | None = None,
+    ) -> ProviderPage:
+        del reference, limit, continuation
+        return ProviderPage(())
+
+    async def resolve_audio(self, reference: MediaReference) -> ProviderAudio:
+        del reference
+        return ProviderAudio("https://audio.example/stream")
+
+    async def close(self) -> None:
+        return None
 
 
 def _database() -> Database:
@@ -342,12 +428,16 @@ def test_personal_playlists_preserve_order_revisions_and_catalog_references() ->
             await library.playlist(other, playlist.playlist_id)
         assert hidden.value.code is LibraryErrorCode.PLAYLIST_NOT_FOUND
 
-        reversed_ids = tuple(entry.entry_id for entry in reversed(entries.entries))
+        moved_ids = (
+            entries.entries[-1].entry_id,
+            *(entry.entry_id for entry in entries.entries[:-1]),
+        )
         clock[0] += timedelta(minutes=1)
-        playlist = await library.reorder_playlist(
+        playlist = await library.move_playlist_entry(
             owner,
             playlist.playlist_id,
-            reversed_ids,
+            entries.entries[-1].entry_id,
+            0,
             entries.revision,
         )
         reordered = await library.playlist_entries(
@@ -357,7 +447,7 @@ def test_personal_playlists_preserve_order_revisions_and_catalog_references() ->
             page_size=100,
             revision=playlist.revision,
         )
-        assert tuple(entry.entry_id for entry in reordered.entries) == reversed_ids
+        assert tuple(entry.entry_id for entry in reordered.entries) == moved_ids
 
         with pytest.raises(LibraryError) as stale_page:
             await library.playlist_entries(
@@ -440,12 +530,13 @@ def test_personal_playlists_preserve_order_revisions_and_catalog_references() ->
         )
 
         capacity = await library.create_playlist(owner, "Capacity")
-        capacity = await library.add_playlist_entries(
-            owner,
-            capacity.playlist_id,
-            tuple(PlaylistTrackSelection(tracks[4].id) for _ in range(100)),
-            capacity.revision,
-        )
+        for _ in range(10):
+            capacity = await library.add_playlist_entries(
+                owner,
+                capacity.playlist_id,
+                tuple(PlaylistTrackSelection(tracks[4].id) for _ in range(100)),
+                capacity.revision,
+            )
         with pytest.raises(LibraryError) as overflow:
             await library.add_playlist_entries(
                 owner,
@@ -461,7 +552,7 @@ def test_personal_playlists_preserve_order_revisions_and_catalog_references() ->
             page_size=100,
             revision=capacity.revision,
         )
-        assert full.total == 100
+        assert full.total == 1_000
 
         async with units() as work:
             candidates = await CatalogCleanupView().candidates(
@@ -510,6 +601,135 @@ def test_personal_playlists_preserve_order_revisions_and_catalog_references() ->
             )
         assert duplicate_entries == 0
         assert catalog_tracks >= len(tracks)
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        asyncio.run(database.close())
+
+
+def test_linked_playlist_import_is_deterministic_read_only_and_detachable() -> None:
+    database = _database()
+
+    async def scenario() -> None:
+        def units() -> UnitOfWork:
+            return UnitOfWork(database.sessions)
+
+        owner = UserId(uuid4())
+        async with units() as work:
+            await _add_user(work, owner, "151", "Andrey")
+            await work.commit()
+
+        clock = [NOW]
+        provider_tracks = (
+            _track(151, "Repeated song", "Loop Artist"),
+            _track(152, "Last song", "Final Artist"),
+        )
+        library = LibraryService(
+            units,
+            CatalogService(units, (PlaylistProvider(provider_tracks),)),
+            LibraryReadModel(units),
+            clock=lambda: clock[0],
+        )
+
+        playlist = await library.import_playlist(owner, PLAYLIST_URL)
+        assert playlist.name == "Imported source"
+        assert playlist.revision == 0
+        assert playlist.entry_count == 3
+        assert playlist.source is not None
+        assert playlist.source.provider_key == "youtube"
+        assert playlist.source.external_id == "PLlibrarysource"
+        assert playlist.source.canonical_url == PLAYLIST_URL
+        assert playlist.source.unavailable_entry_count == 1
+        assert playlist.source.truncated is False
+
+        entries = await library.playlist_entries(
+            owner,
+            playlist.playlist_id,
+            page=1,
+            page_size=100,
+        )
+        assert tuple(entry.position for entry in entries.entries) == (0, 1, 2)
+        assert entries.entries[0].track_id == entries.entries[1].track_id
+        assert entries.entries[0].entry_id != entries.entries[1].entry_id
+        assert entries.entries[2].track_id != entries.entries[0].track_id
+
+        repeated = await library.import_playlist(
+            owner,
+            PLAYLIST_URL,
+            name="Ignored on deterministic reimport",
+        )
+        assert repeated.playlist_id == playlist.playlist_id
+        assert repeated.name == "Imported source"
+        assert repeated.revision == playlist.revision
+
+        selection = PlaylistTrackSelection(
+            entries.entries[2].track_id,
+            entries.entries[2].preferred_source_id,
+        )
+        with pytest.raises(LibraryError) as linked_add:
+            await library.add_playlist_entries(
+                owner,
+                playlist.playlist_id,
+                (selection,),
+                playlist.revision,
+            )
+        assert linked_add.value.code is LibraryErrorCode.PLAYLIST_LINKED_READ_ONLY
+        with pytest.raises(LibraryError) as linked_remove:
+            await library.remove_playlist_entry(
+                owner,
+                playlist.playlist_id,
+                entries.entries[0].entry_id,
+                playlist.revision,
+            )
+        assert linked_remove.value.code is LibraryErrorCode.PLAYLIST_LINKED_READ_ONLY
+        with pytest.raises(LibraryError) as linked_move:
+            await library.move_playlist_entry(
+                owner,
+                playlist.playlist_id,
+                entries.entries[2].entry_id,
+                0,
+                playlist.revision,
+            )
+        assert linked_move.value.code is LibraryErrorCode.PLAYLIST_LINKED_READ_ONLY
+
+        clock[0] += timedelta(minutes=1)
+        detached = await library.detach_playlist_source(
+            owner,
+            playlist.playlist_id,
+            playlist.revision,
+        )
+        assert detached.source is None
+        assert detached.revision == 1
+        detached_entries = await library.playlist_entries(
+            owner,
+            playlist.playlist_id,
+            page=1,
+            page_size=100,
+            revision=detached.revision,
+        )
+        assert tuple(entry.entry_id for entry in detached_entries.entries) == tuple(
+            entry.entry_id for entry in entries.entries
+        )
+
+        clock[0] += timedelta(minutes=1)
+        moved = await library.move_playlist_entry(
+            owner,
+            playlist.playlist_id,
+            detached_entries.entries[2].entry_id,
+            0,
+            detached.revision,
+        )
+        assert moved.revision == 2
+        reordered = await library.playlist_entries(
+            owner,
+            playlist.playlist_id,
+            page=1,
+            page_size=100,
+            revision=moved.revision,
+        )
+        assert reordered.entries[0].entry_id == detached_entries.entries[2].entry_id
+        assert tuple(entry.position for entry in reordered.entries) == (0, 1, 2)
 
     try:
         asyncio.run(scenario())

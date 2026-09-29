@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from nahoermaar.bootstrap import Application
 from nahoermaar.catalog.domain import TrackId, TrackSourceId
 from nahoermaar.library.domain import (
+    MAX_PLAYLIST_MUTATION_ENTRIES,
     PlaylistEntryId,
     PlaylistId,
     PlaylistAccess,
@@ -116,6 +117,19 @@ class ContributorView(BaseModel):
     avatar_url: str | None
 
 
+class PlaylistSourceView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider_key: str
+    external_id: str
+    canonical_url: str
+    last_attempt_at: datetime
+    last_successful_sync_at: datetime
+    last_error_code: str | None
+    unavailable_entry_count: int
+    truncated: bool
+
+
 class PlaylistView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -124,6 +138,7 @@ class PlaylistView(BaseModel):
     name: str
     visibility: PlaylistVisibility
     access: PlaylistAccess
+    source: PlaylistSourceView | None
     revision: int
     entry_count: int
     artwork_urls: tuple[str, ...]
@@ -164,6 +179,13 @@ class PlaylistCreateInput(BaseModel):
     name: str = Field(min_length=1, max_length=100)
 
 
+class PlaylistImportInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_url: str = Field(min_length=1, max_length=2048)
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+
+
 class PlaylistRevisionInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -190,8 +212,8 @@ class PlaylistEntriesInput(PlaylistRevisionInput):
     tracks: tuple[PlaylistTrackInput, ...] = Field(min_length=1, max_length=100)
 
 
-class PlaylistOrderInput(PlaylistRevisionInput):
-    entry_ids: tuple[UUID, ...] = Field(max_length=100)
+class PlaylistMoveInput(PlaylistRevisionInput):
+    position: int = Field(ge=0)
 
 
 class PlaylistDeletionView(BaseModel):
@@ -251,6 +273,25 @@ def router(application: Application) -> APIRouter:
             playlist = await application.library.service.create_playlist(
                 authenticated(request).user.id,
                 body.name,
+            )
+        except ValueError as error:
+            raise ApiError(ApiErrorCode.VALIDATION_FAILED, 422) from error
+        return _playlist_view(playlist, application)
+
+    @routes.post(
+        "/playlists/imports",
+        operation_id="importLibraryPlaylist",
+        responses=error_responses(401, 400, 422, 500, 502, 503),
+    )
+    async def import_playlist(
+        request: Request,
+        body: PlaylistImportInput,
+    ) -> PlaylistView:
+        try:
+            playlist = await application.library.service.import_playlist(
+                authenticated(request).user.id,
+                body.source_url,
+                name=body.name,
             )
         except ValueError as error:
             raise ApiError(ApiErrorCode.VALIDATION_FAILED, 422) from error
@@ -347,6 +388,23 @@ def router(application: Application) -> APIRouter:
             body.expected_revision,
         )
         return PlaylistDeletionView(playlist_id=deleted.id, deleted=True)
+
+    @routes.delete(
+        "/playlists/{playlist_id}/source",
+        operation_id="detachLibraryPlaylistSource",
+        responses=error_responses(401, 403, 404, 409, 422, 500, 503),
+    )
+    async def detach_playlist_source(
+        request: Request,
+        playlist_id: UUID,
+        body: PlaylistRevisionInput,
+    ) -> PlaylistView:
+        playlist = await application.library.service.detach_playlist_source(
+            authenticated(request).user.id,
+            PlaylistId(playlist_id),
+            body.expected_revision,
+        )
+        return _playlist_view(playlist, application)
 
     @routes.post(
         "/playlists/{playlist_id}/duplicate",
@@ -451,19 +509,21 @@ def router(application: Application) -> APIRouter:
         return _playlist_view(playlist, application)
 
     @routes.put(
-        "/playlists/{playlist_id}/order",
-        operation_id="replaceLibraryPlaylistOrder",
+        "/playlists/{playlist_id}/entries/{entry_id}/position",
+        operation_id="moveLibraryPlaylistEntry",
         responses=error_responses(401, 403, 404, 409, 422, 500, 503),
     )
-    async def replace_playlist_order(
+    async def move_playlist_entry(
         request: Request,
         playlist_id: UUID,
-        body: PlaylistOrderInput,
+        entry_id: UUID,
+        body: PlaylistMoveInput,
     ) -> PlaylistView:
-        playlist = await application.library.service.reorder_playlist(
+        playlist = await application.library.service.move_playlist_entry(
             authenticated(request).user.id,
             PlaylistId(playlist_id),
-            tuple(PlaylistEntryId(entry_id) for entry_id in body.entry_ids),
+            PlaylistEntryId(entry_id),
+            body.position,
             body.expected_revision,
         )
         return _playlist_view(playlist, application)
@@ -486,6 +546,8 @@ def router(application: Application) -> APIRouter:
             expected_revision=body.expected_revision,
         )
         if not selections:
+            raise ApiError(ApiErrorCode.VALIDATION_FAILED, 422)
+        if len(selections) > MAX_PLAYLIST_MUTATION_ENTRIES:
             raise ApiError(ApiErrorCode.VALIDATION_FAILED, 422)
         result = await application.bus.execute(
             AddTracks(
@@ -699,6 +761,20 @@ def _playlist_view(
         name=playlist.name,
         visibility=playlist.visibility,
         access=playlist.access,
+        source=(
+            PlaylistSourceView(
+                provider_key=playlist.source.provider_key,
+                external_id=playlist.source.external_id,
+                canonical_url=playlist.source.canonical_url,
+                last_attempt_at=playlist.source.last_attempt_at,
+                last_successful_sync_at=playlist.source.last_successful_sync_at,
+                last_error_code=playlist.source.last_error_code,
+                unavailable_entry_count=playlist.source.unavailable_entry_count,
+                truncated=playlist.source.truncated,
+            )
+            if playlist.source is not None
+            else None
+        ),
         revision=playlist.revision,
         entry_count=playlist.entry_count,
         artwork_urls=playlist.artwork_urls,

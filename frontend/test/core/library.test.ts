@@ -96,7 +96,9 @@ describe("library core", () => {
 		await client.library.playlists({ page: 2, pageSize: 25, query: "Road", snapshot: "list" });
 		await client.library.playlist("playlist/one");
 		await client.library.createPlaylist("Road trip");
+		await client.library.importPlaylist("https://youtube.com/playlist?list=source", "Source");
 		await client.library.renamePlaylist("playlist/one", "Night drive", 4);
+		await client.library.detachPlaylistSource("playlist/one", 5);
 		await client.library.duplicatePlaylist("playlist/one", 5, "Copy");
 		await client.library.playlistEntries("playlist/one", {
 			page: 3,
@@ -113,7 +115,7 @@ describe("library core", () => {
 			6,
 		);
 		await client.library.deletePlaylistEntry("playlist/one", "entry/one", 7);
-		await client.library.replacePlaylistOrder("playlist/one", ["entry-two", "entry-one"], 8);
+		await client.library.movePlaylistEntry("playlist/one", "entry-two", 0, 8);
 		await client.library.queuePlaylist("playlist/one", 9, "operation-one");
 		await client.library.deletePlaylist("playlist/one", 10);
 
@@ -121,7 +123,9 @@ describe("library core", () => {
 			["/api/library/playlists?page=2&page_size=25&q=Road&snapshot=list", "GET"],
 			["/api/library/playlists/playlist%2Fone", "GET"],
 			["/api/library/playlists", "POST"],
+			["/api/library/playlists/imports", "POST"],
 			["/api/library/playlists/playlist%2Fone", "PATCH"],
+			["/api/library/playlists/playlist%2Fone/source", "DELETE"],
 			["/api/library/playlists/playlist%2Fone/duplicate", "POST"],
 			[
 				"/api/library/playlists/playlist%2Fone/entries?page=3&page_size=10&q=Still%20Alive&snapshot=revision",
@@ -129,18 +133,26 @@ describe("library core", () => {
 			],
 			["/api/library/playlists/playlist%2Fone/entries", "POST"],
 			["/api/library/playlists/playlist%2Fone/entries/entry%2Fone", "DELETE"],
-			["/api/library/playlists/playlist%2Fone/order", "PUT"],
+			["/api/library/playlists/playlist%2Fone/entries/entry-two/position", "PUT"],
 			["/api/library/playlists/playlist%2Fone/queue", "POST"],
 			["/api/library/playlists/playlist%2Fone", "DELETE"],
 		]);
-		expect(JSON.parse(String(fetcher.mock.calls[6]![1]?.body))).toEqual({
+		expect(JSON.parse(String(fetcher.mock.calls[3]![1]?.body))).toEqual({
+			name: "Source",
+			source_url: "https://youtube.com/playlist?list=source",
+		});
+		expect(JSON.parse(String(fetcher.mock.calls[8]![1]?.body))).toEqual({
 			expected_revision: 6,
 			tracks: [
 				{ track_id: "track-one", preferred_source_id: "source-one" },
 				{ track_id: "track-one", preferred_source_id: null },
 			],
 		});
-		expect(new Headers(fetcher.mock.calls[9]![1]?.headers).get("Idempotency-Key")).toBe(
+		expect(JSON.parse(String(fetcher.mock.calls[10]![1]?.body))).toEqual({
+			position: 0,
+			expected_revision: 8,
+		});
+		expect(new Headers(fetcher.mock.calls[11]![1]?.headers).get("Idempotency-Key")).toBe(
 			"operation-one",
 		);
 	});

@@ -27,20 +27,30 @@ const playlistLoading = ref(false);
 const actionPending = ref(false);
 const actionError = ref<string | null>(null);
 const createOpen = ref(false);
-const renameOpen = ref(false);
 const deleteOpen = ref(false);
 const playlistName = ref("");
-const orderDraft = ref<string[]>([]);
+const renaming = ref(false);
+const renameInput = ref<{ inputRef?: HTMLInputElement } | null>(null);
+const selectingEntries = ref(false);
+const selectedEntryIds = ref<Set<string>>(new Set());
 
 const trackResult = computed(() => library.tracks.data.value);
 const playlistResult = computed(() => library.playlists.data.value);
 const entryResult = computed(() => library.entries.data.value);
 const selectedPlaylistId = computed(() => queryValue(route.query.playlist));
-const editingOrder = computed(
+const libraryViewKey = computed(() =>
+	selectedPlaylistId.value ? `playlist:${selectedPlaylistId.value}` : selectedView(),
+);
+const canReorderEntries = computed(
 	() =>
-		selectedView() === "playlists" &&
-		Boolean(selectedPlaylistId.value) &&
-		route.query.edit === "order",
+		Boolean(playlist.value) &&
+		playlist.value?.access !== "reader" &&
+		!playlist.value?.source &&
+		!selectedQuery() &&
+		!selectingEntries.value,
+);
+const selectedEntries = computed(() =>
+	(entryResult.value?.items ?? []).filter(({ entry_id }) => selectedEntryIds.value.has(entry_id)),
 );
 const activeResult = computed(() => {
 	if (selectedView() !== "playlists") return trackResult.value;
@@ -57,7 +67,7 @@ function queryValue(value: unknown) {
 }
 function selectedView(): LibraryView {
 	const value = queryValue(route.query.view);
-	return value === "disliked" || value === "playlists" ? value : "liked";
+	return value === "liked" || value === "disliked" ? value : "playlists";
 }
 function selectedReaction(): ReactionValue {
 	return selectedView() === "disliked" ? "dislike" : "like";
@@ -67,7 +77,7 @@ function selectedPage() {
 	return Number.isInteger(page) && page > 0 ? page : 1;
 }
 function selectedQuery() {
-	return editingOrder.value ? "" : queryValue(route.query.q).trim();
+	return queryValue(route.query.q).trim();
 }
 function routeQuery(
 	overrides: {
@@ -75,20 +85,17 @@ function routeQuery(
 		playlist?: string;
 		q?: string;
 		page?: number;
-		edit?: string;
 	} = {},
 ) {
 	const view = overrides.view ?? selectedView();
 	const playlistId = overrides.playlist ?? selectedPlaylistId.value;
 	const q = overrides.q ?? selectedQuery();
 	const page = overrides.page ?? selectedPage();
-	const edit = overrides.edit ?? queryValue(route.query.edit);
 	return {
-		...(view !== "liked" ? { view } : {}),
+		...(view !== "playlists" ? { view } : {}),
 		...(view === "playlists" && playlistId ? { playlist: playlistId } : {}),
-		...(q && !edit ? { q } : {}),
-		...(page > 1 && !edit ? { page: String(page) } : {}),
-		...(view === "playlists" && playlistId && edit ? { edit } : {}),
+		...(q ? { q } : {}),
+		...(page > 1 ? { page: String(page) } : {}),
 	};
 }
 
@@ -141,20 +148,24 @@ async function load(newSnapshot = false) {
 	}
 	if (!playlist.value) return;
 	const loaded = await library.loadEntries(playlistId, {
-		page: editingOrder.value ? 1 : page,
-		pageSize: editingOrder.value ? 100 : PAGE_SIZE,
+		page,
+		pageSize: PAGE_SIZE,
 		query: selectedQuery(),
 		newSnapshot,
 	});
 	if (!loaded) return;
-	orderDraft.value = loaded.items.map(({ entry_id }) => entry_id);
-	if (!editingOrder.value) await normalizePage(loaded.page, page);
+	selectedEntryIds.value = new Set(
+		[...selectedEntryIds.value].filter((id) =>
+			loaded.items.some(({ entry_id }) => entry_id === id),
+		),
+	);
+	await normalizePage(loaded.page, page);
 }
 
 async function chooseView(view: LibraryView) {
 	await router.push({
 		path: "/library",
-		query: routeQuery({ view, playlist: "", q: "", page: 1, edit: "" }),
+		query: routeQuery({ view, playlist: "", q: "", page: 1 }),
 	});
 }
 async function openPlaylist(value: Playlist) {
@@ -165,9 +176,12 @@ async function openPlaylist(value: Playlist) {
 			playlist: value.playlist_id,
 			q: "",
 			page: 1,
-			edit: "",
 		}),
 	});
+}
+async function editPlaylist(value: Playlist) {
+	await openPlaylist(value);
+	await beginRename(value);
 }
 async function searchLibrary() {
 	await router.push({ path: "/library", query: routeQuery({ q: search.value.trim(), page: 1 }) });
@@ -207,7 +221,7 @@ async function renamePlaylist() {
 			name,
 			current.revision,
 		);
-		renameOpen.value = false;
+		renaming.value = false;
 		playlistName.value = "";
 		toast.add({ title: "Playlist renamed", color: "success" });
 	} catch (failure) {
@@ -216,8 +230,20 @@ async function renamePlaylist() {
 		actionPending.value = false;
 	}
 }
-async function duplicatePlaylist() {
-	const current = playlist.value;
+async function beginRename(value = playlist.value) {
+	if (!value || value.access !== "owner") return;
+	playlistName.value = value.name;
+	renaming.value = true;
+	await nextTick();
+	renameInput.value?.inputRef?.focus();
+	renameInput.value?.inputRef?.select();
+}
+function cancelRename() {
+	renaming.value = false;
+	playlistName.value = "";
+}
+async function duplicatePlaylist(value = playlist.value) {
+	const current = value;
 	if (!current || actionPending.value) return;
 	actionPending.value = true;
 	try {
@@ -248,6 +274,11 @@ async function deletePlaylist() {
 		actionPending.value = false;
 	}
 }
+function confirmDelete(value = playlist.value) {
+	if (!value || value.access !== "owner") return;
+	playlist.value = value;
+	deleteOpen.value = true;
+}
 async function removeEntry(entry: PlaylistEntry) {
 	const current = playlist.value;
 	if (!current || actionPending.value) return;
@@ -266,19 +297,48 @@ async function removeEntry(entry: PlaylistEntry) {
 		actionPending.value = false;
 	}
 }
-async function queueAll() {
-	const current = playlist.value;
-	if (!current || !current.entry_count || actionPending.value) return;
+function toggleEntry(entry: PlaylistEntry) {
+	const next = new Set(selectedEntryIds.value);
+	if (next.has(entry.entry_id)) next.delete(entry.entry_id);
+	else next.add(entry.entry_id);
+	selectedEntryIds.value = next;
+}
+function finishEntrySelection() {
+	selectedEntryIds.value = new Set();
+	selectingEntries.value = false;
+}
+async function queueSelected() {
+	if (!selectedEntries.value.length || actionPending.value) return;
+	actionPending.value = true;
+	try {
+		await player.add(
+			selectedEntries.value.map((entry) => ({
+				track_id: entry.track_id,
+				source_id: entry.preferred_source_id,
+			})),
+		);
+		toast.add({
+			title: "Tracks added to queue",
+			description: `${selectedEntries.value.length} selected tracks added.`,
+			color: "success",
+		});
+		finishEntrySelection();
+	} finally {
+		actionPending.value = false;
+	}
+}
+async function queuePlaylist(value: Playlist) {
+	if (!value.entry_count || value.entry_count > 100 || actionPending.value) return;
 	actionPending.value = true;
 	try {
 		await core.client.library.queuePlaylist(
-			current.playlist_id,
-			current.revision,
+			value.playlist_id,
+			value.revision,
 			crypto.randomUUID(),
 		);
 		toast.add({
 			title: "Playlist added to queue",
-			description: `${current.entry_count} tracks added.`,
+			description: `${value.entry_count} tracks added.`,
 			color: "success",
 		});
 	} catch (failure) {
@@ -287,61 +347,35 @@ async function queueAll() {
 		actionPending.value = false;
 	}
 }
-async function startOrderEdit() {
-	await router.push({
-		path: "/library",
-		query: routeQuery({ q: "", page: 1, edit: "order" }),
-	});
-}
-async function cancelOrderEdit() {
-	await router.push({ path: "/library", query: routeQuery({ edit: "", page: 1 }) });
-}
-async function saveOrder() {
+async function moveEntry(entryId: string, position: number) {
 	const current = playlist.value;
 	if (!current || actionPending.value) return;
 	actionPending.value = true;
 	try {
-		playlist.value = await core.client.library.replacePlaylistOrder(
+		playlist.value = await core.client.library.movePlaylistEntry(
 			current.playlist_id,
-			orderDraft.value,
+			entryId,
+			position,
 			current.revision,
 		);
-		toast.add({ title: "Playlist order saved", color: "success" });
-		await cancelOrderEdit();
 		await load(true);
 	} catch (failure) {
 		actionError.value = failureMessage(failure);
+		await load(true);
 	} finally {
 		actionPending.value = false;
 	}
 }
 
 const playlistMenu = computed<DropdownMenuItem[][]>(() => [
-	[
-		{
-			label: "Rename",
-			icon: icons.value.type,
-			onSelect: () => {
-				playlistName.value = playlist.value?.name ?? "";
-				renameOpen.value = true;
-			},
-		},
-		{ label: "Duplicate", icon: icons.value.copy, onSelect: duplicatePlaylist },
-		{
-			label: "Edit order",
-			icon: icons.value.drag,
-			disabled: !playlist.value?.entry_count || Boolean(selectedQuery()),
-			onSelect: startOrderEdit,
-		},
-	],
+	[{ label: "Duplicate", icon: icons.value.copy, onSelect: () => duplicatePlaylist() }],
 	[
 		{
 			label: "Delete",
 			icon: icons.value.trash,
 			color: "error",
-			onSelect: () => {
-				deleteOpen.value = true;
-			},
+			disabled: playlist.value?.access !== "owner",
+			onSelect: () => confirmDelete(),
 		},
 	],
 ]);
@@ -459,13 +493,72 @@ onScopeDispose(library.dispose);
 									:name="playlist.name"
 									class="size-20"
 								/>
-								<div class="min-w-0">
-									<h1 class="truncate text-2xl font-semibold text-highlighted">
+								<div class="min-w-0 flex-1">
+									<form
+										v-if="playlist && renaming"
+										class="flex max-w-xl items-center gap-2"
+										@submit.prevent="renamePlaylist"
+										@keydown.esc.prevent="cancelRename"
+									>
+										<UInput
+											ref="renameInput"
+											v-model="playlistName"
+											maxlength="100"
+											size="xl"
+											class="min-w-0 flex-1"
+											aria-label="Playlist name"
+										/>
+										<UButton
+											type="submit"
+											:icon="icons.check"
+											aria-label="Save playlist name"
+											:loading="actionPending"
+											:disabled="!playlistName.trim()"
+										/>
+										<UButton
+											:icon="icons.close"
+											aria-label="Cancel renaming"
+											color="neutral"
+											variant="ghost"
+											@click="cancelRename"
+										/>
+									</form>
+									<div
+										v-else-if="playlist"
+										class="flex min-w-0 items-center gap-1"
+									>
+										<button
+											v-if="playlist.access === 'owner'"
+											type="button"
+											class="playlist-name truncate text-left text-2xl font-semibold text-highlighted"
+											@click="beginRename()"
+										>
+											{{ playlist.name }}
+										</button>
+										<h1
+											v-else
+											class="truncate text-2xl font-semibold text-highlighted"
+										>
+											{{ playlist.name }}
+										</h1>
+										<UButton
+											v-if="playlist.access === 'owner'"
+											:icon="icons.pencil"
+											aria-label="Rename playlist"
+											color="neutral"
+											variant="ghost"
+											class="size-9 shrink-0 justify-center"
+											@click="beginRename()"
+										/>
+									</div>
+									<h1
+										v-else
+										class="truncate text-2xl font-semibold text-highlighted"
+									>
 										{{
-											playlist?.name ??
-											(selectedView() === "playlists"
+											selectedView() === "playlists"
 												? "Your playlists"
-												: "Your library")
+												: "Your library"
 										}}
 									</h1>
 									<p class="mt-2 max-w-2xl text-sm text-muted">
@@ -481,7 +574,6 @@ onScopeDispose(library.dispose);
 							</div>
 						</div>
 						<form
-							v-if="!editingOrder"
 							class="flex min-w-0 gap-2"
 							role="search"
 							@submit.prevent="searchLibrary"
@@ -509,20 +601,6 @@ onScopeDispose(library.dispose);
 								@click="clearSearch"
 							/>
 						</form>
-						<div v-else class="flex items-center justify-end gap-2">
-							<UButton
-								label="Cancel"
-								color="neutral"
-								variant="ghost"
-								@click="cancelOrderEdit"
-							/>
-							<UButton
-								label="Save order"
-								:icon="icons.check"
-								:loading="actionPending"
-								@click="saveOrder"
-							/>
-						</div>
 					</div>
 
 					<p v-if="actionError" class="mt-5 text-sm text-warning" role="alert">
@@ -544,30 +622,65 @@ onScopeDispose(library.dispose);
 									class="text-lg font-semibold text-highlighted"
 								>
 									{{
-										editingOrder
-											? "Edit order"
-											: selectedQuery()
-												? `Results for “${selectedQuery()}”`
-												: "Tracks"
+										selectedQuery()
+											? `Results for “${selectedQuery()}”`
+											: "Tracks"
 									}}
 								</h2>
 								<p class="mt-1 text-xs text-muted">
 									{{
-										editingOrder
-											? "Drag tracks or use the arrow buttons, then save once."
-											: entryResult
-												? `${entryResult.total} ${entryResult.total === 1 ? "entry" : "entries"}`
-												: ""
+										entryResult
+											? `${entryResult.total} ${entryResult.total === 1 ? "entry" : "entries"}`
+											: ""
 									}}
 								</p>
 							</div>
-							<div v-if="!editingOrder" class="flex items-center gap-2">
+							<div class="flex flex-wrap items-center justify-end gap-2">
+								<template v-if="selectingEntries">
+									<span class="text-xs tabular-nums text-muted">
+										{{ selectedEntries.length }} selected
+									</span>
+									<UButton
+										label="Select page"
+										color="neutral"
+										variant="ghost"
+										:disabled="!entryResult?.items.length"
+										@click="
+											selectedEntryIds = new Set(
+												entryResult?.items.map(({ entry_id }) => entry_id),
+											)
+										"
+									/>
+									<UButton
+										label="Clear"
+										color="neutral"
+										variant="ghost"
+										:disabled="!selectedEntries.length"
+										@click="selectedEntryIds = new Set()"
+									/>
+									<UButton
+										label="Add selected to queue"
+										:icon="icons.plus"
+										:disabled="!player.canControl || !selectedEntries.length"
+										:loading="actionPending"
+										@click="queueSelected"
+									/>
+									<UButton
+										label="Done"
+										:icon="icons.check"
+										color="neutral"
+										variant="soft"
+										@click="finishEntrySelection"
+									/>
+								</template>
 								<UButton
-									label="Queue all"
-									:icon="icons.play"
-									:disabled="!player.canControl || !playlist.entry_count"
-									:loading="actionPending"
-									@click="queueAll"
+									v-else
+									label="Select"
+									:icon="icons.check"
+									color="neutral"
+									variant="ghost"
+									:disabled="!playlist.entry_count"
+									@click="selectingEntries = true"
 								/>
 								<UDropdownMenu :items="playlistMenu"
 									><UButton
@@ -580,188 +693,216 @@ onScopeDispose(library.dispose);
 							</div>
 						</div>
 
-						<template v-if="selectedView() === 'playlists' && !selectedPlaylistId">
-							<LibraryPlaylistList v-if="initialLoading" :items="[]" loading />
-							<div
-								v-else-if="library.playlists.error.value && !playlistResult"
-								class="grid min-h-64 place-items-center text-center"
-								role="alert"
-							>
-								<div>
-									<UIcon
-										:name="icons.warning"
-										class="mx-auto size-9 text-warning"
-									/>
-									<h3 class="mt-4 font-semibold text-highlighted">
-										Playlists could not be loaded
-									</h3>
-									<UButton
-										class="mt-5"
-										label="Try again"
-										:icon="icons.reload"
-										color="neutral"
-										variant="outline"
-										@click="load(true)"
-									/>
-								</div>
-							</div>
-							<div
-								v-else-if="playlistResult && !playlistResult.items.length"
-								class="py-16 text-center"
-							>
-								<UIcon :name="icons.folder" class="mx-auto size-9 text-muted" />
-								<h3 class="mt-4 font-semibold text-highlighted">
-									{{
-										selectedQuery()
-											? "No matching playlists"
-											: "No playlists yet"
-									}}
-								</h3>
-								<p class="mt-2 text-sm text-muted">
-									{{
-										selectedQuery()
-											? "Try another name."
-											: "Create one here or from any track action."
-									}}
-								</p>
-							</div>
-							<LibraryPlaylistList
-								v-else-if="playlistResult"
-								:items="playlistResult.items"
-								@select="openPlaylist"
-							/>
-						</template>
-
-						<template v-else-if="playlist">
-							<LibraryPlaylistEntryList
-								v-if="initialLoading"
-								:items="[]"
-								loading
-								:editing="editingOrder"
-							/>
-							<div
-								v-else-if="library.entries.error.value && !entryResult"
-								class="grid min-h-64 place-items-center text-center"
-								role="alert"
-							>
-								<div>
-									<UIcon
-										:name="icons.warning"
-										class="mx-auto size-9 text-warning"
-									/>
-									<h3 class="mt-4 font-semibold text-highlighted">
-										Playlist tracks could not be loaded
-									</h3>
-									<UButton
-										class="mt-5"
-										label="Try again"
-										:icon="icons.reload"
-										color="neutral"
-										variant="outline"
-										@click="load(true)"
-									/>
-								</div>
-							</div>
-							<div
-								v-else-if="entryResult && !entryResult.items.length"
-								class="py-16 text-center"
-							>
-								<UIcon :name="icons.music" class="mx-auto size-9 text-muted" />
-								<h3 class="mt-4 font-semibold text-highlighted">
-									{{
-										selectedQuery()
-											? "No matching tracks"
-											: "This playlist is empty"
-									}}
-								</h3>
-								<p class="mt-2 text-sm text-muted">
-									{{
-										selectedQuery()
-											? "Try another title or artist."
-											: "Add tracks from the Player, Queue or History."
-									}}
-								</p>
-							</div>
-							<LibraryPlaylistEntryList
-								v-else-if="entryResult"
-								:items="entryResult.items"
-								:editing="editingOrder"
-								:pending="actionPending"
-								@remove="removeEntry"
-								@order="orderDraft = $event"
-							/>
-						</template>
-
-						<template v-else>
-							<div class="mb-4">
-								<h2
-									id="library-results"
-									class="text-lg font-semibold text-highlighted"
+						<Transition name="library-view" mode="out-in">
+							<div :key="libraryViewKey">
+								<template
+									v-if="selectedView() === 'playlists' && !selectedPlaylistId"
 								>
-									{{
-										selectedQuery()
-											? `Results for “${selectedQuery()}”`
-											: selectedReaction() === "like"
-												? "Liked tracks"
-												: "Disliked tracks"
-									}}
-								</h2>
-							</div>
-							<LibraryTrackList v-if="initialLoading" :items="[]" loading />
-							<div
-								v-else-if="library.tracks.error.value && !trackResult"
-								class="grid min-h-64 place-items-center text-center"
-								role="alert"
-							>
-								<div>
-									<UIcon
-										:name="icons.warning"
-										class="mx-auto size-9 text-warning"
+									<LibraryPlaylistList
+										v-if="initialLoading"
+										:items="[]"
+										loading
 									/>
-									<h3 class="mt-4 font-semibold text-highlighted">
-										Your library could not be loaded
-									</h3>
-									<UButton
-										class="mt-5"
-										label="Try again"
-										:icon="icons.reload"
-										color="neutral"
-										variant="outline"
-										@click="load(true)"
+									<div
+										v-else-if="library.playlists.error.value && !playlistResult"
+										class="grid min-h-64 place-items-center text-center"
+										role="alert"
+									>
+										<div>
+											<UIcon
+												:name="icons.warning"
+												class="mx-auto size-9 text-warning"
+											/>
+											<h3 class="mt-4 font-semibold text-highlighted">
+												Playlists could not be loaded
+											</h3>
+											<UButton
+												class="mt-5"
+												label="Try again"
+												:icon="icons.reload"
+												color="neutral"
+												variant="outline"
+												@click="load(true)"
+											/>
+										</div>
+									</div>
+									<div
+										v-else-if="playlistResult && !playlistResult.items.length"
+										class="py-16 text-center"
+									>
+										<UIcon
+											:name="icons.folder"
+											class="mx-auto size-9 text-muted"
+										/>
+										<h3 class="mt-4 font-semibold text-highlighted">
+											{{
+												selectedQuery()
+													? "No matching playlists"
+													: "No playlists yet"
+											}}
+										</h3>
+										<p class="mt-2 text-sm text-muted">
+											{{
+												selectedQuery()
+													? "Try another name."
+													: "Create one here or from any track action."
+											}}
+										</p>
+									</div>
+									<LibraryPlaylistList
+										v-else-if="playlistResult"
+										:items="playlistResult.items"
+										@select="openPlaylist"
+										@queue="queuePlaylist"
+										@rename="editPlaylist"
+										@duplicate="duplicatePlaylist"
+										@delete="confirmDelete"
 									/>
-								</div>
+								</template>
+
+								<template v-else-if="playlist">
+									<LibraryPlaylistEntryList
+										v-if="initialLoading"
+										:items="[]"
+										loading
+										:reorderable="canReorderEntries"
+									/>
+									<div
+										v-else-if="library.entries.error.value && !entryResult"
+										class="grid min-h-64 place-items-center text-center"
+										role="alert"
+									>
+										<div>
+											<UIcon
+												:name="icons.warning"
+												class="mx-auto size-9 text-warning"
+											/>
+											<h3 class="mt-4 font-semibold text-highlighted">
+												Playlist tracks could not be loaded
+											</h3>
+											<UButton
+												class="mt-5"
+												label="Try again"
+												:icon="icons.reload"
+												color="neutral"
+												variant="outline"
+												@click="load(true)"
+											/>
+										</div>
+									</div>
+									<div
+										v-else-if="entryResult && !entryResult.items.length"
+										class="py-16 text-center"
+									>
+										<UIcon
+											:name="icons.music"
+											class="mx-auto size-9 text-muted"
+										/>
+										<h3 class="mt-4 font-semibold text-highlighted">
+											{{
+												selectedQuery()
+													? "No matching tracks"
+													: "This playlist is empty"
+											}}
+										</h3>
+										<p class="mt-2 text-sm text-muted">
+											{{
+												selectedQuery()
+													? "Try another title or artist."
+													: "Add tracks from the Player, Queue or History."
+											}}
+										</p>
+									</div>
+									<LibraryPlaylistEntryList
+										v-else-if="entryResult"
+										:items="entryResult.items"
+										:total="entryResult.total"
+										:reorderable="canReorderEntries"
+										:selectable="selectingEntries"
+										:selected-entry-ids="selectedEntryIds"
+										:pending="actionPending"
+										@toggle="toggleEntry"
+										@remove="removeEntry"
+										@move="moveEntry"
+									/>
+								</template>
+
+								<template v-else>
+									<div class="mb-4">
+										<h2
+											id="library-results"
+											class="text-lg font-semibold text-highlighted"
+										>
+											{{
+												selectedQuery()
+													? `Results for “${selectedQuery()}”`
+													: selectedReaction() === "like"
+														? "Liked tracks"
+														: "Disliked tracks"
+											}}
+										</h2>
+									</div>
+									<LibraryTrackList v-if="initialLoading" :items="[]" loading />
+									<div
+										v-else-if="library.tracks.error.value && !trackResult"
+										class="grid min-h-64 place-items-center text-center"
+										role="alert"
+									>
+										<div>
+											<UIcon
+												:name="icons.warning"
+												class="mx-auto size-9 text-warning"
+											/>
+											<h3 class="mt-4 font-semibold text-highlighted">
+												Your library could not be loaded
+											</h3>
+											<UButton
+												class="mt-5"
+												label="Try again"
+												:icon="icons.reload"
+												color="neutral"
+												variant="outline"
+												@click="load(true)"
+											/>
+										</div>
+									</div>
+									<div
+										v-else-if="trackResult && !trackResult.items.length"
+										class="py-16 text-center"
+									>
+										<UIcon
+											:name="
+												selectedReaction() === 'like'
+													? icons.like
+													: icons.dislike
+											"
+											class="mx-auto size-9 text-muted"
+										/>
+										<h3 class="mt-4 font-semibold text-highlighted">
+											{{
+												selectedQuery()
+													? "No matching tracks"
+													: selectedReaction() === "like"
+														? "Nothing liked yet"
+														: "Nothing disliked yet"
+											}}
+										</h3>
+									</div>
+									<LibraryTrackList
+										v-else-if="trackResult"
+										:items="trackResult.items"
+										:start-index="
+											(trackResult.page - 1) * trackResult.page_size
+										"
+									/>
+								</template>
 							</div>
-							<div
-								v-else-if="trackResult && !trackResult.items.length"
-								class="py-16 text-center"
-							>
-								<UIcon
-									:name="
-										selectedReaction() === 'like' ? icons.like : icons.dislike
-									"
-									class="mx-auto size-9 text-muted"
-								/>
-								<h3 class="mt-4 font-semibold text-highlighted">
-									{{
-										selectedQuery()
-											? "No matching tracks"
-											: selectedReaction() === "like"
-												? "Nothing liked yet"
-												: "Nothing disliked yet"
-									}}
-								</h3>
-							</div>
-							<LibraryTrackList
-								v-else-if="trackResult"
-								:items="trackResult.items"
-								:start-index="(trackResult.page - 1) * trackResult.page_size"
-							/>
-						</template>
+						</Transition>
 					</section>
 				</div>
 			</template>
 
-			<template v-if="!editingOrder && (initialLoading || activeResult)" #footer>
+			<template v-if="initialLoading || activeResult" #footer>
 				<div class="shrink-0 border-t border-default bg-default px-4 sm:px-6">
 					<SharedPagePagination
 						v-if="activeResult"
@@ -817,30 +958,6 @@ onScopeDispose(library.dispose);
 			></template>
 		</UModal>
 		<UModal
-			:open="renameOpen"
-			title="Rename playlist"
-			description="The tracks and order stay the same."
-			@update:open="renameOpen = $event"
-		>
-			<template #body
-				><form class="space-y-4" @submit.prevent="renamePlaylist">
-					<UInput v-model="playlistName" autofocus maxlength="100" class="w-full" />
-					<div class="flex justify-end gap-2">
-						<UButton
-							label="Cancel"
-							color="neutral"
-							variant="ghost"
-							@click="renameOpen = false"
-						/><UButton
-							type="submit"
-							label="Rename"
-							:loading="actionPending"
-							:disabled="!playlistName.trim()"
-						/>
-					</div></form
-			></template>
-		</UModal>
-		<UModal
 			:open="deleteOpen"
 			title="Delete this playlist?"
 			description="The playlist disappears, but its tracks stay in your library and history."
@@ -864,3 +981,45 @@ onScopeDispose(library.dispose);
 		</UModal>
 	</div>
 </template>
+
+<style scoped>
+.playlist-name {
+	text-decoration-color: transparent;
+	text-underline-offset: 0.2em;
+	transition: text-decoration-color 140ms ease-out;
+}
+.playlist-name:hover,
+.playlist-name:focus-visible {
+	text-decoration-line: underline;
+	text-decoration-color: currentColor;
+}
+.playlist-name:focus-visible {
+	outline: 2px solid var(--ui-primary);
+	outline-offset: 0.25rem;
+}
+.library-view-enter-active,
+.library-view-leave-active {
+	transition:
+		opacity 160ms ease-out,
+		transform 160ms ease-out;
+}
+.library-view-enter-from {
+	opacity: 0;
+	transform: translateY(0.25rem);
+}
+.library-view-leave-to {
+	opacity: 0;
+	transform: translateY(-0.125rem);
+}
+@media (prefers-reduced-motion: reduce) {
+	.playlist-name,
+	.library-view-enter-active,
+	.library-view-leave-active {
+		transition: none;
+	}
+	.library-view-enter-from,
+	.library-view-leave-to {
+		transform: none;
+	}
+}
+</style>

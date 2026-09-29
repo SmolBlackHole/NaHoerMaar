@@ -63,22 +63,14 @@ function value(plays: number, listeningSeconds: number) {
 					:key="track.track_id"
 					class="group flex min-w-0 items-center gap-3 rounded-xl bg-elevated/35 p-2.5 transition-colors hover:bg-elevated/65"
 				>
-					<div class="relative shrink-0">
-						<PlayerTrackArtwork :entry="track" class="size-12 rounded-lg" />
-						<span
-							class="absolute -top-1.5 -left-1.5 grid size-5 place-items-center rounded-full bg-primary text-[0.625rem] font-bold text-inverted shadow-sm"
-						>
-							{{ index + 1 }}
-						</span>
-					</div>
-					<div class="min-w-0 flex-1">
-						<p class="truncate text-sm font-medium text-highlighted">
-							{{ track.title }}
-						</p>
-						<p class="mt-0.5 truncate text-xs text-muted">
-							{{ track.artist_names.join(", ") || "Unknown artist" }}
-						</p>
-					</div>
+					<SharedTrackIdentity
+						:entry="track"
+						:title="track.title"
+						:artist-names="track.artist_names"
+						:position="index + 1"
+						class="min-w-0 flex-1"
+						multiline
+					/>
 					<span class="shrink-0 text-xs tabular-nums text-muted">
 						{{ value(track.plays, track.listening_seconds) }}
 					</span>

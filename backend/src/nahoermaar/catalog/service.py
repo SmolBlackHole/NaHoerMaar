@@ -16,12 +16,14 @@ from nahoermaar.observability import error_code, safe_log_value
 
 from .domain import (
     DiscoveryKind,
+    DiscoveryEntry,
     DiscoveryResult,
     DiscoverySnapshot,
     DiscoverySnapshotId,
     MediaKind,
     MediaReference,
     ObservationQuality,
+    PlaylistMaterialization,
     SourceAvailability,
     Track,
     TrackId,
@@ -43,6 +45,8 @@ from .repository import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+MAX_PLAYLIST_MATERIALIZATION_ENTRIES = 1_000
+_PROVIDER_PLAYLIST_PAGE_SIZE = 100
 type RefreshKey = tuple[DiscoveryKind, str, str, int]
 type RefreshLoader = Callable[[], Awaitable[ProviderPage | ProviderPlaylist]]
 
@@ -217,6 +221,105 @@ class CatalogService:
         if refreshing:
             self._schedule(key, lambda: self._playlist_page(provider, reference, limit))
         return DiscoveryResult(cached, refreshing, not cached.is_fresh(self._clock()))
+
+    async def materialize_playlist(
+        self,
+        source_url: str,
+        *,
+        provider_key: str | None = None,
+        max_entries: int = MAX_PLAYLIST_MATERIALIZATION_ENTRIES,
+    ) -> PlaylistMaterialization:
+        """Resolve a provider playlist without folding duplicate occurrences."""
+        self._ensure_open()
+        if not 1 <= max_entries <= MAX_PLAYLIST_MATERIALIZATION_ENTRIES:
+            raise ValueError(
+                "Playlist materialization requires between 1 and "
+                f"{MAX_PLAYLIST_MATERIALIZATION_ENTRIES} source entries."
+            )
+        provider, reference = self._route(
+            source_url,
+            provider_key,
+            MediaKind.PLAYLIST,
+        )
+        observations: list[ProviderTrack] = []
+        unavailable_entry_count = 0
+        consumed_entries = 0
+        continuation: str | None = None
+        seen_continuations: set[str] = set()
+        title: str | None = None
+        exhausted = False
+
+        try:
+            while consumed_entries < max_entries:
+                page_limit = min(
+                    _PROVIDER_PLAYLIST_PAGE_SIZE,
+                    max_entries - consumed_entries,
+                )
+                playlist = await provider.playlist(
+                    reference,
+                    limit=page_limit,
+                    continuation=continuation,
+                )
+                if playlist.reference != reference:
+                    raise ProviderError("Provider returned another playlist identity.")
+                page = playlist.page
+                page_size = len(page.entries) + page.unavailable_entry_count
+                if page_size > page_limit:
+                    raise ProviderError("Provider playlist page exceeded its limit.")
+                if page_size == 0 and page.continuation is not None:
+                    raise ProviderError(
+                        "Provider playlist continuation made no progress."
+                    )
+                observations.extend(page.entries)
+                unavailable_entry_count += page.unavailable_entry_count
+                consumed_entries += page_size
+                title = playlist.title or title
+                if page.continuation is None:
+                    exhausted = True
+                    break
+                if page.continuation in seen_continuations:
+                    raise ProviderError("Provider playlist continuation repeated.")
+                seen_continuations.add(page.continuation)
+                continuation = page.continuation
+        except ProviderError as error:
+            raise CatalogError(
+                CatalogErrorCode.PROVIDER_FAILED,
+                502,
+                retryable=error.retryable,
+            ) from error
+
+        fetched_at = self._clock()
+        async with self._units() as work:
+            catalog = CatalogRepository(work.session)
+            entries: list[DiscoveryEntry] = []
+            for position, observation in enumerate(observations):
+                track = await catalog.upsert(observation, fetched_at)
+                entries.append(
+                    DiscoveryEntry(
+                        position, track, _observed_source(track, observation)
+                    )
+                )
+            await work.commit()
+        result = PlaylistMaterialization(
+            provider.key,
+            reference.external_id,
+            reference.source_url,
+            title,
+            tuple(entries),
+            exhausted,
+            unavailable_entry_count,
+            not exhausted,
+        )
+        _LOGGER.info(
+            "catalog.playlist_materialized provider=%s external_id=%s entries=%d "
+            "unavailable=%d truncated=%s",
+            provider.key,
+            safe_log_value(reference.external_id),
+            len(result.entries),
+            result.unavailable_entry_count,
+            result.truncated,
+        )
+        return result
 
     async def track(
         self,
@@ -946,12 +1049,16 @@ class CatalogService:
 
 
 def _source_id(track: Track, observation: ProviderTrack) -> TrackSourceId:
+    return _observed_source(track, observation).id
+
+
+def _observed_source(track: Track, observation: ProviderTrack) -> TrackSource:
     for source in track.sources:
         if (
             source.provider == observation.provider
             and source.external_id == observation.external_id
         ):
-            return source.id
+            return source
     raise RuntimeError("Persisted track is missing its observed source.")
 
 

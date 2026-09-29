@@ -83,18 +83,14 @@ watch(featuredArtwork, () => {
 							:key="track.track_id"
 							class="flex items-center gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-elevated/50"
 						>
-							<PlayerTrackArtwork
+							<SharedTrackIdentity
 								:entry="{ artwork_url: track.artwork_url }"
-								class="size-10 shrink-0"
+								:title="track.title"
+								:artist-names="track.artist_names"
+								size="sm"
+								class="min-w-0 flex-1"
+								multiline
 							/>
-							<div class="min-w-0 flex-1">
-								<p class="truncate text-sm font-medium text-highlighted">
-									{{ track.title }}
-								</p>
-								<p class="mt-0.5 truncate text-xs text-muted">
-									{{ track.artist_names.join(", ") || "Unknown artist" }}
-								</p>
-							</div>
 							<span class="shrink-0 text-xs tabular-nums text-muted"
 								>{{ track.plays }}×</span
 							>

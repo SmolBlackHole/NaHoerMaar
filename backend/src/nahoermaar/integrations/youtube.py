@@ -436,15 +436,18 @@ class YouTubeProvider:
         raw_entries = payload.get("entries")
         if not isinstance(raw_entries, list):
             raise ProviderError("YouTube returned invalid playlist results.")
+        raw_entry_values = cast(list[object], raw_entries)
+        page_entries = raw_entry_values[:limit]
         converted = tuple(
             track
-            for entry in cast(list[object], raw_entries)
+            for entry in page_entries
             if (track := _video_track(entry, quality=ObservationQuality.DISCOVERY))
             is not None
         )
         page = ProviderPage(
-            converted[:limit],
-            str(offset + limit) if len(converted) > limit else None,
+            converted,
+            str(offset + limit) if len(raw_entry_values) > limit else None,
+            len(page_entries) - len(converted),
         )
         playlist = ProviderPlaylist(reference, _text(payload.get("title")), page)
         _LOGGER.info(

@@ -8,6 +8,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     Enum as SqlEnum,
@@ -33,6 +34,7 @@ from .domain import (
     PlaylistAccess,
     PlaylistEntryId,
     PlaylistId,
+    PlaylistSource,
     PlaylistTrackSelection,
     PlaylistVisibility,
     ReactionValue,
@@ -93,8 +95,43 @@ class _PlaylistRow(Base):
             name="name_valid",
         ),
         CheckConstraint("updated_at >= created_at", name="update_not_before_creation"),
+        CheckConstraint(
+            "((source_provider_key IS NULL AND source_external_id IS NULL AND "
+            "source_url IS NULL) OR (source_provider_key IS NOT NULL AND "
+            "source_external_id IS NOT NULL AND source_url IS NOT NULL))",
+            name="source_identity_complete",
+        ),
+        CheckConstraint(
+            "source_unavailable_entry_count >= 0",
+            name="source_unavailable_nonnegative",
+        ),
+        CheckConstraint(
+            "((source_provider_key IS NULL AND source_last_attempt_at IS NULL AND "
+            "source_last_successful_sync_at IS NULL AND source_last_error_code IS NULL "
+            "AND source_unavailable_entry_count = 0 AND source_truncated = false) OR "
+            "(source_provider_key IS NOT NULL AND source_last_attempt_at IS NOT NULL "
+            "AND source_last_successful_sync_at IS NOT NULL))",
+            name="source_state_complete",
+        ),
+        CheckConstraint(
+            "source_last_successful_sync_at IS NULL OR source_last_attempt_at IS NULL "
+            "OR source_last_successful_sync_at <= source_last_attempt_at",
+            name="source_success_not_after_attempt",
+        ),
+        UniqueConstraint(
+            "owner_id",
+            "source_provider_key",
+            "source_external_id",
+            name="uq_playlists_owner_source",
+        ),
         Index("ix_playlists_owner_updated_id", "owner_id", "updated_at", "id"),
         Index("ix_playlists_visibility_updated_id", "visibility", "updated_at", "id"),
+        Index(
+            "ix_playlists_source_due",
+            "source_provider_key",
+            "source_last_successful_sync_at",
+            "id",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
@@ -103,6 +140,20 @@ class _PlaylistRow(Base):
     )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     visibility: Mapped[PlaylistVisibility] = mapped_column(_VISIBILITY)
+    source_provider_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_external_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    source_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    source_last_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    source_last_successful_sync_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    source_last_error_code: Mapped[str | None] = mapped_column(
+        String(200), nullable=True
+    )
+    source_unavailable_entry_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_truncated: Mapped[bool] = mapped_column(Boolean, nullable=False)
     revision: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -238,6 +289,14 @@ class PlaylistRepository:
             owner_id=owner_id,
             name=name,
             visibility=PlaylistVisibility.PRIVATE,
+            source_provider_key=None,
+            source_external_id=None,
+            source_url=None,
+            source_last_attempt_at=None,
+            source_last_successful_sync_at=None,
+            source_last_error_code=None,
+            source_unavailable_entry_count=0,
+            source_truncated=False,
             revision=0,
             created_at=now,
             updated_at=now,
@@ -245,6 +304,68 @@ class PlaylistRepository:
         self._session.add(row)
         await self._session.flush()
         return _playlist(row)
+
+    async def import_linked(
+        self,
+        owner_id: UserId,
+        name: str,
+        *,
+        provider_key: str,
+        external_id: str,
+        canonical_url: str,
+        selections: tuple[PlaylistTrackSelection, ...],
+        unavailable_entry_count: int,
+        truncated: bool,
+        now: datetime,
+    ) -> tuple[Playlist, bool]:
+        existing = await self._session.scalar(
+            select(_PlaylistRow)
+            .where(
+                _PlaylistRow.owner_id == owner_id,
+                _PlaylistRow.source_provider_key == provider_key,
+                _PlaylistRow.source_external_id == external_id,
+            )
+            .with_for_update()
+        )
+        if existing is not None:
+            return _playlist(existing), False
+        if len(selections) > MAX_PLAYLIST_ENTRIES:
+            raise LibraryError(LibraryErrorCode.PLAYLIST_CAPACITY_EXCEEDED, 409)
+        row = _PlaylistRow(
+            id=uuid4(),
+            owner_id=owner_id,
+            name=name,
+            visibility=PlaylistVisibility.PRIVATE,
+            source_provider_key=provider_key,
+            source_external_id=external_id,
+            source_url=canonical_url,
+            source_last_attempt_at=now,
+            source_last_successful_sync_at=now,
+            source_last_error_code=None,
+            source_unavailable_entry_count=unavailable_entry_count,
+            source_truncated=truncated,
+            revision=0,
+            created_at=now,
+            updated_at=now,
+        )
+        self._session.add(row)
+        await self._session.flush()
+        self._session.add_all(
+            [
+                _PlaylistEntryRow(
+                    id=uuid4(),
+                    playlist_id=row.id,
+                    track_id=selection.track_id,
+                    preferred_source_id=selection.preferred_source_id,
+                    added_by=owner_id,
+                    position=position,
+                    created_at=now,
+                )
+                for position, selection in enumerate(selections)
+            ]
+        )
+        await self._session.flush()
+        return _playlist(row), True
 
     async def get(
         self,
@@ -355,6 +476,7 @@ class PlaylistRepository:
             expected_revision=expected_revision,
             for_update=True,
         )
+        self._require_internal(row)
         entries = await self._entry_rows(playlist_id, for_update=True)
         if len(entries) + len(selections) > MAX_PLAYLIST_ENTRIES:
             raise LibraryError(LibraryErrorCode.PLAYLIST_CAPACITY_EXCEEDED, 409)
@@ -392,6 +514,7 @@ class PlaylistRepository:
             expected_revision=expected_revision,
             for_update=True,
         )
+        self._require_internal(row)
         entries = list(await self._entry_rows(playlist_id, for_update=True))
         target = next((entry for entry in entries if entry.id == entry_id), None)
         if target is None:
@@ -404,11 +527,12 @@ class PlaylistRepository:
         await self._session.flush()
         return _playlist(row)
 
-    async def reorder(
+    async def move(
         self,
         actor_id: UserId,
         playlist_id: PlaylistId,
-        entry_ids: tuple[PlaylistEntryId, ...],
+        entry_id: PlaylistEntryId,
+        position: int,
         expected_revision: int,
         now: datetime,
     ) -> Playlist:
@@ -419,15 +543,49 @@ class PlaylistRepository:
             expected_revision=expected_revision,
             for_update=True,
         )
-        entries = await self._entry_rows(playlist_id, for_update=True)
-        by_id = {PlaylistEntryId(entry.id): entry for entry in entries}
-        if len(entry_ids) != len(entries) or set(entry_ids) != set(by_id):
+        self._require_internal(row)
+        entries = list(await self._entry_rows(playlist_id, for_update=True))
+        target = next((entry for entry in entries if entry.id == entry_id), None)
+        if target is None:
+            raise LibraryError(LibraryErrorCode.PLAYLIST_ENTRY_NOT_FOUND, 404)
+        if position < 0 or position >= len(entries):
             raise LibraryError(LibraryErrorCode.PLAYLIST_ORDER_INVALID, 422)
-        ordered = [by_id[entry_id] for entry_id in entry_ids]
-        if tuple(entry.id for entry in ordered) != tuple(entry.id for entry in entries):
-            await self._reposition(ordered)
+        original = tuple(entry.id for entry in entries)
+        entries.remove(target)
+        entries.insert(position, target)
+        if tuple(entry.id for entry in entries) != original:
+            await self._reposition(entries)
             self._touch(row, now)
             await self._session.flush()
+        return _playlist(row)
+
+    async def detach(
+        self,
+        actor_id: UserId,
+        playlist_id: PlaylistId,
+        *,
+        expected_revision: int,
+        now: datetime,
+    ) -> Playlist:
+        row, _access = await self._authorized(
+            actor_id,
+            playlist_id,
+            allowed=frozenset({PlaylistAccess.OWNER}),
+            expected_revision=expected_revision,
+            for_update=True,
+        )
+        if row.source_provider_key is None:
+            return _playlist(row)
+        row.source_provider_key = None
+        row.source_external_id = None
+        row.source_url = None
+        row.source_last_attempt_at = None
+        row.source_last_successful_sync_at = None
+        row.source_last_error_code = None
+        row.source_unavailable_entry_count = 0
+        row.source_truncated = False
+        self._touch(row, now)
+        await self._session.flush()
         return _playlist(row)
 
     async def selections(
@@ -609,6 +767,11 @@ class PlaylistRepository:
         row.revision += 1
         row.updated_at = now
 
+    @staticmethod
+    def _require_internal(row: _PlaylistRow) -> None:
+        if row.source_provider_key is not None:
+            raise LibraryError(LibraryErrorCode.PLAYLIST_LINKED_READ_ONLY, 409)
+
 
 def _reaction(row: _TrackReactionRow) -> TrackReaction:
     return TrackReaction(
@@ -621,11 +784,30 @@ def _reaction(row: _TrackReactionRow) -> TrackReaction:
 
 
 def _playlist(row: _PlaylistRow) -> Playlist:
+    source = (
+        PlaylistSource(
+            row.source_provider_key,
+            row.source_external_id,
+            row.source_url,
+            row.source_last_attempt_at,
+            row.source_last_successful_sync_at,
+            row.source_last_error_code,
+            row.source_unavailable_entry_count,
+            row.source_truncated,
+        )
+        if row.source_provider_key is not None
+        and row.source_external_id is not None
+        and row.source_url is not None
+        and row.source_last_attempt_at is not None
+        and row.source_last_successful_sync_at is not None
+        else None
+    )
     return Playlist(
         PlaylistId(row.id),
         UserId(row.owner_id),
         row.name,
         row.visibility,
+        source,
         row.revision,
         row.created_at,
         row.updated_at,

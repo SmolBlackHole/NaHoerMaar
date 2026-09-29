@@ -89,10 +89,13 @@ class ProviderAudio:
 class ProviderPage:
     entries: tuple[ProviderTrack, ...]
     continuation: str | None = None
+    unavailable_entry_count: int = 0
 
     def __post_init__(self) -> None:
         if type(self.entries) is not tuple:
             raise ValueError("Provider entries must be an immutable tuple.")
+        if self.unavailable_entry_count < 0:
+            raise ValueError("Unavailable provider entries must be non-negative.")
 
 
 @dataclass(frozen=True, slots=True)
