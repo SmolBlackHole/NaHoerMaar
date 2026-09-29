@@ -31,6 +31,7 @@ APPLICATION_TABLES = {
     "track_reactions",
     "playlists",
     "playlist_entries",
+    "playlist_entry_undos",
     "playlist_collaborators",
     "track_source_artists",
     "discovery_keys",
@@ -71,7 +72,7 @@ def test_initial_migration_upgrades_and_downgrades_fresh_postgresql() -> None:
                 lambda value: MigrationContext.configure(value).get_current_revision()
             )
             assert APPLICATION_TABLES <= tables
-            assert revision == "0016_linked_playlists"
+            assert revision == "0017_playlist_entry_undos"
 
     try:
         asyncio.run(inspect_upgrade())

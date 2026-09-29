@@ -20,6 +20,8 @@ from .domain import (
     Playlist,
     PlaylistAccess,
     PlaylistEntryId,
+    PlaylistEntryUndo,
+    PlaylistEntryUndoId,
     PlaylistId,
     PlaylistScope,
     PlaylistTrackSelection,
@@ -314,12 +316,30 @@ class LibraryService:
         playlist_id: PlaylistId,
         entry_id: PlaylistEntryId,
         expected_revision: int,
-    ) -> PlaylistSummary:
+    ) -> tuple[PlaylistSummary, PlaylistEntryUndo]:
         async with self._units() as work:
-            await PlaylistRepository(work.session).remove(
+            _playlist, undo = await PlaylistRepository(work.session).remove(
                 actor_id,
                 playlist_id,
                 entry_id,
+                expected_revision,
+                self._clock(),
+            )
+            await work.commit()
+        return await self._reader.playlist(actor_id, playlist_id), undo
+
+    async def undo_playlist_entry(
+        self,
+        actor_id: UserId,
+        playlist_id: PlaylistId,
+        undo_id: PlaylistEntryUndoId,
+        expected_revision: int,
+    ) -> PlaylistSummary:
+        async with self._units() as work:
+            await PlaylistRepository(work.session).restore(
+                actor_id,
+                playlist_id,
+                undo_id,
                 expected_revision,
                 self._clock(),
             )

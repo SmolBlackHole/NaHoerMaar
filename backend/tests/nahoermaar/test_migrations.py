@@ -26,7 +26,7 @@ def test_alembic_uses_packaged_schema_revisions() -> None:
         Path(scripts.dir).resolve()
         == (root / "backend/src/nahoermaar/database/migrations").resolve()
     )
-    assert scripts.get_heads() == ["0016_linked_playlists"]
+    assert scripts.get_heads() == ["0017_playlist_entry_undos"]
 
 
 def test_runtime_migration_uses_packaged_scripts() -> None:
@@ -42,7 +42,7 @@ def test_runtime_migration_uses_packaged_scripts() -> None:
     finally:
         asyncio.run(database.close())
 
-    assert revision == "0016_linked_playlists"
+    assert revision == "0017_playlist_entry_undos"
 
 
 def _current_revision(connection: Connection) -> str | None:

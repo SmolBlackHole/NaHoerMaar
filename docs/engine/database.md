@@ -77,7 +77,7 @@ result through the Session inbox.
 ## Schema ownership
 
 The Alembic chain lives under `database/migrations/versions/`. The supported
-head is `0014_personal_playlists`. Startup upgrades the configured
+head is `0017_playlist_entry_undos`. Startup upgrades the configured
 database before it starts the player or Discord gateway.
 
 `0001_initial` creates the normalized user, catalog, player and listening
@@ -93,8 +93,11 @@ actions, and `0012_track_lyrics` adds the Lyrics cache.
 `0014_personal_playlists` adds owner-scoped playlists and ordered entries with
 stable track and optional source references. Catalog cleanup treats reactions
 and playlist entries as durable references, so it cannot delete music still
-used by the Library. Applied migrations are immutable history. Add a new
-revision instead of editing an applied one.
+used by the Library. `0015_playlist_sharing` adds visibility and collaborators,
+`0016_linked_playlists` records imported playlist sources and synchronization
+state, and `0017_playlist_entry_undos` stores short-lived receipts that restore
+the same playlist occurrence at its prior position. Applied migrations are
+immutable history. Add a new revision instead of editing an applied one.
 
 The runtime currently supports one shared listening session. Independent queues
 per Discord server require an explicit schema and runtime change; the existing

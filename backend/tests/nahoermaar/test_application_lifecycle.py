@@ -264,7 +264,10 @@ def _application(
             cast(HousekeepingContribution, object()),
             LifecycleResource(catalog_resource_name, close=catalog.close),
         ),
-        LibraryModule(cast(LibraryService, object())),
+        LibraryModule(
+            cast(LibraryService, object()),
+            cast(HousekeepingContribution, object()),
+        ),
         LyricsModule(cast(LyricsService, object())),
         player_module,
         listening_module,

@@ -151,6 +151,19 @@ export function createLibraryRepository(request: Transport) {
 					signal,
 				}),
 			),
+		undoPlaylistEntry: (
+			playlistId: string,
+			undoId: string,
+			expectedRevision: number,
+			signal?: AbortSignal,
+		) =>
+			request((api) =>
+				api.POST("/api/library/playlists/{playlist_id}/entries/undo", {
+					params: { path: { playlist_id: playlistId } },
+					body: { undo_id: undoId, expected_revision: expectedRevision },
+					signal,
+				}),
+			),
 		movePlaylistEntry: (
 			playlistId: string,
 			entryId: string,

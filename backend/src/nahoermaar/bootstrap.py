@@ -279,6 +279,7 @@ def bootstrap(
             users_module.housekeeping,
             player_module.housekeeping,
             catalog_module.housekeeping,
+            library_module.housekeeping,
             *operations_foundation.housekeeping,
             integrations_module.housekeeping,
         ),

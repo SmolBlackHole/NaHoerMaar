@@ -181,6 +181,11 @@ const failures: Record<string, FailureCopy> = {
 		icon: "user",
 		retryable: true,
 	},
+	library_playlist_undo_unavailable: {
+		title: "That undo window has closed.",
+		description: "The playlist changed or the removed track can no longer be restored.",
+		icon: "reload",
+	},
 	maintenance_busy: {
 		title: "The maintenance job is already busy.",
 		description: "Let the current run finish before starting another one.",

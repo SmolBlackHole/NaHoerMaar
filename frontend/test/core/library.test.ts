@@ -115,9 +115,10 @@ describe("library core", () => {
 			6,
 		);
 		await client.library.deletePlaylistEntry("playlist/one", "entry/one", 7);
-		await client.library.movePlaylistEntry("playlist/one", "entry-two", 0, 8);
-		await client.library.queuePlaylist("playlist/one", 9, "operation-one");
-		await client.library.deletePlaylist("playlist/one", 10);
+		await client.library.undoPlaylistEntry("playlist/one", "undo-one", 8);
+		await client.library.movePlaylistEntry("playlist/one", "entry-two", 0, 9);
+		await client.library.queuePlaylist("playlist/one", 10, "operation-one");
+		await client.library.deletePlaylist("playlist/one", 11);
 
 		expect(fetcher.mock.calls.map(([url, options]) => [url, options?.method])).toEqual([
 			["/api/library/playlists?page=2&page_size=25&q=Road&snapshot=list", "GET"],
@@ -133,6 +134,7 @@ describe("library core", () => {
 			],
 			["/api/library/playlists/playlist%2Fone/entries", "POST"],
 			["/api/library/playlists/playlist%2Fone/entries/entry%2Fone", "DELETE"],
+			["/api/library/playlists/playlist%2Fone/entries/undo", "POST"],
 			["/api/library/playlists/playlist%2Fone/entries/entry-two/position", "PUT"],
 			["/api/library/playlists/playlist%2Fone/queue", "POST"],
 			["/api/library/playlists/playlist%2Fone", "DELETE"],
@@ -149,10 +151,14 @@ describe("library core", () => {
 			],
 		});
 		expect(JSON.parse(String(fetcher.mock.calls[10]![1]?.body))).toEqual({
-			position: 0,
+			undo_id: "undo-one",
 			expected_revision: 8,
 		});
-		expect(new Headers(fetcher.mock.calls[11]![1]?.headers).get("Idempotency-Key")).toBe(
+		expect(JSON.parse(String(fetcher.mock.calls[11]![1]?.body))).toEqual({
+			position: 0,
+			expected_revision: 9,
+		});
+		expect(new Headers(fetcher.mock.calls[12]![1]?.headers).get("Idempotency-Key")).toBe(
 			"operation-one",
 		);
 	});

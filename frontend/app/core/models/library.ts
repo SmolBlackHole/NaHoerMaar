@@ -10,6 +10,7 @@ export type LibraryTrackPage = Schema["LibraryTrackPageView"];
 export type Playlist = Schema["PlaylistView"];
 export type PlaylistPage = Schema["PlaylistPageView"];
 export type PlaylistEntry = Schema["PlaylistEntryView"];
+export type PlaylistEntryDeletion = Schema["PlaylistEntryDeletionView"];
 export type PlaylistEntryPage = Schema["PlaylistEntryPageView"];
 export type PlaylistTrack = Schema["PlaylistTrackInput"];
 export type ReactionParticipant = Schema["ReactionParticipantView"];

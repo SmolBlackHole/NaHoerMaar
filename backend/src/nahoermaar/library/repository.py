@@ -17,6 +17,7 @@ from sqlalchemy import (
     Integer,
     String,
     UniqueConstraint,
+    delete,
     select,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,11 +29,15 @@ from nahoermaar.users.domain import UserId
 
 from .domain import (
     MAX_PLAYLIST_ENTRIES,
+    PLAYLIST_ENTRY_UNDO_LIFETIME,
     LibraryError,
     LibraryErrorCode,
     Playlist,
     PlaylistAccess,
+    PlaylistEntry,
     PlaylistEntryId,
+    PlaylistEntryUndo,
+    PlaylistEntryUndoId,
     PlaylistId,
     PlaylistSource,
     PlaylistTrackSelection,
@@ -205,6 +210,37 @@ class _PlaylistCollaboratorRow(Base):
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class _PlaylistEntryUndoRow(Base):
+    __tablename__ = "playlist_entry_undos"
+    __table_args__ = (
+        CheckConstraint("position >= 0", name="position_nonnegative"),
+        CheckConstraint("expires_at > removed_at", name="positive_lifetime"),
+        Index("ix_playlist_entry_undos_expires_at", "expires_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    actor_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    playlist_id: Mapped[UUID] = mapped_column(
+        ForeignKey("playlists.id", ondelete="CASCADE"), nullable=False
+    )
+    entry_id: Mapped[UUID] = mapped_column(nullable=False)
+    track_id: Mapped[UUID] = mapped_column(
+        ForeignKey("tracks.id", ondelete="RESTRICT"), nullable=False
+    )
+    preferred_source_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("track_sources.id", ondelete="RESTRICT"), nullable=True
+    )
+    added_by: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    entry_created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    removed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class TrackReactionRepository:
@@ -506,7 +542,7 @@ class PlaylistRepository:
         entry_id: PlaylistEntryId,
         expected_revision: int,
         now: datetime,
-    ) -> Playlist:
+    ) -> tuple[Playlist, PlaylistEntryUndo]:
         row, _access = await self._authorized(
             actor_id,
             playlist_id,
@@ -519,13 +555,94 @@ class PlaylistRepository:
         target = next((entry for entry in entries if entry.id == entry_id), None)
         if target is None:
             raise LibraryError(LibraryErrorCode.PLAYLIST_ENTRY_NOT_FOUND, 404)
+        undo_row = _PlaylistEntryUndoRow(
+            id=uuid4(),
+            actor_id=actor_id,
+            playlist_id=playlist_id,
+            entry_id=target.id,
+            track_id=target.track_id,
+            preferred_source_id=target.preferred_source_id,
+            added_by=target.added_by,
+            position=target.position,
+            entry_created_at=target.created_at,
+            removed_at=now,
+            expires_at=now + PLAYLIST_ENTRY_UNDO_LIFETIME,
+        )
+        self._session.add(undo_row)
         entries.remove(target)
         await self._session.delete(target)
         await self._session.flush()
         await self._reposition(entries)
         self._touch(row, now)
         await self._session.flush()
+        return _playlist(row), _playlist_entry_undo(undo_row)
+
+    async def restore(
+        self,
+        actor_id: UserId,
+        playlist_id: PlaylistId,
+        undo_id: PlaylistEntryUndoId,
+        expected_revision: int,
+        now: datetime,
+    ) -> Playlist:
+        row, _access = await self._authorized(
+            actor_id,
+            playlist_id,
+            allowed=frozenset({PlaylistAccess.OWNER, PlaylistAccess.EDITOR}),
+            expected_revision=expected_revision,
+            for_update=True,
+        )
+        self._require_internal(row)
+        undo_statement = (
+            select(_PlaylistEntryUndoRow)
+            .where(
+                _PlaylistEntryUndoRow.id == undo_id,
+                _PlaylistEntryUndoRow.actor_id == actor_id,
+                _PlaylistEntryUndoRow.playlist_id == playlist_id,
+            )
+            .with_for_update()
+        )
+        undo = await self._session.scalar(undo_statement)
+        if undo is None or undo.expires_at <= now:
+            raise LibraryError(LibraryErrorCode.PLAYLIST_UNDO_UNAVAILABLE, 409)
+        entries = list(await self._entry_rows(playlist_id, for_update=True))
+        if undo.position > len(entries) or any(
+            entry.id == undo.entry_id for entry in entries
+        ):
+            raise LibraryError(LibraryErrorCode.PLAYLIST_UNDO_UNAVAILABLE, 409)
+        restored = _PlaylistEntryRow(
+            id=undo.entry_id,
+            playlist_id=playlist_id,
+            track_id=undo.track_id,
+            preferred_source_id=undo.preferred_source_id,
+            added_by=undo.added_by,
+            position=len(entries) + 1,
+            created_at=undo.entry_created_at,
+        )
+        self._session.add(restored)
+        await self._session.flush()
+        entries.insert(undo.position, restored)
+        await self._reposition(entries)
+        await self._session.delete(undo)
+        self._touch(row, now)
+        await self._session.flush()
         return _playlist(row)
+
+    async def prune_entry_undos(self, now: datetime, *, limit: int) -> int:
+        identifiers = (
+            select(_PlaylistEntryUndoRow.id)
+            .where(_PlaylistEntryUndoRow.expires_at <= now)
+            .order_by(_PlaylistEntryUndoRow.expires_at, _PlaylistEntryUndoRow.id)
+            .limit(limit)
+        )
+        expired = tuple(await self._session.scalars(identifiers))
+        if expired:
+            await self._session.execute(
+                delete(_PlaylistEntryUndoRow).where(
+                    _PlaylistEntryUndoRow.id.in_(expired)
+                )
+            )
+        return len(expired)
 
     async def move(
         self,
@@ -811,4 +928,24 @@ def _playlist(row: _PlaylistRow) -> Playlist:
         row.revision,
         row.created_at,
         row.updated_at,
+    )
+
+
+def _playlist_entry_undo(row: _PlaylistEntryUndoRow) -> PlaylistEntryUndo:
+    return PlaylistEntryUndo(
+        PlaylistEntryUndoId(row.id),
+        UserId(row.actor_id),
+        PlaylistEntry(
+            PlaylistEntryId(row.entry_id),
+            PlaylistId(row.playlist_id),
+            TrackId(row.track_id),
+            TrackSourceId(row.preferred_source_id)
+            if row.preferred_source_id is not None
+            else None,
+            UserId(row.added_by),
+            row.position,
+            row.entry_created_at,
+        ),
+        row.removed_at,
+        row.expires_at,
     )

@@ -5,7 +5,7 @@
 """Domain values and failures owned by the personal Library."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import NewType
 from uuid import UUID
@@ -15,10 +15,12 @@ from nahoermaar.users.domain import UserId
 
 PlaylistId = NewType("PlaylistId", UUID)
 PlaylistEntryId = NewType("PlaylistEntryId", UUID)
+PlaylistEntryUndoId = NewType("PlaylistEntryUndoId", UUID)
 
 MAX_PLAYLIST_ENTRIES = 1_000
 MAX_PLAYLIST_MUTATION_ENTRIES = 100
 MAX_PLAYLIST_NAME_LENGTH = 100
+PLAYLIST_ENTRY_UNDO_LIFETIME = timedelta(seconds=12)
 
 
 class ReactionValue(StrEnum):
@@ -56,6 +58,7 @@ class LibraryErrorCode(StrEnum):
     PLAYLIST_COLLABORATOR_INVALID = "library_playlist_collaborator_invalid"
     PLAYLIST_COLLABORATOR_EXISTS = "library_playlist_collaborator_exists"
     PLAYLIST_LINKED_READ_ONLY = "library_playlist_linked_read_only"
+    PLAYLIST_UNDO_UNAVAILABLE = "library_playlist_undo_unavailable"
     USER_NOT_FOUND = "library_user_not_found"
 
 
@@ -170,6 +173,21 @@ class PlaylistEntry:
         if self.position < 0:
             raise ValueError("Playlist entry position must be non-negative.")
         _aware(self.created_at, "Playlist entry creation time")
+
+
+@dataclass(frozen=True, slots=True)
+class PlaylistEntryUndo:
+    id: PlaylistEntryUndoId
+    actor_id: UserId
+    entry: PlaylistEntry
+    removed_at: datetime
+    expires_at: datetime
+
+    def __post_init__(self) -> None:
+        _aware(self.removed_at, "Playlist undo creation time")
+        _aware(self.expires_at, "Playlist undo expiry time")
+        if self.expires_at <= self.removed_at:
+            raise ValueError("Playlist undo expiry must follow creation.")
 
 
 @dataclass(frozen=True, slots=True)

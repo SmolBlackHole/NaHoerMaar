@@ -438,6 +438,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/library/playlists/{playlist_id}/entries/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Undo Playlist Entry */
+        post: operations["undoLibraryPlaylistEntry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/library/playlists/{playlist_id}/queue": {
         parameters: {
             query?: never;
@@ -2133,6 +2150,20 @@ export interface components {
             /** Tracks */
             tracks: components["schemas"]["PlaylistTrackInput"][];
         };
+        /** PlaylistEntryDeletionView */
+        PlaylistEntryDeletionView: {
+            playlist: components["schemas"]["PlaylistView"];
+            /**
+             * Undo Expires At
+             * Format: date-time
+             */
+            undo_expires_at: string;
+            /**
+             * Undo Id
+             * Format: uuid
+             */
+            undo_id: string;
+        };
         /** PlaylistEntryPageView */
         PlaylistEntryPageView: {
             /** Items */
@@ -2147,6 +2178,16 @@ export interface components {
             snapshot: string | null;
             /** Total */
             total: number;
+        };
+        /** PlaylistEntryUndoInput */
+        PlaylistEntryUndoInput: {
+            /** Expected Revision */
+            expected_revision: number;
+            /**
+             * Undo Id
+             * Format: uuid
+             */
+            undo_id: string;
         };
         /** PlaylistEntryView */
         PlaylistEntryView: {
@@ -4997,7 +5038,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PlaylistView"];
+                    "application/json": components["schemas"]["PlaylistEntryDeletionView"];
                 };
             };
             /** @description Authentication required */
@@ -5078,6 +5119,95 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["PlaylistMoveInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaylistView"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Request not allowed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description State conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Dependency unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+        };
+    };
+    undoLibraryPlaylistEntry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playlist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlaylistEntryUndoInput"];
             };
         };
         responses: {

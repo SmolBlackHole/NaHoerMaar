@@ -16,6 +16,7 @@ from nahoermaar.catalog.domain import TrackId, TrackSourceId
 from nahoermaar.library.domain import (
     MAX_PLAYLIST_MUTATION_ENTRIES,
     PlaylistEntryId,
+    PlaylistEntryUndoId,
     PlaylistId,
     PlaylistAccess,
     PlaylistScope,
@@ -214,6 +215,18 @@ class PlaylistEntriesInput(PlaylistRevisionInput):
 
 class PlaylistMoveInput(PlaylistRevisionInput):
     position: int = Field(ge=0)
+
+
+class PlaylistEntryUndoInput(PlaylistRevisionInput):
+    undo_id: UUID
+
+
+class PlaylistEntryDeletionView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    playlist: PlaylistView
+    undo_id: UUID
+    undo_expires_at: datetime
 
 
 class PlaylistDeletionView(BaseModel):
@@ -499,11 +512,33 @@ def router(application: Application) -> APIRouter:
         playlist_id: UUID,
         entry_id: UUID,
         body: PlaylistRevisionInput,
-    ) -> PlaylistView:
-        playlist = await application.library.service.remove_playlist_entry(
+    ) -> PlaylistEntryDeletionView:
+        playlist, undo = await application.library.service.remove_playlist_entry(
             authenticated(request).user.id,
             PlaylistId(playlist_id),
             PlaylistEntryId(entry_id),
+            body.expected_revision,
+        )
+        return PlaylistEntryDeletionView(
+            playlist=_playlist_view(playlist, application),
+            undo_id=undo.id,
+            undo_expires_at=undo.expires_at,
+        )
+
+    @routes.post(
+        "/playlists/{playlist_id}/entries/undo",
+        operation_id="undoLibraryPlaylistEntry",
+        responses=error_responses(401, 403, 404, 409, 422, 500, 503),
+    )
+    async def undo_playlist_entry(
+        request: Request,
+        playlist_id: UUID,
+        body: PlaylistEntryUndoInput,
+    ) -> PlaylistView:
+        playlist = await application.library.service.undo_playlist_entry(
+            authenticated(request).user.id,
+            PlaylistId(playlist_id),
+            PlaylistEntryUndoId(body.undo_id),
             body.expected_revision,
         )
         return _playlist_view(playlist, application)

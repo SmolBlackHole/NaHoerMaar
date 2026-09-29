@@ -110,6 +110,7 @@ def test_bootstrap_loads_settings_and_composes_auth(
         "/api/library/playlists/{playlist_id}/entries",
         "/api/library/playlists/{playlist_id}/entries/{entry_id}",
         "/api/library/playlists/{playlist_id}/entries/{entry_id}/position",
+        "/api/library/playlists/{playlist_id}/entries/undo",
         "/api/library/playlists/{playlist_id}/queue",
     } <= paths.keys()
     assert "/api/library/playlists/{playlist_id}/order" not in paths

@@ -48,6 +48,7 @@ from nahoermaar.library.domain import (
     ReactionValue,
 )
 from nahoermaar.library.read_model import LibraryReadModel
+from nahoermaar.library.repository import PlaylistRepository
 from nahoermaar.library.service import LibraryService
 from nahoermaar.messaging import MessageContext
 from nahoermaar.player.domain import ListeningSessionId, OperationId
@@ -477,12 +478,21 @@ def test_personal_playlists_preserve_order_revisions_and_catalog_references() ->
         ).total == 5
 
         clock[0] += timedelta(minutes=1)
-        playlist = await library.remove_playlist_entry(
+        removed_entry = reordered.entries[-1]
+        playlist, undo = await library.remove_playlist_entry(
             owner,
             playlist.playlist_id,
-            reordered.entries[-1].entry_id,
+            removed_entry.entry_id,
             playlist.revision,
         )
+        assert undo.entry.id == removed_entry.entry_id
+        assert undo.entry.playlist_id == removed_entry.playlist_id
+        assert undo.entry.track_id == removed_entry.track_id
+        assert undo.entry.preferred_source_id == removed_entry.preferred_source_id
+        assert undo.entry.added_by == removed_entry.added_by.user_id
+        assert undo.entry.position == removed_entry.position
+        assert undo.entry.created_at == removed_entry.added_at
+        assert undo.actor_id == owner
         remaining = await library.playlist_entries(
             owner,
             playlist.playlist_id,
@@ -491,6 +501,63 @@ def test_personal_playlists_preserve_order_revisions_and_catalog_references() ->
             revision=playlist.revision,
         )
         assert tuple(entry.position for entry in remaining.entries) == tuple(range(4))
+
+        playlist = await library.undo_playlist_entry(
+            owner,
+            playlist.playlist_id,
+            undo.id,
+            playlist.revision,
+        )
+        restored = await library.playlist_entries(
+            owner,
+            playlist.playlist_id,
+            page=1,
+            page_size=100,
+            revision=playlist.revision,
+        )
+        assert tuple(entry.entry_id for entry in restored.entries) == tuple(
+            entry.entry_id for entry in reordered.entries
+        )
+        assert restored.entries[-1] == removed_entry
+        with pytest.raises(LibraryError) as reused_undo:
+            await library.undo_playlist_entry(
+                owner,
+                playlist.playlist_id,
+                undo.id,
+                playlist.revision,
+            )
+        assert reused_undo.value.code is LibraryErrorCode.PLAYLIST_UNDO_UNAVAILABLE
+
+        playlist, expired_undo = await library.remove_playlist_entry(
+            owner,
+            playlist.playlist_id,
+            removed_entry.entry_id,
+            playlist.revision,
+        )
+        clock[0] += timedelta(seconds=13)
+        with pytest.raises(LibraryError) as expired:
+            await library.undo_playlist_entry(
+                owner,
+                playlist.playlist_id,
+                expired_undo.id,
+                playlist.revision,
+            )
+        assert expired.value.code is LibraryErrorCode.PLAYLIST_UNDO_UNAVAILABLE
+
+        remaining = await library.playlist_entries(
+            owner,
+            playlist.playlist_id,
+            page=1,
+            page_size=100,
+            revision=playlist.revision,
+        )
+        async with units() as work:
+            removed_undos = await PlaylistRepository(work.session).prune_entry_undos(
+                clock[0],
+                limit=100,
+            )
+            await work.commit()
+        assert removed_undos == 1
 
         duplicate = await library.duplicate_playlist(
             owner,

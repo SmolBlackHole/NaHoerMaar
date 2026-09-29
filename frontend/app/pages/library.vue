@@ -284,15 +284,72 @@ async function removeEntry(entry: PlaylistEntry) {
 	if (!current || actionPending.value) return;
 	actionPending.value = true;
 	try {
-		playlist.value = await core.client.library.deletePlaylistEntry(
+		const deletion = await core.client.library.deletePlaylistEntry(
 			current.playlist_id,
 			entry.entry_id,
 			current.revision,
 		);
-		toast.add({ title: "Track removed", description: entry.title, color: "success" });
+		playlist.value = deletion.playlist;
+		const remaining = Math.max(
+			0,
+			Math.min(12_000, Date.parse(deletion.undo_expires_at) - Date.now()),
+		);
+		const toastId = `playlist-entry-undo-${deletion.undo_id}`;
+		toast.add({
+			id: toastId,
+			title: "Track removed",
+			description: entry.title,
+			color: "success",
+			duration: remaining || 5000,
+			actions: remaining
+				? [
+						{
+							label: "Undo",
+							onClick: () =>
+								void undoEntry(
+									current.playlist_id,
+									deletion.undo_id,
+									deletion.playlist.revision,
+									entry.title,
+									toastId,
+								),
+						},
+					]
+				: [],
+		});
 		await load(true);
 	} catch (failure) {
 		actionError.value = failureMessage(failure);
+	} finally {
+		actionPending.value = false;
+	}
+}
+async function undoEntry(
+	playlistId: string,
+	undoId: string,
+	expectedRevision: number,
+	title: string,
+	toastId: string,
+) {
+	if (actionPending.value) return;
+	actionPending.value = true;
+	try {
+		playlist.value = await core.client.library.undoPlaylistEntry(
+			playlistId,
+			undoId,
+			expectedRevision,
+		);
+		toast.remove(toastId);
+		toast.add({ title: "Track restored", description: title, color: "success" });
+		await load(true);
+	} catch (failure) {
+		toast.remove(toastId);
+		actionError.value = failureMessage(failure);
+		toast.add({
+			title: "Could not restore track",
+			description: actionError.value,
+			color: "warning",
+		});
 	} finally {
 		actionPending.value = false;
 	}
