@@ -22,11 +22,7 @@ import type {
 import type { LibraryTrack, ReactionSummary, ReactionValue } from "../models/library";
 
 export type AccountStatus =
-	| "checking"
-	| "authenticated"
-	| "signed_out"
-	| "forbidden"
-	| "unavailable";
+	"checking" | "authenticated" | "signed_out" | "forbidden" | "unavailable";
 export type PlayerConnection = "closed" | "connecting" | "live" | "reconnecting";
 
 export interface SettledOperation {
@@ -236,6 +232,7 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 		const pendingTrackIds = ref<string[]>([]);
 		const error = ref<string | null>(null);
 		const revision = ref(0);
+		const playlistRevision = ref(0);
 		const accessOrder: string[] = [];
 		const controllers = new Set<AbortController>();
 		const maxEntries = 500;
@@ -248,6 +245,7 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 			pendingTrackIds.value = [];
 			error.value = null;
 			revision.value = 0;
+			playlistRevision.value = 0;
 			accessOrder.splice(0);
 		}
 
@@ -356,6 +354,7 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 			pendingTrackIds,
 			error,
 			revision,
+			playlistRevision,
 			summary: (trackId: string) => summaries.value[trackId] ?? null,
 			isLoading: (trackId: string) => loadingTrackIds.value.includes(trackId),
 			isPending: (trackId: string) => pendingTrackIds.value.includes(trackId),
@@ -365,6 +364,9 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 			removeReaction: (trackId: string) => mutate(trackId, null),
 			toggleReaction: (trackId: string, value: ReactionValue) =>
 				mutate(trackId, summaries.value[trackId]?.reaction === value ? null : value),
+			invalidatePlaylists: () => {
+				playlistRevision.value += 1;
+			},
 		};
 	});
 

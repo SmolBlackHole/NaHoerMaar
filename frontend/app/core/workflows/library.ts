@@ -3,7 +3,13 @@
 
 import type { SessionAuthority } from "../api/transport";
 import type { BackendClient } from "../client";
-import type { LibraryTrackPage, ReactionParticipantPage, ReactionValue } from "../models/library";
+import type {
+	LibraryTrackPage,
+	PlaylistEntryPage,
+	PlaylistPage,
+	ReactionParticipantPage,
+	ReactionValue,
+} from "../models/library";
 import { createPagePagination } from "./pagePagination";
 
 export interface LibraryTrackFilters {
@@ -16,6 +22,7 @@ export interface ReactionParticipantFilters {
 
 export function createLibraryWorkflow(client: BackendClient, authority: SessionAuthority) {
 	let participantTrackId: string | null = null;
+	let entryPlaylistId: string | null = null;
 	const tracks = createPagePagination<LibraryTrackPage, LibraryTrackFilters>(
 		authority,
 		(request, signal) =>
@@ -47,6 +54,31 @@ export function createLibraryWorkflow(client: BackendClient, authority: SessionA
 			);
 		},
 	);
+	const playlists = createPagePagination<PlaylistPage>(authority, (request, signal) =>
+		client.library.playlists(
+			{
+				page: request.page,
+				pageSize: request.pageSize,
+				query: request.query,
+				snapshot: request.snapshot,
+			},
+			signal,
+		),
+	);
+	const entries = createPagePagination<PlaylistEntryPage>(authority, (request, signal) => {
+		const playlistId = entryPlaylistId;
+		if (!playlistId) throw new Error("A playlist is required before loading entries.");
+		return client.library.playlistEntries(
+			playlistId,
+			{
+				page: request.page,
+				pageSize: request.pageSize,
+				query: request.query,
+				snapshot: request.snapshot,
+			},
+			signal,
+		);
+	});
 	return {
 		tracks: tracks.page,
 		loadTracks: tracks.load,
@@ -73,9 +105,34 @@ export function createLibraryWorkflow(client: BackendClient, authority: SessionA
 			participantTrackId = null;
 			participants.page.set(null);
 		},
+		playlists: playlists.page,
+		loadPlaylists: playlists.load,
+		entries: entries.page,
+		loadEntries: (
+			playlistId: string,
+			options: {
+				page?: number;
+				pageSize?: number;
+				query?: string;
+				newSnapshot?: boolean;
+			} = {},
+		) => {
+			const changedPlaylist = entryPlaylistId !== playlistId;
+			entryPlaylistId = playlistId;
+			return entries.load({
+				...options,
+				newSnapshot: options.newSnapshot || changedPlaylist,
+			});
+		},
+		clearEntries: () => {
+			entryPlaylistId = null;
+			entries.page.set(null);
+		},
 		dispose: () => {
 			tracks.dispose();
 			participants.dispose();
+			playlists.dispose();
+			entries.dispose();
 		},
 	};
 }

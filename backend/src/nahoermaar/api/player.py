@@ -317,7 +317,7 @@ def router(application: Application) -> APIRouter:
             ),
             MessageContext(actor_id=current.user.id),
         )
-        return await _mutation(application, result)
+        return await mutation_view(application, result)
 
     @routes.delete(
         "/queue/{entry_id}",
@@ -340,7 +340,7 @@ def router(application: Application) -> APIRouter:
             ),
             MessageContext(actor_id=current.user.id),
         )
-        return await _mutation(application, result)
+        return await mutation_view(application, result)
 
     @routes.patch(
         "/queue/{entry_id}",
@@ -368,7 +368,7 @@ def router(application: Application) -> APIRouter:
             ),
             MessageContext(actor_id=current.user.id),
         )
-        return await _mutation(application, result)
+        return await mutation_view(application, result)
 
     @routes.post(
         "/queue/clear",
@@ -390,7 +390,7 @@ def router(application: Application) -> APIRouter:
             ),
             MessageContext(actor_id=current.user.id),
         )
-        return await _mutation(application, result)
+        return await mutation_view(application, result)
 
     @routes.post(
         "/queue/undo",
@@ -411,7 +411,7 @@ def router(application: Application) -> APIRouter:
             ),
             MessageContext(actor_id=current.user.id),
         )
-        return await _mutation(application, result)
+        return await mutation_view(application, result)
 
     @routes.post(
         "/control",
@@ -567,7 +567,7 @@ def router(application: Application) -> APIRouter:
             ),
             MessageContext(actor_id=current.user.id),
         )
-        return await _mutation(application, result)
+        return await mutation_view(application, result)
 
     @routes.delete("/radio", operation_id="stopRadio", responses=_MUTATION_ERRORS)
     async def stop_radio(
@@ -584,7 +584,7 @@ def router(application: Application) -> APIRouter:
             ),
             MessageContext(actor_id=current.user.id),
         )
-        return await _mutation(application, result)
+        return await mutation_view(application, result)
 
     @routes.post(
         "/radio/retry",
@@ -605,7 +605,7 @@ def router(application: Application) -> APIRouter:
             ),
             MessageContext(actor_id=current.user.id),
         )
-        return await _mutation(application, result)
+        return await mutation_view(application, result)
 
     async def execute(request: Request, command: PlayerCommand) -> MutationView:
         current = authenticated(request)
@@ -613,7 +613,7 @@ def router(application: Application) -> APIRouter:
             command,
             MessageContext(actor_id=current.user.id),
         )
-        return await _mutation(application, result)
+        return await mutation_view(application, result)
 
     return routes
 
@@ -622,7 +622,7 @@ def _session_id(application: Application) -> ListeningSessionId:
     return application.player.service.state.session.id
 
 
-async def _mutation(
+async def mutation_view(
     application: Application,
     reply: MutationReply,
 ) -> MutationView:

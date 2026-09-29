@@ -65,12 +65,23 @@ class TimestampPosition:
     identifier: UUID
 
 
+@dataclass(frozen=True, slots=True)
+class RevisionPosition:
+    resource_id: UUID
+    revision: int
+
+
 def encode_position(position: TimestampPosition | None) -> str | None:
     if position is None:
         return None
     payload = (
         f"{position.occurred_at.astimezone(UTC).isoformat()}|{position.identifier}"
     )
+    return urlsafe_b64encode(payload.encode()).decode().rstrip("=")
+
+
+def encode_revision(position: RevisionPosition) -> str:
+    payload = f"{position.resource_id}|{position.revision}"
     return urlsafe_b64encode(payload.encode()).decode().rstrip("=")
 
 
@@ -94,6 +105,21 @@ def decode_position(value: str | None) -> TimestampPosition | None:
             occurred_at.astimezone(UTC),
             UUID(identifier_value),
         )
+    except (Base64Error, UnicodeDecodeError, ValueError) as error:
+        raise ApiError(ApiErrorCode.VALIDATION_FAILED, 422) from error
+
+
+def decode_revision(value: str | None) -> RevisionPosition | None:
+    if value is None:
+        return None
+    try:
+        padding = "=" * (-len(value) % 4)
+        payload = urlsafe_b64decode(value + padding).decode()
+        resource_id, revision = payload.split("|", 1)
+        parsed_revision = int(revision)
+        if parsed_revision < 0:
+            raise ValueError("Pagination revision must be non-negative.")
+        return RevisionPosition(UUID(resource_id), parsed_revision)
     except (Base64Error, UnicodeDecodeError, ValueError) as error:
         raise ApiError(ApiErrorCode.VALIDATION_FAILED, 422) from error
 

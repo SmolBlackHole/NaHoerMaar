@@ -226,7 +226,7 @@ const confirmationDescription = computed(() =>
 						>{{ current?.track.title ?? "Nothing playing" }}</NuxtLink
 					>
 				</UTooltip>
-				<p class="mt-1 truncate text-xs text-muted">
+				<p class="mt-0.5 truncate text-xs leading-tight text-muted">
 					<PlayerArtistLink v-if="current" :entry="current.track" /><template v-else
 						>Your next track is up to you</template
 					>
@@ -240,6 +240,11 @@ const confirmationDescription = computed(() =>
 				:show-counts="false"
 				:show-details="false"
 				class="dock-reactions"
+			/>
+			<LibraryPlaylistAction
+				v-if="current"
+				:track="{ track_id: current.track.id, preferred_source_id: current.source_id }"
+				:title="current.track.title"
 			/>
 			<PlayerRadioAction v-if="current" :entry="current" labelled />
 		</div>
@@ -423,26 +428,6 @@ const confirmationDescription = computed(() =>
 					</p>
 				</template>
 			</UPopover>
-			<label for="browser-volume" class="sr-only"
-				>Browser video volume, only on this device</label
-			>
-			<UTooltip text="Browser video volume, only on this device">
-				<input
-					id="browser-volume"
-					v-model.number="browserVolume"
-					type="range"
-					min="0"
-					max="100"
-					step="1"
-					class="volume-slider hidden min-w-0 w-24 lg:block"
-					:aria-valuetext="`${browserVolume} percent, only on this device`"
-				/>
-			</UTooltip>
-			<output
-				for="browser-volume"
-				class="hidden w-9 text-right text-xs tabular-nums text-muted lg:block"
-				>{{ browserVolume }}%</output
-			>
 		</div>
 		<UModal
 			:open="confirmation !== null"
@@ -478,13 +463,13 @@ const confirmationDescription = computed(() =>
 .player-dock {
 	position: relative;
 	display: grid;
-	grid-template-columns: minmax(9rem, 1fr) auto minmax(10rem, 1.3fr) auto;
+	grid-template-columns: minmax(12rem, 1fr) auto minmax(14rem, 32rem) auto;
 	grid-template-areas: "track transport timeline volume";
 	align-items: center;
-	gap: 1.5rem;
+	gap: 1rem;
 	flex-shrink: 0;
-	min-height: 5.5rem;
-	padding: 1rem 1.75rem max(1rem, env(safe-area-inset-bottom));
+	min-height: 4.75rem;
+	padding: 0.75rem 1.5rem max(0.75rem, env(safe-area-inset-bottom));
 	background: var(--room-dock);
 	border-top: 1px solid var(--ui-border);
 }
@@ -498,6 +483,8 @@ const confirmationDescription = computed(() =>
 .dock-timeline {
 	grid-area: timeline;
 	gap: 0.5rem;
+	width: 100%;
+	justify-self: center;
 }
 .dock-volume {
 	grid-area: volume;
@@ -505,8 +492,8 @@ const confirmationDescription = computed(() =>
 	gap: 0.25rem;
 }
 .dock-cover {
-	width: 2.75rem;
-	height: 2.75rem;
+	width: 2.5rem;
+	height: 2.5rem;
 	border-radius: 0.375rem;
 }
 .dock-play {
@@ -518,7 +505,7 @@ const confirmationDescription = computed(() =>
 	transform: scale(0.94);
 }
 .seek-control {
-	--seek-thumb-size: 12px;
+	--seek-thumb-size: 10px;
 	position: relative;
 }
 .seek-preview {
@@ -545,13 +532,13 @@ const confirmationDescription = computed(() =>
 .seek-slider {
 	display: block;
 	width: 100%;
-	height: 1.75rem;
+	height: 1.5rem;
 	appearance: none;
 	background: transparent;
 	cursor: pointer;
 }
 .seek-slider::-webkit-slider-runnable-track {
-	height: 3px;
+	height: 2px;
 	border-radius: 999px;
 	background: linear-gradient(
 		to right,
@@ -560,12 +547,12 @@ const confirmationDescription = computed(() =>
 	);
 }
 .seek-slider::-moz-range-track {
-	height: 3px;
+	height: 2px;
 	border-radius: 999px;
 	background: var(--ui-bg-accented);
 }
 .seek-slider::-moz-range-progress {
-	height: 3px;
+	height: 2px;
 	border-radius: 999px;
 	background: var(--ui-primary);
 }
@@ -573,7 +560,7 @@ const confirmationDescription = computed(() =>
 	appearance: none;
 	width: var(--seek-thumb-size);
 	height: var(--seek-thumb-size);
-	margin-top: -4.5px;
+	margin-top: -4px;
 	border-radius: 50%;
 	background: var(--ui-primary);
 }
@@ -602,11 +589,7 @@ const confirmationDescription = computed(() =>
 		grid-template-columns: minmax(0, 1fr) auto auto;
 		grid-template-areas: "track transport volume" "timeline timeline timeline";
 		gap: 0.75rem 1rem;
-		padding: 0.75rem 1.5rem;
-	}
-	.dock-volume input,
-	.dock-volume > output {
-		display: none;
+		padding: 0.625rem 1.25rem;
 	}
 }
 @container workspace (max-width: 600px) {

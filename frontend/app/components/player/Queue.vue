@@ -14,6 +14,9 @@ const { icons } = useTheme();
 const { position } = usePlaybackPosition();
 const toast = useToast();
 const queue = computed(() => player.state?.queue ?? []);
+const selecting = ref(false);
+const selectedIds = ref<Set<string>>(new Set());
+const selectedEntries = computed(() => queue.value.filter(({ id }) => selectedIds.value.has(id)));
 watch(
 	() => [queue.value.map(({ request }) => request.track.id).join(","), session.status] as const,
 	([, status]) => {
@@ -21,6 +24,13 @@ watch(
 			void reactions.load(queue.value.map(({ request }) => request.track.id));
 	},
 	{ immediate: true },
+);
+watch(
+	() => queue.value.map(({ id }) => id).join(","),
+	() => {
+		const available = new Set(queue.value.map(({ id }) => id));
+		selectedIds.value = new Set([...selectedIds.value].filter((id) => available.has(id)));
+	},
 );
 const mine = computed(() =>
 	queue.value.filter(({ request }) => request.requested_by === session.account?.user_id),
@@ -57,6 +67,16 @@ function confirmClear(requestedBy: string | null, name: string | null, mine = fa
 		? queue.value.filter(({ request }) => request.requested_by === requestedBy).length
 		: queue.value.length;
 	if (count) clearing.value = { requestedBy, name, count, mine };
+}
+function toggleSelection(entryId: string) {
+	const next = new Set(selectedIds.value);
+	if (next.has(entryId)) next.delete(entryId);
+	else next.add(entryId);
+	selectedIds.value = next;
+}
+function finishSelection() {
+	selectedIds.value = new Set();
+	selecting.value = false;
 }
 const removalItems = computed<DropdownMenuItem[][]>(() => {
 	const groups: DropdownMenuItem[][] = [
@@ -263,24 +283,66 @@ function formatWait(seconds: number) {
 					{{ queue.length }} {{ queue.length === 1 ? "track" : "tracks" }}
 				</span>
 			</div>
-			<UDropdownMenu
-				:items="removalItems"
-				:content="{ align: 'end' }"
-				:ui="{ item: 'min-h-11', content: 'max-w-[calc(100vw-2rem)]' }"
-			>
-				<UButton
-					label="Remove"
-					:loading="player.isPending('queue.clear')"
-					:aria-busy="player.isPending('queue.clear')"
-					:icon="icons.trash"
-					:trailing-icon="icons.chevronDown"
-					color="neutral"
-					variant="ghost"
-					class="min-h-11"
-					:disabled="!player.canControl || !queue.length"
-					aria-label="Remove tracks from the queue"
-				/>
-			</UDropdownMenu>
+			<div class="flex flex-wrap items-center justify-end gap-1">
+				<template v-if="selecting">
+					<span class="mr-2 text-xs tabular-nums text-muted"
+						>{{ selectedEntries.length }} selected</span
+					>
+					<UButton
+						label="Clear"
+						color="neutral"
+						variant="ghost"
+						:disabled="!selectedEntries.length"
+						@click="selectedIds = new Set()"
+					/>
+					<LibraryPlaylistPicker
+						:tracks="
+							selectedEntries.map(({ request }) => ({
+								track_id: request.track.id,
+								preferred_source_id: request.source_id,
+							}))
+						"
+						label="Add selected to playlist"
+						:disabled="!selectedEntries.length"
+						@added="finishSelection"
+					/>
+					<UButton
+						label="Done"
+						:icon="icons.check"
+						color="neutral"
+						variant="soft"
+						@click="finishSelection"
+					/>
+				</template>
+				<template v-else>
+					<UButton
+						label="Select"
+						:icon="icons.check"
+						color="neutral"
+						variant="ghost"
+						:disabled="!queue.length"
+						@click="selecting = true"
+					/>
+					<UDropdownMenu
+						:items="removalItems"
+						:content="{ align: 'end' }"
+						:ui="{ item: 'min-h-11', content: 'max-w-[calc(100vw-2rem)]' }"
+					>
+						<UButton
+							label="Remove"
+							:loading="player.isPending('queue.clear')"
+							:aria-busy="player.isPending('queue.clear')"
+							:icon="icons.trash"
+							:trailing-icon="icons.chevronDown"
+							color="neutral"
+							variant="ghost"
+							class="min-h-11"
+							:disabled="!player.canControl || !queue.length"
+							aria-label="Remove tracks from the queue"
+						/>
+					</UDropdownMenu>
+				</template>
+			</div>
 		</div>
 
 		<div
@@ -310,6 +372,7 @@ function formatWait(seconds: number) {
 					<div class="queue-actions flex items-center gap-1">
 						<USkeleton class="size-10 rounded-lg" />
 						<USkeleton class="size-10 rounded-lg" />
+						<USkeleton class="size-10 rounded-lg" />
 					</div>
 					<USkeleton class="queue-menu mx-auto size-4" />
 				</li>
@@ -327,7 +390,16 @@ function formatWait(seconds: number) {
 					:data-entry-id="entry.id"
 					class="queue-row queue-grid"
 				>
+					<label v-if="selecting" class="queue-select grid size-11 place-items-center">
+						<input
+							type="checkbox"
+							:checked="selectedIds.has(entry.id)"
+							@change="toggleSelection(entry.id)"
+						/>
+						<span class="sr-only">Select {{ entry.request.track.title }}</span>
+					</label>
 					<button
+						v-else
 						type="button"
 						:disabled="!player.canControl"
 						:aria-label="`Drag ${entry.request.track.title} to reorder`"
@@ -373,14 +445,22 @@ function formatWait(seconds: number) {
 							</UTooltip>
 						</div>
 					</div>
-					<LibraryReactionActions
-						:track-id="entry.request.track.id"
-						:title="entry.request.track.title"
-						compact
-						:show-counts="false"
-						:show-details="false"
-						class="queue-actions"
-					/>
+					<div class="queue-actions flex items-center gap-1">
+						<LibraryReactionActions
+							:track-id="entry.request.track.id"
+							:title="entry.request.track.title"
+							compact
+							:show-counts="false"
+							:show-details="false"
+						/>
+						<LibraryPlaylistAction
+							:track="{
+								track_id: entry.request.track.id,
+								preferred_source_id: entry.request.source_id,
+							}"
+							:title="entry.request.track.title"
+						/>
+					</div>
 					<UDropdownMenu
 						:items="[
 							{
@@ -537,7 +617,7 @@ function formatWait(seconds: number) {
 }
 .queue-grid {
 	display: grid;
-	grid-template-columns: 2.75rem 3rem minmax(0, 1fr) 10rem 6rem 5.25rem 2.75rem;
+	grid-template-columns: 2.75rem 3rem minmax(0, 1fr) 10rem 6rem 7.75rem 2.75rem;
 	align-items: center;
 	column-gap: 1rem;
 	padding-inline: 0.5rem;
@@ -562,6 +642,11 @@ function formatWait(seconds: number) {
 .queue-handle {
 	display: flex;
 	touch-action: none;
+}
+.queue-select input {
+	width: 1rem;
+	height: 1rem;
+	accent-color: var(--ui-primary);
 }
 .queue-grip {
 	opacity: 0;
@@ -621,7 +706,7 @@ function formatWait(seconds: number) {
 }
 @container workspace (max-width: 1000px) {
 	.queue-grid {
-		grid-template-columns: 2.75rem 3rem minmax(0, 1fr) 7.5rem 5rem 5.25rem 2.75rem;
+		grid-template-columns: 2.75rem 3rem minmax(0, 1fr) 7.5rem 5rem 7.75rem 2.75rem;
 		column-gap: 0.75rem;
 	}
 }

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 import type { Transport } from "../api/transport";
-import type { ReactionValue } from "../models/library";
+import type { PlaylistTrack, ReactionValue } from "../models/library";
 
 export interface LibraryTracksQuery {
 	page?: number;
@@ -19,8 +19,148 @@ export interface ReactionParticipantsQuery {
 	snapshot?: string;
 }
 
+export interface PlaylistPageQuery {
+	page?: number;
+	pageSize?: number;
+	query?: string;
+	snapshot?: string;
+}
+
+const idempotencyHeader = (operationId: string) => ({ "Idempotency-Key": operationId });
+
 export function createLibraryRepository(request: Transport) {
 	return {
+		playlists: (options: PlaylistPageQuery = {}, signal?: AbortSignal) =>
+			request((api) =>
+				api.GET("/api/library/playlists", {
+					params: {
+						query: {
+							page: options.page ?? 1,
+							page_size: options.pageSize ?? 20,
+							q: options.query,
+							snapshot: options.snapshot,
+						},
+					},
+					signal,
+				}),
+			),
+		playlist: (playlistId: string, signal?: AbortSignal) =>
+			request((api) =>
+				api.GET("/api/library/playlists/{playlist_id}", {
+					params: { path: { playlist_id: playlistId } },
+					signal,
+				}),
+			),
+		createPlaylist: (name: string, signal?: AbortSignal) =>
+			request((api) => api.POST("/api/library/playlists", { body: { name }, signal })),
+		renamePlaylist: (
+			playlistId: string,
+			name: string,
+			expectedRevision: number,
+			signal?: AbortSignal,
+		) =>
+			request((api) =>
+				api.PATCH("/api/library/playlists/{playlist_id}", {
+					params: { path: { playlist_id: playlistId } },
+					body: { name, expected_revision: expectedRevision },
+					signal,
+				}),
+			),
+		deletePlaylist: (playlistId: string, expectedRevision: number, signal?: AbortSignal) =>
+			request((api) =>
+				api.DELETE("/api/library/playlists/{playlist_id}", {
+					params: { path: { playlist_id: playlistId } },
+					body: { expected_revision: expectedRevision },
+					signal,
+				}),
+			),
+		duplicatePlaylist: (
+			playlistId: string,
+			expectedRevision: number,
+			name?: string,
+			signal?: AbortSignal,
+		) =>
+			request((api) =>
+				api.POST("/api/library/playlists/{playlist_id}/duplicate", {
+					params: { path: { playlist_id: playlistId } },
+					body: { expected_revision: expectedRevision, name },
+					signal,
+				}),
+			),
+		playlistEntries: (
+			playlistId: string,
+			options: PlaylistPageQuery = {},
+			signal?: AbortSignal,
+		) =>
+			request((api) =>
+				api.GET("/api/library/playlists/{playlist_id}/entries", {
+					params: {
+						path: { playlist_id: playlistId },
+						query: {
+							page: options.page ?? 1,
+							page_size: options.pageSize ?? 20,
+							q: options.query,
+							snapshot: options.snapshot,
+						},
+					},
+					signal,
+				}),
+			),
+		addPlaylistEntries: (
+			playlistId: string,
+			tracks: PlaylistTrack[],
+			expectedRevision: number,
+			signal?: AbortSignal,
+		) =>
+			request((api) =>
+				api.POST("/api/library/playlists/{playlist_id}/entries", {
+					params: { path: { playlist_id: playlistId } },
+					body: { tracks, expected_revision: expectedRevision },
+					signal,
+				}),
+			),
+		deletePlaylistEntry: (
+			playlistId: string,
+			entryId: string,
+			expectedRevision: number,
+			signal?: AbortSignal,
+		) =>
+			request((api) =>
+				api.DELETE("/api/library/playlists/{playlist_id}/entries/{entry_id}", {
+					params: { path: { playlist_id: playlistId, entry_id: entryId } },
+					body: { expected_revision: expectedRevision },
+					signal,
+				}),
+			),
+		replacePlaylistOrder: (
+			playlistId: string,
+			entryIds: string[],
+			expectedRevision: number,
+			signal?: AbortSignal,
+		) =>
+			request((api) =>
+				api.PUT("/api/library/playlists/{playlist_id}/order", {
+					params: { path: { playlist_id: playlistId } },
+					body: { entry_ids: entryIds, expected_revision: expectedRevision },
+					signal,
+				}),
+			),
+		queuePlaylist: (
+			playlistId: string,
+			expectedRevision: number,
+			operationId: string,
+			signal?: AbortSignal,
+		) =>
+			request((api) =>
+				api.POST("/api/library/playlists/{playlist_id}/queue", {
+					params: {
+						path: { playlist_id: playlistId },
+						header: idempotencyHeader(operationId),
+					},
+					body: { expected_revision: expectedRevision },
+					signal,
+				}),
+			),
 		tracks: (options: LibraryTracksQuery = {}, signal?: AbortSignal) =>
 			request((api) =>
 				api.GET("/api/library/tracks", {

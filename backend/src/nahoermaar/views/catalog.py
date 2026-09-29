@@ -67,6 +67,7 @@ class CatalogCleanupView:
     __slots__ = (
         "_artists",
         "_discovery_results",
+        "_playlist_entries",
         "_radio_candidates",
         "_radio_exclusions",
         "_radio_runs",
@@ -101,6 +102,9 @@ class CatalogCleanupView:
         )
         self._reactions = registered_table(
             "track_reactions", consumer="Catalog cleanup"
+        )
+        self._playlist_entries = registered_table(
+            "playlist_entries", consumer="Catalog cleanup"
         )
 
     async def candidates(
@@ -161,6 +165,19 @@ class CatalogCleanupView:
                         ),
                         ~exists().where(
                             self._reactions.c.track_id == self._sources.c.track_id
+                        ),
+                        ~exists().where(
+                            or_(
+                                self._playlist_entries.c.preferred_source_id
+                                == self._sources.c.id,
+                                (
+                                    self._playlist_entries.c.track_id
+                                    == self._sources.c.track_id
+                                )
+                                & self._playlist_entries.c.preferred_source_id.is_(
+                                    None
+                                ),
+                            )
                         ),
                     )
                     .order_by(self._sources.c.checked_at, self._sources.c.id)

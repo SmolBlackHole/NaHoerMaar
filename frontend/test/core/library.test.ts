@@ -89,6 +89,87 @@ describe("library core", () => {
 		workflow.dispose();
 	});
 
+	it("uses one generated contract for personal playlist reads and mutations", async () => {
+		const { client, fetcher } = fixture();
+		fetcher.mockImplementation(async () => Response.json({ items: [] }));
+
+		await client.library.playlists({ page: 2, pageSize: 25, query: "Road", snapshot: "list" });
+		await client.library.playlist("playlist/one");
+		await client.library.createPlaylist("Road trip");
+		await client.library.renamePlaylist("playlist/one", "Night drive", 4);
+		await client.library.duplicatePlaylist("playlist/one", 5, "Copy");
+		await client.library.playlistEntries("playlist/one", {
+			page: 3,
+			pageSize: 10,
+			query: "Still Alive",
+			snapshot: "revision",
+		});
+		await client.library.addPlaylistEntries(
+			"playlist/one",
+			[
+				{ track_id: "track-one", preferred_source_id: "source-one" },
+				{ track_id: "track-one", preferred_source_id: null },
+			],
+			6,
+		);
+		await client.library.deletePlaylistEntry("playlist/one", "entry/one", 7);
+		await client.library.replacePlaylistOrder("playlist/one", ["entry-two", "entry-one"], 8);
+		await client.library.queuePlaylist("playlist/one", 9, "operation-one");
+		await client.library.deletePlaylist("playlist/one", 10);
+
+		expect(fetcher.mock.calls.map(([url, options]) => [url, options?.method])).toEqual([
+			["/api/library/playlists?page=2&page_size=25&q=Road&snapshot=list", "GET"],
+			["/api/library/playlists/playlist%2Fone", "GET"],
+			["/api/library/playlists", "POST"],
+			["/api/library/playlists/playlist%2Fone", "PATCH"],
+			["/api/library/playlists/playlist%2Fone/duplicate", "POST"],
+			[
+				"/api/library/playlists/playlist%2Fone/entries?page=3&page_size=10&q=Still%20Alive&snapshot=revision",
+				"GET",
+			],
+			["/api/library/playlists/playlist%2Fone/entries", "POST"],
+			["/api/library/playlists/playlist%2Fone/entries/entry%2Fone", "DELETE"],
+			["/api/library/playlists/playlist%2Fone/order", "PUT"],
+			["/api/library/playlists/playlist%2Fone/queue", "POST"],
+			["/api/library/playlists/playlist%2Fone", "DELETE"],
+		]);
+		expect(JSON.parse(String(fetcher.mock.calls[6]![1]?.body))).toEqual({
+			expected_revision: 6,
+			tracks: [
+				{ track_id: "track-one", preferred_source_id: "source-one" },
+				{ track_id: "track-one", preferred_source_id: null },
+			],
+		});
+		expect(new Headers(fetcher.mock.calls[9]![1]?.headers).get("Idempotency-Key")).toBe(
+			"operation-one",
+		);
+	});
+
+	it("keeps playlist and entry pages on independent snapshots", async () => {
+		const fetcher = vi
+			.fn<typeof fetch>()
+			.mockResolvedValueOnce(Response.json(libraryPage(1, "playlists-one")))
+			.mockResolvedValueOnce(Response.json(libraryPage(2, "playlists-one")))
+			.mockResolvedValueOnce(Response.json(libraryPage(1, "entries-one")))
+			.mockResolvedValueOnce(Response.json(libraryPage(2, "entries-one")));
+		const core = createBackendCore({ fetch: fetcher });
+		core.authority.replace("session-token", "restored");
+		const workflow = core.workflows.library();
+
+		await workflow.loadPlaylists({ page: 1, pageSize: 1, newSnapshot: true });
+		await workflow.loadPlaylists({ page: 2, pageSize: 1 });
+		await workflow.loadEntries("playlist-one", { page: 1, pageSize: 1, newSnapshot: true });
+		await workflow.loadEntries("playlist-one", { page: 2, pageSize: 1 });
+
+		expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+			"/api/library/playlists?page=1&page_size=1",
+			"/api/library/playlists?page=2&page_size=1&snapshot=playlists-one",
+			"/api/library/playlists/playlist-one/entries?page=1&page_size=1",
+			"/api/library/playlists/playlist-one/entries?page=2&page_size=1&snapshot=entries-one",
+		]);
+		workflow.dispose();
+	});
+
 	it("deduplicates summary reads, rolls back a rejected optimistic reaction and clears on logout", async () => {
 		const pinia = createPinia();
 		setActivePinia(pinia);
@@ -163,5 +244,36 @@ describe("library core", () => {
 		await nextTick();
 		expect(library.summary("track-one")).toBeNull();
 		expect(library.revision).toBe(0);
+	});
+
+	it("publishes playlist invalidations and resets them with the account session", async () => {
+		const pinia = createPinia();
+		setActivePinia(pinia);
+		piniaInstances.push(pinia);
+		const fetcher = vi.fn<typeof fetch>(async (input) => {
+			if (String(input) === "/api/auth/session")
+				return Response.json({
+					csrf: "session-token",
+					discord_id: "discord-user",
+					expires_at: "2026-09-30T00:00:00Z",
+					profile_complete: true,
+					role: "user",
+					user_id: "user-id",
+				});
+			throw new Error(`Unexpected request: ${String(input)}`);
+		});
+		const core = createBackendCore({ fetch: fetcher });
+		const session = core.stores.useSessionStore();
+		const library = core.stores.useLibraryStore();
+		expect(await session.restore()).toBe(true);
+		await nextTick();
+
+		expect(library.playlistRevision).toBe(0);
+		library.invalidatePlaylists();
+		expect(library.playlistRevision).toBe(1);
+
+		core.authority.lost("signed_out");
+		await nextTick();
+		expect(library.playlistRevision).toBe(0);
 	});
 });

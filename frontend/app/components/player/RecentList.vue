@@ -11,9 +11,18 @@ const props = withDefaults(
 		loading?: boolean;
 		skeletonCount?: number;
 		layout?: "compact" | "history";
+		selectable?: boolean;
+		selectedPlaybackIds?: Set<string>;
 	}>(),
-	{ loading: false, skeletonCount: 5, layout: "compact" },
+	{
+		loading: false,
+		skeletonCount: 5,
+		layout: "compact",
+		selectable: false,
+		selectedPlaybackIds: () => new Set(),
+	},
 );
+const emit = defineEmits<{ toggle: [entry: PlaybackHistoryEntry] }>();
 const player = useNuxtApp().$backendCore.stores.usePlayerStore();
 const session = useNuxtApp().$backendCore.stores.useSessionStore();
 const reactions = useNuxtApp().$backendCore.stores.useLibraryStore();
@@ -63,7 +72,13 @@ watch(
 
 <template>
 	<div>
-		<div v-if="props.layout === 'history'" class="recent-columns" aria-hidden="true">
+		<div
+			v-if="props.layout === 'history'"
+			class="recent-columns"
+			:class="{ 'recent-columns--selectable': selectable }"
+			aria-hidden="true"
+		>
+			<span v-if="selectable"></span>
 			<span class="recent-column-track">Track</span>
 			<span>Requested by</span>
 			<span>Length</span>
@@ -82,6 +97,7 @@ watch(
 				class="recent-row flex flex-wrap items-center gap-3 py-4"
 				aria-hidden="true"
 			>
+				<USkeleton v-if="selectable" class="recent-select size-4" />
 				<USkeleton class="recent-cover size-12 shrink-0 rounded-lg" />
 				<div class="recent-track min-w-0 flex-1 basis-32 space-y-2">
 					<USkeleton class="h-4 w-full max-w-72" />
@@ -108,13 +124,24 @@ watch(
 			v-else-if="entries.length"
 			:aria-label="listLabel"
 			class="recent-list space-y-1"
-			:class="{ 'recent-list--history': props.layout === 'history' }"
+			:class="{
+				'recent-list--history': props.layout === 'history',
+				'recent-list--selectable': selectable,
+			}"
 		>
 			<li
 				v-for="item in entries"
 				:key="item.playback_id"
 				class="recent-row flex flex-wrap items-center gap-3 py-4"
 			>
+				<label v-if="selectable" class="recent-select grid size-10 place-items-center">
+					<input
+						type="checkbox"
+						:checked="selectedPlaybackIds.has(item.playback_id)"
+						@change="emit('toggle', item)"
+					/>
+					<span class="sr-only">Select {{ item.title }}</span>
+				</label>
 				<PlayerTrackArtwork
 					:entry="{ artwork_url: item.artwork_url }"
 					class="recent-cover"
@@ -176,6 +203,11 @@ watch(
 						compact
 						:show-counts="false"
 						:show-details="false"
+						mode="menu"
+					/>
+					<LibraryPlaylistAction
+						:track="{ track_id: item.track_id, preferred_source_id: item.source_id }"
+						:title="item.title"
 					/>
 					<UTooltip :text="`Queue ${item.title} again`">
 						<UButton
@@ -217,6 +249,12 @@ watch(
 .recent-column-track {
 	grid-column: 1 / 3;
 }
+.recent-columns--selectable {
+	grid-template-columns: 2.5rem 3rem minmax(14rem, 1fr) minmax(8rem, 12rem) 3rem 9rem 10.5rem;
+}
+.recent-columns--selectable .recent-column-track {
+	grid-column: 2 / 4;
+}
 .recent-row {
 	padding-inline-start: 0.75rem;
 	border-radius: 0.5rem;
@@ -226,6 +264,14 @@ watch(
 	display: grid;
 	grid-template-columns: 3rem minmax(14rem, 1fr) minmax(8rem, 12rem) 3rem 9rem 10.5rem;
 	gap: 1rem;
+}
+.recent-list--history.recent-list--selectable .recent-row {
+	grid-template-columns: 2.5rem 3rem minmax(14rem, 1fr) minmax(8rem, 12rem) 3rem 9rem 10.5rem;
+}
+.recent-select input {
+	width: 1rem;
+	height: 1rem;
+	accent-color: var(--ui-primary);
 }
 .recent-list--history .recent-track {
 	flex: none;
@@ -253,6 +299,9 @@ watch(
 		grid-template-columns: 2.75rem minmax(0, 1fr) auto;
 		gap: 0.75rem;
 	}
+	.recent-list--history.recent-list--selectable .recent-row {
+		grid-template-columns: 2rem 2.75rem minmax(0, 1fr) auto;
+	}
 	.recent-row {
 		display: grid;
 		grid-template-columns: 2.75rem minmax(0, 1fr) auto;
@@ -263,6 +312,23 @@ watch(
 	.recent-cover {
 		width: 2.75rem;
 		height: 2.75rem;
+	}
+	.recent-select {
+		grid-column: 1;
+		grid-row: 1;
+		align-self: start;
+	}
+	.recent-list--selectable .recent-cover {
+		grid-column: 2;
+	}
+	.recent-list--selectable .recent-track {
+		grid-column: 3 / 5;
+	}
+	.recent-list--selectable .recent-contributor {
+		grid-column: 2 / 4;
+	}
+	.recent-list--selectable .recent-actions {
+		grid-column: 4;
 	}
 	.recent-title {
 		display: -webkit-box;
@@ -308,6 +374,10 @@ watch(
 	.recent-list--history .recent-row {
 		display: flex;
 		gap: 0.75rem;
+	}
+	.recent-list--history.recent-list--selectable .recent-row {
+		display: grid;
+		grid-template-columns: 2.5rem 3rem minmax(8rem, 1fr) minmax(8rem, 12rem) auto;
 	}
 	.recent-list--history .recent-track {
 		flex: 1 1 8rem;

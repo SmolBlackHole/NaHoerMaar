@@ -33,7 +33,7 @@ async function openQueue() {
 			id="music-player"
 			class="player-page min-w-0"
 			:class="{ 'is-listening': selected === 'player' }"
-			:ui="{ body: 'pt-0 sm:pt-0' }"
+			:ui="{ body: 'pt-0 sm:pt-0 pb-0 sm:pb-0 px-4 sm:px-4' }"
 		>
 			<template #header>
 				<UDashboardNavbar class="player-navbar" :ui="{ left: 'h-full gap-3 sm:gap-4' }">

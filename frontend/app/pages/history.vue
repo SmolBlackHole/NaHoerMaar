@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { PlaybackHistoryEntry } from "~/core/models/playbacks";
 definePageMeta({ pageTransition: { name: "page", mode: "out-in" } });
 useSeoMeta({ title: "History | NaHörMaar" });
 
@@ -11,6 +12,10 @@ const activeQuery = ref("");
 const radioMode = ref<"all" | "only" | "exclude">("all");
 const requestedBy = ref("all");
 const currentPage = ref(1);
+const selectedEntries = ref<PlaybackHistoryEntry[]>([]);
+const selectedPlaybackIds = computed(
+	() => new Set(selectedEntries.value.map(({ playback_id }) => playback_id)),
+);
 const result = computed(() => playbackHistory.history.data.value);
 const initialLoading = computed(() => playbackHistory.history.loading.value && !result.value);
 const radioItems = [
@@ -43,12 +48,14 @@ async function load(page: number, newSnapshot = false) {
 }
 
 function searchHistory() {
+	clearSelection();
 	activeQuery.value = search.value.trim();
 	playbackHistory.history.set(null);
 	void load(1, true);
 }
 
 function clearSearch() {
+	clearSelection();
 	search.value = "";
 	activeQuery.value = "";
 	playbackHistory.history.set(null);
@@ -65,7 +72,21 @@ function resetFilters() {
 	requestedBy.value = "all";
 }
 
-watch([radioMode, requestedBy], () => void load(1, true));
+function toggleSelection(entry: PlaybackHistoryEntry) {
+	const selected = selectedPlaybackIds.value.has(entry.playback_id);
+	selectedEntries.value = selected
+		? selectedEntries.value.filter(({ playback_id }) => playback_id !== entry.playback_id)
+		: [...selectedEntries.value, entry];
+}
+
+function clearSelection() {
+	selectedEntries.value = [];
+}
+
+watch([radioMode, requestedBy], () => {
+	clearSelection();
+	void load(1, true);
+});
 
 onMounted(() => void load(1, true));
 onScopeDispose(playbackHistory.dispose);
@@ -207,11 +228,45 @@ onScopeDispose(playbackHistory.dispose);
 							The requested page could not be loaded. Try again.
 						</p>
 
+						<div
+							v-if="selectedEntries.length"
+							class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-elevated px-4 py-3"
+							role="status"
+						>
+							<div>
+								<p class="text-sm font-medium text-highlighted">
+									{{ selectedEntries.length }} selected
+								</p>
+								<p class="mt-1 text-xs text-muted">
+									Selection stays while you move through these results.
+								</p>
+							</div>
+							<div class="flex items-center gap-2">
+								<UButton
+									label="Clear"
+									color="neutral"
+									variant="ghost"
+									@click="clearSelection"
+								/>
+								<LibraryPlaylistPicker
+									:tracks="
+										selectedEntries.map((entry) => ({
+											track_id: entry.track_id,
+											preferred_source_id: entry.source_id,
+										}))
+									"
+									label="Add selected to playlist"
+									@added="clearSelection"
+								/>
+							</div>
+						</div>
+
 						<PlayerRecentList
 							v-if="playbackHistory.history.loading.value && !result"
 							:entries="[]"
 							:skeleton-count="8"
 							layout="history"
+							selectable
 							loading
 						/>
 
@@ -261,6 +316,9 @@ onScopeDispose(playbackHistory.dispose);
 							v-else-if="result"
 							:entries="result.items"
 							layout="history"
+							selectable
+							:selected-playback-ids="selectedPlaybackIds"
+							@toggle="toggleSelection"
 						/>
 					</section>
 				</div>

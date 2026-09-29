@@ -328,12 +328,6 @@ watch(loadVideo, (visible) => {
 					</UTooltip>
 					<template v-else>What are we<br />listening to?</template>
 				</h2>
-				<LibraryReactionActions
-					v-if="current"
-					:track-id="current.track.id"
-					:title="current.track.title"
-					class="media-reactions"
-				/>
 				<p v-if="!current" class="media-empty-help">
 					Add something to the queue.<br />The room is yours.
 				</p>
@@ -629,9 +623,6 @@ watch(loadVideo, (visible) => {
 .media-title.is-long {
 	font-size: 2.75rem;
 }
-.media-reactions {
-	margin-top: 1.25rem;
-}
 .media-contributor {
 	margin-bottom: 1rem;
 	font-size: 0.75rem;
@@ -725,7 +716,7 @@ watch(loadVideo, (visible) => {
 		margin-top: 0.75rem;
 	}
 	.media-details {
-		padding-bottom: 0;
+		padding-bottom: 1rem;
 	}
 }
 @container workspace (max-width: 1000px) {

@@ -58,6 +58,7 @@ function queue(track: LibraryTrack) {
 					<USkeleton class="h-10 w-[5.5rem] rounded-lg" />
 					<USkeleton class="h-10 w-[6.5rem] rounded-lg" />
 					<USkeleton class="size-10 rounded-lg" />
+					<USkeleton class="size-10 rounded-lg" />
 				</div>
 				<USkeleton class="size-10 rounded-lg" />
 			</li>
@@ -90,7 +91,13 @@ function queue(track: LibraryTrack) {
 					class="library-saved text-xs tabular-nums text-muted"
 					>{{ reactedAt(track.reacted_at) }}</time
 				>
-				<LibraryReactionActions :track-id="track.track_id" :title="track.title" />
+				<div class="flex items-center gap-1">
+					<LibraryReactionActions :track-id="track.track_id" :title="track.title" />
+					<LibraryPlaylistAction
+						:track="{ track_id: track.track_id, preferred_source_id: null }"
+						:title="track.title"
+					/>
+				</div>
 				<UTooltip :text="`Add ${track.title} to queue`">
 					<UButton
 						:icon="icons.plus"

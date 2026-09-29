@@ -2,6 +2,7 @@
 <!-- SPDX-License-Identifier: MPL-2.0 -->
 
 <script setup lang="ts">
+import type { DropdownMenuItem } from "@nuxt/ui";
 import type { ReactionValue } from "~/core/models/library";
 
 defineOptions({ inheritAttrs: false });
@@ -13,8 +14,9 @@ const props = withDefaults(
 		compact?: boolean;
 		showCounts?: boolean;
 		showDetails?: boolean;
+		mode?: "split" | "menu";
 	}>(),
-	{ compact: false, showCounts: true, showDetails: true },
+	{ compact: false, showCounts: true, showDetails: true, mode: "split" },
 );
 const attrs = useAttrs();
 const core = useNuxtApp().$backendCore;
@@ -26,6 +28,34 @@ const detailsOpen = ref(false);
 const summary = computed(() => reactions.summary(props.trackId));
 const pending = computed(() => reactions.isPending(props.trackId));
 const total = computed(() => (summary.value?.likes ?? 0) + (summary.value?.dislikes ?? 0));
+const menuIcon = computed(() => {
+	if (summary.value?.reaction === "dislike") return icons.value.dislike;
+	return icons.value.like;
+});
+const menuItems = computed<DropdownMenuItem[][]>(() => {
+	const reaction = summary.value?.reaction;
+	const choices: DropdownMenuItem[] = [
+		{
+			label: reaction === "like" ? "Remove Like" : "Like",
+			icon: icons.value.like,
+			onSelect: () => toggle("like"),
+		},
+		{
+			label: reaction === "dislike" ? "Remove Dislike" : "Dislike",
+			icon: icons.value.dislike,
+			onSelect: () => toggle("dislike"),
+		},
+	];
+	if (props.showDetails)
+		choices.push({
+			label: total.value ? `See ${total.value} reactions` : "See reactions",
+			icon: icons.value.users,
+			onSelect: () => {
+				detailsOpen.value = true;
+			},
+		});
+	return [choices];
+});
 
 watch(
 	() => [props.trackId, session.status] as const,
@@ -58,6 +88,7 @@ function countLabel(value: ReactionValue) {
 
 <template>
 	<div
+		v-if="mode === 'split'"
 		v-bind="attrs"
 		class="reaction-actions"
 		:class="{
@@ -110,6 +141,20 @@ function countLabel(value: ReactionValue) {
 			/>
 		</UTooltip>
 	</div>
+	<UDropdownMenu v-else v-bind="attrs" :items="menuItems" :content="{ align: 'end' }">
+		<UTooltip :text="`React to ${title}`">
+			<UButton
+				:icon="menuIcon"
+				:aria-label="`React to ${title}`"
+				:aria-pressed="Boolean(summary?.reaction)"
+				:color="summary?.reaction ? 'primary' : 'neutral'"
+				:variant="summary?.reaction ? 'soft' : 'ghost'"
+				:loading="pending"
+				:disabled="pending || session.status !== 'authenticated'"
+				class="reaction-button"
+			/>
+		</UTooltip>
+	</UDropdownMenu>
 	<LibraryReactionDetail
 		:open="detailsOpen"
 		:track-id="trackId"

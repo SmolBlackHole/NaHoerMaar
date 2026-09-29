@@ -95,6 +95,10 @@ function presence(trackId: string): string | null {
 					:show-counts="false"
 					:show-details="false"
 				/>
+				<LibraryPlaylistAction
+					:track="{ track_id: item.track.id, preferred_source_id: item.source.id }"
+					:title="item.track.title"
+				/>
 				<UTooltip :text="'Add ' + item.track.title + ' to queue'">
 					<UButton
 						:icon="icons.plus"
@@ -137,6 +141,7 @@ function presence(trackId: string): string | null {
 				</div>
 			</div>
 			<div v-if="!selectable" class="flex shrink-0 items-center gap-1">
+				<USkeleton class="size-10 rounded-lg" />
 				<USkeleton class="size-10 rounded-lg" />
 				<USkeleton class="size-10 rounded-lg" />
 			</div>
