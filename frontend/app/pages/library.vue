@@ -49,6 +49,9 @@ const canReorderEntries = computed(
 		!selectedQuery() &&
 		!selectingEntries.value,
 );
+const canReorderPlaylists = computed(
+	() => selectedView() === "playlists" && !selectedPlaylistId.value && !selectedQuery(),
+);
 const selectedEntries = computed(() =>
 	(entryResult.value?.items ?? []).filter(({ entry_id }) => selectedEntryIds.value.has(entry_id)),
 );
@@ -403,6 +406,19 @@ async function moveEntry(entryId: string, position: number) {
 		actionPending.value = false;
 	}
 }
+async function movePlaylist(playlistId: string, position: number) {
+	if (!canReorderPlaylists.value || actionPending.value) return;
+	actionPending.value = true;
+	try {
+		await core.client.library.movePlaylist(playlistId, position);
+		await load(true);
+	} catch (failure) {
+		actionError.value = failureMessage(failure);
+		await load(true);
+	} finally {
+		actionPending.value = false;
+	}
+}
 
 const playlistMenu = computed<DropdownMenuItem[][]>(() => [
 	[{ label: "Duplicate", icon: icons.value.copy, onSelect: () => duplicatePlaylist() }],
@@ -719,6 +735,7 @@ onScopeDispose(library.dispose);
 									<LibraryPlaylistList
 										v-if="initialLoading"
 										:items="[]"
+										:reorderable="canReorderPlaylists"
 										loading
 									/>
 									<div
@@ -770,10 +787,14 @@ onScopeDispose(library.dispose);
 									<LibraryPlaylistList
 										v-else-if="playlistResult"
 										:items="playlistResult.items"
+										:reorderable="canReorderPlaylists"
+										:pending="actionPending"
+										:total="playlistResult.total"
 										@select="openPlaylist"
 										@rename="editPlaylist"
 										@duplicate="duplicatePlaylist"
 										@delete="confirmDelete"
+										@move="movePlaylist"
 									/>
 								</template>
 

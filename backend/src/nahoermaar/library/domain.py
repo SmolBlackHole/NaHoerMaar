@@ -142,6 +142,7 @@ class PlaylistSource:
 class Playlist:
     id: PlaylistId
     owner_id: UserId
+    owner_position: int
     name: str
     visibility: PlaylistVisibility
     source: PlaylistSource | None
@@ -150,6 +151,8 @@ class Playlist:
     updated_at: datetime
 
     def __post_init__(self) -> None:
+        if self.owner_position < 0:
+            raise ValueError("Playlist owner position must be non-negative.")
         _playlist_name(self.name)
         if self.revision < 0:
             raise ValueError("Playlist revision must be non-negative.")

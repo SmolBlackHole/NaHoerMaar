@@ -18,6 +18,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     delete,
+    func,
     select,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -95,6 +96,7 @@ class _PlaylistRow(Base):
     __tablename__ = "playlists"
     __table_args__ = (
         CheckConstraint("revision >= 0", name="revision_nonnegative"),
+        CheckConstraint("owner_position >= 0", name="owner_position_nonnegative"),
         CheckConstraint(
             "char_length(name) BETWEEN 1 AND 100 AND name = btrim(name)",
             name="name_valid",
@@ -129,6 +131,11 @@ class _PlaylistRow(Base):
             "source_external_id",
             name="uq_playlists_owner_source",
         ),
+        UniqueConstraint(
+            "owner_id",
+            "owner_position",
+            name="uq_playlists_owner_position",
+        ),
         Index("ix_playlists_owner_updated_id", "owner_id", "updated_at", "id"),
         Index("ix_playlists_visibility_updated_id", "visibility", "updated_at", "id"),
         Index(
@@ -143,6 +150,7 @@ class _PlaylistRow(Base):
     owner_id: Mapped[UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
+    owner_position: Mapped[int] = mapped_column(Integer, nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     visibility: Mapped[PlaylistVisibility] = mapped_column(_VISIBILITY)
     source_provider_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -320,9 +328,11 @@ class PlaylistRepository:
         name: str,
         now: datetime,
     ) -> Playlist:
+        owner_position = await self._next_owner_position(owner_id)
         row = _PlaylistRow(
             id=uuid4(),
             owner_id=owner_id,
+            owner_position=owner_position,
             name=name,
             visibility=PlaylistVisibility.PRIVATE,
             source_provider_key=None,
@@ -367,9 +377,11 @@ class PlaylistRepository:
             return _playlist(existing), False
         if len(selections) > MAX_PLAYLIST_ENTRIES:
             raise LibraryError(LibraryErrorCode.PLAYLIST_CAPACITY_EXCEEDED, 409)
+        owner_position = await self._next_owner_position(owner_id)
         row = _PlaylistRow(
             id=uuid4(),
             owner_id=owner_id,
+            owner_position=owner_position,
             name=name,
             visibility=PlaylistVisibility.PRIVATE,
             source_provider_key=provider_key,
@@ -457,10 +469,37 @@ class PlaylistRepository:
             expected_revision=expected_revision,
             for_update=True,
         )
+        owned = list(
+            await self._owned_playlist_rows(UserId(row.owner_id), for_update=True)
+        )
         deleted = _playlist(row)
         await self._session.delete(row)
         await self._session.flush()
+        owned.remove(row)
+        await self._reposition_playlists(owned)
         return deleted
+
+    async def move_playlist(
+        self,
+        actor_id: UserId,
+        playlist_id: PlaylistId,
+        position: int,
+    ) -> Playlist:
+        row, _access = await self._authorized(
+            actor_id,
+            playlist_id,
+            allowed=frozenset({PlaylistAccess.OWNER}),
+            for_update=True,
+        )
+        owned = list(await self._owned_playlist_rows(actor_id, for_update=True))
+        if position < 0 or position >= len(owned):
+            raise LibraryError(LibraryErrorCode.PLAYLIST_ORDER_INVALID, 422)
+        original = tuple(item.id for item in owned)
+        owned.remove(row)
+        owned.insert(position, row)
+        if tuple(item.id for item in owned) != original:
+            await self._reposition_playlists(owned)
+        return _playlist(row)
 
     async def duplicate(
         self,
@@ -868,6 +907,40 @@ class PlaylistRepository:
             statement = statement.with_for_update()
         return tuple((await self._session.scalars(statement)).all())
 
+    async def _next_owner_position(self, owner_id: UserId) -> int:
+        value = await self._session.scalar(
+            select(func.max(_PlaylistRow.owner_position)).where(
+                _PlaylistRow.owner_id == owner_id
+            )
+        )
+        return 0 if value is None else int(value) + 1
+
+    async def _owned_playlist_rows(
+        self,
+        owner_id: UserId,
+        *,
+        for_update: bool = False,
+    ) -> tuple[_PlaylistRow, ...]:
+        statement = (
+            select(_PlaylistRow)
+            .where(_PlaylistRow.owner_id == owner_id)
+            .order_by(_PlaylistRow.owner_position, _PlaylistRow.id)
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        return tuple((await self._session.scalars(statement)).all())
+
+    async def _reposition_playlists(self, playlists: list[_PlaylistRow]) -> None:
+        if not playlists:
+            return
+        offset = len(playlists) + 1
+        for playlist in playlists:
+            playlist.owner_position += offset
+        await self._session.flush()
+        for position, playlist in enumerate(playlists):
+            playlist.owner_position = position
+        await self._session.flush()
+
     async def _reposition(self, entries: list[_PlaylistEntryRow]) -> None:
         if not entries:
             return
@@ -922,6 +995,7 @@ def _playlist(row: _PlaylistRow) -> Playlist:
     return Playlist(
         PlaylistId(row.id),
         UserId(row.owner_id),
+        row.owner_position,
         row.name,
         row.visibility,
         source,

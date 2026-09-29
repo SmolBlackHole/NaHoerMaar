@@ -73,6 +73,14 @@ export function createLibraryRepository(request: Transport) {
 					signal,
 				}),
 			),
+		movePlaylist: (playlistId: string, position: number, signal?: AbortSignal) =>
+			request((api) =>
+				api.PUT("/api/library/playlists/{playlist_id}/position", {
+					params: { path: { playlist_id: playlistId } },
+					body: { position },
+					signal,
+				}),
+			),
 		deletePlaylist: (playlistId: string, expectedRevision: number, signal?: AbortSignal) =>
 			request((api) =>
 				api.DELETE("/api/library/playlists/{playlist_id}", {

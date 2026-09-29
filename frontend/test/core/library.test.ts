@@ -98,6 +98,7 @@ describe("library core", () => {
 		await client.library.createPlaylist("Road trip");
 		await client.library.importPlaylist("https://youtube.com/playlist?list=source", "Source");
 		await client.library.renamePlaylist("playlist/one", "Night drive", 4);
+		await client.library.movePlaylist("playlist/one", 0);
 		await client.library.detachPlaylistSource("playlist/one", 5);
 		await client.library.duplicatePlaylist("playlist/one", 5, "Copy");
 		await client.library.playlistEntries("playlist/one", {
@@ -126,6 +127,7 @@ describe("library core", () => {
 			["/api/library/playlists", "POST"],
 			["/api/library/playlists/imports", "POST"],
 			["/api/library/playlists/playlist%2Fone", "PATCH"],
+			["/api/library/playlists/playlist%2Fone/position", "PUT"],
 			["/api/library/playlists/playlist%2Fone/source", "DELETE"],
 			["/api/library/playlists/playlist%2Fone/duplicate", "POST"],
 			[
@@ -143,22 +145,23 @@ describe("library core", () => {
 			name: "Source",
 			source_url: "https://youtube.com/playlist?list=source",
 		});
-		expect(JSON.parse(String(fetcher.mock.calls[8]![1]?.body))).toEqual({
+		expect(JSON.parse(String(fetcher.mock.calls[5]![1]?.body))).toEqual({ position: 0 });
+		expect(JSON.parse(String(fetcher.mock.calls[9]![1]?.body))).toEqual({
 			expected_revision: 6,
 			tracks: [
 				{ track_id: "track-one", preferred_source_id: "source-one" },
 				{ track_id: "track-one", preferred_source_id: null },
 			],
 		});
-		expect(JSON.parse(String(fetcher.mock.calls[10]![1]?.body))).toEqual({
+		expect(JSON.parse(String(fetcher.mock.calls[11]![1]?.body))).toEqual({
 			undo_id: "undo-one",
 			expected_revision: 8,
 		});
-		expect(JSON.parse(String(fetcher.mock.calls[11]![1]?.body))).toEqual({
+		expect(JSON.parse(String(fetcher.mock.calls[12]![1]?.body))).toEqual({
 			position: 0,
 			expected_revision: 9,
 		});
-		expect(new Headers(fetcher.mock.calls[12]![1]?.headers).get("Idempotency-Key")).toBe(
+		expect(new Headers(fetcher.mock.calls[13]![1]?.headers).get("Idempotency-Key")).toBe(
 			"operation-one",
 		);
 	});

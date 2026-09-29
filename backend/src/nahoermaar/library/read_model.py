@@ -103,6 +103,7 @@ class LibraryContributor:
 class PlaylistSummary:
     playlist_id: PlaylistId
     owner: LibraryContributor
+    position: int
     name: str
     visibility: PlaylistVisibility
     access: PlaylistAccess
@@ -456,6 +457,11 @@ class LibraryReadModel:
         normalized = query.strip() if query is not None else ""
         if normalized:
             filters.append(self._playlists.c.name.ilike(f"%{normalized}%"))
+        ordering = (
+            (self._playlists.c.owner_position, self._playlists.c.id)
+            if scope is PlaylistScope.OWNED
+            else (self._playlists.c.updated_at.desc(), self._playlists.c.id.desc())
+        )
         async with self._units() as work:
             if snapshot is None:
                 newest = (
@@ -488,10 +494,7 @@ class LibraryReadModel:
                         self._playlist_select(actor_id)
                         .select_from(relation)
                         .where(*filters)
-                        .order_by(
-                            self._playlists.c.updated_at.desc(),
-                            self._playlists.c.id.desc(),
-                        )
+                        .order_by(*ordering)
                         .offset((page - 1) * page_size)
                         .limit(page_size)
                     )
@@ -629,6 +632,7 @@ class LibraryReadModel:
         return select(
             self._playlists.c.id.label("playlist_id"),
             self._playlists.c.owner_id,
+            self._playlists.c.owner_position,
             self._playlists.c.name,
             self._playlists.c.visibility,
             self._playlists.c.source_provider_key,
@@ -792,6 +796,7 @@ class LibraryReadModel:
         return PlaylistSummary(
             PlaylistId(row["playlist_id"]),
             cls._contributor(row, user_key="owner_id"),
+            int(row["owner_position"]),
             cast(str, row["name"]),
             visibility,
             access,

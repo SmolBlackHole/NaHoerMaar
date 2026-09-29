@@ -231,6 +231,21 @@ class LibraryService:
             await work.commit()
         return await self._reader.playlist(actor_id, playlist_id)
 
+    async def move_playlist(
+        self,
+        actor_id: UserId,
+        playlist_id: PlaylistId,
+        position: int,
+    ) -> PlaylistSummary:
+        async with self._units() as work:
+            await PlaylistRepository(work.session).move_playlist(
+                actor_id,
+                playlist_id,
+                position,
+            )
+            await work.commit()
+        return await self._reader.playlist(actor_id, playlist_id)
+
     async def delete_playlist(
         self,
         actor_id: UserId,

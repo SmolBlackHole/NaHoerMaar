@@ -136,6 +136,7 @@ class PlaylistView(BaseModel):
 
     playlist_id: UUID
     owner: ContributorView
+    position: int
     name: str
     visibility: PlaylistVisibility
     access: PlaylistAccess
@@ -214,6 +215,12 @@ class PlaylistEntriesInput(PlaylistRevisionInput):
 
 
 class PlaylistMoveInput(PlaylistRevisionInput):
+    position: int = Field(ge=0)
+
+
+class PlaylistPositionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     position: int = Field(ge=0)
 
 
@@ -345,6 +352,23 @@ def router(application: Application) -> APIRouter:
             )
         except ValueError as error:
             raise ApiError(ApiErrorCode.VALIDATION_FAILED, 422) from error
+        return _playlist_view(playlist, application)
+
+    @routes.put(
+        "/playlists/{playlist_id}/position",
+        operation_id="moveLibraryPlaylist",
+        responses=error_responses(401, 403, 404, 422, 500, 503),
+    )
+    async def move_playlist(
+        request: Request,
+        playlist_id: UUID,
+        body: PlaylistPositionInput,
+    ) -> PlaylistView:
+        playlist = await application.library.service.move_playlist(
+            authenticated(request).user.id,
+            PlaylistId(playlist_id),
+            body.position,
+        )
         return _playlist_view(playlist, application)
 
     @routes.put(
@@ -793,6 +817,7 @@ def _playlist_view(
     return PlaylistView(
         playlist_id=playlist.playlist_id,
         owner=_contributor_view(playlist.owner, application),
+        position=playlist.position,
         name=playlist.name,
         visibility=playlist.visibility,
         access=playlist.access,

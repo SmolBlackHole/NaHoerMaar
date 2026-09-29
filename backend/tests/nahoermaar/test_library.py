@@ -675,6 +675,85 @@ def test_personal_playlists_preserve_order_revisions_and_catalog_references() ->
         asyncio.run(database.close())
 
 
+def test_owned_playlist_order_is_persistent_and_does_not_change_public_order() -> None:
+    database = _database()
+
+    async def scenario() -> None:
+        def units() -> UnitOfWork:
+            return UnitOfWork(database.sessions)
+
+        owner = UserId(uuid4())
+        reader = UserId(uuid4())
+        async with units() as work:
+            await _add_user(work, owner, "111", "Owner")
+            await _add_user(work, reader, "112", "Reader")
+            await work.commit()
+
+        clock = [NOW]
+        library = LibraryService(
+            units,
+            CatalogService(units, ()),
+            LibraryReadModel(units),
+            clock=lambda: clock[0],
+        )
+
+        first = await library.create_playlist(owner, "First")
+        clock[0] += timedelta(minutes=1)
+        first = await library.update_playlist(
+            owner,
+            first.playlist_id,
+            name=None,
+            visibility=PlaylistVisibility.PUBLIC,
+            expected_revision=first.revision,
+        )
+        clock[0] += timedelta(minutes=1)
+        second = await library.create_playlist(owner, "Second")
+        clock[0] += timedelta(minutes=1)
+        second = await library.update_playlist(
+            owner,
+            second.playlist_id,
+            name=None,
+            visibility=PlaylistVisibility.PUBLIC,
+            expected_revision=second.revision,
+        )
+
+        await library.move_playlist(owner, second.playlist_id, 0)
+        moved = await library.move_playlist(owner, first.playlist_id, 0)
+        assert moved.position == 0
+        assert moved.revision == first.revision
+        assert moved.updated_at == first.updated_at
+
+        owned = await library.playlists(owner, page=1, page_size=20)
+        assert tuple(item.playlist_id for item in owned.entries) == (
+            first.playlist_id,
+            second.playlist_id,
+        )
+        assert tuple(item.position for item in owned.entries) == (0, 1)
+
+        public = await library.playlists(
+            reader,
+            scope=PlaylistScope.PUBLIC,
+            page=1,
+            page_size=20,
+        )
+        assert tuple(item.playlist_id for item in public.entries) == (
+            second.playlist_id,
+            first.playlist_id,
+        )
+
+        with pytest.raises(LibraryError) as denied:
+            await library.move_playlist(reader, first.playlist_id, 1)
+        assert denied.value.code is LibraryErrorCode.PLAYLIST_ACCESS_DENIED
+        with pytest.raises(LibraryError) as invalid:
+            await library.move_playlist(owner, first.playlist_id, 2)
+        assert invalid.value.code is LibraryErrorCode.PLAYLIST_ORDER_INVALID
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        asyncio.run(database.close())
+
+
 def test_linked_playlist_import_is_deterministic_read_only_and_detachable() -> None:
     database = _database()
 
