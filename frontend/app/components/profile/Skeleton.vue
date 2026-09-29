@@ -19,12 +19,14 @@ const metrics = [
 
 <template>
 	<div aria-busy="true">
-		<header class="flex flex-wrap items-center justify-between gap-5 pb-2">
-			<div class="flex min-w-0 items-center gap-5">
-				<USkeleton class="size-20 shrink-0 rounded-full" />
+		<header
+			class="flex min-h-28 flex-wrap items-center justify-between gap-5 py-2 sm:min-h-32 sm:py-4"
+		>
+			<div class="flex min-w-0 items-center gap-4 sm:gap-6">
+				<USkeleton class="size-20 shrink-0 rounded-full sm:size-24" />
 				<div class="min-w-0 flex-1 space-y-2.5">
 					<div class="flex items-center gap-2.5">
-						<USkeleton class="h-8 w-48" />
+						<USkeleton class="h-10 w-48 sm:w-56" />
 						<USkeleton class="h-5 w-16 rounded-full" />
 					</div>
 					<USkeleton class="h-4 w-32" />
@@ -34,7 +36,7 @@ const metrics = [
 		</header>
 
 		<div
-			class="mt-7 grid grid-cols-4 border-b border-default pb-3 sm:flex sm:gap-3"
+			class="mt-7 grid h-11 grid-cols-4 items-center border-b border-default sm:flex sm:gap-1"
 			aria-hidden="true"
 		>
 			<USkeleton
@@ -127,26 +129,28 @@ const metrics = [
 				</div>
 			</section>
 
-			<div class="mt-12 grid gap-12 2xl:grid-cols-[minmax(0,1.15fr)_minmax(24rem,0.85fr)]">
-				<StatisticsActivity loading scope="personal" />
+			<StatisticsActivity class="mt-12" loading scope="personal" />
+			<div class="mt-12 grid gap-12 lg:grid-cols-2">
 				<section aria-hidden="true">
 					<USkeleton class="h-6 w-40" />
 					<USkeleton class="mt-2 h-3 w-56" />
-					<div class="mt-5 grid gap-7 xl:grid-cols-[minmax(18rem,0.8fr)_minmax(0,1.2fr)]">
-						<div class="space-y-3">
-							<div v-for="index in 7" :key="index" class="flex items-center gap-3">
-								<USkeleton class="h-3 w-8" />
-								<USkeleton class="h-2 flex-1 rounded-full" />
-								<USkeleton class="h-3 w-12" />
-							</div>
+					<div class="mt-5 space-y-3">
+						<div v-for="index in 7" :key="index" class="flex items-center gap-3">
+							<USkeleton class="h-3 w-8" />
+							<USkeleton class="h-2 flex-1 rounded-full" />
+							<USkeleton class="h-3 w-12" />
 						</div>
-						<div class="grid grid-cols-8 gap-1.5 sm:grid-cols-12">
-							<USkeleton
-								v-for="index in 24"
-								:key="index"
-								class="aspect-square rounded-md"
-							/>
-						</div>
+					</div>
+				</section>
+				<section aria-hidden="true">
+					<USkeleton class="h-6 w-36" />
+					<USkeleton class="mt-2 h-3 w-64" />
+					<div class="mt-5 grid grid-cols-8 gap-1.5 sm:grid-cols-12">
+						<USkeleton
+							v-for="index in 24"
+							:key="index"
+							class="aspect-square rounded-md"
+						/>
 					</div>
 				</section>
 			</div>

@@ -163,8 +163,8 @@ class LibraryService:
         self,
         actor_id: UserId,
         *,
-        query: str,
-        limit: int = 10,
+        query: str | None = None,
+        limit: int = 25,
     ) -> tuple[LibraryContributor, ...]:
         return await self._reader.contributors(actor_id, query=query, limit=limit)
 
@@ -254,7 +254,7 @@ class LibraryService:
         return await self._reader.playlists(
             actor_id,
             scope=PlaylistScope.PUBLIC,
-            owner_id=subject_id,
+            profile_user_id=subject_id,
             page=page,
             page_size=page_size,
             query=query,

@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 SmolBlackHole -->
+<!-- SPDX-License-Identifier: MPL-2.0 -->
+
 <script setup lang="ts">
 import { formatStatistic, formatStatisticsDuration } from "~/core/models/statistics";
 
@@ -11,7 +14,6 @@ const { icons } = useTheme();
 const period = useStatisticsPeriod();
 const report = computed(() => statistics.groupReport.data.value);
 const recentTracks = computed(() => playbackHistory.history.data.value?.items ?? []);
-const peopleStatsLink = computed(() => `/server-stats?view=people&period=${period.value}`);
 const metrics = computed(() => {
 	const totals = report.value?.totals;
 	return [
@@ -120,14 +122,31 @@ onScopeDispose(() => {
 							:listeners="report.top_listeners"
 							:total-listening-seconds="report.totals.listening_seconds"
 							compact
-							:more-to="peopleStatsLink"
+							expandable
 						/>
 
-						<StatisticsGroupHighlights
-							:report="report"
-							:limit="2"
-							:more-to="peopleStatsLink"
-						/>
+						<StatisticsActivity :activity="report.activity" />
+
+						<StatisticsMusicStory :report="report" />
+
+						<StatisticsGroupHighlights :report="report" />
+
+						<StatisticsDetails :report="report" />
+
+						<section aria-labelledby="library-heading">
+							<div class="mb-5">
+								<h2
+									id="library-heading"
+									class="text-lg font-semibold text-highlighted"
+								>
+									The library
+								</h2>
+								<p class="mt-1 text-xs text-muted">
+									How the group reacted to tracks and built shared collections.
+								</p>
+							</div>
+							<StatisticsLibraryStory :library="report.library" />
+						</section>
 
 						<section aria-labelledby="recent-heading">
 							<div class="mb-3 flex items-center justify-between gap-4">

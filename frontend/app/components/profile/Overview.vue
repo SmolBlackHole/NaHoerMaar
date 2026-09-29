@@ -3,13 +3,14 @@
 
 <script setup lang="ts">
 import type { ListenerProfile, StatisticsPeriod } from "~/core/models/account";
+import { youtubeMusicArtistUrl, youtubeMusicTrackUrl } from "~/core/models/musicLinks";
 import { formatStatistic, formatStatisticsDuration } from "~/core/models/statistics";
+
+type ProfileView = "overview" | "liked" | "disliked" | "playlists";
 
 const props = defineProps<{ value: ListenerProfile }>();
 const period = defineModel<StatisticsPeriod>("period", { required: true });
-const view = defineModel<"overview" | "liked" | "disliked" | "playlists">("view", {
-	required: true,
-});
+const view = defineModel<ProfileView>("view", { required: true });
 const { icons } = useTheme();
 const views = [
 	{ value: "overview", label: "Overview", compactLabel: "Overview" },
@@ -83,21 +84,24 @@ function formatDate(value: string) {
 
 <template>
 	<div>
-		<header class="flex flex-wrap items-center justify-between gap-5 pb-2">
-			<div class="flex min-w-0 items-center gap-5">
+		<header
+			class="flex min-h-28 flex-wrap items-center justify-between gap-5 py-2 sm:min-h-32 sm:py-4"
+		>
+			<div class="flex min-w-0 items-center gap-4 sm:gap-6">
 				<UAvatar
 					:src="discordAvatar"
 					:alt="value.discord.display_name ?? value.discord.username ?? 'Discord account'"
 					size="3xl"
+					class="size-20 shrink-0 sm:size-24"
 				/>
 				<div class="min-w-0">
 					<div class="flex flex-wrap items-center gap-2.5">
-						<h1 class="truncate text-2xl font-semibold text-highlighted sm:text-3xl">
+						<h1 class="truncate text-3xl font-semibold text-highlighted sm:text-4xl">
 							{{ displayName }}
 						</h1>
 						<UBadge :label="role" color="primary" variant="subtle" />
 					</div>
-					<p class="mt-1.5 truncate text-sm text-muted">
+					<p class="mt-2 truncate text-sm text-muted sm:text-base">
 						@{{ value.discord.username ?? value.discord.id }}
 					</p>
 				</div>
@@ -146,13 +150,15 @@ function formatDate(value: string) {
 				/>
 			</section>
 
-			<div class="mt-12 grid gap-12 2xl:grid-cols-[minmax(0,1.15fr)_minmax(24rem,0.85fr)]">
-				<StatisticsActivity
-					:activity="value.statistics.activity"
-					:granularity="value.statistics.coverage.granularity"
-					scope="personal"
-				/>
+			<StatisticsActivity
+				class="mt-12"
+				:activity="value.statistics.activity"
+				:granularity="value.statistics.coverage.granularity"
+				scope="personal"
+			/>
+			<div class="mt-12 grid gap-12 lg:grid-cols-2">
 				<ProfileListeningRhythm :pattern="value.statistics.highlights.listening_pattern" />
+				<ProfileListeningHours :pattern="value.statistics.highlights.listening_pattern" />
 			</div>
 
 			<ProfileFavorites class="mt-12" :statistics="value.statistics" />
@@ -177,6 +183,8 @@ function formatDate(value: string) {
 							:entry="track"
 							:title="track.title"
 							:artist-names="track.artist_names"
+							:source-url="youtubeMusicTrackUrl(track.title, track.artist_names)"
+							:artist-url="youtubeMusicArtistUrl(track.artist_names)"
 							class="min-w-0 flex-1"
 							multiline
 						/>
@@ -199,7 +207,7 @@ function formatDate(value: string) {
 .profile-view-nav {
 	display: flex;
 	gap: 0.25rem;
-	overflow-x: auto;
+	overflow: hidden;
 	border-bottom: 1px solid var(--ui-border);
 }
 .profile-view-button {
@@ -236,7 +244,7 @@ function formatDate(value: string) {
 		display: grid;
 		grid-template-columns: repeat(4, minmax(0, 1fr));
 		gap: 0;
-		overflow-x: visible;
+		overflow: hidden;
 	}
 	.profile-view-button {
 		min-width: 0;

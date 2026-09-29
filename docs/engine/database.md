@@ -38,11 +38,13 @@ The engine stores:
 
 - the stable listening-session identity and settings;
 - persistent tracks, media identities, artists and merged metadata;
-- personal track reactions and ordered personal playlists;
+- personal track reactions, playlist visibility, collaborators, linked source
+  state, ordered occurrences and short-lived Undo receipts;
 - ordered queue entries with request origin and a user reference;
 - the current playback checkpoint and confirmed playback records;
 - the active Radio run, candidates and exclusions;
-- mutation receipts, outcomes and revision evidence used for idempotency.
+- mutation receipts, outcomes and revision evidence used for idempotency;
+- persisted background-job runs and operational incidents.
 
 Tracks are the shared reference point. Queue entries and playback records refer
 to them instead of copying complete metadata payloads. A queued occurrence and a
@@ -61,9 +63,9 @@ bootstrap boundary.
 
 `database/core.py` owns the SQLAlchemy engine and session factory.
 `database/uow.py` gives a command one explicit transaction. Feature repositories
-own their private mappings under `users/`, `catalog/`, `library/`, `player/` and
-`listening/`; `statistics/` reads the same normalized facts without owning a
-second write model.
+own their private mappings under `users/`, `catalog/`, `library/`, `player`,
+`listening/` and `operations/`; `statistics/` registers the same normalized
+tables for read-only cross-module reports without owning a second write model.
 
 Repositories flush inside the caller-owned unit of work and do not choose when
 to commit. Player state, queue requests, receipts and revision changes therefore
@@ -150,6 +152,13 @@ or playlist version. The catalog bounds their retention and may refresh stale
 snapshots in the background. Playable media URLs, provider headers, FFmpeg
 buffers, running tasks and the recent Logs buffer stay in memory because they
 are valid only for the current process.
+
+Linked Library playlists persist provider and playlist identity, the canonical
+source URL, last attempt and success times, the last error code, unavailable
+entry count and truncation flag. Their reusable Catalog tracks and preferred
+sources remain durable, while temporary playable URLs are still resolved only
+when Player needs them. A failed refresh updates source diagnostics without
+discarding the last successful occurrence list.
 
 [Catalog and metadata](catalog.md#cache-and-refresh-behavior) owns discovery
 retention and refresh behavior. Durable playback and Radio restoration come from

@@ -3,6 +3,7 @@
 
 <script setup lang="ts">
 import type { PersonalStatistics } from "~/core/models/statistics";
+import { youtubeMusicArtistUrl, youtubeMusicTrackUrl } from "~/core/models/musicLinks";
 import { formatStatisticsDuration } from "~/core/models/statistics";
 
 const props = defineProps<{ statistics: PersonalStatistics }>();
@@ -67,6 +68,8 @@ function value(plays: number, listeningSeconds: number) {
 						:entry="track"
 						:title="track.title"
 						:artist-names="track.artist_names"
+						:source-url="youtubeMusicTrackUrl(track.title, track.artist_names)"
+						:artist-url="youtubeMusicArtistUrl(track.artist_names)"
 						:position="index + 1"
 						class="min-w-0 flex-1"
 						multiline
@@ -87,7 +90,14 @@ function value(plays: number, listeningSeconds: number) {
 					<span class="text-right text-xs font-semibold tabular-nums text-dimmed">
 						{{ index + 1 }}
 					</span>
-					<p class="truncate text-sm font-medium text-highlighted">{{ artist.name }}</p>
+					<a
+						:href="youtubeMusicArtistUrl([artist.name]) ?? undefined"
+						target="_blank"
+						rel="noopener noreferrer"
+						class="truncate text-sm font-medium text-highlighted hover:underline"
+					>
+						{{ artist.name }}
+					</a>
 					<span class="text-xs tabular-nums text-muted">
 						{{ value(artist.plays, artist.listening_seconds) }}
 					</span>

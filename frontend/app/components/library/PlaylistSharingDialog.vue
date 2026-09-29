@@ -15,7 +15,7 @@ const { icons } = useTheme();
 const toast = useToast();
 const query = ref("");
 const results = ref<LibraryContributor[]>([]);
-const searching = ref(false);
+const loadingPeople = ref(false);
 const pendingUserId = ref<string | null>(null);
 const visibilityPending = ref(false);
 const error = ref<string | null>(null);
@@ -28,6 +28,24 @@ const visibilityOptions: { label: string; value: PlaylistVisibility }[] = [
 const availableResults = computed(() => {
 	const collaborators = new Set(props.playlist.collaborators.map(({ user_id }) => user_id));
 	return results.value.filter(({ user_id }) => !collaborators.has(user_id));
+});
+const discoveryItems = computed(() =>
+	availableResults.value.map((contributor) => ({
+		id: contributor.user_id,
+		displayName: contributor.display_name,
+		username: contributor.username,
+		avatarUrl: contributor.avatar_url,
+	})),
+);
+const contributorById = computed(
+	() => new Map(availableResults.value.map((contributor) => [contributor.user_id, contributor])),
+);
+const visibilityHint = computed(() => {
+	if (props.playlist.visibility === "public")
+		return "Everyone signed in to NaHörMaar can find and play it. Only invited people can edit.";
+	if (props.playlist.visibility === "collaborators")
+		return "Only you and invited people can find and edit it.";
+	return "Only you can find or edit it.";
 });
 
 async function updateVisibility(value: string | number | boolean | undefined) {
@@ -50,17 +68,16 @@ async function updateVisibility(value: string | number | boolean | undefined) {
 	}
 }
 
-async function search() {
-	const value = query.value.trim();
-	if (!value || searching.value) return;
-	searching.value = true;
+async function loadPeople() {
+	if (loadingPeople.value) return;
+	loadingPeople.value = true;
 	error.value = null;
 	try {
-		results.value = (await core.client.library.contributors(value)).items;
+		results.value = (await core.client.library.contributors(undefined, 100)).items;
 	} catch (failure) {
 		error.value = failureMessage(failure);
 	} finally {
-		searching.value = false;
+		loadingPeople.value = false;
 	}
 }
 
@@ -75,7 +92,6 @@ async function add(contributor: LibraryContributor) {
 			props.playlist.revision,
 		);
 		emit("changed", updated);
-		results.value = results.value.filter(({ user_id }) => user_id !== contributor.user_id);
 		toast.add({
 			title: "Collaborator added",
 			description: contributor.display_name,
@@ -86,6 +102,11 @@ async function add(contributor: LibraryContributor) {
 	} finally {
 		pendingUserId.value = null;
 	}
+}
+
+function invite(userId: string) {
+	const contributor = contributorById.value.get(userId);
+	if (contributor) void add(contributor);
 }
 
 async function remove(contributor: LibraryContributor) {
@@ -119,13 +140,21 @@ function updateOpen(open: boolean) {
 	}
 	emit("update:open", open);
 }
+
+watch(
+	() => props.open,
+	(open) => {
+		if (open) void loadPeople();
+	},
+	{ immediate: true },
+);
 </script>
 
 <template>
 	<UModal
 		:open="open"
-		title="Share playlist"
-		description="Choose who can find this playlist and who can edit its internal tracks."
+		title="Playlist access"
+		description="Choose who can find this playlist and invite people to edit it with you."
 		@update:open="updateOpen"
 	>
 		<template #body>
@@ -141,6 +170,7 @@ function updateOpen(open: boolean) {
 						@update:model-value="updateVisibility"
 					/>
 				</UFormField>
+				<p class="-mt-4 text-xs text-muted">{{ visibilityHint }}</p>
 
 				<div>
 					<div class="flex items-center justify-between gap-3">
@@ -176,53 +206,35 @@ function updateOpen(open: boolean) {
 					<p v-else class="mt-3 text-sm text-muted">Only you can edit this playlist.</p>
 				</div>
 
-				<form class="space-y-3" @submit.prevent="search">
-					<UFormField label="Add someone">
-						<div class="flex gap-2">
-							<UInput
-								v-model="query"
-								:icon="icons.search"
-								placeholder="Search by Discord name"
-								class="min-w-0 flex-1"
-							/>
-							<UButton
-								type="submit"
-								label="Search"
-								:loading="searching"
-								:disabled="!query.trim()"
-							/>
-						</div>
-					</UFormField>
-					<ul v-if="availableResults.length" class="space-y-2">
-						<li
-							v-for="contributor in availableResults"
-							:key="contributor.user_id"
-							class="flex items-center gap-3 rounded-xl border border-default px-3 py-2"
+				<div>
+					<div class="mb-3 flex items-center justify-between gap-3">
+						<h3 class="text-sm font-medium text-highlighted">Invite someone</h3>
+						<span class="text-xs text-muted"
+							>{{ availableResults.length }} available</span
 						>
-							<UAvatar
-								:src="contributor.avatar_url ?? undefined"
-								:alt="contributor.display_name"
-								size="sm"
-							/>
-							<span
-								class="min-w-0 flex-1 truncate text-sm font-medium text-highlighted"
-								>{{ contributor.display_name }}</span
-							>
+					</div>
+					<SharedUserDiscovery
+						v-model:query="query"
+						:items="discoveryItems"
+						:loading="loadingPeople"
+						search-placeholder="Search people"
+						empty-title="No people available"
+						empty-description="Everyone else is already invited."
+					>
+						<template #action="{ item }">
 							<UButton
-								label="Add"
+								label="Invite"
 								:icon="icons.userPlus"
 								color="neutral"
 								variant="soft"
-								:loading="pendingUserId === contributor.user_id"
+								size="sm"
+								:loading="pendingUserId === item.id"
 								:disabled="Boolean(pendingUserId)"
-								@click="add(contributor)"
+								@click="invite(item.id)"
 							/>
-						</li>
-					</ul>
-					<p v-else-if="query.trim() && !searching" class="text-sm text-muted">
-						No new people found.
-					</p>
-				</form>
+						</template>
+					</SharedUserDiscovery>
+				</div>
 
 				<p v-if="error" class="text-sm text-warning" role="alert">{{ error }}</p>
 				<div class="flex justify-end">

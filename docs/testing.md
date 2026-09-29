@@ -33,14 +33,17 @@ snapshot with Python 3.12, Node.js 24 and `libopus0`, then invokes the same
 complete gate. It catches clean-environment, database and Linux-only problems
 locally. GitHub Actions remains the final hosted-runner result.
 
-The Library release gate was run on 2026-09-29 on Windows and again in the
-clean Linux container. Both runs passed repository checks, strict Python and
-frontend type checks, API generation without a diff, 192 backend tests, 98
-frontend tests and the production build. The browser review covered the final
-History, Queue and Library track geometry, geometry-matched Library loading
-states, pagination above the Dock, dark and light themes and a 390 CSS-pixel
-viewport. Live mutations and audible Discord behavior remain separate checks;
-do not infer them from this automated and visual gate.
+The Library and Statistics release gate was run on 2026-09-29 and completed
+on 2026-09-30 on Windows and again in a clean Linux container. Both runs passed
+repository checks, Ruff lint and format checks, strict mypy and Pyright, the
+migration upgrade/downgrade/schema checks, API generation without a diff, 197
+backend tests, 99 frontend tests, Nuxt type checking and the production build.
+The browser review covered linked and shared Library surfaces, public profile
+collections, Jobs including a manual no-candidate synchronization run, the
+the comprehensive Overview, retained period queries, desktop layouts, dark and
+light themes and a 390 CSS-pixel viewport. Live mutations and audible
+Discord behavior remain separate checks; do not infer them from this automated
+and visual gate.
 
 Backend tests use a separate working directory and PostgreSQL schema per test,
 synthetic Discord credentials and simulated voice connections. Start the test

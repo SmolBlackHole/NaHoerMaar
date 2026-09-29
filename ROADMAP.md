@@ -13,8 +13,8 @@ this page once implementation, tests and its owning documentation agree.
 
 ## Next: performance profiling and Player startup
 
-Profile the application after the current Library and playlist plan is complete,
-starting with the Player page's noticeably long loading time. Establish separate
+Profile the application starting with the Player page's noticeably long loading
+time. Establish separate
 cold-load, warm-load and in-app navigation baselines on desktop and mobile before
 changing implementation details.
 
@@ -28,27 +28,6 @@ Fix the measured bottlenecks in small slices and record the before-and-after
 numbers. Extend the pass to other slow routes only after the Player path is
 understood, so shared improvements are extracted from real repetition instead of
 speculative caching, prefetching or new infrastructure.
-
-## Later: shared and synchronized playlists
-
-Extend personal playlists with explicit collaborators and private,
-collaborator-only or public visibility. Keep the creator as owner and define
-rename, editing, sharing and removal permissions before exposing another user's
-playlist on profiles or server pages.
-
-A playlist may remain a local copy or become linked to YouTube Music or YouTube.
-Store provider identity, playlist identity and reusable track metadata; resolve
-temporary audio sources only when playing.
-
-Show cached contents immediately, refresh on open and before queueing, and allow
-bounded periodic synchronization. Reconcile additions, removals, reordering and
-intentional duplicates while preserving the listener's current selection. Keep
-the last successful contents when a source is unavailable, show the last sync,
-and provide an explicit way to detach a linked playlist as a local copy.
-
-Define how local edits and upstream changes interact before implementation.
-Refreshing a saved playlist must not rewrite tracks that are already queued or
-playing.
 
 ## Later: faithful loading states
 

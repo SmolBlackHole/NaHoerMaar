@@ -46,7 +46,7 @@ const heading = computed(() => {
 const description = computed(() => {
 	if (props.view === "liked") return "Tracks this listener explicitly liked.";
 	if (props.view === "disliked") return "Tracks this listener explicitly disliked.";
-	return "Collections this listener chose to share with everyone.";
+	return "Public collections this listener owns or helps curate.";
 });
 const emptyTitle = computed(() => {
 	if (selectedQuery.value) return "Nothing matched that search";

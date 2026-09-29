@@ -53,9 +53,12 @@ when someone wants to call the bot into their voice channel.
 
 NaHörMaar is in development. The bot has **one shared queue and one
 active voice connection across its servers**. It does not give each server an
-independent listening room yet. Saved playlists, reactions and listening recaps
-are also [future work](ROADMAP.md). The [Discord listening acceptance](docs/testing.md#live-acceptance)
-still has open cases; automated checks alone do not settle what listeners hear.
+independent listening room yet. Reactions, private/shared/public playlists,
+bounded provider synchronization, listener profiles and a period-based Overview
+are available in the dashboard. The next measured work is Player startup
+performance; broader future work remains on the [roadmap](ROADMAP.md). The
+[Discord listening acceptance](docs/testing.md#live-acceptance) stays separate
+from automated checks because only a listener can settle what reaches Discord.
 
 ## Find your way
 

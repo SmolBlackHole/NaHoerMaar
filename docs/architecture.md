@@ -25,9 +25,14 @@ live in the [Engine API](engine-api.md).
 flowchart LR
     Browser[Nuxt dashboard] -->|HTTP commands| API[FastAPI and auth]
     API --> Session[Session inbox]
-    API --> Library[Reactions and personal playlists]
+    API --> Library[Reactions and user playlists]
+    API --> Statistics[Read-only statistics]
+    API --> Operations[Jobs, incidents and logs]
     Library --> Session
+    Library --> Catalog[Catalog and providers]
     Library --> DB[(PostgreSQL)]
+    Statistics --> DB
+    Operations --> DB
     Discord[Discord commands and callbacks] --> Session
     Session --> Domain[Queue, playback and Radio policies]
     Session --> DB
@@ -86,9 +91,11 @@ new queue command. Neither SSE nor the event bus is a durable audit log.
 | --- | --- | --- |
 | Search, links and metadata | Catalog | [Catalog](engine/catalog.md) |
 | Track lyrics lookup and cache | Lyrics | [Lyrics](engine/lyrics.md) |
-| Reactions and personal playlists | Library | [Library](engine/library.md) |
+| Reactions, sharing and linked playlists | Library | [Library](engine/library.md) |
 | Queue order and request attribution | Player Session | [Queue](engine/queue.md) |
 | Confirmed playback history | Playback history view | [Engine API](engine-api.md#playback-history) |
+| Period-based profile and group reports | Statistics read model | [Engine API](engine-api.md#statistics-and-profiles) |
+| Jobs, run history, incidents and logs | Operations | [Engine API](engine-api.md#operations) |
 | Automatic queue supply | Radio strategy and observer | [Radio](engine/radio.md) |
 | FSM, audio, voice and restart | Playback | [Playback](engine/playback.md) |
 | SQLAlchemy, transactions and migrations | Persistence and schema | [Database](engine/database.md) |
@@ -118,8 +125,18 @@ An owner-specific report may enrich its read result from registered foreign
 tables without importing or invoking the foreign feature's repository.
 
 Library owns its reaction and playlist writes and read projection. It references
-stable Catalog identities without taking ownership of provider metadata, then
-submits saved selections through Player when a playlist is queued.
+stable Catalog identities without taking ownership of provider metadata. Its
+linked-playlist synchronizer asks Catalog to materialize one bounded provider
+snapshot, then updates Library occurrences in a short transaction. Queueing
+submits saved selections through Player and does not couple Library persistence
+to the live queue.
+
+Statistics is a read-only projection over durable Listening, Player, Catalog,
+Users and Library tables. It owns no second copy of those facts. Period coverage
+and all Library aggregates are calculated inside one selected report window.
+Operations coordinates bounded maintenance contributed by feature modules;
+Library owns playlist synchronization work, while Operations owns scheduling,
+persisted run history and failure or recovery incidents.
 
 The application uses the host event loop. A Session waits on its bounded inbox
 instead of polling. One backend worker owns one bot and one player; starting
@@ -145,5 +162,7 @@ owns the authentication routes and HTTP requirements.
 ## Current scope
 
 The runtime supports one listening session, one shared queue and one active voice
-connection across all Discord servers where the bot is installed. The
-[roadmap](../ROADMAP.md) owns work towards independent server sessions.
+connection across all Discord servers where the bot is installed. Overview
+therefore describes that one application-wide listening group, not an
+individual Discord guild. The [roadmap](../ROADMAP.md) owns work towards
+independent server sessions.

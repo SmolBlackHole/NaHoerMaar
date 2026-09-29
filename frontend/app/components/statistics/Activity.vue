@@ -111,7 +111,7 @@ function durationLabel(seconds: number) {
 			</div>
 		</div>
 		<figure v-if="loading" class="mt-8" aria-hidden="true">
-			<div class="grid grid-cols-[2.5rem_minmax(0,1fr)] gap-2">
+			<div class="grid grid-cols-[4rem_minmax(0,1fr)] gap-2">
 				<div class="flex h-44 flex-col justify-between pb-px">
 					<USkeleton v-for="index in 4" :key="index" class="ml-auto h-3 w-6" />
 				</div>
@@ -136,9 +136,9 @@ function durationLabel(seconds: number) {
 			</figcaption>
 		</figure>
 		<figure v-else-if="activity.length" class="mt-8">
-			<div class="grid grid-cols-[2.5rem_minmax(0,1fr)] gap-2">
+			<div class="grid grid-cols-[4rem_minmax(0,1fr)] gap-2">
 				<div
-					class="flex h-44 flex-col justify-between pb-px text-right text-[0.6875rem] tabular-nums text-muted"
+					class="flex h-44 flex-col justify-between pb-px text-right text-[0.6875rem] whitespace-nowrap tabular-nums text-muted"
 					aria-label="Duration"
 				>
 					<span v-for="tick in yTicks" :key="tick">{{ durationLabel(tick) }}</span>

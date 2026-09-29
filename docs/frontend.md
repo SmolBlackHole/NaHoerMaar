@@ -76,8 +76,9 @@ their operation ID.
 
 The Library store keeps reaction summaries and the playlist picker coherent
 across Player, Queue, History, search and Library views. It is deliberately
-bounded: collection search, numbered pages, playlist detail and order editing
-remain page workflow state instead of becoming a second global data cache.
+bounded: collaborator search, collection search, numbered pages, playlist
+detail, source state and order editing remain page workflow state instead of
+becoming a second global data cache.
 
 ## Page workflows
 
@@ -85,6 +86,18 @@ Discovery, Library collections and playlist entries, lyrics, playback history,
 profiles, statistics, access, jobs, incidents and logs use local workflow
 instances. Each workflow owns its loading state, error, cancellation and current
 result. Leaving the page disposes that state.
+
+Library uses `view=playlists|liked|disliked` and an optional `playlist` query.
+Playlists are the default view. Player and Queue use the same query-backed tab
+pattern on `/`, and the global page transition also covers those in-route view
+changes. Route queries remain the source of truth across reloads and browser
+navigation; focus is repaired after a query transition.
+
+Overview owns the complete group story: headline metrics, expandable People,
+Activity, Music, group highlights, request details, Library activity and recent
+playback. `useStatisticsPeriod` keeps the selected `period` query across reloads
+and profile drill-downs. Partial history is shown after available content
+instead of blocking the report.
 
 Use a Pinia store only when several views need the same data or when the data has
 a longer lifecycle than one page. A search result, selected statistics period or
@@ -102,6 +115,19 @@ Queue, History, Catalog, Library, Coming up and the Dock. Surfaces compose the
 actions and secondary metadata they need around that identity. Library reaction
 and playlist controls reuse the same bounded store actions instead of each
 surface inventing its own optimistic state.
+
+Shared track rows own desktop and mobile action placement, context menus and an
+optional drag handle. Playlist cards use the same right-click action model and
+restore saturation on hover without moving their layout. Library entry and card
+ordering sends absolute positions and waits for the accepted revision before it
+becomes authoritative. Geometry-matched skeletons reuse the final surfaces'
+spacing so initial data does not move controls when it arrives.
+
+The Library page exposes import, visibility, collaborator, source status,
+manual synchronization and detach controls according to the API's `owner`,
+`editor` or `reader` access. Linked entries suppress local mutation controls.
+Profile pages reuse the same collection and track presentation for Likes,
+Dislikes and public playlists without showing private collection counts.
 
 `stores/settings.ts` keeps the editable appearance state because the theme must
 remain available across the whole app. Persistence still goes through the core

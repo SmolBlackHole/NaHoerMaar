@@ -5,6 +5,8 @@
 import { failureMessage } from "~/core/errors";
 import type { Playlist } from "~/core/models/library";
 
+defineOptions({ inheritAttrs: false });
+
 const props = defineProps<{ playlist: Playlist }>();
 const emit = defineEmits<{ changed: [playlist: Playlist] }>();
 const core = useNuxtApp().$backendCore;
@@ -13,6 +15,9 @@ const toast = useToast();
 const pending = ref<"sync" | "detach" | null>(null);
 const detachOpen = ref(false);
 const error = ref<string | null>(null);
+const providerName = computed(() =>
+	props.playlist.source?.provider_key === "youtube" ? "YouTube" : "the source",
+);
 
 function formatted(value: string) {
 	return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(
@@ -72,11 +77,11 @@ async function detach() {
 </script>
 
 <template>
-	<div v-if="playlist.source" class="source-card">
-		<div class="min-w-0 flex-1">
-			<div class="flex flex-wrap items-center gap-2">
-				<p class="text-sm font-semibold text-highlighted">Linked playlist</p>
-				<UBadge color="neutral" variant="soft">{{ playlist.source.provider_key }}</UBadge>
+	<div v-if="playlist.source" v-bind="$attrs" class="source-card">
+		<UIcon :name="icons.reload" class="mt-0.5 size-4 shrink-0 text-primary" />
+		<div class="source-details min-w-0 flex-1">
+			<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+				<p class="text-sm font-medium text-highlighted">Synced from {{ providerName }}</p>
 				<UBadge v-if="playlist.source.truncated" color="warning" variant="soft">
 					Import limit reached
 				</UBadge>
@@ -88,21 +93,21 @@ async function detach() {
 					{{ playlist.source.unavailable_entry_count }} unavailable
 				</UBadge>
 			</div>
-			<a
-				:href="playlist.source.canonical_url"
-				target="_blank"
-				rel="noreferrer"
-				class="mt-2 inline-flex max-w-full items-center gap-1.5 text-sm text-muted hover:text-highlighted"
-			>
-				<span class="truncate">{{ playlist.source.canonical_url }}</span>
-				<UIcon :name="icons.external" class="size-4 shrink-0" />
-			</a>
-			<p class="mt-2 text-xs text-muted">
-				Last successful refresh {{ formatted(playlist.source.last_successful_sync_at) }}
-			</p>
-			<p class="mt-1 text-xs text-muted">
-				Track order follows the linked source until you detach it.
-			</p>
+			<div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+				<span>Last refreshed {{ formatted(playlist.source.last_successful_sync_at) }}</span>
+				<span aria-hidden="true">·</span>
+				<span>Source order</span>
+				<span aria-hidden="true">·</span>
+				<a
+					:href="playlist.source.canonical_url"
+					target="_blank"
+					rel="noreferrer"
+					class="inline-flex items-center gap-1 font-medium hover:text-highlighted hover:underline"
+				>
+					Open source
+					<UIcon :name="icons.external" class="size-3.5" />
+				</a>
+			</div>
 			<p
 				v-if="playlist.source.last_error_code"
 				class="mt-2 text-sm text-warning"
@@ -113,9 +118,12 @@ async function detach() {
 			</p>
 			<p v-if="error" class="mt-2 text-sm text-warning" role="alert">{{ error }}</p>
 		</div>
-		<div v-if="playlist.access === 'owner'" class="flex shrink-0 flex-wrap gap-2">
+		<div
+			v-if="playlist.access === 'owner'"
+			class="source-actions flex shrink-0 flex-wrap gap-1"
+		>
 			<UButton
-				label="Sync now"
+				label="Refresh"
 				:icon="icons.reload"
 				color="neutral"
 				variant="soft"
@@ -124,7 +132,7 @@ async function detach() {
 				@click="synchronize"
 			/>
 			<UButton
-				label="Detach"
+				label="Stop sync"
 				:icon="icons.close"
 				color="neutral"
 				variant="ghost"
@@ -165,16 +173,19 @@ async function detach() {
 .source-card {
 	display: flex;
 	align-items: flex-start;
-	justify-content: space-between;
-	gap: 1rem;
-	padding: 1rem;
-	border: 1px solid var(--ui-border);
-	border-radius: 0.875rem;
-	background: color-mix(in srgb, var(--ui-bg-elevated) 58%, transparent);
+	gap: 0.625rem;
+	padding-block: 0.875rem;
+	border-block: 1px solid color-mix(in srgb, var(--ui-border) 72%, transparent);
 }
 @container workspace (max-width: 640px) {
 	.source-card {
-		flex-direction: column;
+		flex-wrap: wrap;
+	}
+	.source-details {
+		min-width: calc(100% - 2.25rem);
+	}
+	.source-actions {
+		margin-left: 1.625rem;
 	}
 }
 </style>

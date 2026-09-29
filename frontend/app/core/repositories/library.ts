@@ -36,7 +36,7 @@ const idempotencyHeader = (operationId: string) => ({ "Idempotency-Key": operati
 
 export function createLibraryRepository(request: Transport) {
 	return {
-		contributors: (query: string, limit = 10, signal?: AbortSignal) =>
+		contributors: (query?: string, limit = 25, signal?: AbortSignal) =>
 			request((api) =>
 				api.GET("/api/library/contributors", {
 					params: { query: { q: query, limit } },

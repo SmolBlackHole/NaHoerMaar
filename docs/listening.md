@@ -80,15 +80,24 @@ pages. Reaction details show the totals and the people behind each value.
 
 Personal playlists also live in the Library. Create and rename a playlist, add
 tracks from Queue, History, search or another track surface, and keep deliberate
-duplicates in the order you want. A playlist can contain up to 100 track
-occurrences. You can queue one saved occurrence or queue the complete playlist;
-the saved list does not change when the live queue changes.
+duplicates in the order you want. Drag playlist cards or local entries to keep
+their order. Removing one occurrence offers a brief Undo that restores it at
+the same position. A playlist can contain up to 1,000 occurrences; one add or
+queue action remains bounded to 100 selections. The saved list does not change
+when the live queue changes.
 
-Only the creator can currently open or change a saved playlist. Sharing,
-collaborators and public visibility are later work. A YouTube playlist opened in
-search is a provider preview, not a synchronized saved playlist: selecting its
-tracks creates local Library entries without retaining an upstream link. The
-[Library guide](engine/library.md) owns these boundaries.
+The creator stays the owner. A playlist can remain private, be shared with
+invited collaborators or become visible to every signed-in listener. Editors
+may change local entries; readers may inspect and queue visible contents. Public
+playlists, Likes and Dislikes appear on the owner's profile, while private and
+collaborator-only playlists remain hidden there.
+
+Importing a supported YouTube or YouTube Music playlist creates a linked saved
+playlist. NaHörMaar keeps its ordered occurrences synchronized hourly and lets
+the owner refresh it directly. Linked contents remain read-only until detached,
+and a failed refresh keeps the last successful contents. NaHörMaar never writes
+changes back to the provider. The [Library guide](engine/library.md) owns these
+permissions and synchronization rules.
 
 ## Shape the queue
 

@@ -3,6 +3,7 @@
 
 <script setup lang="ts">
 import type { PersonalStatistics } from "~/core/models/statistics";
+import { youtubeMusicArtistUrl, youtubeMusicTrackUrl } from "~/core/models/musicLinks";
 import { formatStatisticsDuration } from "~/core/models/statistics";
 
 const props = defineProps<{ highlights: PersonalStatistics["highlights"] }>();
@@ -84,6 +85,8 @@ function percent(value: number | null) {
 							:entry="track"
 							:title="track.title"
 							:artist-names="track.artist_names"
+							:source-url="youtubeMusicTrackUrl(track.title, track.artist_names)"
+							:artist-url="youtubeMusicArtistUrl(track.artist_names)"
 							size="sm"
 							class="min-w-0 flex-1"
 							multiline
@@ -111,6 +114,8 @@ function percent(value: number | null) {
 							:entry="track"
 							:title="track.title"
 							:artist-names="track.artist_names"
+							:source-url="youtubeMusicTrackUrl(track.title, track.artist_names)"
+							:artist-url="youtubeMusicArtistUrl(track.artist_names)"
 							size="sm"
 							class="min-w-0 flex-1"
 							multiline

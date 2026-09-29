@@ -369,7 +369,11 @@ def test_statistics_project_shared_and_personal_facts_without_double_counting() 
         playlist_entries = registered_table(
             "playlist_entries", consumer="Statistics tests"
         )
+        playlist_collaborators = registered_table(
+            "playlist_collaborators", consumer="Statistics tests"
+        )
         public_playlist_id = uuid4()
+        collaborative_playlist_id = uuid4()
         async with units() as work:
             await work.session.execute(
                 insert(reactions),
@@ -429,7 +433,33 @@ def test_statistics_project_shared_and_personal_facts_without_double_counting() 
                         "created_at": NOW - timedelta(minutes=1),
                         "updated_at": NOW - timedelta(minutes=1),
                     },
+                    {
+                        "id": collaborative_playlist_id,
+                        "owner_id": seeded.owner_id,
+                        "owner_position": 0,
+                        "name": "Collaborative picks",
+                        "visibility": "public",
+                        "source_provider_key": None,
+                        "source_external_id": None,
+                        "source_url": None,
+                        "source_last_attempt_at": None,
+                        "source_last_successful_sync_at": None,
+                        "source_last_error_code": None,
+                        "source_unavailable_entry_count": 0,
+                        "source_truncated": False,
+                        "revision": 0,
+                        "created_at": NOW - timedelta(minutes=1),
+                        "updated_at": NOW - timedelta(seconds=30),
+                    },
                 ],
+            )
+            await work.session.execute(
+                insert(playlist_collaborators).values(
+                    playlist_id=collaborative_playlist_id,
+                    user_id=listener_id,
+                    granted_by=seeded.owner_id,
+                    granted_at=NOW - timedelta(minutes=1),
+                )
             )
             await work.session.execute(
                 insert(playlist_entries).values(
@@ -529,7 +559,7 @@ def test_statistics_project_shared_and_personal_facts_without_double_counting() 
         assert overview.library.dislikes == 1
         assert overview.library.reactions == 2
         assert overview.library.like_share == 0.5
-        assert overview.library.public_playlists == 1
+        assert overview.library.public_playlists == 2
         assert overview.library.shared_playlists == 0
         assert [track.track_id for track in overview.library.top_liked_tracks] == [
             seeded.first_track_id
@@ -618,7 +648,7 @@ def test_statistics_project_shared_and_personal_facts_without_double_counting() 
         assert profile.recent_tracks[1].audio_seconds == 100.0
         assert profile.library.likes_count == 1
         assert profile.library.dislikes_count == 1
-        assert profile.library.public_playlist_count == 1
+        assert profile.library.public_playlist_count == 2
         assert [track.title for track in profile.library.liked_tracks] == [
             "First track"
         ]
@@ -626,9 +656,11 @@ def test_statistics_project_shared_and_personal_facts_without_double_counting() 
             "Second track"
         ]
         assert [playlist.name for playlist in profile.library.public_playlists] == [
-            "Public favourites"
+            "Collaborative picks",
+            "Public favourites",
         ]
-        assert profile.library.public_playlists[0].entry_count == 1
+        assert profile.library.public_playlists[0].entry_count == 0
+        assert profile.library.public_playlists[1].entry_count == 1
 
         with pytest.raises(AuthError) as caught:
             await service.user(blocked_id, StatisticsPeriod.ALL)

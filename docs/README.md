@@ -28,7 +28,9 @@ other pages keep the context they need and link to that owner.
 | Understand the system | [Architecture](architecture.md) | [Engine](engine/) or [frontend](frontend.md) |
 | Change search or metadata | [Catalog](engine/catalog.md) | [Engine API][api-discovery] |
 | Change lyrics lookup or caching | [Lyrics](engine/lyrics.md) | [Engine API](engine-api.md#lyrics) |
-| Change reactions or personal playlists | [Library](engine/library.md) | [Engine API](engine-api.md#library) |
+| Change reactions, sharing or linked playlists | [Library](engine/library.md) | [Engine API](engine-api.md#library) |
+| Change profile or Overview reports | [Engine API](engine-api.md#statistics-and-profiles) | [Architecture](architecture.md) |
+| Change background jobs or incidents | [Engine API](engine-api.md#operations) | [Architecture](architecture.md) |
 | Change queue order or history | [Queue](engine/queue.md) | [Database](engine/database.md) |
 | Change Radio | [Radio](engine/radio.md) | [Catalog](engine/catalog.md) |
 | Change Discord audio or restart | [Playback](engine/playback.md) | [Testing][playback-diagnostics] |
@@ -74,7 +76,7 @@ whole sequence to change one provider or develop one migration.
 | --- | --- |
 | [Architecture](architecture.md) | End-to-end flow and responsibility boundaries |
 | [Engine documentation](engine/) | Engine navigation and domain ownership |
-| [Library](engine/library.md) | Reactions, personal playlists and queue handoff |
+| [Library](engine/library.md) | Reactions, sharing, linked playlists, maintenance and queue handoff |
 | [Frontend architecture](frontend.md) | Generated types, repositories, stores and composables |
 | [Engine API](engine-api.md) | HTTP, SSE, request and response shapes |
 

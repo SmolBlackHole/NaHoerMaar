@@ -15,6 +15,7 @@ that contract. The live Discord check is documented under
 - [Engine API](#engine-api)
   - [Table of contents](#table-of-contents)
   - [Authentication](#authentication)
+  - [Statistics and profiles](#statistics-and-profiles)
   - [Process health](#process-health)
   - [State and mutations](#state-and-mutations)
   - [Playback history](#playback-history)
@@ -41,11 +42,8 @@ Authentication routes are:
 
 The PATCH document accepts optional nested `profile` and `appearance` objects
 and requires at least one of them. It updates both atomically when both are
-present. The cheap user document contains account state only. Profile routes
-combine that identity with recent listening and personal statistics for the
-selected period. `GET /api/statistics` returns the group report. Statistics use
-`7d`, `30d`, `year` or `all` and return display-ready daily or monthly activity
-buckets.
+present. The cheap user document contains account state only. Profile and group
+report shapes are described under [Statistics and profiles](#statistics-and-profiles).
 
 All other `/api/` requests need a valid session cookie. Mutations also require
 the configured `Origin` and `X-CSRF-Token`. Replies are private and `no-store`.
@@ -68,6 +66,29 @@ Owners and admins use these administration routes:
 The owner may revoke any normal grant. An admin may revoke only a grant created
 by that admin. The backend enforces this rule. Owner and admin roles cannot be
 changed through the API.
+
+## Statistics and profiles
+
+`GET /api/profiles/me` and `GET /api/profiles/{user_id}` combine account
+identity with listening statistics for `7d`, `30d`, `year` or `all`. The report
+includes coverage, totals, activity, music rankings, listening patterns,
+request outcomes, highlights and earned badges. Its Library preview reports the
+selected listener's reaction and public-playlist counts without exposing
+private or collaborator-only playlists.
+
+`GET /api/statistics?period=...` returns the complete group report used by
+Overview. It includes period coverage, totals, activity and music rankings plus
+active listeners, the listener leaderboard, requested music, group highlights
+and read-only Library aggregates. Library aggregates count
+reaction updates, playlist creation and playlist-entry additions inside the
+selected half-open period. Most-saved rankings exclude private playlist
+contents; top liked and disliked tracks are based on explicit reactions.
+
+Coverage reports the effective UTC window, display granularity, configured
+timezone, earliest durable fact and whether the requested period predates
+recorded history. Partial coverage never suppresses the available report. All
+group statistics currently describe the application's one shared listening
+session rather than a Discord guild.
 
 ## Process health
 
@@ -163,9 +184,11 @@ filter.
 
 ## Library
 
-Library routes store reactions and private personal playlists for canonical
-Catalog tracks. All routes require an authenticated browser session. Ordinary
-mutation protection from [Authentication](#authentication) applies.
+Library routes store reactions and user-owned playlists for canonical Catalog
+tracks. A playlist may be private, shared with collaborators or public, and may
+be local or linked to a supported provider playlist. All routes require an
+authenticated browser session. Ordinary mutation protection from
+[Authentication](#authentication) applies.
 
 Reaction routes are:
 
@@ -175,22 +198,34 @@ Reaction routes are:
 | `PUT /api/library/tracks/{track_id}/reaction` | Set or replace `{ "value": "like" }` or `dislike` |
 | `DELETE /api/library/tracks/{track_id}/reaction` | Remove the current user's reaction |
 | `GET /api/library/tracks?reaction=like` | Searchable, numbered Liked or Disliked collection |
+| `GET /api/library/profiles/{user_id}/tracks?reaction=like` | Searchable, numbered reaction collection for one profile |
 | `GET /api/library/tracks/{track_id}/reactions` | Numbered participants for `like` or `dislike` |
 
 Playlist routes are:
 
 | Endpoint | Body / meaning |
 | --- | --- |
+| `GET /api/library/contributors?q=...` | Search existing listeners for collaborator selection |
 | `GET /api/library/playlists` | Searchable, numbered personal playlists |
+| `GET /api/library/playlists?scope=shared` | Playlists shared with the current user |
+| `GET /api/library/playlists?scope=public` | Public playlists from all users |
+| `GET /api/library/profiles/{user_id}/playlists` | Searchable, numbered public playlists for one profile |
 | `POST /api/library/playlists` | Create a playlist with `name` |
-| `GET /api/library/playlists/{playlist_id}` | Read one owner-scoped playlist |
-| `PATCH /api/library/playlists/{playlist_id}` | Rename with `name` and `expected_revision` |
+| `POST /api/library/playlists/imports` | Import and link a provider playlist from `source_url` |
+| `GET /api/library/playlists/{playlist_id}` | Read one accessible playlist |
+| `PATCH /api/library/playlists/{playlist_id}` | Change `name` and/or `visibility` at `expected_revision` |
+| `PUT /api/library/playlists/{playlist_id}/position` | Move one owned playlist card to an absolute position |
+| `PUT /api/library/playlists/{playlist_id}/collaborators/{user_id}` | Add one collaborator at `expected_revision` |
+| `DELETE /api/library/playlists/{playlist_id}/collaborators/{user_id}` | Remove one collaborator at `expected_revision` |
 | `DELETE /api/library/playlists/{playlist_id}` | Delete at `expected_revision` |
+| `POST /api/library/playlists/{playlist_id}/sync` | Refresh one linked playlist from its provider |
+| `DELETE /api/library/playlists/{playlist_id}/source` | Detach a linked playlist at `expected_revision` |
 | `POST /api/library/playlists/{playlist_id}/duplicate` | Copy at `expected_revision`, with an optional new `name` |
 | `GET /api/library/playlists/{playlist_id}/entries` | Searchable, numbered ordered occurrences |
 | `POST /api/library/playlists/{playlist_id}/entries` | Add 1..100 track selections at `expected_revision` |
-| `DELETE /api/library/playlists/{playlist_id}/entries/{entry_id}` | Remove one occurrence at `expected_revision` |
-| `PUT /api/library/playlists/{playlist_id}/order` | Replace the complete entry-ID order at `expected_revision` |
+| `DELETE /api/library/playlists/{playlist_id}/entries/{entry_id}` | Remove one occurrence and return a short-lived Undo receipt |
+| `POST /api/library/playlists/{playlist_id}/entries/undo` | Restore an Undo occurrence at its previous position |
+| `PUT /api/library/playlists/{playlist_id}/entries/{entry_id}/position` | Move one local occurrence to an absolute position |
 | `POST /api/library/playlists/{playlist_id}/queue` | Queue the saved order and duplicates at `expected_revision` |
 
 Collections use `q`, `page`, `page_size` and an opaque `snapshot` where
@@ -200,11 +235,19 @@ snapshots encode the playlist revision, so pages from different orders cannot
 be combined.
 
 Playlist mutations increment `revision`. A stale `expected_revision` returns
-409 with `library_playlist_revision_conflict`. Missing tracks, sources,
-playlists or entries and invalid full-order submissions use stable `library_*`
-error codes. A playlist holds at most 100 occurrences. Queueing a playlist also
-requires an `Idempotency-Key` and returns the ordinary Player mutation envelope.
-The [Library guide](engine/library.md) owns the domain and persistence rules.
+409 with `library_playlist_revision_conflict`. Access is reported as `owner`,
+`editor` or `reader`; denied writes return `library_playlist_access_denied`.
+Linked entries reject local edits with `library_playlist_linked_read_only` until
+the owner detaches the source. Missing tracks, sources, playlists, entries,
+users and expired Undo receipts use stable `library_*` error codes.
+
+A playlist holds at most 1,000 occurrences, while one addition or queue command
+handles at most 100 selections. Queueing a playlist requires an
+`Idempotency-Key` and returns the ordinary Player mutation envelope. Provider
+sync preserves the last successful contents on failure and exposes attempt,
+success, error, unavailable-entry and truncation state. The
+[Library guide](engine/library.md) owns permissions, synchronization and
+persistence rules.
 
 ## Discovery and stable selections
 
@@ -286,6 +329,14 @@ history is available through `GET /api/jobs/runs`, ordered newest first with
 `page_size`, `cursor`, `job_id` and `status` queries. Its response uses the
 shared cursor document. `GET /api/jobs/runs/{run_id}` returns the complete
 details for one run.
+
+Registered bounded work currently includes Catalog maintenance and cleanup,
+source revalidation, Operations housekeeping and hourly Library playlist
+synchronization. The playlist job defaults to ten due linked playlists and four
+parallel provider requests. Its run details record additions, removals, moves,
+unchanged occurrences, unavailable entries and provider failures. A failed or
+partial run retains the previous successful playlist contents; the next clean
+run restores the job's health state.
 
 `GET /api/incidents` combines a full-period summary with one numbered page of
 matching incident items. `period`, `severity`, `component`, `code` and

@@ -9,7 +9,7 @@ from datetime import date, datetime
 from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, true
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -95,6 +95,7 @@ class ReactionParticipantPage:
 class LibraryContributor:
     user_id: UserId
     display_name: str
+    username: str | None
     discord_id: str | None
     discord_avatar_hash: str | None
 
@@ -201,15 +202,12 @@ class LibraryReadModel:
         self,
         actor_id: UserId,
         *,
-        query: str,
+        query: str | None,
         limit: int,
     ) -> tuple[LibraryContributor, ...]:
-        normalized = query.strip()
-        if not normalized:
-            raise ValueError("Contributor search requires a query.")
-        if not 1 <= limit <= 25:
-            raise ValueError("Contributor search limit must be between 1 and 25.")
-        pattern = f"%{normalized}%"
+        normalized = query.strip() if query is not None else ""
+        if not 1 <= limit <= 100:
+            raise ValueError("Contributor search limit must be between 1 and 100.")
         relation = self._users.outerjoin(
             self._profiles,
             self._profiles.c.user_id == self._users.c.id,
@@ -229,12 +227,14 @@ class LibraryReadModel:
                             self._discord.c.avatar_hash,
                         )
                         .select_from(relation)
+                        .where(self._users.c.id != actor_id)
                         .where(
-                            self._users.c.id != actor_id,
                             or_(
-                                self._profiles.c.display_name.ilike(pattern),
-                                self._discord.c.username.ilike(pattern),
-                            ),
+                                self._profiles.c.display_name.ilike(f"%{normalized}%"),
+                                self._discord.c.username.ilike(f"%{normalized}%"),
+                            )
+                            if normalized
+                            else true()
                         )
                         .order_by(
                             func.coalesce(
@@ -500,7 +500,7 @@ class LibraryReadModel:
         actor_id: UserId,
         *,
         scope: PlaylistScope,
-        owner_id: UserId | None = None,
+        profile_user_id: UserId | None = None,
         page: int,
         page_size: int,
         query: str | None = None,
@@ -518,10 +518,20 @@ class LibraryReadModel:
             ]
         else:
             filters = [self._playlists.c.visibility == PlaylistVisibility.PUBLIC]
-        if owner_id is not None:
+        if profile_user_id is not None:
             if scope is not PlaylistScope.PUBLIC:
-                raise ValueError("An owner filter requires the public playlist scope.")
-            filters.append(self._playlists.c.owner_id == owner_id)
+                raise ValueError("A profile filter requires the public playlist scope.")
+            profile_collaborators = self._collaborators.alias("profile_collaborators")
+            filters.append(
+                or_(
+                    self._playlists.c.owner_id == profile_user_id,
+                    self._playlists.c.id.in_(
+                        select(profile_collaborators.c.playlist_id).where(
+                            profile_collaborators.c.user_id == profile_user_id
+                        )
+                    ),
+                )
+            )
         normalized = query.strip() if query is not None else ""
         if normalized:
             filters.append(self._playlists.c.name.ilike(f"%{normalized}%"))
@@ -893,6 +903,7 @@ class LibraryReadModel:
         return LibraryContributor(
             user_id,
             display_name or username or f"Listener {str(user_id)[:8]}",
+            username,
             row["discord_id"],
             row["avatar_hash"],
         )

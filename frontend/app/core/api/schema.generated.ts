@@ -1957,6 +1957,8 @@ export interface components {
              * Format: uuid
              */
             user_id: string;
+            /** Username */
+            username: string | null;
         };
         /** ContributorView */
         nahoermaar__api__player__ContributorView: {
@@ -4396,9 +4398,9 @@ export interface operations {
     };
     searchLibraryContributors: {
         parameters: {
-            query: {
+            query?: {
                 limit?: number;
-                q: string;
+                q?: string | null;
             };
             header?: never;
             path?: never;

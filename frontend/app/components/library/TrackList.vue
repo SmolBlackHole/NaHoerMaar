@@ -5,6 +5,7 @@
 import type { ContextMenuItem } from "@nuxt/ui";
 import type { LibraryTrack } from "~/core/models/library";
 import { formatDuration } from "~/core/models/catalog";
+import { youtubeMusicArtistUrl, youtubeMusicTrackUrl } from "~/core/models/musicLinks";
 
 const props = withDefaults(
 	defineProps<{
@@ -115,6 +116,8 @@ function contextItems(track: LibraryTrack): ContextMenuItem[][] {
 				:entry="track"
 				:title="track.title"
 				:artist-names="track.artist_names"
+				:source-url="youtubeMusicTrackUrl(track.title, track.artist_names)"
+				:artist-url="youtubeMusicArtistUrl(track.artist_names)"
 				:metadata="
 					track.duration_seconds === null ? null : formatDuration(track.duration_seconds)
 				"

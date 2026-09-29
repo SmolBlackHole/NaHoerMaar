@@ -11,11 +11,12 @@ const props = defineProps<{
 	listeners: readonly Listener[];
 	totalListeningSeconds: number;
 	compact?: boolean;
-	moreTo?: string;
+	expandable?: boolean;
 }>();
 const { icons } = useTheme();
+const expanded = ref(false);
 const visibleListeners = computed(() =>
-	props.compact ? props.listeners.slice(0, 4) : props.listeners,
+	props.compact && !expanded.value ? props.listeners.slice(0, 4) : props.listeners,
 );
 const leader = computed(() => visibleListeners.value[0]);
 const runnersUp = computed(() => visibleListeners.value.slice(1));
@@ -68,13 +69,15 @@ function remainingBadges(listener: Listener) {
 					{{ listeners.length === 1 ? "listener" : "listeners" }}
 				</p>
 				<UButton
-					v-if="moreTo"
-					:to="moreTo"
-					:label="hiddenListeners ? `View all ${listeners.length}` : 'View details'"
+					v-if="expandable && (hiddenListeners || expanded)"
+					:label="expanded ? 'Show less' : `Show all ${listeners.length}`"
 					variant="link"
 					color="neutral"
-					:trailing-icon="icons.arrowRight"
+					:trailing-icon="expanded ? icons.chevronUp : icons.chevronDown"
 					size="xs"
+					:aria-expanded="expanded"
+					aria-controls="listener-runners"
+					@click="expanded = !expanded"
 				/>
 			</div>
 		</div>
@@ -129,7 +132,13 @@ function remainingBadges(listener: Listener) {
 				</div>
 			</NuxtLink>
 
-			<div v-if="runnersUp.length" class="grid gap-2">
+			<TransitionGroup
+				v-if="runnersUp.length"
+				id="listener-runners"
+				name="listener-row"
+				tag="div"
+				class="grid gap-2"
+			>
 				<NuxtLink
 					v-for="(listener, index) in runnersUp"
 					:key="listener.user_id"
@@ -167,10 +176,30 @@ function remainingBadges(listener: Listener) {
 						class="size-4 shrink-0 text-dimmed transition-transform group-hover:translate-x-0.5"
 					/>
 				</NuxtLink>
-			</div>
+			</TransitionGroup>
 		</div>
 		<p v-else class="mt-4 text-sm text-muted">
 			Listening time appears once people join the channel.
 		</p>
 	</section>
 </template>
+
+<style scoped>
+.listener-row-enter-active,
+.listener-row-leave-active {
+	transition:
+		opacity 180ms ease,
+		transform 180ms ease;
+}
+.listener-row-enter-from,
+.listener-row-leave-to {
+	opacity: 0;
+	transform: translateY(-0.35rem);
+}
+@media (prefers-reduced-motion: reduce) {
+	.listener-row-enter-active,
+	.listener-row-leave-active {
+		transition: none;
+	}
+}
+</style>

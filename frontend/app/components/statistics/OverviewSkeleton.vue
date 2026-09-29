@@ -56,18 +56,54 @@ defineProps<{
 			</div>
 		</section>
 
+		<StatisticsActivity loading />
+
 		<section aria-hidden="true">
-			<div class="flex items-end justify-between gap-4">
-				<div>
-					<h2 class="text-lg font-semibold text-highlighted">Group highlights</h2>
-					<p class="mt-1 text-xs text-muted">
-						The small stories hiding inside this period.
-					</p>
+			<h2 class="text-lg font-semibold text-highlighted">The music</h2>
+			<p class="mt-1 text-xs text-muted">The tracks and artists that kept coming back.</p>
+			<div class="mt-4 grid gap-8 xl:grid-cols-[minmax(17rem,30rem)_minmax(0,1fr)]">
+				<div
+					class="flex aspect-4/3 min-h-56 flex-col rounded-2xl bg-elevated/45 p-5 sm:aspect-video"
+				>
+					<div class="flex items-center justify-between gap-3">
+						<USkeleton class="h-7 w-24 rounded-full" />
+						<USkeleton class="h-7 w-16 rounded-full" />
+					</div>
+					<div class="mt-auto space-y-3">
+						<USkeleton class="h-9 w-full max-w-72" />
+						<USkeleton class="h-4 w-32" />
+						<USkeleton class="h-3 w-36" />
+					</div>
 				</div>
-				<USkeleton class="h-4 w-16" />
+				<div class="grid min-w-0 gap-8 md:grid-cols-2">
+					<section v-for="column in 2" :key="column" class="min-w-0">
+						<USkeleton class="h-4 w-32" />
+						<div class="mt-3 space-y-1">
+							<div
+								v-for="index in 5"
+								:key="index"
+								class="flex items-center gap-3 px-2 py-2"
+							>
+								<USkeleton
+									v-if="column === 1"
+									class="size-10 shrink-0 rounded-md"
+								/>
+								<USkeleton class="h-4 min-w-0 flex-1" />
+								<USkeleton class="h-3 w-6 shrink-0" />
+							</div>
+						</div>
+					</section>
+				</div>
+			</div>
+		</section>
+
+		<section aria-hidden="true">
+			<div>
+				<h2 class="text-lg font-semibold text-highlighted">Group highlights</h2>
+				<p class="mt-1 text-xs text-muted">The small stories hiding inside this period.</p>
 			</div>
 			<div class="mt-4 grid gap-3 sm:grid-cols-2">
-				<div v-for="index in 2" :key="index" class="min-w-0 rounded-2xl bg-elevated/40 p-5">
+				<div v-for="index in 4" :key="index" class="min-w-0 rounded-2xl bg-elevated/40 p-5">
 					<div class="flex items-center gap-3">
 						<USkeleton class="size-9 rounded-xl" />
 						<USkeleton class="h-3 w-24" />
@@ -76,6 +112,26 @@ defineProps<{
 					<USkeleton class="mt-2 h-4 w-full max-w-72" />
 				</div>
 			</div>
+		</section>
+
+		<div class="rounded-2xl bg-elevated/35 px-5 py-4" aria-hidden="true">
+			<div class="flex items-center justify-between gap-4">
+				<div class="space-y-2">
+					<USkeleton class="h-4 w-52" />
+					<USkeleton class="h-3 w-72 max-w-full" />
+				</div>
+				<USkeleton class="size-5 shrink-0" />
+			</div>
+		</div>
+
+		<section aria-hidden="true">
+			<div class="mb-5">
+				<h2 class="text-lg font-semibold text-highlighted">The library</h2>
+				<p class="mt-1 text-xs text-muted">
+					How the group reacted to tracks and built shared collections.
+				</p>
+			</div>
+			<StatisticsLibraryStory loading />
 		</section>
 
 		<section aria-hidden="true">

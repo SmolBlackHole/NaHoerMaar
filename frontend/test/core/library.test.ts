@@ -115,6 +115,7 @@ describe("library core", () => {
 		fetcher.mockImplementation(async () => Response.json({ items: [] }));
 
 		await client.library.contributors("Kai", 5);
+		await client.library.contributors(undefined, 100);
 		await client.library.playlists({
 			page: 2,
 			pageSize: 25,
@@ -158,6 +159,7 @@ describe("library core", () => {
 
 		expect(fetcher.mock.calls.map(([url, options]) => [url, options?.method])).toEqual([
 			["/api/library/contributors?q=Kai&limit=5", "GET"],
+			["/api/library/contributors?limit=100", "GET"],
 			["/api/library/playlists?page=2&page_size=25&q=Road&scope=shared&snapshot=list", "GET"],
 			["/api/library/playlists/playlist%2Fone", "GET"],
 			["/api/library/playlists", "POST"],
@@ -180,27 +182,27 @@ describe("library core", () => {
 			["/api/library/playlists/playlist%2Fone/queue", "POST"],
 			["/api/library/playlists/playlist%2Fone", "DELETE"],
 		]);
-		expect(JSON.parse(String(fetcher.mock.calls[4]![1]?.body))).toEqual({
+		expect(JSON.parse(String(fetcher.mock.calls[5]![1]?.body))).toEqual({
 			name: "Source",
 			source_url: "https://youtube.com/playlist?list=source",
 		});
-		expect(JSON.parse(String(fetcher.mock.calls[8]![1]?.body))).toEqual({ position: 0 });
-		expect(JSON.parse(String(fetcher.mock.calls[13]![1]?.body))).toEqual({
+		expect(JSON.parse(String(fetcher.mock.calls[9]![1]?.body))).toEqual({ position: 0 });
+		expect(JSON.parse(String(fetcher.mock.calls[14]![1]?.body))).toEqual({
 			expected_revision: 6,
 			tracks: [
 				{ track_id: "track-one", preferred_source_id: "source-one" },
 				{ track_id: "track-one", preferred_source_id: null },
 			],
 		});
-		expect(JSON.parse(String(fetcher.mock.calls[15]![1]?.body))).toEqual({
+		expect(JSON.parse(String(fetcher.mock.calls[16]![1]?.body))).toEqual({
 			undo_id: "undo-one",
 			expected_revision: 8,
 		});
-		expect(JSON.parse(String(fetcher.mock.calls[16]![1]?.body))).toEqual({
+		expect(JSON.parse(String(fetcher.mock.calls[17]![1]?.body))).toEqual({
 			position: 0,
 			expected_revision: 9,
 		});
-		expect(new Headers(fetcher.mock.calls[17]![1]?.headers).get("Idempotency-Key")).toBe(
+		expect(new Headers(fetcher.mock.calls[18]![1]?.headers).get("Idempotency-Key")).toBe(
 			"operation-one",
 		);
 	});

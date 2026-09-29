@@ -1204,6 +1204,12 @@ def test_playlist_visibility_collaboration_and_scopes_enforce_capabilities() -> 
         matches = await library.contributors(owner, query="dit", limit=10)
         assert tuple(match.user_id for match in matches) == (editor,)
         assert await library.contributors(owner, query="Owner", limit=10) == ()
+        all_contributors = await library.contributors(owner, limit=100)
+        assert tuple(match.user_id for match in all_contributors) == (
+            editor,
+            reader,
+            stranger,
+        )
         assert (await library.playlists(owner, page=1, page_size=20)).total == 1
         assert (
             await library.playlists(
@@ -1331,6 +1337,17 @@ def test_playlist_visibility_collaboration_and_scopes_enforce_capabilities() -> 
             playlist.playlist_id,
         )
         assert profile_public.entries[0].access is PlaylistAccess.READER
+        editor_profile_public = await library.profile_playlists(
+            stranger,
+            editor,
+            page=1,
+            page_size=20,
+            query="Shared",
+        )
+        assert tuple(item.playlist_id for item in editor_profile_public.entries) == (
+            playlist.playlist_id,
+        )
+        assert editor_profile_public.entries[0].access is PlaylistAccess.READER
         assert (
             len(
                 await library.playlist_selections(

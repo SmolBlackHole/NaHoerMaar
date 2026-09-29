@@ -3,6 +3,7 @@
 
 <script setup lang="ts">
 import type { ProfileLibrary } from "~/core/models/account";
+import { youtubeMusicArtistUrl, youtubeMusicTrackUrl } from "~/core/models/musicLinks";
 
 defineProps<{ value: ProfileLibrary }>();
 const emit = defineEmits<{
@@ -29,28 +30,30 @@ const { icons } = useTheme();
 		</div>
 
 		<div class="mt-5 grid gap-3 xl:grid-cols-3">
-			<button
-				type="button"
-				class="library-preview-card group"
-				@click="emit('select', 'liked')"
-			>
-				<span class="flex items-start justify-between gap-4">
-					<span>
-						<span
-							class="flex items-center gap-2 text-sm font-semibold text-highlighted"
-						>
-							<UIcon :name="icons.like" class="size-4 text-primary" />
-							Liked tracks
+			<article class="library-preview-card">
+				<button
+					type="button"
+					class="library-preview-heading group"
+					@click="emit('select', 'liked')"
+				>
+					<span class="flex items-start justify-between gap-4">
+						<span>
+							<span
+								class="flex items-center gap-2 text-sm font-semibold text-highlighted"
+							>
+								<UIcon :name="icons.like" class="size-4 text-primary" />
+								Liked tracks
+							</span>
+							<span class="mt-1 block text-xs text-muted">
+								{{ value.likes_count.toLocaleString() }} saved
+							</span>
 						</span>
-						<span class="mt-1 block text-xs text-muted">
-							{{ value.likes_count.toLocaleString() }} saved
-						</span>
+						<UIcon
+							:name="icons.arrowRight"
+							class="size-4 text-muted transition-transform group-hover:translate-x-0.5"
+						/>
 					</span>
-					<UIcon
-						:name="icons.arrowRight"
-						class="size-4 text-muted transition-transform group-hover:translate-x-0.5"
-					/>
-				</span>
+				</button>
 				<span v-if="value.liked_tracks.length" class="mt-5 grid gap-2 text-left">
 					<SharedTrackIdentity
 						v-for="track in value.liked_tracks.slice(0, 3)"
@@ -58,6 +61,8 @@ const { icons } = useTheme();
 						:entry="track"
 						:title="track.title"
 						:artist-names="track.artist_names"
+						:source-url="youtubeMusicTrackUrl(track.title, track.artist_names)"
+						:artist-url="youtubeMusicArtistUrl(track.artist_names)"
 						size="sm"
 						multiline
 					/>
@@ -65,30 +70,32 @@ const { icons } = useTheme();
 				<span v-else class="mt-8 block text-left text-sm text-muted"
 					>No liked tracks yet.</span
 				>
-			</button>
+			</article>
 
-			<button
-				type="button"
-				class="library-preview-card group"
-				@click="emit('select', 'disliked')"
-			>
-				<span class="flex items-start justify-between gap-4">
-					<span>
-						<span
-							class="flex items-center gap-2 text-sm font-semibold text-highlighted"
-						>
-							<UIcon :name="icons.dislike" class="size-4 text-primary" />
-							Disliked tracks
+			<article class="library-preview-card">
+				<button
+					type="button"
+					class="library-preview-heading group"
+					@click="emit('select', 'disliked')"
+				>
+					<span class="flex items-start justify-between gap-4">
+						<span>
+							<span
+								class="flex items-center gap-2 text-sm font-semibold text-highlighted"
+							>
+								<UIcon :name="icons.dislike" class="size-4 text-primary" />
+								Disliked tracks
+							</span>
+							<span class="mt-1 block text-xs text-muted">
+								{{ value.dislikes_count.toLocaleString() }} saved
+							</span>
 						</span>
-						<span class="mt-1 block text-xs text-muted">
-							{{ value.dislikes_count.toLocaleString() }} saved
-						</span>
+						<UIcon
+							:name="icons.arrowRight"
+							class="size-4 text-muted transition-transform group-hover:translate-x-0.5"
+						/>
 					</span>
-					<UIcon
-						:name="icons.arrowRight"
-						class="size-4 text-muted transition-transform group-hover:translate-x-0.5"
-					/>
-				</span>
+				</button>
 				<span v-if="value.disliked_tracks.length" class="mt-5 grid gap-2 text-left">
 					<SharedTrackIdentity
 						v-for="track in value.disliked_tracks.slice(0, 3)"
@@ -96,6 +103,8 @@ const { icons } = useTheme();
 						:entry="track"
 						:title="track.title"
 						:artist-names="track.artist_names"
+						:source-url="youtubeMusicTrackUrl(track.title, track.artist_names)"
+						:artist-url="youtubeMusicArtistUrl(track.artist_names)"
 						size="sm"
 						multiline
 					/>
@@ -103,30 +112,32 @@ const { icons } = useTheme();
 				<span v-else class="mt-8 block text-left text-sm text-muted">
 					No disliked tracks yet.
 				</span>
-			</button>
+			</article>
 
-			<button
-				type="button"
-				class="library-preview-card group"
-				@click="emit('select', 'playlists')"
-			>
-				<span class="flex items-start justify-between gap-4">
-					<span>
-						<span
-							class="flex items-center gap-2 text-sm font-semibold text-highlighted"
-						>
-							<UIcon :name="icons.library" class="size-4 text-primary" />
-							Public playlists
+			<article class="library-preview-card">
+				<button
+					type="button"
+					class="library-preview-heading group"
+					@click="emit('select', 'playlists')"
+				>
+					<span class="flex items-start justify-between gap-4">
+						<span>
+							<span
+								class="flex items-center gap-2 text-sm font-semibold text-highlighted"
+							>
+								<UIcon :name="icons.library" class="size-4 text-primary" />
+								Public playlists
+							</span>
+							<span class="mt-1 block text-xs text-muted">
+								{{ value.public_playlist_count.toLocaleString() }} public
+							</span>
 						</span>
-						<span class="mt-1 block text-xs text-muted">
-							{{ value.public_playlist_count.toLocaleString() }} published
-						</span>
+						<UIcon
+							:name="icons.arrowRight"
+							class="size-4 text-muted transition-transform group-hover:translate-x-0.5"
+						/>
 					</span>
-					<UIcon
-						:name="icons.arrowRight"
-						class="size-4 text-muted transition-transform group-hover:translate-x-0.5"
-					/>
-				</span>
+				</button>
 				<span v-if="value.public_playlists.length" class="mt-5 grid gap-2 text-left">
 					<span
 						v-for="playlist in value.public_playlists.slice(0, 3)"
@@ -152,7 +163,7 @@ const { icons } = useTheme();
 				<span v-else class="mt-8 block text-left text-sm text-muted">
 					No public playlists yet.
 				</span>
-			</button>
+			</article>
 		</div>
 	</section>
 </template>
@@ -170,11 +181,17 @@ const { icons } = useTheme();
 		background-color 180ms ease-out;
 }
 .library-preview-card:hover,
-.library-preview-card:focus-visible {
+.library-preview-card:focus-within {
 	border-color: color-mix(in srgb, var(--ui-primary) 55%, var(--ui-border));
 	background: color-mix(in srgb, var(--ui-bg-elevated) 58%, transparent);
 }
-.library-preview-card:focus-visible {
+.library-preview-heading {
+	display: block;
+	width: 100%;
+	border-radius: 0.5rem;
+	text-align: left;
+}
+.library-preview-heading:focus-visible {
 	outline: 2px solid var(--ui-primary);
 	outline-offset: 2px;
 }

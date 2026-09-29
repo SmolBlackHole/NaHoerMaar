@@ -4,9 +4,10 @@ Parent: [Documentation index](../README.md)
 
 The engine owns the shared listening session behind NaHörMaar. Its parts answer
 different questions: the catalog identifies music, the Library saves reactions
-and personal playlists, the queue orders requests, Radio decides when to find
-more, playback turns committed intent into audio, Lyrics enriches a known track,
-and the database keeps durable state. This index routes to the owner of each
+and local or linked playlists, the queue orders requests, Radio decides when to
+find more, playback turns committed intent into audio, Lyrics enriches a known
+track, Statistics projects durable facts and Operations coordinates bounded
+jobs. The database keeps durable state. This index routes to the owner of each
 part instead of repeating their rules in one architecture page.
 
 ## Table of contents
@@ -23,7 +24,9 @@ part instead of repeating their rules in one architecture page.
 | --- | --- |
 | Links, searches and providers become tracks? | [Catalog](catalog.md) |
 | Lyrics for a known track? | [Lyrics](lyrics.md) |
-| Reactions and personal playlists? | [Library](library.md) |
+| Reactions, sharing and linked playlists? | [Library](library.md) |
+| Profile and Overview reports? | [Engine API](../engine-api.md#statistics-and-profiles) |
+| Jobs, incidents and logs? | [Engine API](../engine-api.md#operations) |
 | Queue entries and confirmed history? | [Queue](queue.md) |
 | Radio refill and manual priority? | [Radio](radio.md) |
 | FSM, audio, Discord and restart recovery? | [Playback](playback.md) |
@@ -50,7 +53,8 @@ pages describe the implementation boundaries behind that contract.
 | `database/core.py`, `database/uow.py` and `database/schema.py` | [Database](database.md) |
 | `database/migrations/` | [Database](database.md) |
 | `users/` | [Discord setup](../discord-setup.md) |
-| `listening/` and `statistics/` | [Architecture](../architecture.md) |
+| `listening/` and `statistics/` | [Architecture](../architecture.md) and [Engine API](../engine-api.md#statistics-and-profiles) |
+| `operations/` | [Architecture](../architecture.md) and [Engine API](../engine-api.md#operations) |
 | `api/` | [Engine API](../engine-api.md) |
 
 ## Reading order
@@ -58,7 +62,7 @@ pages describe the implementation boundaries behind that contract.
 To follow one request through the engine, read:
 
 1. [Catalog and metadata](catalog.md), where a source becomes a persistent track.
-2. [Library](library.md), where a user saves reactions and ordered playlists.
+2. [Library](library.md), where a user saves reactions and local or linked playlists.
 3. [Queue and history](queue.md), where one request becomes a queue occurrence.
 4. [Playback](playback.md), where committed intent becomes Discord audio.
 5. [Database](database.md), where the state and operation evidence are stored.

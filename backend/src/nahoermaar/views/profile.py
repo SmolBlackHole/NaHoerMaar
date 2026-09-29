@@ -8,9 +8,9 @@ from dataclasses import dataclass
 from datetime import datetime
 import logging
 from time import perf_counter
-from typing import cast
+from typing import Any, cast
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 
 from nahoermaar.catalog.domain import TrackId
@@ -116,6 +116,7 @@ class ProfileView:
 
     __slots__ = (
         "_artists",
+        "_collaborators",
         "_discord",
         "_listeners",
         "_playbacks",
@@ -148,6 +149,9 @@ class ProfileView:
         self._requests = registered_table("track_requests", consumer="Profile")
         self._reactions = registered_table("track_reactions", consumer="Profile")
         self._playlists = registered_table("playlists", consumer="Profile")
+        self._collaborators = registered_table(
+            "playlist_collaborators", consumer="Profile"
+        )
         self._playlist_entries = registered_table(
             "playlist_entries", consumer="Profile"
         )
@@ -362,7 +366,7 @@ class ProfileView:
                 select(func.count())
                 .select_from(self._playlists)
                 .where(
-                    self._playlists.c.owner_id == user_id,
+                    self._public_playlist_affiliation(user_id),
                     self._playlists.c.visibility == PlaylistVisibility.PUBLIC.value,
                 )
             )
@@ -476,7 +480,7 @@ class ProfileView:
                         entry_count.label("entry_count"),
                     )
                     .where(
-                        self._playlists.c.owner_id == user_id,
+                        self._public_playlist_affiliation(user_id),
                         self._playlists.c.visibility == PlaylistVisibility.PUBLIC.value,
                     )
                     .order_by(
@@ -500,6 +504,15 @@ class ProfileView:
                 row["updated_at"],
             )
             for row in rows
+        )
+
+    def _public_playlist_affiliation(self, user_id: UserId) -> Any:
+        collaborator_playlists = select(self._collaborators.c.playlist_id).where(
+            self._collaborators.c.user_id == user_id
+        )
+        return or_(
+            self._playlists.c.owner_id == user_id,
+            self._playlists.c.id.in_(collaborator_playlists),
         )
 
     async def _playlist_artworks(

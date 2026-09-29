@@ -36,7 +36,7 @@ from nahoermaar.library.read_model import (
 from nahoermaar.messaging import MessageContext
 from nahoermaar.player.domain import OperationId
 from nahoermaar.player.events import AddTracks, TrackSelection
-from nahoermaar.users.domain import UserId
+from nahoermaar.users.domain import DiscordMember, UserId
 
 from .errors import ApiError, ApiErrorCode, error_responses
 from .middleware import authenticated
@@ -115,6 +115,7 @@ class ContributorView(BaseModel):
 
     user_id: UUID
     display_name: str
+    username: str | None
     avatar_url: str | None
 
 
@@ -261,8 +262,8 @@ def router(application: Application) -> APIRouter:
     )
     async def search_contributors(
         request: Request,
-        q: Annotated[str, Query(min_length=1, max_length=100)],
-        limit: Annotated[int, Query(ge=1, le=25)] = 10,
+        q: Annotated[str | None, Query(min_length=1, max_length=100)] = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 25,
     ) -> ContributorsView:
         try:
             contributors = await application.library.service.contributors(
@@ -272,9 +273,18 @@ def router(application: Application) -> APIRouter:
             )
         except ValueError as error:
             raise ApiError(ApiErrorCode.VALIDATION_FAILED, 422) from error
+        members_by_id = _discord_members_by_id(application)
         return ContributorsView(
             items=tuple(
-                _contributor_view(contributor, application)
+                _contributor_view(
+                    contributor,
+                    application,
+                    member=(
+                        members_by_id.get(contributor.discord_id)
+                        if contributor.discord_id is not None
+                        else None
+                    ),
+                )
                 for contributor in contributors
             )
         )
@@ -910,19 +920,39 @@ def _participant_view(
 def _contributor_view(
     contributor: LibraryContributor,
     application: Application,
+    *,
+    member: DiscordMember | None = None,
 ) -> ContributorView:
+    placeholder = f"Listener {str(contributor.user_id)[:8]}"
     return ContributorView(
         user_id=contributor.user_id,
-        display_name=contributor.display_name,
+        display_name=(
+            member.display_name
+            if member is not None and contributor.display_name == placeholder
+            else contributor.display_name
+        ),
+        username=contributor.username
+        or (member.username if member is not None else None),
         avatar_url=(
             application.integrations.avatars.public_url(
                 contributor.discord_id,
                 avatar_hash=contributor.discord_avatar_hash,
+                source_url=member.avatar_url if member is not None else None,
             )
             if contributor.discord_id is not None
             else None
         ),
     )
+
+
+def _discord_members_by_id(application: Application) -> dict[str, DiscordMember]:
+    gateway = application.integrations.gateway
+    if gateway is None:
+        return {}
+    members: dict[str, DiscordMember] = {}
+    for member in gateway.members():
+        members.setdefault(member.discord_id, member)
+    return members
 
 
 def _playlist_view(

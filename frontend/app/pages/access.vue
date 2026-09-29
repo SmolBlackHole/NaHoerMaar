@@ -59,17 +59,19 @@ const grantedDiscordIds = computed(
 		]),
 );
 const availableMembers = computed(() => {
-	const needle = query.value.trim().toLocaleLowerCase();
 	return directoryMembers.value.filter(
-		(member) =>
-			!grantedDiscordIds.value.has(member.discord_id) &&
-			(!needle ||
-				member.display_name.toLocaleLowerCase().includes(needle) ||
-				member.username.toLocaleLowerCase().includes(needle) ||
-				member.discord_id.includes(needle) ||
-				member.guildNames.some((guild) => guild.toLocaleLowerCase().includes(needle))),
+		(member) => !grantedDiscordIds.value.has(member.discord_id),
 	);
 });
+const discoveryMembers = computed(() =>
+	availableMembers.value.map((member) => ({
+		id: member.discord_id,
+		displayName: member.display_name,
+		username: member.username,
+		avatarUrl: member.avatar_url,
+		detail: member.guildNames.join(", "),
+	})),
+);
 const operators = computed(() => state.value?.operators ?? []);
 const visibleOperators = computed(() =>
 	operatorsExpanded.value ? operators.value : operators.value.slice(0, 4),
@@ -365,86 +367,26 @@ onScopeDispose(access.dispose);
 										>{{ availableMembers.length }} available</span
 									>
 								</div>
-								<UInput
-									v-model="query"
-									:icon="icons.search"
-									placeholder="Search people or servers"
-									aria-label="Search Discord members"
-									class="mt-5 w-full"
+								<SharedUserDiscovery
+									v-model:query="query"
+									class="mt-5"
+									:items="discoveryMembers"
+									search-placeholder="Search people or servers"
+									empty-title="Everyone here already has access"
+									empty-description="There is nobody left to add."
 								>
-									<template v-if="query" #trailing>
+									<template #action="{ item }">
 										<UButton
-											:icon="icons.close"
-											aria-label="Clear search"
+											:label="isPending(item.id) ? 'Adding…' : 'Allow'"
+											:icon="isPending(item.id) ? undefined : icons.userPlus"
 											color="neutral"
-											variant="link"
-											size="xs"
-											@click="query = ''"
+											variant="soft"
+											size="sm"
+											:disabled="access.pendingDiscordIds.value.length > 0"
+											@click="grant(item.id)"
 										/>
 									</template>
-								</UInput>
-								<div class="access-list mt-3" aria-live="polite">
-									<UTooltip
-										v-for="member in availableMembers"
-										:key="member.discord_id"
-										:text="`Discord ID: ${member.discord_id}`"
-									>
-										<div class="access-row">
-											<UAvatar
-												:src="member.avatar_url ?? undefined"
-												:alt="member.display_name"
-												size="sm"
-											/>
-											<div class="min-w-0 flex-1">
-												<p
-													class="truncate text-sm font-medium text-highlighted"
-												>
-													{{ member.display_name }}
-												</p>
-												<p class="truncate text-xs text-muted">
-													@{{ member.username }} ·
-													{{ member.guildNames.join(", ") }}
-												</p>
-											</div>
-											<UButton
-												:label="
-													isPending(member.discord_id)
-														? 'Adding…'
-														: 'Allow'
-												"
-												:icon="
-													isPending(member.discord_id)
-														? undefined
-														: icons.userPlus
-												"
-												color="neutral"
-												variant="soft"
-												size="sm"
-												:disabled="
-													access.pendingDiscordIds.value.length > 0
-												"
-												@click="grant(member.discord_id)"
-											/>
-										</div>
-									</UTooltip>
-									<div v-if="!availableMembers.length" class="empty-state">
-										<UIcon :name="icons.users" class="size-5" />
-										<p class="text-sm font-medium text-highlighted">
-											{{
-												query
-													? "No matching people"
-													: "Everyone here already has access"
-											}}
-										</p>
-										<p class="text-xs text-muted">
-											{{
-												query
-													? "Try another name or server."
-													: "There is nobody left to add."
-											}}
-										</p>
-									</div>
-								</div>
+								</SharedUserDiscovery>
 							</section>
 
 							<section aria-labelledby="listeners-heading" class="min-w-0">

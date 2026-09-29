@@ -67,6 +67,13 @@ upstream result set. The response limit, HTTP shapes and pagination fields are
 defined in the
 [Engine API](../engine-api.md#discovery-and-stable-selections).
 
+Library uses the same bounded provider translation when importing or
+synchronizing a linked playlist. Catalog materializes the ordered observation as
+stable track and preferred-source selections while preserving duplicate
+occurrences and reporting unavailable items or upstream truncation. Library
+owns the saved provider identity, reconciliation and sync state; Catalog does
+not write playlist rows or change entries already copied into Player.
+
 ## Cache and refresh behavior
 
 Search observations are fresh for five minutes; playlist observations are fresh
