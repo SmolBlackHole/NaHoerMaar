@@ -11,6 +11,24 @@ and current listening evidence belongs in
 [Testing and acceptance](docs/testing.md#live-acceptance). Completed work leaves
 this page once implementation, tests and its owning documentation agree.
 
+## Next: performance profiling and Player startup
+
+Profile the application after the current Library and playlist plan is complete,
+starting with the Player page's noticeably long loading time. Establish separate
+cold-load, warm-load and in-app navigation baselines on desktop and mobile before
+changing implementation details.
+
+Use browser timings, the network waterfall and server measurements to distinguish
+API latency, payload size, Nuxt hydration, component rendering, artwork or video
+loading and live-state connection startup. Keep cached content visible during
+refreshes, load only the media and UI required by the selected Player view and
+avoid making the initial page wait for optional controls or background data.
+
+Fix the measured bottlenecks in small slices and record the before-and-after
+numbers. Extend the pass to other slow routes only after the Player path is
+understood, so shared improvements are extracted from real repetition instead of
+speculative caching, prefetching or new infrastructure.
+
 ## Later: shared and synchronized playlists
 
 Extend personal playlists with explicit collaborators and private,
