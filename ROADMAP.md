@@ -11,23 +11,16 @@ and current listening evidence belongs in
 [Testing and acceptance](docs/testing.md#live-acceptance). Completed work leaves
 this page once implementation, tests and its owning documentation agree.
 
-## Next: reactions
+## Later: shared and synchronized playlists
 
-Let each user like or dislike a persistent track, change the reaction or remove
-it. Show totals and the people behind them on demand. Reactions belong to stable
-track and account identities, not queue entries, so they survive requeueing and
-can contribute to personal statistics.
+Extend personal playlists with explicit collaborators and private,
+collaborator-only or public visibility. Keep the creator as owner and define
+rename, editing, sharing and removal permissions before exposing another user's
+playlist on profiles or server pages.
 
-Automatic skipping and recommendation filtering remain separate product
-decisions. Define whether reactions become server-specific before independent
-server sessions are introduced.
-
-## Later: saved and synchronized playlists
-
-Create personal playlists and shared server playlists with saved order,
-ownership and editing permissions. A playlist may be a local copy or remain
-linked to YouTube Music or YouTube. Store provider identity, playlist identity
-and reusable track metadata; resolve temporary audio sources only when playing.
+A playlist may remain a local copy or become linked to YouTube Music or YouTube.
+Store provider identity, playlist identity and reusable track metadata; resolve
+temporary audio sources only when playing.
 
 Show cached contents immediately, refresh on open and before queueing, and allow
 bounded periodic synchronization. Reconcile additions, removals, reordering and
@@ -77,6 +70,8 @@ songs while an ordinary YouTube link keeps an explicit video choice.
 
 ## Later directions
 
+- Decide whether reactions influence Radio, recommendations or personal
+  statistics. Automatic skipping remains a separate opt-in product decision.
 - Add shuffle, repeat and voting after their interaction with manual requests,
   Radio and server-specific queues is defined.
 - Consider YouTube livestreams and media that requires a personal YouTube login

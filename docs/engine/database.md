@@ -38,6 +38,7 @@ The engine stores:
 
 - the stable listening-session identity and settings;
 - persistent tracks, media identities, artists and merged metadata;
+- personal track reactions and ordered personal playlists;
 - ordered queue entries with request origin and a user reference;
 - the current playback checkpoint and confirmed playback records;
 - the active Radio run, candidates and exclusions;
@@ -60,7 +61,7 @@ bootstrap boundary.
 
 `database/core.py` owns the SQLAlchemy engine and session factory.
 `database/uow.py` gives a command one explicit transaction. Feature repositories
-own their private mappings under `users/`, `catalog/`, `player/` and
+own their private mappings under `users/`, `catalog/`, `library/`, `player/` and
 `listening/`; `statistics/` reads the same normalized facts without owning a
 second write model.
 
@@ -76,14 +77,24 @@ result through the Session inbox.
 ## Schema ownership
 
 The Alembic chain lives under `database/migrations/versions/`. The supported
-head is `0003_radio_request_attribution`. Startup upgrades the configured
+head is `0014_personal_playlists`. Startup upgrades the configured
 database before it starts the player or Discord gateway.
 
 `0001_initial` creates the normalized user, catalog, player and listening
 schema. `0002_catalog_search_indexes` adds catalog lookup indexes.
 `0003_radio_request_attribution` records the initiating user on Radio-created
-requests. Applied migrations are immutable history. Add a new revision instead
-of editing an applied one.
+requests. Revisions `0004` through `0006` add the Discord avatar cache,
+operational incidents and unattended playback state. Revisions `0007` through
+`0010` add durable background-job history and the Catalog cleanup and source
+revalidation jobs. `0011_player_settings_action` extends recorded Player
+actions, and `0012_track_lyrics` adds the Lyrics cache.
+
+`0013_track_reactions` adds one reaction per user and track.
+`0014_personal_playlists` adds owner-scoped playlists and ordered entries with
+stable track and optional source references. Catalog cleanup treats reactions
+and playlist entries as durable references, so it cannot delete music still
+used by the Library. Applied migrations are immutable history. Add a new
+revision instead of editing an applied one.
 
 The runtime currently supports one shared listening session. Independent queues
 per Discord server require an explicit schema and runtime change; the existing

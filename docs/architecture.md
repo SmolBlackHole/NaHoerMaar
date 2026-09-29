@@ -25,9 +25,12 @@ live in the [Engine API](engine-api.md).
 flowchart LR
     Browser[Nuxt dashboard] -->|HTTP commands| API[FastAPI and auth]
     API --> Session[Session inbox]
+    API --> Library[Reactions and personal playlists]
+    Library --> Session
+    Library --> DB[(PostgreSQL)]
     Discord[Discord commands and callbacks] --> Session
     Session --> Domain[Queue, playback and Radio policies]
-    Session --> DB[(PostgreSQL)]
+    Session --> DB
     Session --> Effects[Playback effects]
     Effects --> Catalog[Catalog and providers]
     Effects --> Voice[FFmpeg, Opus and Discord voice]
@@ -83,6 +86,7 @@ new queue command. Neither SSE nor the event bus is a durable audit log.
 | --- | --- | --- |
 | Search, links and metadata | Catalog | [Catalog](engine/catalog.md) |
 | Track lyrics lookup and cache | Lyrics | [Lyrics](engine/lyrics.md) |
+| Reactions and personal playlists | Library | [Library](engine/library.md) |
 | Queue order and request attribution | Player Session | [Queue](engine/queue.md) |
 | Confirmed playback history | Playback history view | [Engine API](engine-api.md#playback-history) |
 | Automatic queue supply | Radio strategy and observer | [Radio](engine/radio.md) |
@@ -112,6 +116,10 @@ state and runtime. Jobs, incidents and logs stay with Operations. Views are
 read-only and never become an alternate command or repository layer.
 An owner-specific report may enrich its read result from registered foreign
 tables without importing or invoking the foreign feature's repository.
+
+Library owns its reaction and playlist writes and read projection. It references
+stable Catalog identities without taking ownership of provider metadata, then
+submits saved selections through Player when a playlist is queued.
 
 The application uses the host event loop. A Session waits on its bounded inbox
 instead of polling. One backend worker owns one bot and one player; starting

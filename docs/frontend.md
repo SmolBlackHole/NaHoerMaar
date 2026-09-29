@@ -29,7 +29,8 @@ The frontend core lives under `frontend/app/core/`:
   import generated schema types directly.
 - `repositories/` owns endpoint paths, methods and request bodies.
 - `stores/` owns state that survives a route change: the signed-in account, the
-  current profile and the shared player session.
+  current profile, bounded Library interaction state and the shared player
+  session.
 - `workflows/` owns temporary page state such as a search, log page, access list
   or statistics period.
 
@@ -44,9 +45,9 @@ of the Python package `nahoermaar`. It is a transport artifact and must not be
 edited or reformatted by hand.
 
 Repositories are grouped by backend capability: account, access, catalog,
-lyrics, playbacks, player, statistics, jobs, incidents and logs. They all use the same
-transport, which adds CSRF credentials, normalizes API errors and rejects
-responses that belong to an earlier account generation.
+library, lyrics, playbacks, player, statistics, jobs, incidents and logs. They
+all use the same transport, which adds CSRF credentials, normalizes API errors
+and rejects responses that belong to an earlier account generation.
 
 The browser calls Nuxt under `/api/`. Nitro forwards the request to the backend,
 so the browser stays on one origin in local development and in the Docker stack.
@@ -73,11 +74,17 @@ uncertain network result. An explicit retry reuses the original
 `Idempotency-Key`; the matching HTTP reply and SSE change expose that value as
 their operation ID.
 
+The Library store keeps reaction summaries and the playlist picker coherent
+across Player, Queue, History, search and Library views. It is deliberately
+bounded: collection search, numbered pages, playlist detail and order editing
+remain page workflow state instead of becoming a second global data cache.
+
 ## Page workflows
 
-Discovery, lyrics, playback history, profiles, statistics, access, jobs, incidents and
-logs use local workflow instances. Each workflow owns its loading state, error,
-cancellation and current result. Leaving the page disposes that state.
+Discovery, Library collections and playlist entries, lyrics, playback history,
+profiles, statistics, access, jobs, incidents and logs use local workflow
+instances. Each workflow owns its loading state, error, cancellation and current
+result. Leaving the page disposes that state.
 
 Use a Pinia store only when several views need the same data or when the data has
 a longer lifecycle than one page. A search result, selected statistics period or
@@ -89,6 +96,12 @@ Components render core models and call store or workflow actions. They do not
 construct queue entries or infer successful playback before the backend confirms
 it. Player notifications use the semantic action and outcome returned by the
 backend.
+
+`SharedTrackIdentity` owns the common artwork, title and artist geometry used by
+Queue, History, Catalog, Library, Coming up and the Dock. Surfaces compose the
+actions and secondary metadata they need around that identity. Library reaction
+and playlist controls reuse the same bounded store actions instead of each
+surface inventing its own optimistic state.
 
 `stores/settings.ts` keeps the editable appearance state because the theme must
 remain available across the whole app. Persistence still goes through the core

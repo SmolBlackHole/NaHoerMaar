@@ -18,6 +18,7 @@ that contract. The live Discord check is documented under
   - [Process health](#process-health)
   - [State and mutations](#state-and-mutations)
   - [Playback history](#playback-history)
+  - [Library](#library)
   - [Discovery and stable selections](#discovery-and-stable-selections)
   - [Lyrics](#lyrics)
   - [Events](#events)
@@ -159,6 +160,51 @@ cannot shift or duplicate existing results. Changing search text or filters
 starts a new snapshot. The response uses `items`, `page`, `page_size`, `total`,
 `page_count` and `snapshot`, plus the known requesters used by the History
 filter.
+
+## Library
+
+Library routes store reactions and private personal playlists for canonical
+Catalog tracks. All routes require an authenticated browser session. Ordinary
+mutation protection from [Authentication](#authentication) applies.
+
+Reaction routes are:
+
+| Endpoint | Body / meaning |
+| --- | --- |
+| `GET /api/library/reactions?track_id=...` | Summaries for 1..100 track IDs, including the current user's value and totals |
+| `PUT /api/library/tracks/{track_id}/reaction` | Set or replace `{ "value": "like" }` or `dislike` |
+| `DELETE /api/library/tracks/{track_id}/reaction` | Remove the current user's reaction |
+| `GET /api/library/tracks?reaction=like` | Searchable, numbered Liked or Disliked collection |
+| `GET /api/library/tracks/{track_id}/reactions` | Numbered participants for `like` or `dislike` |
+
+Playlist routes are:
+
+| Endpoint | Body / meaning |
+| --- | --- |
+| `GET /api/library/playlists` | Searchable, numbered personal playlists |
+| `POST /api/library/playlists` | Create a playlist with `name` |
+| `GET /api/library/playlists/{playlist_id}` | Read one owner-scoped playlist |
+| `PATCH /api/library/playlists/{playlist_id}` | Rename with `name` and `expected_revision` |
+| `DELETE /api/library/playlists/{playlist_id}` | Delete at `expected_revision` |
+| `POST /api/library/playlists/{playlist_id}/duplicate` | Copy at `expected_revision`, with an optional new `name` |
+| `GET /api/library/playlists/{playlist_id}/entries` | Searchable, numbered ordered occurrences |
+| `POST /api/library/playlists/{playlist_id}/entries` | Add 1..100 track selections at `expected_revision` |
+| `DELETE /api/library/playlists/{playlist_id}/entries/{entry_id}` | Remove one occurrence at `expected_revision` |
+| `PUT /api/library/playlists/{playlist_id}/order` | Replace the complete entry-ID order at `expected_revision` |
+| `POST /api/library/playlists/{playlist_id}/queue` | Queue the saved order and duplicates at `expected_revision` |
+
+Collections use `q`, `page`, `page_size` and an opaque `snapshot` where
+applicable. They return the same `items`, `page`, `page_size`, `total`,
+`page_count` and `snapshot` document as playback history. Playlist-entry
+snapshots encode the playlist revision, so pages from different orders cannot
+be combined.
+
+Playlist mutations increment `revision`. A stale `expected_revision` returns
+409 with `library_playlist_revision_conflict`. Missing tracks, sources,
+playlists or entries and invalid full-order submissions use stable `library_*`
+error codes. A playlist holds at most 100 occurrences. Queueing a playlist also
+requires an `Idempotency-Key` and returns the ordinary Player mutation envelope.
+The [Library guide](engine/library.md) owns the domain and persistence rules.
 
 ## Discovery and stable selections
 

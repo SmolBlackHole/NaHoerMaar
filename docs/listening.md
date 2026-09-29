@@ -14,6 +14,7 @@ and one active voice connection across all servers where it is installed.
   - [Get into the room](#get-into-the-room)
   - [Your profile and browser](#your-profile-and-browser)
   - [Find a song or open a playlist](#find-a-song-or-open-a-playlist)
+  - [Save reactions and personal playlists](#save-reactions-and-personal-playlists)
   - [Shape the queue](#shape-the-queue)
   - [Control what is playing](#control-what-is-playing)
   - [Let Radio find the next few tracks](#let-radio-find-the-next-few-tracks)
@@ -70,6 +71,25 @@ not reshuffle the list while you choose tracks, and new playlist entries do not
 silently join the selection. [Catalog and metadata](engine/catalog.md) explains
 provider translation, stable result versions and refresh behavior.
 
+## Save reactions and personal playlists
+
+Like or dislike a track from its track actions. Choosing the other value
+replaces the current reaction, and choosing the active value again removes it.
+The Library page collects your Liked and Disliked tracks with search and numbered
+pages. Reaction details show the totals and the people behind each value.
+
+Personal playlists also live in the Library. Create and rename a playlist, add
+tracks from Queue, History, search or another track surface, and keep deliberate
+duplicates in the order you want. A playlist can contain up to 100 track
+occurrences. You can queue one saved occurrence or queue the complete playlist;
+the saved list does not change when the live queue changes.
+
+Only the creator can currently open or change a saved playlist. Sharing,
+collaborators and public visibility are later work. A YouTube playlist opened in
+search is a provider preview, not a synchronized saved playlist: selecting its
+tracks creates local Library entries without retaining an upstream link. The
+[Library guide](engine/library.md) owns these boundaries.
+
 ## Shape the queue
 
 Each request has its own place, even if someone added the same song twice. You
@@ -84,10 +104,10 @@ removed and who did it. [Queue and history](engine/queue.md#queue-mutations) own
 the exact deadline and restoration behavior.
 
 **Recently played** shows tracks after playback has been confirmed, including the
-current song. It also shows play counts. You can add a song from there again
-without searching. History is separate from the upcoming queue: clearing the
-queue does not erase it. The underlying identities are documented in
-[Queue and history](engine/queue.md).
+current song. You can react, save a track to a playlist or add it again without
+searching. History is separate from the upcoming queue: clearing the queue does
+not erase it. The underlying identities are documented in [Queue and
+history](engine/queue.md).
 
 ## Control what is playing
 

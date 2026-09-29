@@ -33,6 +33,15 @@ snapshot with Python 3.12, Node.js 24 and `libopus0`, then invokes the same
 complete gate. It catches clean-environment, database and Linux-only problems
 locally. GitHub Actions remains the final hosted-runner result.
 
+The Library release gate was run on 2026-09-29 on Windows and again in the
+clean Linux container. Both runs passed repository checks, strict Python and
+frontend type checks, API generation without a diff, 192 backend tests, 98
+frontend tests and the production build. The browser review covered the final
+History, Queue and Library track geometry, geometry-matched Library loading
+states, pagination above the Dock, dark and light themes and a 390 CSS-pixel
+viewport. Live mutations and audible Discord behavior remain separate checks;
+do not infer them from this automated and visual gate.
+
 Backend tests use a separate working directory and PostgreSQL schema per test,
 synthetic Discord credentials and simulated voice connections. Start the test
 database before the native gate:
@@ -56,7 +65,8 @@ To run the backend suite alone:
 ```
 
 Repository tests cover PostgreSQL transactions, migration from supported schema
-revisions, account data, queue order, Radio, history and playback checkpoints.
+revisions, account data, reactions, personal playlists, queue order, Radio,
+history and playback checkpoints.
 The operational dump and restore drill is documented in
 [Back up and restore NaHörMaar](recovery.md).
 

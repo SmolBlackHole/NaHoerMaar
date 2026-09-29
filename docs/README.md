@@ -28,6 +28,7 @@ other pages keep the context they need and link to that owner.
 | Understand the system | [Architecture](architecture.md) | [Engine](engine/) or [frontend](frontend.md) |
 | Change search or metadata | [Catalog](engine/catalog.md) | [Engine API][api-discovery] |
 | Change lyrics lookup or caching | [Lyrics](engine/lyrics.md) | [Engine API](engine-api.md#lyrics) |
+| Change reactions or personal playlists | [Library](engine/library.md) | [Engine API](engine-api.md#library) |
 | Change queue order or history | [Queue](engine/queue.md) | [Database](engine/database.md) |
 | Change Radio | [Radio](engine/radio.md) | [Catalog](engine/catalog.md) |
 | Change Discord audio or restart | [Playback](engine/playback.md) | [Testing][playback-diagnostics] |
@@ -46,7 +47,7 @@ For a guided introduction:
 1. [Project README](../README.md): purpose, origin and current boundary.
 2. [Listening together](listening.md): what the group can do.
 3. [Architecture](architecture.md): how one request crosses the system.
-4. [Engine documentation](engine/): catalog, queue, Radio, playback and database.
+4. [Engine documentation](engine/): catalog, Library, queue, Radio, playback and database.
 5. [Frontend architecture](frontend.md): repositories, stores and local workflows.
 6. Choose [Development](development.md), [Engine API](engine-api.md) or
    [Testing](testing.md) for the work in front of you.
@@ -73,6 +74,7 @@ whole sequence to change one provider or develop one migration.
 | --- | --- |
 | [Architecture](architecture.md) | End-to-end flow and responsibility boundaries |
 | [Engine documentation](engine/) | Engine navigation and domain ownership |
+| [Library](engine/library.md) | Reactions, personal playlists and queue handoff |
 | [Frontend architecture](frontend.md) | Generated types, repositories, stores and composables |
 | [Engine API](engine-api.md) | HTTP, SSE, request and response shapes |
 
