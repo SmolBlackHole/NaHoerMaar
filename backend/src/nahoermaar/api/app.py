@@ -18,6 +18,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from nahoermaar.catalog.service import CatalogError
 from nahoermaar.bootstrap import Application, bootstrap
+from nahoermaar.library.domain import LibraryError
 from nahoermaar.lyrics.service import LyricsError
 from nahoermaar.player.domain import PlayerError
 from nahoermaar.users.domain import AuthError
@@ -30,6 +31,7 @@ from .logs import router as logs_router
 from .lyrics import router as lyrics_router
 from .jobs import router as jobs_router
 from .incidents import router as incidents_router
+from .library import router as library_router
 from .middleware import install_auth_middleware
 from .player import router as player_router
 from .playbacks import router as playbacks_router
@@ -67,6 +69,7 @@ def create_app(application: Application | None = None) -> FastAPI:
     app.include_router(auth_router(container))
     app.include_router(users_router(container))
     app.include_router(catalog_router(container.catalog.service))
+    app.include_router(library_router(container))
     app.include_router(lyrics_router(container.lyrics.service))
     app.include_router(player_router(container))
     app.include_router(playbacks_router(container))
@@ -163,6 +166,10 @@ def install_error_handlers(app: FastAPI) -> None:
             retryable=error.retryable,
             headers=headers,
         )
+
+    @app.exception_handler(LibraryError)
+    async def library_error(request: Request, error: LibraryError) -> JSONResponse:
+        return _error_response(request, error.code.value, error.status)
 
     @app.exception_handler(ApiError)
     async def api_error(request: Request, error: ApiError) -> JSONResponse:

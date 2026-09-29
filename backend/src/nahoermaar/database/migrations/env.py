@@ -16,6 +16,7 @@ from nahoermaar.catalog import repository as catalog_repository
 from nahoermaar.config import Settings
 from nahoermaar.database.schema import Base
 from nahoermaar.listening import repository as listening_repository
+from nahoermaar.library import repository as library_repository
 from nahoermaar.lyrics import repository as lyrics_repository
 from nahoermaar.operations import incidents as incidents_repository
 from nahoermaar.operations import jobs as jobs_repository
@@ -24,6 +25,7 @@ from nahoermaar.users import repository as users_repository
 
 _MAPPING_MODULES = (
     catalog_repository,
+    library_repository,
     listening_repository,
     lyrics_repository,
     incidents_repository,

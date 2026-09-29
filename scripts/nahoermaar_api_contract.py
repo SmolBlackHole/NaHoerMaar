@@ -23,6 +23,10 @@ BACKEND_SRC = ROOT / "backend" / "src"
 TARGET = ROOT / "frontend/app/core/api/schema.generated.ts"
 HTTP_METHODS = {"delete", "get", "head", "options", "patch", "post", "put", "trace"}
 OPERATION_ID = re.compile(r"^[a-z][A-Za-z0-9]*$")
+TYPESCRIPT_SPDX_HEADER = """// SPDX-FileCopyrightText: 2026 SmolBlackHole
+// SPDX-License-Identifier: MPL-2.0
+
+"""
 
 
 def validate_operation_ids(schema: dict[str, object]) -> None:
@@ -156,7 +160,7 @@ def main() -> None:
             cwd=ROOT,
             check=True,
         )
-        generated = output.read_text(encoding="utf-8")
+        generated = TYPESCRIPT_SPDX_HEADER + output.read_text(encoding="utf-8")
         if args.check:
             if not TARGET.is_file() or TARGET.read_text(encoding="utf-8") != generated:
                 raise SystemExit(

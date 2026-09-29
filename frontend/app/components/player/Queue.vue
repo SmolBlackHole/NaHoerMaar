@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 SmolBlackHole -->
+<!-- SPDX-License-Identifier: MPL-2.0 -->
+
 <script setup lang="ts">
 import type { DropdownMenuItem } from "@nuxt/ui";
 import Sortable, { type SortableEvent } from "sortablejs";
@@ -6,10 +9,19 @@ import { formatTime, trackSource, type Contributor, type QueueEntry } from "~/co
 const core = useNuxtApp().$backendCore;
 const player = core.stores.usePlayerStore();
 const session = core.stores.useSessionStore();
+const reactions = core.stores.useLibraryStore();
 const { icons } = useTheme();
 const { position } = usePlaybackPosition();
 const toast = useToast();
 const queue = computed(() => player.state?.queue ?? []);
+watch(
+	() => [queue.value.map(({ request }) => request.track.id).join(","), session.status] as const,
+	([, status]) => {
+		if (status === "authenticated")
+			void reactions.load(queue.value.map(({ request }) => request.track.id));
+	},
+	{ immediate: true },
+);
 const mine = computed(() =>
 	queue.value.filter(({ request }) => request.requested_by === session.account?.user_id),
 );
@@ -278,7 +290,7 @@ function formatWait(seconds: number) {
 		>
 			<div class="queue-columns queue-grid text-xs text-muted" aria-hidden="true">
 				<span /><span /><span>Track</span><span>Requested by</span><span>Duration</span
-				><span />
+				><span /><span />
 			</div>
 			<ol class="queue-list" aria-hidden="true">
 				<li v-for="row in 3" :key="row" class="queue-row queue-grid">
@@ -293,6 +305,10 @@ function formatWait(seconds: number) {
 						<USkeleton class="ml-auto h-3 w-10" />
 						<USkeleton class="ml-auto h-3 w-12" />
 					</div>
+					<div class="flex items-center gap-1">
+						<USkeleton class="size-10 rounded-lg" />
+						<USkeleton class="size-10 rounded-lg" />
+					</div>
 					<USkeleton class="mx-auto size-4" />
 				</li>
 			</ol>
@@ -300,7 +316,7 @@ function formatWait(seconds: number) {
 		<template v-else-if="queue.length">
 			<div class="queue-columns queue-grid text-xs text-muted" aria-hidden="true">
 				<span /><span /><span>Track</span><span>Requested by</span><span>Duration</span
-				><span />
+				><span /><span />
 			</div>
 			<ol ref="list" aria-label="Upcoming tracks" class="queue-list">
 				<li
@@ -355,6 +371,13 @@ function formatWait(seconds: number) {
 							</UTooltip>
 						</div>
 					</div>
+					<LibraryReactionActions
+						:track-id="entry.request.track.id"
+						:title="entry.request.track.title"
+						compact
+						:show-counts="false"
+						:show-details="false"
+					/>
 					<UDropdownMenu
 						:items="[
 							{
@@ -511,7 +534,7 @@ function formatWait(seconds: number) {
 }
 .queue-grid {
 	display: grid;
-	grid-template-columns: 2.75rem 3rem minmax(0, 1fr) 10rem 6rem 2.75rem;
+	grid-template-columns: 2.75rem 3rem minmax(0, 1fr) 10rem 6rem 5.25rem 2.75rem;
 	align-items: center;
 	column-gap: 1rem;
 	padding-inline: 0.5rem;

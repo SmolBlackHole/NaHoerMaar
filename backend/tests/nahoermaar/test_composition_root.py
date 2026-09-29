@@ -14,6 +14,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from nahoermaar.api.app import create_app
 from nahoermaar.bootstrap import bootstrap
 from nahoermaar.catalog.service import CatalogService
+from nahoermaar.library.service import LibraryService
 from nahoermaar.config import LogLevel
 from nahoermaar.database.core import Database
 from nahoermaar.messaging import MessageBus
@@ -64,6 +65,7 @@ def test_bootstrap_loads_settings_and_composes_auth(
     assert isinstance(application.views.history, PlaybackHistoryView)
     assert isinstance(application.views.catalog_cleanup, CatalogCleanupView)
     assert isinstance(application.catalog.service, CatalogService)
+    assert isinstance(application.library.service, LibraryService)
     assert application.catalog.lifecycle.name == "catalog"
     assert application.catalog.lifecycle.start is None
     assert isinstance(application.player, PlayerModule)
@@ -96,6 +98,10 @@ def test_bootstrap_loads_settings_and_composes_auth(
         "/api/catalog/search",
         "/api/catalog/playlist",
         "/api/catalog/link",
+        "/api/library/tracks",
+        "/api/library/reactions",
+        "/api/library/tracks/{track_id}/reaction",
+        "/api/library/tracks/{track_id}/reactions",
     } <= paths.keys()
     assert configured == [(LogLevel.WARNING, (Path.cwd() / "data/logs").resolve(), 14)]
     asyncio.run(application.close())

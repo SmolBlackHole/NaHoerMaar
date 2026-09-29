@@ -30,11 +30,13 @@ function value(plays: number, listeningSeconds: number) {
 		<div class="flex flex-wrap items-end justify-between gap-4">
 			<div>
 				<h2 id="profile-favourites-heading" class="text-lg font-semibold text-highlighted">
-					Favourite music
+					Listening favourites
 				</h2>
-				<p class="mt-1 text-xs text-muted">Ranked by repeat plays or actual time heard.</p>
+				<p class="mt-1 text-xs text-muted">
+					Derived from repeat plays and time heard, not explicit Likes.
+				</p>
 			</div>
-			<div class="flex gap-1" role="group" aria-label="Favourite music ranking">
+			<div class="flex gap-1" role="group" aria-label="Listening favourites ranking">
 				<UButton
 					label="Most played"
 					:color="ranking === 'plays' ? 'primary' : 'neutral'"
@@ -82,7 +84,7 @@ function value(plays: number, listeningSeconds: number) {
 					</span>
 				</li>
 			</ol>
-			<p v-else class="text-sm text-muted">No favourite tracks in this period yet.</p>
+			<p v-else class="text-sm text-muted">No listening favourites in this period yet.</p>
 
 			<ol v-if="artists.length" class="space-y-2">
 				<li

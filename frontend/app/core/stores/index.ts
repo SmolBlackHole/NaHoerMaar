@@ -19,6 +19,7 @@ import type {
 	PlayerEvent,
 	PlayerState,
 } from "../models/player";
+import type { LibraryTrack, ReactionSummary, ReactionValue } from "../models/library";
 
 export type AccountStatus =
 	| "checking"
@@ -225,6 +226,145 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 			load,
 			refresh: () => load(true),
 			update: (body: CurrentUserUpdate) => save(() => client.account.update(body)),
+		};
+	});
+
+	const useLibraryStore = defineStore("backendLibrary", () => {
+		const session = useSessionStore();
+		const summaries = shallowRef<Record<string, ReactionSummary>>({});
+		const loadingTrackIds = ref<string[]>([]);
+		const pendingTrackIds = ref<string[]>([]);
+		const error = ref<string | null>(null);
+		const revision = ref(0);
+		const accessOrder: string[] = [];
+		const controllers = new Set<AbortController>();
+		const maxEntries = 500;
+
+		function reset() {
+			for (const controller of controllers) controller.abort();
+			controllers.clear();
+			summaries.value = {};
+			loadingTrackIds.value = [];
+			pendingTrackIds.value = [];
+			error.value = null;
+			revision.value = 0;
+			accessOrder.splice(0);
+		}
+
+		function remember(values: ReactionSummary[]) {
+			if (!values.length) return;
+			const next = { ...summaries.value };
+			for (const value of values) {
+				next[value.track_id] = value;
+				const index = accessOrder.indexOf(value.track_id);
+				if (index >= 0) accessOrder.splice(index, 1);
+				accessOrder.push(value.track_id);
+			}
+			while (accessOrder.length > maxEntries) {
+				const oldest = accessOrder.shift();
+				if (oldest) delete next[oldest];
+			}
+			summaries.value = next;
+		}
+
+		function ingest(tracks: LibraryTrack[]) {
+			remember(
+				tracks.map((track) => ({
+					track_id: track.track_id,
+					likes: track.likes,
+					dislikes: track.dislikes,
+					reaction: track.reaction,
+				})),
+			);
+		}
+
+		async function load(trackIds: string[], force = false) {
+			if (session.status !== "authenticated") return;
+			const unique = [...new Set(trackIds)].filter(Boolean).slice(0, 100);
+			const requested = unique.filter(
+				(trackId) =>
+					!loadingTrackIds.value.includes(trackId) &&
+					(force || summaries.value[trackId] === undefined),
+			);
+			if (!requested.length) return;
+			loadingTrackIds.value = [...loadingTrackIds.value, ...requested];
+			const controller = new AbortController();
+			controllers.add(controller);
+			const generation = session.generation;
+			error.value = null;
+			try {
+				const result = await client.library.summaries(requested, controller.signal);
+				if (controller.signal.aborted || generation !== session.generation) return;
+				remember(result.items);
+			} catch (failure) {
+				if (!controller.signal.aborted && !(failure instanceof SessionLost))
+					error.value = failureMessage(failure);
+			} finally {
+				controllers.delete(controller);
+				loadingTrackIds.value = loadingTrackIds.value.filter(
+					(trackId) => !requested.includes(trackId),
+				);
+			}
+		}
+
+		async function mutate(trackId: string, value: ReactionValue | null): Promise<boolean> {
+			if (session.status !== "authenticated" || pendingTrackIds.value.includes(trackId))
+				return false;
+			const generation = session.generation;
+			const previous = summaries.value[trackId] ?? {
+				track_id: trackId,
+				likes: 0,
+				dislikes: 0,
+				reaction: null,
+			};
+			remember([{ ...previous, reaction: value }]);
+			pendingTrackIds.value = [...pendingTrackIds.value, trackId];
+			error.value = null;
+			try {
+				const authoritative = value
+					? await client.library.setReaction(trackId, value)
+					: await client.library.deleteReaction(trackId);
+				if (generation !== session.generation) return false;
+				remember([authoritative]);
+				revision.value += 1;
+				return true;
+			} catch (failure) {
+				if (generation === session.generation && !(failure instanceof SessionLost)) {
+					remember([previous]);
+					error.value = failureMessage(failure);
+				}
+				return false;
+			} finally {
+				if (generation === session.generation)
+					pendingTrackIds.value = pendingTrackIds.value.filter((id) => id !== trackId);
+			}
+		}
+
+		const stopWatch = watch(
+			() => [session.generation, session.status] as const,
+			() => reset(),
+		);
+
+		onScopeDispose(() => {
+			stopWatch();
+			reset();
+		});
+
+		return {
+			summaries,
+			loadingTrackIds,
+			pendingTrackIds,
+			error,
+			revision,
+			summary: (trackId: string) => summaries.value[trackId] ?? null,
+			isLoading: (trackId: string) => loadingTrackIds.value.includes(trackId),
+			isPending: (trackId: string) => pendingTrackIds.value.includes(trackId),
+			load,
+			ingest,
+			setReaction: (trackId: string, value: ReactionValue) => mutate(trackId, value),
+			removeReaction: (trackId: string) => mutate(trackId, null),
+			toggleReaction: (trackId: string, value: ReactionValue) =>
+				mutate(trackId, summaries.value[trackId]?.reaction === value ? null : value),
 		};
 	});
 
@@ -596,5 +736,5 @@ export function createBackendStores(client: BackendClient, authority: SessionAut
 		};
 	});
 
-	return { useSessionStore, useAccountStore, usePlayerStore };
+	return { useSessionStore, useAccountStore, useLibraryStore, usePlayerStore };
 }

@@ -11,6 +11,7 @@ _FEATURE_MODULES = frozenset(
     {
         "catalog",
         "integrations",
+        "library",
         "listening",
         "lyrics",
         "operations",
@@ -27,6 +28,7 @@ _MODULE_FACTORIES = frozenset(
         "complete_player_module",
         "create_catalog_module",
         "create_listening_module",
+        "create_library_module",
         "create_lyrics_module",
         "create_operations_foundation",
         "create_statistics_module",
@@ -43,6 +45,7 @@ _APPLICATION_FIELDS = frozenset(
         "bus",
         "users",
         "catalog",
+        "library",
         "player",
         "listening",
         "lyrics",

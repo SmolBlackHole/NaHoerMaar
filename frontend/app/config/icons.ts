@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 SmolBlackHole
+// SPDX-License-Identifier: MPL-2.0
+
 export const iconMaps = {
 	lucide: {
 		music: "i-lucide-music-2",
@@ -5,6 +8,9 @@ export const iconMaps = {
 		radio: "i-lucide-radio-tower",
 		headphones: "i-lucide-headphones",
 		clock: "i-lucide-clock-3",
+		library: "i-lucide-library",
+		like: "i-lucide-thumbs-up",
+		dislike: "i-lucide-thumbs-down",
 		users: "i-lucide-users",
 		play: "i-lucide-play",
 		pause: "i-lucide-pause",
@@ -79,6 +85,9 @@ export const iconMaps = {
 		radio: "i-ph-broadcast",
 		headphones: "i-ph-headphones",
 		clock: "i-ph-clock",
+		library: "i-ph-books",
+		like: "i-ph-thumbs-up",
+		dislike: "i-ph-thumbs-down",
 		users: "i-ph-users",
 		play: "i-ph-play",
 		pause: "i-ph-pause",
@@ -153,6 +162,9 @@ export const iconMaps = {
 		radio: "i-tabler-broadcast",
 		headphones: "i-tabler-headphones",
 		clock: "i-tabler-clock",
+		library: "i-tabler-library",
+		like: "i-tabler-thumb-up",
+		dislike: "i-tabler-thumb-down",
 		users: "i-tabler-users",
 		play: "i-tabler-player-play",
 		pause: "i-tabler-player-pause",
@@ -227,6 +239,9 @@ export const iconMaps = {
 		radio: "i-heroicons-signal-20-solid",
 		headphones: "i-heroicons-speaker-wave-20-solid",
 		clock: "i-heroicons-clock-20-solid",
+		library: "i-heroicons-rectangle-stack-20-solid",
+		like: "i-heroicons-hand-thumb-up-20-solid",
+		dislike: "i-heroicons-hand-thumb-down-20-solid",
 		users: "i-heroicons-user-group-20-solid",
 		play: "i-heroicons-play-20-solid",
 		pause: "i-heroicons-pause-20-solid",

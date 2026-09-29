@@ -17,6 +17,8 @@ from nahoermaar.catalog.service import CatalogService
 from nahoermaar.config import Settings
 from nahoermaar.database.core import Database
 from nahoermaar.lifecycle import LifecycleResource
+from nahoermaar.library.main import LibraryModule
+from nahoermaar.library.service import LibraryService
 from nahoermaar.listening.main import ListeningModule
 from nahoermaar.listening.service import ListeningService
 from nahoermaar.lyrics.main import LyricsModule
@@ -262,6 +264,7 @@ def _application(
             cast(HousekeepingContribution, object()),
             LifecycleResource(catalog_resource_name, close=catalog.close),
         ),
+        LibraryModule(cast(LibraryService, object())),
         LyricsModule(cast(LyricsService, object())),
         player_module,
         listening_module,

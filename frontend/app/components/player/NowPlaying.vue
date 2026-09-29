@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 SmolBlackHole -->
+<!-- SPDX-License-Identifier: MPL-2.0 -->
+
 <script setup lang="ts">
 import { trackSource, youtubeVideoId } from "~/core/models/player";
 import { ArtworkHandoff } from "~/utils/artworkHandoff";
@@ -325,6 +328,12 @@ watch(loadVideo, (visible) => {
 					</UTooltip>
 					<template v-else>What are we<br />listening to?</template>
 				</h2>
+				<LibraryReactionActions
+					v-if="current"
+					:track-id="current.track.id"
+					:title="current.track.title"
+					class="media-reactions"
+				/>
 				<p v-if="!current" class="media-empty-help">
 					Add something to the queue.<br />The room is yours.
 				</p>
@@ -619,6 +628,9 @@ watch(loadVideo, (visible) => {
 }
 .media-title.is-long {
 	font-size: 2.75rem;
+}
+.media-reactions {
+	margin-top: 1.25rem;
 }
 .media-contributor {
 	margin-bottom: 1rem;

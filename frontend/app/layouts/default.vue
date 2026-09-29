@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 SmolBlackHole -->
+<!-- SPDX-License-Identifier: MPL-2.0 -->
+
 <script setup lang="ts">
 import { useTheme } from "~/composables/useTheme";
 import { useThemeEffects } from "~/composables/useThemeEffects";
@@ -66,6 +69,15 @@ const links = computed(() => [
 		"aria-label": "Playback history",
 		icon: icons.value.clock,
 		to: "/history",
+		onSelect: () => {
+			open.value = false;
+		},
+	},
+	{
+		label: "Library",
+		"aria-label": "Your music library",
+		icon: icons.value.library,
+		to: "/library",
 		onSelect: () => {
 			open.value = false;
 		},

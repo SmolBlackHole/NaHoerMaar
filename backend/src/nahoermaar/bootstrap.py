@@ -24,6 +24,7 @@ from .integrations.main import (
     prepare_integrations_module,
 )
 from .lifecycle import LifecycleResource
+from .library.main import LibraryModule, create_library_module
 from .listening.main import ListeningModule, create_listening_module
 from .lyrics.main import LyricsModule, create_lyrics_module
 from .messaging import MessageBus
@@ -66,6 +67,7 @@ class Application:
     bus: MessageBus
     users: UsersModule
     catalog: CatalogModule
+    library: LibraryModule
     lyrics: LyricsModule
     player: PlayerModule
     listening: ListeningModule
@@ -238,6 +240,7 @@ def bootstrap(
         views_module.catalog_cleanup,
     )
     catalog = catalog_module.service
+    library_module = create_library_module(units, catalog)
     lyrics_module = create_lyrics_module(
         units,
         catalog,
@@ -287,6 +290,7 @@ def bootstrap(
         bus,
         users_module,
         catalog_module,
+        library_module,
         lyrics_module,
         player_module,
         listening_module,

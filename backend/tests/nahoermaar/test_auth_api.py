@@ -31,6 +31,7 @@ from nahoermaar.integrations.discord import DiscordGateway
 from nahoermaar.integrations.avatars import DiscordAvatarStore
 from nahoermaar.integrations.main import IntegrationsModule
 from nahoermaar.lifecycle import LifecycleResource
+from nahoermaar.library.main import create_library_module
 from nahoermaar.messaging import MessageBus
 from nahoermaar.listening.main import create_listening_module
 from nahoermaar.lyrics.main import LyricsModule
@@ -174,6 +175,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
         housekeeping_contribution,
         LifecycleResource("catalog", close=catalog.close),
     )
+    library_module = create_library_module(units, catalog)
     jobs = JobCoordinator(
         job_runs,
         (
@@ -259,6 +261,7 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
         bus,
         users_module,
         catalog_module,
+        library_module,
         LyricsModule(cast(LyricsService, object())),
         player_module,
         listening_module,

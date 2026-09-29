@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 SmolBlackHole -->
+<!-- SPDX-License-Identifier: MPL-2.0 -->
+
 <script setup lang="ts">
 import { formatTime } from "~/core/models/player";
 import type { PlaybackHistoryEntry } from "~/core/models/playbacks";
@@ -12,6 +15,8 @@ const props = withDefaults(
 	{ loading: false, skeletonCount: 5, layout: "compact" },
 );
 const player = useNuxtApp().$backendCore.stores.usePlayerStore();
+const session = useNuxtApp().$backendCore.stores.useSessionStore();
+const reactions = useNuxtApp().$backendCore.stores.useLibraryStore();
 const { icons } = useTheme();
 const listLabel = computed(() =>
 	props.layout === "history" ? "Playback history" : "Recently played tracks",
@@ -46,6 +51,14 @@ function endState(item: PlaybackHistoryEntry) {
 function requeue(item: PlaybackHistoryEntry) {
 	return player.add([{ track_id: item.track_id, source_id: null }]);
 }
+watch(
+	() => [props.entries.map(({ track_id }) => track_id).join(","), session.status] as const,
+	([, status]) => {
+		if (status === "authenticated")
+			void reactions.load(props.entries.map(({ track_id }) => track_id));
+	},
+	{ immediate: true },
+);
 </script>
 
 <template>
@@ -84,6 +97,8 @@ function requeue(item: PlaybackHistoryEntry) {
 					<USkeleton class="h-3 w-16" />
 				</div>
 				<div class="recent-actions ml-auto flex items-center gap-1">
+					<USkeleton class="size-10 rounded-lg" />
+					<USkeleton class="size-10 rounded-lg" />
 					<USkeleton class="size-11 rounded-lg" />
 					<USkeleton class="size-11 rounded-lg" />
 				</div>
@@ -154,6 +169,13 @@ function requeue(item: PlaybackHistoryEntry) {
 					<span class="mt-1 block">{{ endState(item) }}</span>
 				</div>
 				<div class="recent-actions ml-auto flex items-center">
+					<LibraryReactionActions
+						:track-id="item.track_id"
+						:title="item.title"
+						compact
+						:show-counts="false"
+						:show-details="false"
+					/>
 					<UTooltip :text="`Queue ${item.title} again`">
 						<UButton
 							:icon="icons.plus"
@@ -181,7 +203,7 @@ function requeue(item: PlaybackHistoryEntry) {
 <style scoped>
 .recent-columns {
 	display: grid;
-	grid-template-columns: 3rem minmax(14rem, 1fr) minmax(8rem, 12rem) 3rem 9rem 5.5rem;
+	grid-template-columns: 3rem minmax(14rem, 1fr) minmax(8rem, 12rem) 3rem 9rem 10.5rem;
 	gap: 1rem;
 	align-items: center;
 	padding: 0 0.75rem 0.75rem;
@@ -201,7 +223,7 @@ function requeue(item: PlaybackHistoryEntry) {
 }
 .recent-list--history .recent-row {
 	display: grid;
-	grid-template-columns: 3rem minmax(14rem, 1fr) minmax(8rem, 12rem) 3rem 9rem 5.5rem;
+	grid-template-columns: 3rem minmax(14rem, 1fr) minmax(8rem, 12rem) 3rem 9rem 10.5rem;
 	gap: 1rem;
 }
 .recent-list--history .recent-track {

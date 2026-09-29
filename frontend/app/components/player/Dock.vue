@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 SmolBlackHole -->
+<!-- SPDX-License-Identifier: MPL-2.0 -->
+
 <script setup lang="ts">
 import { formatTime } from "~/core/models/player";
 
@@ -229,6 +232,15 @@ const confirmationDescription = computed(() =>
 					>
 				</p>
 			</div>
+			<LibraryReactionActions
+				v-if="current"
+				:track-id="current.track.id"
+				:title="current.track.title"
+				compact
+				:show-counts="false"
+				:show-details="false"
+				class="dock-reactions"
+			/>
 			<PlayerRadioAction v-if="current" :entry="current" labelled />
 		</div>
 		<div class="dock-transport flex items-center justify-center gap-3">

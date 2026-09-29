@@ -28,6 +28,7 @@ APPLICATION_TABLES = {
     "track_sources",
     "track_artists",
     "track_lyrics",
+    "track_reactions",
     "track_source_artists",
     "discovery_keys",
     "discovery_snapshots",
@@ -67,7 +68,7 @@ def test_initial_migration_upgrades_and_downgrades_fresh_postgresql() -> None:
                 lambda value: MigrationContext.configure(value).get_current_revision()
             )
             assert APPLICATION_TABLES <= tables
-            assert revision == "0012_track_lyrics"
+            assert revision == "0013_track_reactions"
 
     try:
         asyncio.run(inspect_upgrade())

@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 SmolBlackHole -->
+<!-- SPDX-License-Identifier: MPL-2.0 -->
+
 <script setup lang="ts">
 import { artistNames, formatDuration, type DiscoveryEntry } from "../../core/models/catalog";
 import type { PlayerState } from "../../core/models/player";
@@ -17,7 +20,19 @@ const emit = defineEmits<{
 	radio: [entry: DiscoveryEntry];
 	toggle: [position: number];
 }>();
+const core = useNuxtApp().$backendCore;
+const session = core.stores.useSessionStore();
+const reactions = core.stores.useLibraryStore();
 const { icons } = useTheme();
+
+watch(
+	() => [props.entries.map(({ track }) => track.id).join(","), session.status] as const,
+	([, status]) => {
+		if (status === "authenticated")
+			void reactions.load(props.entries.map(({ track }) => track.id));
+	},
+	{ immediate: true },
+);
 
 function unavailable(entry: DiscoveryEntry) {
 	return entry.source.availability === "unavailable";
@@ -73,6 +88,13 @@ function presence(trackId: string): string | null {
 				</p>
 			</div>
 			<template v-if="!selectable">
+				<LibraryReactionActions
+					:track-id="item.track.id"
+					:title="item.track.title"
+					compact
+					:show-counts="false"
+					:show-details="false"
+				/>
 				<UTooltip :text="'Add ' + item.track.title + ' to queue'">
 					<UButton
 						:icon="icons.plus"
@@ -113,6 +135,10 @@ function presence(trackId: string): string | null {
 					<USkeleton class="h-3 w-1/3" />
 					<USkeleton class="h-3 w-8" />
 				</div>
+			</div>
+			<div v-if="!selectable" class="flex shrink-0 items-center gap-1">
+				<USkeleton class="size-10 rounded-lg" />
+				<USkeleton class="size-10 rounded-lg" />
 			</div>
 			<div v-if="!selectable" class="grid size-11 shrink-0 place-items-center">
 				<USkeleton class="size-4" />
