@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 SmolBlackHole -->
+<!-- SPDX-License-Identifier: MPL-2.0 -->
+
 <script setup lang="ts">
 const props = defineProps<{
 	pageSize: number;
@@ -15,13 +18,13 @@ const pageItems = computed(() => {
 	if (lastPage <= 7) return Array.from({ length: lastPage }, (_, index) => index + 1);
 
 	const visible = new Set([1, lastPage]);
-	for (let candidate = page.value - 2; candidate <= page.value + 2; candidate++) {
+	for (let candidate = page.value - 1; candidate <= page.value + 1; candidate++) {
 		if (candidate > 1 && candidate < lastPage) visible.add(candidate);
 	}
-	if (page.value <= 4)
-		for (let candidate = 2; candidate <= 5; candidate++) visible.add(candidate);
-	if (page.value >= lastPage - 3)
-		for (let candidate = lastPage - 4; candidate < lastPage; candidate++)
+	if (page.value <= 3)
+		for (let candidate = 2; candidate <= 4; candidate++) visible.add(candidate);
+	if (page.value >= lastPage - 2)
+		for (let candidate = lastPage - 3; candidate < lastPage; candidate++)
 			visible.add(candidate);
 
 	const pages = [...visible].sort((left, right) => left - right);
@@ -43,8 +46,8 @@ function selectPage(nextPage: number) {
 </script>
 
 <template>
-	<div class="flex min-h-16 items-center justify-between gap-4">
-		<div class="min-w-0 text-xs tabular-nums text-muted">
+	<div class="flex min-h-16 items-center justify-center gap-4 sm:justify-between">
+		<div class="hidden min-w-0 text-xs tabular-nums text-muted sm:block">
 			<p class="hidden sm:block">
 				Showing {{ firstItem.toLocaleString() }}-{{ lastItem.toLocaleString() }} of
 				{{ total.toLocaleString() }}
@@ -58,7 +61,7 @@ function selectPage(nextPage: number) {
 				variant="outline"
 				size="sm"
 				aria-label="First page"
-				class="size-8 justify-center p-0"
+				class="hidden size-8 justify-center p-0 sm:inline-flex"
 				:disabled="disabled || page === 1"
 				@click="selectPage(1)"
 			/>
@@ -110,7 +113,7 @@ function selectPage(nextPage: number) {
 				variant="outline"
 				size="sm"
 				aria-label="Last page"
-				class="size-8 justify-center p-0"
+				class="hidden size-8 justify-center p-0 sm:inline-flex"
 				:disabled="disabled || page === pageCount"
 				@click="selectPage(pageCount)"
 			/>

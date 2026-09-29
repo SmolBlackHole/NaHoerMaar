@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 SmolBlackHole -->
+<!-- SPDX-License-Identifier: MPL-2.0 -->
+
 <script setup lang="ts">
 import type { AccessState, DiscordMembers } from "~/core/models/access";
 
@@ -230,7 +233,7 @@ onScopeDispose(access.dispose);
 					</div>
 				</div>
 
-				<div v-else class="w-full space-y-8 pb-4 sm:pb-6">
+				<div v-else class="min-w-0 w-full space-y-8 pb-4 sm:pb-6">
 					<header>
 						<h1 class="text-2xl font-semibold text-highlighted">Listener access</h1>
 						<p class="mt-2 max-w-2xl text-sm text-muted">
@@ -277,7 +280,7 @@ onScopeDispose(access.dispose);
 							</div>
 						</dl>
 
-						<section aria-labelledby="operators-title">
+						<section aria-labelledby="operators-title" class="min-w-0">
 							<div class="flex items-end justify-between gap-4">
 								<div>
 									<h2
@@ -308,7 +311,7 @@ onScopeDispose(access.dispose);
 							</div>
 							<div
 								id="operator-list"
-								class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
+								class="mt-4 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4"
 							>
 								<NuxtLink
 									v-for="operator in visibleOperators"
@@ -624,8 +627,11 @@ onScopeDispose(access.dispose);
 }
 .operator-row {
 	display: flex;
+	width: 100%;
+	min-width: 0;
 	align-items: center;
 	gap: 0.75rem;
+	overflow: hidden;
 	border-radius: 0.75rem;
 	background: color-mix(in srgb, var(--ui-bg-elevated) 55%, transparent);
 	padding: 0.75rem;

@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 SmolBlackHole -->
+<!-- SPDX-License-Identifier: MPL-2.0 -->
+
 <script setup lang="ts">
 import type { IncidentPeriod, IncidentSeverity } from "~/core/models/incidents";
 
@@ -97,7 +100,7 @@ onBeforeUnmount(() => {
 			<div v-if="!allowed" class="p-6 text-muted" role="alert">
 				Only admins can read incident statistics.
 			</div>
-			<div v-else class="flex flex-col gap-6 pb-6">
+			<div v-else class="flex min-w-0 flex-col gap-6 pb-6">
 				<div class="flex flex-wrap items-end justify-between gap-4">
 					<div>
 						<h1 class="text-xl font-semibold text-highlighted">What needs attention</h1>
@@ -191,8 +194,8 @@ onBeforeUnmount(() => {
 						</div>
 					</div>
 
-					<div class="grid gap-6 xl:grid-cols-2">
-						<section class="rounded-xl bg-elevated/35 p-5">
+					<div class="grid min-w-0 gap-6 xl:grid-cols-2">
+						<section class="min-w-0 rounded-xl bg-elevated/35 p-5">
 							<h2 class="text-base font-semibold text-highlighted">Common issues</h2>
 							<p class="mt-1 text-sm text-muted">
 								Stable codes and the components reporting them.
@@ -218,7 +221,7 @@ onBeforeUnmount(() => {
 								No incidents in this period.
 							</p>
 						</section>
-						<section class="rounded-xl bg-elevated/35 p-5">
+						<section class="min-w-0 rounded-xl bg-elevated/35 p-5">
 							<h2 class="text-base font-semibold text-highlighted">
 								Affected operations
 							</h2>
@@ -252,7 +255,7 @@ onBeforeUnmount(() => {
 
 					<section
 						v-if="report.associated_users.length"
-						class="rounded-xl bg-elevated/35 p-5"
+						class="min-w-0 rounded-xl bg-elevated/35 p-5"
 					>
 						<h2 class="text-base font-semibold text-highlighted">
 							Rejected user operations
@@ -278,8 +281,8 @@ onBeforeUnmount(() => {
 						</div>
 					</section>
 
-					<div class="grid gap-6 xl:grid-cols-2">
-						<section class="rounded-xl bg-elevated/35 p-5">
+					<div class="grid min-w-0 gap-6 xl:grid-cols-2">
+						<section class="min-w-0 rounded-xl bg-elevated/35 p-5">
 							<h2
 								class="flex items-center gap-2 text-base font-semibold text-highlighted"
 							>
@@ -315,7 +318,7 @@ onBeforeUnmount(() => {
 								No user-triggered incidents.
 							</p>
 						</section>
-						<section class="rounded-xl bg-elevated/35 p-5">
+						<section class="min-w-0 rounded-xl bg-elevated/35 p-5">
 							<h2
 								class="flex items-center gap-2 text-base font-semibold text-highlighted"
 							>

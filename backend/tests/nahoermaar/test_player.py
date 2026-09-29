@@ -52,6 +52,7 @@ from nahoermaar.player.events import (
     StartRadio,
     StopRadio,
     TrackSelection,
+    UndoQueue,
 )
 from nahoermaar.player.fsm import transition
 from nahoermaar.player.repository import SessionRepository
@@ -401,6 +402,63 @@ def test_fsm_keeps_manual_requests_distinct_and_radio_at_target() -> None:
     assert all(
         entry.request.radio_run_id == replacement.id
         for entry in replacement_filled.state.queue.entries[2:]
+    )
+
+
+def test_undo_restores_removed_entry_at_its_original_queue_position() -> None:
+    session_id = ListeningSessionId(uuid4())
+    actor = UserId(uuid4())
+    selections = tuple(
+        TrackSelection(TrackId(uuid4()), TrackSourceId(uuid4())) for _ in range(4)
+    )
+    added = transition(
+        PlayerState.empty(session_id, NOW),
+        AddTracks(session_id, OperationId(uuid4()), selections),
+        actor,
+        NOW,
+    )
+    original_ids = tuple(entry.id for entry in added.state.queue.entries)
+
+    removed = transition(
+        added.state,
+        RemoveQueueEntry(
+            session_id,
+            OperationId(uuid4()),
+            original_ids[1],
+            added.state.session.queue_revision,
+        ),
+        actor,
+        NOW + timedelta(seconds=1),
+    )
+    assert removed.save_undo is not None
+
+    without_next_anchor = transition(
+        removed.state,
+        RemoveQueueEntry(
+            session_id,
+            OperationId(uuid4()),
+            original_ids[2],
+            removed.state.session.queue_revision,
+        ),
+        actor,
+        NOW + timedelta(seconds=2),
+    )
+    restored = transition(
+        without_next_anchor.state,
+        UndoQueue(
+            session_id,
+            OperationId(uuid4()),
+            removed.save_undo.id,
+        ),
+        actor,
+        NOW + timedelta(seconds=3),
+        undo=removed.save_undo,
+    )
+
+    assert tuple(entry.id for entry in restored.state.queue.entries) == (
+        original_ids[0],
+        original_ids[1],
+        original_ids[3],
     )
 
 

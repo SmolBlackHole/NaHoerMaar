@@ -618,7 +618,7 @@ def _undo(
         candidates = [entry for entry in group.entries if entry.id not in present]
         if not candidates:
             continue
-        insert_at = len(entries)
+        insert_at: int | None = None
         if group.next_id is not None:
             insert_at = next(
                 (
@@ -626,9 +626,9 @@ def _undo(
                     for index, entry in enumerate(entries)
                     if entry.id == group.next_id
                 ),
-                insert_at,
+                None,
             )
-        elif group.previous_id is not None:
+        if insert_at is None and group.previous_id is not None:
             previous = next(
                 (
                     index
@@ -639,6 +639,8 @@ def _undo(
             )
             if previous is not None:
                 insert_at = previous + 1
+        if insert_at is None:
+            insert_at = min(group.entries[0].position, len(entries))
         entries[insert_at:insert_at] = candidates
         restored.extend(candidates)
 

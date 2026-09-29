@@ -294,22 +294,24 @@ function formatWait(seconds: number) {
 			</div>
 			<ol class="queue-list" aria-hidden="true">
 				<li v-for="row in 3" :key="row" class="queue-row queue-grid">
-					<USkeleton class="mx-auto size-4" />
+					<USkeleton class="queue-handle mx-auto size-4" />
 					<USkeleton class="queue-cover rounded-md" />
-					<div class="min-w-0 space-y-2">
+					<div class="queue-title min-w-0 space-y-2">
 						<USkeleton class="h-4 w-full max-w-72" />
 						<USkeleton class="h-3 w-32" />
 					</div>
-					<USkeleton class="h-5 w-28" />
-					<div class="space-y-2 text-right">
-						<USkeleton class="ml-auto h-3 w-10" />
-						<USkeleton class="ml-auto h-3 w-12" />
+					<div class="queue-details">
+						<USkeleton class="queue-person h-5 w-28 max-w-full" />
+						<div class="queue-timing space-y-2 text-right">
+							<USkeleton class="ml-auto h-3 w-10" />
+							<USkeleton class="queue-wait ml-auto h-3 w-12" />
+						</div>
 					</div>
-					<div class="flex items-center gap-1">
+					<div class="queue-actions flex items-center gap-1">
 						<USkeleton class="size-10 rounded-lg" />
 						<USkeleton class="size-10 rounded-lg" />
 					</div>
-					<USkeleton class="mx-auto size-4" />
+					<USkeleton class="queue-menu mx-auto size-4" />
 				</li>
 			</ol>
 		</div>
@@ -377,6 +379,7 @@ function formatWait(seconds: number) {
 						compact
 						:show-counts="false"
 						:show-details="false"
+						class="queue-actions"
 					/>
 					<UDropdownMenu
 						:items="[
@@ -618,7 +621,7 @@ function formatWait(seconds: number) {
 }
 @container workspace (max-width: 1000px) {
 	.queue-grid {
-		grid-template-columns: 2.75rem 3rem minmax(0, 1fr) 7.5rem 5rem 2.75rem;
+		grid-template-columns: 2.75rem 3rem minmax(0, 1fr) 7.5rem 5rem 5.25rem 2.75rem;
 		column-gap: 0.75rem;
 	}
 }
@@ -669,7 +672,7 @@ function formatWait(seconds: number) {
 		overflow-wrap: anywhere;
 	}
 	.queue-details {
-		grid-column: 2 / 4;
+		grid-column: 2 / -1;
 		grid-row: 2;
 		display: flex;
 		align-items: center;
@@ -691,9 +694,14 @@ function formatWait(seconds: number) {
 		margin-top: 0;
 		font-size: inherit;
 	}
+	.queue-actions {
+		grid-column: 3;
+		grid-row: 3;
+		justify-self: end;
+	}
 	.queue-menu {
 		grid-column: 4;
-		grid-row: 2;
+		grid-row: 3;
 	}
 }
 </style>

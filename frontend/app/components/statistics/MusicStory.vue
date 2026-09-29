@@ -136,6 +136,8 @@ watch(featuredArtwork, () => {
 .featured-track {
 	position: relative;
 	isolation: isolate;
+	width: 100%;
+	min-width: 0;
 	aspect-ratio: 16 / 9;
 	min-height: 14rem;
 	overflow: hidden;
@@ -207,6 +209,15 @@ watch(featuredArtwork, () => {
 }
 .featured-track-count {
 	font-variant-numeric: tabular-nums;
+}
+@media (max-width: 639px) {
+	.featured-track {
+		aspect-ratio: 4 / 3;
+	}
+	.featured-track-copy {
+		min-height: 0;
+		padding: 1rem;
+	}
 }
 @media (prefers-reduced-motion: reduce) {
 	.featured-track-artwork {

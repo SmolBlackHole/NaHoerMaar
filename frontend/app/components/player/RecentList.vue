@@ -153,12 +153,13 @@ watch(
 						<span class="recent-mobile-state shrink-0">{{ endState(item) }}</span>
 					</p>
 				</div>
-				<PlayerContributor
-					v-if="item.contributor"
-					:contributor="item.contributor"
-					:origin="item.origin"
-					class="recent-contributor"
-				/>
+				<div v-if="item.contributor" class="recent-contributor min-w-0">
+					<PlayerContributor
+						:contributor="item.contributor"
+						:origin="item.origin"
+						class="w-full"
+					/>
+				</div>
 				<span class="recent-duration text-xs tabular-nums text-muted">
 					{{ formatTime(item.duration_seconds) }}
 				</span>
@@ -273,11 +274,16 @@ watch(
 	}
 	.recent-actions {
 		grid-column: 3;
-		grid-row: 1;
+		grid-row: 2;
 		align-self: center;
 	}
+	.recent-track {
+		grid-column: 2 / 4;
+	}
 	.recent-contributor {
-		grid-column: 2;
+		grid-column: 1 / 3;
+		grid-row: 2;
+		overflow: hidden;
 	}
 	.recent-details {
 		flex-wrap: wrap;
