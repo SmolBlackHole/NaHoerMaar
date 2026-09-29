@@ -216,37 +216,42 @@ const confirmationDescription = computed(() =>
 
 <template>
 	<section class="player-dock" aria-label="Playback controls">
-		<div class="dock-track flex min-w-0 items-center gap-3">
-			<PlayerTrackArtwork :entry="current?.track ?? null" class="dock-cover" />
-			<div class="min-w-0 flex-1">
-				<UTooltip :text="current ? `Open player: ${current.track.title}` : 'Open player'">
-					<NuxtLink
-						to="/"
-						class="inline-block max-w-full truncate text-sm font-semibold text-highlighted hover:underline"
-						>{{ current?.track.title ?? "Nothing playing" }}</NuxtLink
+		<div class="dock-track flex min-w-0 items-center gap-2">
+			<SharedTrackIdentity
+				:entry="current?.track ?? null"
+				:title="current?.track.title ?? 'Nothing playing'"
+				size="sm"
+				class="dock-identity"
+			>
+				<template #title>
+					<UTooltip
+						:text="current ? `Open player: ${current.track.title}` : 'Open player'"
 					>
-				</UTooltip>
-				<p class="mt-0.5 truncate text-xs leading-tight text-muted">
-					<PlayerArtistLink v-if="current" :entry="current.track" /><template v-else
-						>Your next track is up to you</template
-					>
-				</p>
+						<NuxtLink to="/" class="dock-title hover:underline">
+							{{ current?.track.title ?? "Nothing playing" }}
+						</NuxtLink>
+					</UTooltip>
+				</template>
+				<template #artist>
+					<PlayerArtistLink v-if="current" :entry="current.track" />
+					<span v-else>Your next track is up to you</span>
+				</template>
+			</SharedTrackIdentity>
+			<div v-if="current" class="dock-track-actions flex shrink-0 items-center gap-0.5">
+				<LibraryReactionActions
+					:track-id="current.track.id"
+					:title="current.track.title"
+					compact
+					:show-counts="false"
+					:show-details="false"
+					class="dock-reactions"
+				/>
+				<LibraryPlaylistAction
+					:track="{ track_id: current.track.id, preferred_source_id: current.source_id }"
+					:title="current.track.title"
+				/>
+				<PlayerRadioAction :entry="current" labelled />
 			</div>
-			<LibraryReactionActions
-				v-if="current"
-				:track-id="current.track.id"
-				:title="current.track.title"
-				compact
-				:show-counts="false"
-				:show-details="false"
-				class="dock-reactions"
-			/>
-			<LibraryPlaylistAction
-				v-if="current"
-				:track="{ track_id: current.track.id, preferred_source_id: current.source_id }"
-				:title="current.track.title"
-			/>
-			<PlayerRadioAction v-if="current" :entry="current" labelled />
 		</div>
 		<div class="dock-transport flex items-center justify-center gap-3">
 			<UTooltip text="Stop and return track to queue">
@@ -491,10 +496,20 @@ const confirmationDescription = computed(() =>
 	justify-self: end;
 	gap: 0.25rem;
 }
-.dock-cover {
-	width: 2.5rem;
-	height: 2.5rem;
-	border-radius: 0.375rem;
+.dock-identity {
+	min-width: 0;
+	flex: 1;
+}
+.dock-title {
+	display: block;
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--ui-text-highlighted);
+	font-size: 0.875rem;
+	font-weight: 600;
+	line-height: 1.25rem;
 }
 .dock-play {
 	transition:
@@ -594,14 +609,16 @@ const confirmationDescription = computed(() =>
 }
 @container workspace (max-width: 600px) {
 	.player-dock {
+		grid-template-columns: minmax(0, 1fr) auto;
+		grid-template-areas: "track track" "transport volume" "timeline timeline";
 		gap: 0.75rem;
 		padding: 0.75rem 1rem max(0.75rem, env(safe-area-inset-bottom));
 	}
-	.dock-cover {
+	.dock-identity :deep(.track-identity__artwork) {
 		display: none;
 	}
-	.dock-track p {
-		font-size: 0.6875rem;
+	.dock-track-actions {
+		margin-left: auto;
 	}
 	.dock-transport {
 		gap: 0;

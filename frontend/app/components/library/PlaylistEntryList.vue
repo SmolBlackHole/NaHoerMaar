@@ -99,13 +99,11 @@ function queue(entry: PlaylistEntry) {
 			class="playlist-entry playlist-entry-grid"
 			aria-hidden="true"
 		>
-			<USkeleton class="mx-auto size-4" /><USkeleton class="size-12 rounded-lg" />
-			<div class="min-w-0 space-y-2">
-				<USkeleton class="h-4 w-full max-w-72" /><USkeleton class="h-3 w-32" />
-			</div>
+			<USkeleton class="mx-auto size-4" />
+			<SharedTrackIdentity loading class="playlist-identity" />
 			<USkeleton class="h-3 w-20" /><USkeleton class="h-3 w-10" />
 			<div class="flex gap-1">
-				<USkeleton v-for="action in 5" :key="action" class="size-10 rounded-lg" />
+				<USkeleton v-for="action in 4" :key="action" class="size-10 rounded-lg" />
 			</div>
 		</li>
 	</ol>
@@ -133,13 +131,13 @@ function queue(entry: PlaylistEntry) {
 			<span v-else class="text-center text-xs tabular-nums text-muted">{{
 				String(index + 1).padStart(2, "0")
 			}}</span>
-			<PlayerTrackArtwork :entry="entry" class="size-12" />
-			<div class="min-w-0">
-				<p class="truncate text-sm font-medium text-highlighted">{{ entry.title }}</p>
-				<p class="mt-1 truncate text-xs text-muted">
-					{{ entry.artist_names.join(", ") || "Unknown artist" }}
-				</p>
-			</div>
+			<SharedTrackIdentity
+				:entry="entry"
+				:title="entry.title"
+				:artist-names="entry.artist_names"
+				class="playlist-identity"
+				multiline
+			/>
 			<NuxtLink
 				:to="`/profile/${entry.added_by.user_id}`"
 				class="playlist-contributor flex min-w-0 items-center gap-2 text-xs text-muted hover:text-highlighted"
@@ -181,6 +179,7 @@ function queue(entry: PlaylistEntry) {
 					compact
 					:show-counts="false"
 					:show-details="false"
+					mode="menu"
 				/>
 				<LibraryPlaylistAction
 					:track="{
@@ -218,10 +217,7 @@ function queue(entry: PlaylistEntry) {
 <style scoped>
 .playlist-entry-grid {
 	display: grid;
-	grid-template-columns: 2.5rem 3rem minmax(12rem, 1fr) minmax(8rem, 12rem) 3.5rem minmax(
-			12rem,
-			auto
-		);
+	grid-template-columns: 2.5rem minmax(12rem, 1fr) minmax(8rem, 12rem) 3.5rem minmax(12rem, auto);
 	align-items: center;
 	gap: 1rem;
 }
@@ -242,7 +238,7 @@ function queue(entry: PlaylistEntry) {
 }
 @container workspace (max-width: 760px) {
 	.playlist-entry-grid {
-		grid-template-columns: 2rem 2.75rem minmax(0, 1fr);
+		grid-template-columns: 2rem minmax(0, 1fr);
 		gap: 0.75rem;
 		padding-inline: 0;
 	}

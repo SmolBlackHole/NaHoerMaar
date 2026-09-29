@@ -459,15 +459,6 @@ onScopeDispose(library.dispose);
 									:name="playlist.name"
 									class="size-20"
 								/>
-								<UIcon
-									v-else
-									:name="
-										selectedView() === 'playlists'
-											? icons.folder
-											: icons.library
-									"
-									class="size-6 shrink-0 text-primary"
-								/>
 								<div class="min-w-0">
 									<h1 class="truncate text-2xl font-semibold text-highlighted">
 										{{

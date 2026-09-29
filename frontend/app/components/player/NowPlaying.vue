@@ -341,11 +341,9 @@ watch(loadVideo, (visible) => {
 				</button>
 			</div>
 			<div v-if="loading" class="next-track-cue" aria-hidden="true">
-				<USkeleton class="size-12! shrink-0 rounded-lg" />
-				<div class="min-w-0 flex-1 space-y-2">
-					<USkeleton class="h-4 w-full" />
-					<USkeleton class="h-3 w-16" />
-				</div>
+				<span class="next-track-label text-xs text-muted">Coming up</span>
+				<SharedTrackIdentity loading class="next-track-identity" />
+				<USkeleton class="size-4" />
 			</div>
 			<UTooltip
 				v-else-if="current"
@@ -357,19 +355,21 @@ watch(loadVideo, (visible) => {
 					<span class="next-track-label text-xs text-muted">{{
 						nextTrack ? "Coming up" : "Keep it going"
 					}}</span>
-					<PlayerTrackArtwork
+					<SharedTrackIdentity
 						v-if="nextTrack"
 						:entry="nextTrack.track"
-						class="size-12!"
-					/>
-					<span v-else class="next-track-icon"><UIcon :name="icons.plus" /></span>
-					<span class="min-w-0 text-left">
-						<span class="line-clamp-2 text-sm font-medium text-highlighted">{{
-							nextTrack ? nextTrack.track.title : "Add the next track"
-						}}</span>
-						<span v-if="nextTrack" class="mt-1 block text-xs text-muted"
-							>{{ player.state?.queue.length ?? 0 }} in queue</span
-						>
+						:title="nextTrack.track.title"
+						:metadata="`${player.state?.queue.length ?? 0} in queue`"
+						class="next-track-identity"
+						multiline
+					>
+						<template #artist><PlayerArtistLink :entry="nextTrack.track" /></template>
+					</SharedTrackIdentity>
+					<span v-else class="next-track-empty">
+						<span class="next-track-icon"><UIcon :name="icons.plus" /></span>
+						<span class="min-w-0 text-sm font-medium text-highlighted">
+							Add the next track
+						</span>
 					</span>
 					<UIcon :name="icons.arrowRight" class="size-4 shrink-0 text-muted" />
 				</button>
@@ -649,18 +649,27 @@ watch(loadVideo, (visible) => {
 }
 .next-track-cue {
 	display: grid;
-	grid-template-columns: 3rem minmax(0, 1fr) 1rem;
+	grid-template-columns: minmax(0, 1fr) 1rem;
 	align-items: center;
 	gap: 0.75rem 1rem;
 	width: 100%;
 	min-width: 0;
-	padding: 0.25rem 0 0.25rem 2rem;
+	padding: 0.25rem 0 0.25rem 1.5rem;
 	border-left: 1px solid var(--player-divider);
 	text-align: left;
 	cursor: pointer;
 }
 .next-track-label {
 	grid-column: 1 / -1;
+}
+.next-track-identity {
+	min-width: 0;
+}
+.next-track-empty {
+	display: flex;
+	min-width: 0;
+	align-items: center;
+	gap: 0.75rem;
 }
 .next-track-cue:hover .text-highlighted {
 	color: var(--ui-primary);

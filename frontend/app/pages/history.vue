@@ -112,12 +112,9 @@ onScopeDispose(playbackHistory.dispose);
 						class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(26rem,0.8fr)] lg:items-end"
 					>
 						<div>
-							<div class="flex items-center gap-3">
-								<UIcon :name="icons.clock" class="size-6 shrink-0 text-primary" />
-								<h1 class="text-2xl font-semibold text-highlighted">
-									Playback history
-								</h1>
-							</div>
+							<h1 class="text-2xl font-semibold text-highlighted">
+								Playback history
+							</h1>
 							<p class="mt-2 max-w-2xl text-sm text-muted">
 								Every confirmed start, including repeat plays and Radio picks.
 								Nothing gets folded away.
@@ -186,7 +183,7 @@ onScopeDispose(playbackHistory.dispose);
 								<USkeleton v-else class="mt-2 h-3 w-32" aria-hidden="true" />
 							</div>
 
-							<div class="flex flex-wrap items-end gap-2">
+							<div class="history-filters">
 								<label class="grid gap-1">
 									<span class="text-xs font-medium text-muted">Radio</span>
 									<USelect
@@ -194,7 +191,7 @@ onScopeDispose(playbackHistory.dispose);
 										:items="radioItems"
 										value-key="value"
 										aria-label="Filter playback history by Radio"
-										class="w-40"
+										class="history-filter-select"
 										:disabled="initialLoading"
 									/>
 								</label>
@@ -205,7 +202,7 @@ onScopeDispose(playbackHistory.dispose);
 										:items="requesterItems"
 										value-key="value"
 										aria-label="Filter playback history by requester"
-										class="w-48"
+										class="history-filter-select"
 										:disabled="initialLoading"
 									/>
 								</label>
@@ -214,7 +211,7 @@ onScopeDispose(playbackHistory.dispose);
 									label="Reset"
 									color="neutral"
 									variant="ghost"
-									class="mb-px"
+									class="history-filter-reset mb-px"
 									@click="resetFilters"
 								/>
 							</div>
@@ -349,3 +346,34 @@ onScopeDispose(playbackHistory.dispose);
 		</UDashboardPanel>
 	</div>
 </template>
+
+<style scoped>
+.history-filters {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: end;
+	gap: 0.5rem;
+}
+.history-filter-select {
+	width: 10rem;
+}
+.history-filters label:nth-child(2) .history-filter-select {
+	width: 12rem;
+}
+@container workspace (max-width: 600px) {
+	.history-filters {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+		width: 100%;
+	}
+	.history-filters label,
+	.history-filter-select {
+		width: 100% !important;
+		min-width: 0;
+	}
+	.history-filter-reset {
+		grid-column: 1 / -1;
+		justify-self: start;
+	}
+}
+</style>

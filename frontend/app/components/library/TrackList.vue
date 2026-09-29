@@ -34,7 +34,6 @@ function queue(track: LibraryTrack) {
 	<div>
 		<div class="library-columns library-grid" aria-hidden="true">
 			<span></span>
-			<span></span>
 			<span>Track</span>
 			<span>Saved</span>
 			<span>Reaction</span>
@@ -48,15 +47,9 @@ function queue(track: LibraryTrack) {
 				aria-hidden="true"
 			>
 				<USkeleton class="mx-auto size-4" />
-				<USkeleton class="library-cover rounded-lg" />
-				<div class="library-copy space-y-2">
-					<USkeleton class="h-4 w-full max-w-72" />
-					<USkeleton class="h-3 w-36" />
-				</div>
+				<SharedTrackIdentity loading class="library-identity" />
 				<USkeleton class="h-3 w-20" />
-				<div class="flex items-center gap-1">
-					<USkeleton class="h-10 w-[5.5rem] rounded-lg" />
-					<USkeleton class="h-10 w-[6.5rem] rounded-lg" />
+				<div class="library-actions flex items-center gap-1">
 					<USkeleton class="size-10 rounded-lg" />
 					<USkeleton class="size-10 rounded-lg" />
 				</div>
@@ -72,27 +65,30 @@ function queue(track: LibraryTrack) {
 				<span class="library-number text-center text-xs tabular-nums text-muted">
 					{{ String(startIndex + index + 1).padStart(2, "0") }}
 				</span>
-				<PlayerTrackArtwork :entry="track" class="library-cover" />
-				<div class="library-copy min-w-0">
-					<p class="truncate text-sm font-medium text-highlighted">{{ track.title }}</p>
-					<p class="mt-1 flex min-w-0 items-center gap-3 text-xs text-muted">
-						<span class="truncate">{{
-							track.artist_names.join(", ") || "Unknown artist"
-						}}</span>
-						<span
-							v-if="track.duration_seconds !== null"
-							class="shrink-0 tabular-nums"
-							>{{ formatDuration(track.duration_seconds) }}</span
-						>
-					</p>
-				</div>
+				<SharedTrackIdentity
+					:entry="track"
+					:title="track.title"
+					:artist-names="track.artist_names"
+					:metadata="
+						track.duration_seconds === null
+							? null
+							: formatDuration(track.duration_seconds)
+					"
+					class="library-identity"
+					multiline
+				/>
 				<time
 					:datetime="track.reacted_at"
 					class="library-saved text-xs tabular-nums text-muted"
 					>{{ reactedAt(track.reacted_at) }}</time
 				>
-				<div class="flex items-center gap-1">
-					<LibraryReactionActions :track-id="track.track_id" :title="track.title" />
+				<div class="library-actions flex items-center gap-1">
+					<LibraryReactionActions
+						:track-id="track.track_id"
+						:title="track.title"
+						mode="menu"
+						:show-details="false"
+					/>
 					<LibraryPlaylistAction
 						:track="{ track_id: track.track_id, preferred_source_id: null }"
 						:title="track.title"
@@ -118,7 +114,7 @@ function queue(track: LibraryTrack) {
 <style scoped>
 .library-grid {
 	display: grid;
-	grid-template-columns: 2.5rem 3rem minmax(12rem, 1fr) 8rem minmax(14.5rem, auto) 2.75rem;
+	grid-template-columns: 2.5rem minmax(12rem, 1fr) 8rem auto 2.75rem;
 	align-items: center;
 	gap: 1rem;
 }
@@ -140,33 +136,28 @@ function queue(track: LibraryTrack) {
 .library-row:focus-within {
 	background: var(--ui-bg-muted);
 }
-.library-cover {
-	width: 3rem;
-	height: 3rem;
-}
 @container workspace (max-width: 760px) {
 	.library-columns {
 		display: none;
 	}
 	.library-row {
-		grid-template-columns: 2rem 2.75rem minmax(0, 1fr) 2.75rem;
+		grid-template-columns: 2rem minmax(0, 1fr) 2.75rem;
 		gap: 0.75rem;
 		padding-block: 1rem;
 		padding-inline: 0;
 	}
-	.library-cover {
-		width: 2.75rem;
-		height: 2.75rem;
+	.library-identity {
+		--track-artwork-size: 2.75rem;
 	}
 	.library-saved {
 		display: none;
 	}
-	.library-row :deep(.reaction-actions) {
-		grid-column: 3 / -1;
+	.library-actions {
+		grid-column: 2 / 3;
 		justify-self: start;
 	}
 	.library-row > :last-child {
-		grid-column: 4;
+		grid-column: 3;
 		grid-row: 1;
 	}
 }

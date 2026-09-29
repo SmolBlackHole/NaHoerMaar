@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: MPL-2.0 -->
 
 <script setup lang="ts">
-import { artistNames, formatDuration, type DiscoveryEntry } from "../../core/models/catalog";
+import { formatDuration, type DiscoveryEntry } from "../../core/models/catalog";
 import type { PlayerState } from "../../core/models/player";
 
 const props = defineProps<{
@@ -66,27 +66,24 @@ function presence(trackId: string): string | null {
 				/>
 				<span class="sr-only">Select {{ item.track.title }}</span>
 			</label>
-			<PlayerTrackArtwork :entry="item.track" class="catalog-cover" />
-			<div class="catalog-copy">
-				<UTooltip :text="'Open ' + item.track.title + ' in a new tab'">
-					<a
-						:href="item.source.source_url"
-						target="_blank"
-						rel="noopener noreferrer"
-						class="catalog-title inline-block max-w-full"
-					>
-						{{ item.track.title }}
-					</a>
-				</UTooltip>
-				<p class="catalog-detail">
-					<span>{{ artistNames(item.track) }}</span>
-					<span>{{ formatDuration(item.track.duration_seconds) }}</span>
-				</p>
-				<p v-if="unavailable(item)" class="mt-1 text-xs text-muted">Track unavailable</p>
-				<p v-else-if="presence(item.track.id)" class="mt-1 text-xs text-muted">
-					{{ presence(item.track.id) }}
-				</p>
-			</div>
+			<SharedTrackIdentity
+				:entry="item.track"
+				:title="item.track.title"
+				:artist-names="item.track.artists.map(({ name }) => name)"
+				:source-url="item.source.source_url"
+				:metadata="formatDuration(item.track.duration_seconds)"
+				class="catalog-identity"
+				multiline
+			>
+				<template #note>
+					<p v-if="unavailable(item)" class="mt-0.5 text-xs text-muted">
+						Track unavailable
+					</p>
+					<p v-else-if="presence(item.track.id)" class="mt-0.5 text-xs text-muted">
+						{{ presence(item.track.id) }}
+					</p>
+				</template>
+			</SharedTrackIdentity>
 			<template v-if="!selectable">
 				<LibraryReactionActions
 					:track-id="item.track.id"
@@ -132,14 +129,7 @@ function presence(trackId: string): string | null {
 			aria-hidden="true"
 		>
 			<div v-if="selectable" class="catalog-select"><USkeleton class="size-4" /></div>
-			<USkeleton class="catalog-cover rounded-md" />
-			<div class="catalog-copy">
-				<USkeleton class="h-4 w-3/4" />
-				<div class="catalog-detail">
-					<USkeleton class="h-3 w-1/3" />
-					<USkeleton class="h-3 w-8" />
-				</div>
-			</div>
+			<SharedTrackIdentity loading class="catalog-identity" />
 			<div v-if="!selectable" class="flex shrink-0 items-center gap-1">
 				<USkeleton class="size-10 rounded-lg" />
 				<USkeleton class="size-10 rounded-lg" />
@@ -173,46 +163,9 @@ function presence(trackId: string): string | null {
 .catalog-row:focus-within {
 	background: var(--ui-bg-muted);
 }
-.catalog-copy {
+.catalog-identity {
 	min-width: 0;
 	flex: 1;
-}
-.catalog-cover {
-	width: 3rem;
-	height: 3rem;
-	flex-shrink: 0;
-}
-.catalog-title {
-	display: inline-block;
-	max-width: 100%;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-	color: var(--ui-text-highlighted);
-	font-weight: 500;
-	font-size: 0.875rem;
-}
-a.catalog-title:hover {
-	text-decoration: underline;
-	text-underline-offset: 3px;
-}
-.catalog-detail {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: baseline;
-	gap: 0.375rem 1rem;
-	margin-top: 0.25rem;
-	font-size: 0.75rem;
-	color: var(--ui-text-muted);
-}
-.catalog-detail :first-child {
-	min-width: 0;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-.catalog-detail span {
-	font-variant-numeric: tabular-nums;
 }
 .catalog-select {
 	display: grid;
@@ -231,10 +184,10 @@ a.catalog-title:hover {
 .catalog-select:has(input:disabled) {
 	cursor: default;
 }
-.is-unavailable .catalog-title {
+.is-unavailable .catalog-identity {
 	color: var(--ui-text-muted);
 }
-.is-unavailable .catalog-cover {
+.is-unavailable .catalog-identity :deep(.track-identity__artwork) {
 	filter: grayscale(1);
 }
 @media (prefers-reduced-motion: reduce) {
@@ -247,17 +200,8 @@ a.catalog-title:hover {
 		gap: 0.625rem;
 		padding-inline: 0;
 	}
-	.catalog-title {
-		display: -webkit-box;
-		-webkit-box-orient: vertical;
-		-webkit-line-clamp: 2;
-		line-clamp: 2;
-		white-space: normal;
-		overflow-wrap: anywhere;
-	}
-	.catalog-cover {
-		width: 2.75rem;
-		height: 2.75rem;
+	.catalog-identity {
+		--track-artwork-size: 2.75rem;
 	}
 }
 </style>

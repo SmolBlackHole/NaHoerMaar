@@ -98,11 +98,7 @@ watch(
 				aria-hidden="true"
 			>
 				<USkeleton v-if="selectable" class="recent-select size-4" />
-				<USkeleton class="recent-cover size-12 shrink-0 rounded-lg" />
-				<div class="recent-track min-w-0 flex-1 basis-32 space-y-2">
-					<USkeleton class="h-4 w-full max-w-72" />
-					<USkeleton class="h-3 w-32" />
-				</div>
+				<SharedTrackIdentity loading class="recent-track" />
 				<div class="recent-contributor flex min-w-0 items-center gap-2">
 					<USkeleton class="size-6 shrink-0 rounded-full" />
 					<USkeleton class="h-3 w-20" />
@@ -142,44 +138,22 @@ watch(
 					/>
 					<span class="sr-only">Select {{ item.title }}</span>
 				</label>
-				<PlayerTrackArtwork
+				<SharedTrackIdentity
 					:entry="{ artwork_url: item.artwork_url }"
-					class="recent-cover"
-				/>
-				<div class="recent-track min-w-0 flex-1 basis-32">
-					<UTooltip v-if="item.source_url" :text="`Open ${item.title} in a new tab`">
-						<a
-							:href="item.source_url"
-							target="_blank"
-							rel="noopener noreferrer"
-							class="recent-title inline-block max-w-full truncate text-sm font-medium text-highlighted hover:underline"
-						>
-							{{ item.title }}
-						</a>
-					</UTooltip>
-					<p
-						v-else
-						class="recent-title block truncate text-sm font-medium text-highlighted"
-					>
-						{{ item.title }}
-					</p>
-					<p class="recent-details mt-1 flex items-center gap-3 text-xs text-muted">
-						<a
-							v-if="artistUrl(item)"
-							:href="artistUrl(item)!"
-							target="_blank"
-							rel="noopener noreferrer"
-							class="truncate hover:text-highlighted hover:underline"
-						>
-							{{ item.artist_names.join(", ") }}
-						</a>
-						<span v-else class="truncate">Unknown artist</span>
+					:title="item.title"
+					:artist-names="item.artist_names"
+					:source-url="item.source_url"
+					:artist-url="artistUrl(item)"
+					class="recent-track"
+					multiline
+				>
+					<template #metadata>
 						<span class="recent-mobile-duration shrink-0 tabular-nums">
 							{{ formatTime(item.duration_seconds) }}
 						</span>
 						<span class="recent-mobile-state shrink-0">{{ endState(item) }}</span>
-					</p>
-				</div>
+					</template>
+				</SharedTrackIdentity>
 				<div v-if="item.contributor" class="recent-contributor min-w-0">
 					<PlayerContributor
 						:contributor="item.contributor"
@@ -236,7 +210,7 @@ watch(
 <style scoped>
 .recent-columns {
 	display: grid;
-	grid-template-columns: 3rem minmax(14rem, 1fr) minmax(8rem, 12rem) 3rem 9rem 10.5rem;
+	grid-template-columns: minmax(14rem, 1fr) minmax(8rem, 12rem) 3rem 9rem 10.5rem;
 	gap: 1rem;
 	align-items: center;
 	padding: 0 0.75rem 0.75rem;
@@ -247,13 +221,13 @@ watch(
 	color: var(--ui-text-dimmed);
 }
 .recent-column-track {
-	grid-column: 1 / 3;
+	grid-column: 1;
 }
 .recent-columns--selectable {
-	grid-template-columns: 2.5rem 3rem minmax(14rem, 1fr) minmax(8rem, 12rem) 3rem 9rem 10.5rem;
+	grid-template-columns: 2.5rem minmax(14rem, 1fr) minmax(8rem, 12rem) 3rem 9rem 10.5rem;
 }
 .recent-columns--selectable .recent-column-track {
-	grid-column: 2 / 4;
+	grid-column: 2;
 }
 .recent-row {
 	padding-inline-start: 0.75rem;
@@ -262,11 +236,11 @@ watch(
 }
 .recent-list--history .recent-row {
 	display: grid;
-	grid-template-columns: 3rem minmax(14rem, 1fr) minmax(8rem, 12rem) 3rem 9rem 10.5rem;
+	grid-template-columns: minmax(14rem, 1fr) minmax(8rem, 12rem) 3rem 9rem 10.5rem;
 	gap: 1rem;
 }
 .recent-list--history.recent-list--selectable .recent-row {
-	grid-template-columns: 2.5rem 3rem minmax(14rem, 1fr) minmax(8rem, 12rem) 3rem 9rem 10.5rem;
+	grid-template-columns: 2.5rem minmax(14rem, 1fr) minmax(8rem, 12rem) 3rem 9rem 10.5rem;
 }
 .recent-select input {
 	width: 1rem;
@@ -296,39 +270,35 @@ watch(
 	}
 	.recent-list--history .recent-row {
 		display: grid;
-		grid-template-columns: 2.75rem minmax(0, 1fr) auto;
+		grid-template-columns: minmax(0, 1fr) auto;
 		gap: 0.75rem;
 	}
 	.recent-list--history.recent-list--selectable .recent-row {
-		grid-template-columns: 2rem 2.75rem minmax(0, 1fr) auto;
+		grid-template-columns: 2rem minmax(0, 1fr) auto;
 	}
 	.recent-row {
 		display: grid;
-		grid-template-columns: 2.75rem minmax(0, 1fr) auto;
+		grid-template-columns: minmax(0, 1fr) auto;
 		gap: 0.75rem;
 		align-items: start;
 		padding-block: 1rem;
 	}
-	.recent-cover {
-		width: 2.75rem;
-		height: 2.75rem;
+	.recent-track {
+		--track-artwork-size: 2.75rem;
 	}
 	.recent-select {
 		grid-column: 1;
 		grid-row: 1;
 		align-self: start;
 	}
-	.recent-list--selectable .recent-cover {
+	.recent-list--selectable .recent-track {
 		grid-column: 2;
 	}
-	.recent-list--selectable .recent-track {
-		grid-column: 3 / 5;
-	}
 	.recent-list--selectable .recent-contributor {
-		grid-column: 2 / 4;
+		grid-column: 2;
 	}
 	.recent-list--selectable .recent-actions {
-		grid-column: 4;
+		grid-column: 3;
 	}
 	.recent-title {
 		display: -webkit-box;
@@ -339,22 +309,17 @@ watch(
 		overflow-wrap: anywhere;
 	}
 	.recent-actions {
-		grid-column: 3;
+		grid-column: 2;
 		grid-row: 2;
 		align-self: center;
 	}
 	.recent-track {
-		grid-column: 2 / 4;
+		grid-column: 1;
 	}
 	.recent-contributor {
-		grid-column: 1 / 3;
+		grid-column: 1;
 		grid-row: 2;
 		overflow: hidden;
-	}
-	.recent-details {
-		flex-wrap: wrap;
-		gap: 0.25rem 0.75rem;
-		margin-top: 0.375rem;
 	}
 	.recent-mobile-duration {
 		display: inline;
@@ -377,7 +342,7 @@ watch(
 	}
 	.recent-list--history.recent-list--selectable .recent-row {
 		display: grid;
-		grid-template-columns: 2.5rem 3rem minmax(8rem, 1fr) minmax(8rem, 12rem) auto;
+		grid-template-columns: 2.5rem minmax(8rem, 1fr) minmax(8rem, 12rem) auto;
 	}
 	.recent-list--history .recent-track {
 		flex: 1 1 8rem;

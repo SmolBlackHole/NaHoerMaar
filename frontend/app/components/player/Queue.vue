@@ -351,17 +351,13 @@ function formatWait(seconds: number) {
 			aria-busy="true"
 		>
 			<div class="queue-columns queue-grid text-xs text-muted" aria-hidden="true">
-				<span /><span /><span>Track</span><span>Requested by</span><span>Duration</span
+				<span /><span>Track</span><span>Requested by</span><span>Duration</span
 				><span /><span />
 			</div>
 			<ol class="queue-list" aria-hidden="true">
 				<li v-for="row in 3" :key="row" class="queue-row queue-grid">
 					<USkeleton class="queue-handle mx-auto size-4" />
-					<USkeleton class="queue-cover rounded-md" />
-					<div class="queue-title min-w-0 space-y-2">
-						<USkeleton class="h-4 w-full max-w-72" />
-						<USkeleton class="h-3 w-32" />
-					</div>
+					<SharedTrackIdentity loading class="queue-identity" />
 					<div class="queue-details">
 						<USkeleton class="queue-person h-5 w-28 max-w-full" />
 						<div class="queue-timing space-y-2 text-right">
@@ -380,7 +376,7 @@ function formatWait(seconds: number) {
 		</div>
 		<template v-else-if="queue.length">
 			<div class="queue-columns queue-grid text-xs text-muted" aria-hidden="true">
-				<span /><span /><span>Track</span><span>Requested by</span><span>Duration</span
+				<span /><span>Track</span><span>Requested by</span><span>Duration</span
 				><span /><span />
 			</div>
 			<ol ref="list" aria-label="Upcoming tracks" class="queue-list">
@@ -411,22 +407,17 @@ function formatWait(seconds: number) {
 						</span>
 						<UIcon :name="icons.drag" class="queue-grip absolute size-4" />
 					</button>
-					<PlayerTrackArtwork :entry="entry.request.track" class="queue-cover" />
-					<div class="queue-title min-w-0">
-						<UTooltip :text="`Open ${entry.request.track.title} in a new tab`">
-							<a
-								:href="trackSource(entry.request)?.source_url"
-								target="_blank"
-								rel="noopener noreferrer"
-								class="block truncate text-sm font-medium text-highlighted hover:underline"
-							>
-								{{ entry.request.track.title }}
-							</a>
-						</UTooltip>
-						<p class="mt-1 truncate text-xs text-muted">
+					<SharedTrackIdentity
+						:entry="entry.request.track"
+						:title="entry.request.track.title"
+						:source-url="trackSource(entry.request)?.source_url"
+						class="queue-identity"
+						multiline
+					>
+						<template #artist>
 							<PlayerArtistLink :entry="entry.request.track" />
-						</p>
-					</div>
+						</template>
+					</SharedTrackIdentity>
 					<div class="queue-details">
 						<PlayerContributor
 							:contributor="entry.request.contributor"
@@ -617,7 +608,7 @@ function formatWait(seconds: number) {
 }
 .queue-grid {
 	display: grid;
-	grid-template-columns: 2.75rem 3rem minmax(0, 1fr) 10rem 6rem 7.75rem 2.75rem;
+	grid-template-columns: 2.75rem minmax(0, 1fr) 10rem 6rem 7.75rem 2.75rem;
 	align-items: center;
 	column-gap: 1rem;
 	padding-inline: 0.5rem;
@@ -625,7 +616,7 @@ function formatWait(seconds: number) {
 .queue-columns {
 	padding-block: 0.75rem;
 }
-.queue-columns > :nth-child(5),
+.queue-columns > :nth-child(4),
 .queue-timing {
 	text-align: right;
 }
@@ -706,7 +697,7 @@ function formatWait(seconds: number) {
 }
 @container workspace (max-width: 1000px) {
 	.queue-grid {
-		grid-template-columns: 2.75rem 3rem minmax(0, 1fr) 7.5rem 5rem 7.75rem 2.75rem;
+		grid-template-columns: 2.75rem minmax(0, 1fr) 7.5rem 5rem 7.75rem 2.75rem;
 		column-gap: 0.75rem;
 	}
 }
@@ -716,7 +707,7 @@ function formatWait(seconds: number) {
 		gap: 0.125rem 0.75rem;
 	}
 	.queue-grid {
-		grid-template-columns: 2.75rem 2.75rem minmax(0, 1fr) 2.75rem;
+		grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem;
 		gap: 0.5rem;
 		padding-inline: 0;
 	}
@@ -737,24 +728,10 @@ function formatWait(seconds: number) {
 		grid-row: 1;
 		align-self: start;
 	}
-	.queue-cover {
-		grid-column: 2;
+	.queue-identity {
+		grid-column: 2 / -1;
 		grid-row: 1;
-		align-self: start;
-		width: 2.75rem;
-		height: 2.75rem;
-	}
-	.queue-title {
-		grid-column: 3 / -1;
-		grid-row: 1;
-	}
-	.queue-title > a {
-		display: -webkit-box;
-		-webkit-box-orient: vertical;
-		-webkit-line-clamp: 2;
-		line-clamp: 2;
-		white-space: normal;
-		overflow-wrap: anywhere;
+		--track-artwork-size: 2.75rem;
 	}
 	.queue-details {
 		grid-column: 2 / -1;
@@ -780,12 +757,12 @@ function formatWait(seconds: number) {
 		font-size: inherit;
 	}
 	.queue-actions {
-		grid-column: 3;
+		grid-column: 2;
 		grid-row: 3;
 		justify-self: end;
 	}
 	.queue-menu {
-		grid-column: 4;
+		grid-column: 3;
 		grid-row: 3;
 	}
 }
