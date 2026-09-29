@@ -35,7 +35,7 @@ const { icons } = useTheme();
 					<LibraryPlaylistCover
 						:artwork-urls="playlist.artwork_urls"
 						:name="playlist.name"
-						class="aspect-square w-full rounded-2xl"
+						class="playlist-card-cover aspect-square w-full rounded-2xl"
 					/>
 					<span
 						class="absolute bottom-3 right-3 grid size-10 place-items-center rounded-full bg-primary text-inverted opacity-0 shadow-lg transition-all duration-200 group-hover:opacity-100 group-focus-visible:opacity-100"
@@ -63,19 +63,30 @@ const { icons } = useTheme();
 }
 .playlist-card {
 	min-width: 0;
+	border: 1px solid transparent;
 	border-radius: 1rem;
-	transition: transform 180ms ease-out;
+	padding: 0.5rem;
+	transition: border-color 180ms ease-out;
 }
 .playlist-card:hover,
 .playlist-card:focus-visible {
-	transform: translateY(-2px);
+	border-color: color-mix(in srgb, var(--ui-primary) 55%, var(--ui-border));
 }
 .playlist-card:focus-visible {
 	outline: 2px solid var(--ui-primary);
 	outline-offset: 0.35rem;
 }
+.playlist-card-cover {
+	filter: saturate(0.68);
+	transition: filter 180ms ease-out;
+}
+.playlist-card:hover .playlist-card-cover,
+.playlist-card:focus-visible .playlist-card-cover {
+	filter: saturate(1);
+}
 @media (prefers-reduced-motion: reduce) {
-	.playlist-card {
+	.playlist-card,
+	.playlist-card-cover {
 		transition: none;
 	}
 }

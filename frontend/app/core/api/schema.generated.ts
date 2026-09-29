@@ -347,8 +347,26 @@ export interface paths {
         delete: operations["deleteLibraryPlaylist"];
         options?: never;
         head?: never;
-        /** Rename Playlist */
-        patch: operations["renameLibraryPlaylist"];
+        /** Update Playlist */
+        patch: operations["updateLibraryPlaylist"];
+        trace?: never;
+    };
+    "/api/library/playlists/{playlist_id}/collaborators/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Add Playlist Collaborator */
+        put: operations["addLibraryPlaylistCollaborator"];
+        post?: never;
+        /** Delete Playlist Collaborator */
+        delete: operations["deleteLibraryPlaylistCollaborator"];
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/library/playlists/{playlist_id}/duplicate": {
@@ -2047,6 +2065,11 @@ export interface components {
             /** Volume */
             volume: number;
         };
+        /**
+         * PlaylistAccess
+         * @enum {string}
+         */
+        PlaylistAccess: "owner" | "editor" | "reader";
         /** PlaylistCreateInput */
         PlaylistCreateInput: {
             /** Name */
@@ -2155,18 +2178,16 @@ export interface components {
             /** Total */
             total: number;
         };
-        /** PlaylistRenameInput */
-        PlaylistRenameInput: {
-            /** Expected Revision */
-            expected_revision: number;
-            /** Name */
-            name: string;
-        };
         /** PlaylistRevisionInput */
         PlaylistRevisionInput: {
             /** Expected Revision */
             expected_revision: number;
         };
+        /**
+         * PlaylistScope
+         * @enum {string}
+         */
+        PlaylistScope: "owned" | "shared" | "public";
         /** PlaylistTrackInput */
         PlaylistTrackInput: {
             /** Preferred Source Id */
@@ -2177,8 +2198,17 @@ export interface components {
              */
             track_id: string;
         };
+        /** PlaylistUpdateInput */
+        PlaylistUpdateInput: {
+            /** Expected Revision */
+            expected_revision: number;
+            /** Name */
+            name?: string | null;
+            visibility?: components["schemas"]["PlaylistVisibility"] | null;
+        };
         /** PlaylistView */
         PlaylistView: {
+            access: components["schemas"]["PlaylistAccess"];
             /** Artwork Urls */
             artwork_urls: string[];
             /**
@@ -2203,7 +2233,13 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+            visibility: components["schemas"]["PlaylistVisibility"];
         };
+        /**
+         * PlaylistVisibility
+         * @enum {string}
+         */
+        PlaylistVisibility: "private" | "collaborators" | "public";
         /**
          * PrimaryColor
          * @enum {string}
@@ -4063,6 +4099,7 @@ export interface operations {
                 page?: number;
                 page_size?: number;
                 q?: string | null;
+                scope?: components["schemas"]["PlaylistScope"];
                 snapshot?: string | null;
             };
             header?: never;
@@ -4278,6 +4315,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Request not allowed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Resource not found */
             404: {
                 headers: {
@@ -4325,7 +4371,7 @@ export interface operations {
             };
         };
     };
-    renameLibraryPlaylist: {
+    updateLibraryPlaylist: {
         parameters: {
             query?: never;
             header?: never;
@@ -4336,7 +4382,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["PlaylistRenameInput"];
+                "application/json": components["schemas"]["PlaylistUpdateInput"];
             };
         };
         responses: {
@@ -4351,6 +4397,195 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Request not allowed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description State conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Dependency unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+        };
+    };
+    addLibraryPlaylistCollaborator: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playlist_id: string;
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlaylistRevisionInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaylistView"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Request not allowed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description State conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Dependency unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+        };
+    };
+    deleteLibraryPlaylistCollaborator: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playlist_id: string;
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlaylistRevisionInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaylistView"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Request not allowed */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4431,6 +4666,15 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Request not allowed */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4519,6 +4763,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Request not allowed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Resource not found */
             404: {
                 headers: {
@@ -4592,6 +4845,15 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Request not allowed */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4680,6 +4942,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorView"];
                 };
             };
+            /** @description Request not allowed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
             /** @description Resource not found */
             404: {
                 headers: {
@@ -4753,6 +5024,15 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Request not allowed */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

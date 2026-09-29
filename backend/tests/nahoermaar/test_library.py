@@ -29,7 +29,10 @@ from nahoermaar.database.uow import UnitOfWork
 from nahoermaar.library.domain import (
     LibraryError,
     LibraryErrorCode,
+    PlaylistAccess,
+    PlaylistScope,
     PlaylistTrackSelection,
+    PlaylistVisibility,
     ReactionValue,
 )
 from nahoermaar.library.read_model import LibraryReadModel
@@ -289,11 +292,12 @@ def test_personal_playlists_preserve_order_revisions_and_catalog_references() ->
         playlist = await library.create_playlist(owner, "Road test")
         assert playlist.revision == 0
         clock[0] += timedelta(minutes=1)
-        playlist = await library.rename_playlist(
+        playlist = await library.update_playlist(
             owner,
             playlist.playlist_id,
-            "Road favourites",
-            playlist.revision,
+            name="Road favourites",
+            visibility=None,
+            expected_revision=playlist.revision,
         )
         selections = (
             PlaylistTrackSelection(tracks[0].id, tracks[0].sources[0].id),
@@ -506,6 +510,245 @@ def test_personal_playlists_preserve_order_revisions_and_catalog_references() ->
             )
         assert duplicate_entries == 0
         assert catalog_tracks >= len(tracks)
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        asyncio.run(database.close())
+
+
+def test_playlist_visibility_collaboration_and_scopes_enforce_capabilities() -> None:
+    database = _database()
+
+    async def scenario() -> None:
+        def units() -> UnitOfWork:
+            return UnitOfWork(database.sessions)
+
+        owner = UserId(uuid4())
+        editor = UserId(uuid4())
+        reader = UserId(uuid4())
+        stranger = UserId(uuid4())
+        async with units() as work:
+            await _add_user(work, owner, "201", "Owner")
+            await _add_user(work, editor, "202", "Editor")
+            await _add_user(work, reader, "203", "Reader")
+            await _add_user(work, stranger, "204", "Stranger")
+            track = await CatalogRepository(work.session).upsert(
+                _track(201, "Shared Song", "Collaboration"), NOW
+            )
+            await work.commit()
+
+        clock = [NOW]
+        library = LibraryService(
+            units,
+            CatalogService(units, ()),
+            LibraryReadModel(units),
+            clock=lambda: clock[0],
+        )
+
+        playlist = await library.create_playlist(owner, "Shared later")
+        assert playlist.visibility is PlaylistVisibility.PRIVATE
+        assert playlist.access is PlaylistAccess.OWNER
+        assert (await library.playlists(owner, page=1, page_size=20)).total == 1
+        assert (
+            await library.playlists(
+                editor,
+                scope=PlaylistScope.SHARED,
+                page=1,
+                page_size=20,
+            )
+        ).total == 0
+
+        clock[0] += timedelta(minutes=1)
+        playlist = await library.add_playlist_collaborator(
+            owner,
+            playlist.playlist_id,
+            editor,
+            expected_revision=playlist.revision,
+        )
+        assert playlist.revision == 1
+        with pytest.raises(LibraryError) as duplicate:
+            await library.add_playlist_collaborator(
+                owner,
+                playlist.playlist_id,
+                editor,
+                expected_revision=playlist.revision,
+            )
+        assert duplicate.value.code is LibraryErrorCode.PLAYLIST_COLLABORATOR_EXISTS
+        assert (await library.playlist(owner, playlist.playlist_id)).revision == 1
+
+        clock[0] += timedelta(minutes=1)
+        playlist = await library.update_playlist(
+            owner,
+            playlist.playlist_id,
+            name=None,
+            visibility=PlaylistVisibility.COLLABORATORS,
+            expected_revision=playlist.revision,
+        )
+        editor_view = await library.playlist(editor, playlist.playlist_id)
+        assert editor_view.access is PlaylistAccess.EDITOR
+        shared = await library.playlists(
+            editor,
+            scope=PlaylistScope.SHARED,
+            page=1,
+            page_size=20,
+        )
+        assert tuple(item.playlist_id for item in shared.entries) == (
+            playlist.playlist_id,
+        )
+        with pytest.raises(LibraryError) as hidden:
+            await library.playlist(stranger, playlist.playlist_id)
+        assert hidden.value.code is LibraryErrorCode.PLAYLIST_NOT_FOUND
+        hidden_page = await library.playlists(
+            stranger,
+            scope=PlaylistScope.PUBLIC,
+            page=1,
+            page_size=1,
+            query="Shared later",
+        )
+        assert hidden_page.total == 0
+        assert hidden_page.page_count == 0
+        assert hidden_page.entries == ()
+
+        clock[0] += timedelta(minutes=1)
+        playlist = await library.add_playlist_entries(
+            editor,
+            playlist.playlist_id,
+            (PlaylistTrackSelection(track.id, track.sources[0].id),),
+            playlist.revision,
+        )
+        entries = await library.playlist_entries(
+            owner,
+            playlist.playlist_id,
+            page=1,
+            page_size=20,
+            revision=playlist.revision,
+        )
+        assert entries.entries[0].added_by.user_id == editor
+        with pytest.raises(LibraryError) as editor_management:
+            await library.update_playlist(
+                editor,
+                playlist.playlist_id,
+                name="Editor rename",
+                visibility=None,
+                expected_revision=playlist.revision,
+            )
+        assert editor_management.value.code is LibraryErrorCode.PLAYLIST_ACCESS_DENIED
+        assert (
+            await library.playlist(owner, playlist.playlist_id)
+        ).name == "Shared later"
+
+        clock[0] += timedelta(minutes=1)
+        playlist = await library.update_playlist(
+            owner,
+            playlist.playlist_id,
+            name=None,
+            visibility=PlaylistVisibility.PUBLIC,
+            expected_revision=playlist.revision,
+        )
+        reader_view = await library.playlist(reader, playlist.playlist_id)
+        assert reader_view.access is PlaylistAccess.READER
+        public = await library.playlists(
+            stranger,
+            scope=PlaylistScope.PUBLIC,
+            page=1,
+            page_size=20,
+        )
+        assert tuple(item.playlist_id for item in public.entries) == (
+            playlist.playlist_id,
+        )
+        assert (
+            len(
+                await library.playlist_selections(
+                    reader,
+                    playlist.playlist_id,
+                    expected_revision=playlist.revision,
+                )
+            )
+            == 1
+        )
+        with pytest.raises(LibraryError) as reader_write:
+            await library.add_playlist_entries(
+                reader,
+                playlist.playlist_id,
+                (PlaylistTrackSelection(track.id),),
+                playlist.revision,
+            )
+        assert reader_write.value.code is LibraryErrorCode.PLAYLIST_ACCESS_DENIED
+        assert (await library.playlist(owner, playlist.playlist_id)).revision == 4
+
+        clock[0] += timedelta(minutes=1)
+        playlist = await library.remove_playlist_collaborator(
+            owner,
+            playlist.playlist_id,
+            editor,
+            expected_revision=playlist.revision,
+        )
+        assert (
+            await library.playlist(editor, playlist.playlist_id)
+        ).access is PlaylistAccess.READER
+        with pytest.raises(LibraryError) as revoked_write:
+            await library.remove_playlist_entry(
+                editor,
+                playlist.playlist_id,
+                entries.entries[0].entry_id,
+                playlist.revision,
+            )
+        assert revoked_write.value.code is LibraryErrorCode.PLAYLIST_ACCESS_DENIED
+
+        clock[0] += timedelta(minutes=1)
+        playlist = await library.update_playlist(
+            owner,
+            playlist.playlist_id,
+            name=None,
+            visibility=PlaylistVisibility.COLLABORATORS,
+            expected_revision=playlist.revision,
+        )
+        with pytest.raises(LibraryError) as revoked_hidden:
+            await library.playlist(editor, playlist.playlist_id)
+        assert revoked_hidden.value.code is LibraryErrorCode.PLAYLIST_NOT_FOUND
+        assert (
+            await library.playlists(
+                editor,
+                scope=PlaylistScope.SHARED,
+                page=1,
+                page_size=1,
+                query="Shared later",
+            )
+        ).total == 0
+        with pytest.raises(LibraryError) as stale_grant:
+            await library.add_playlist_collaborator(
+                owner,
+                playlist.playlist_id,
+                editor,
+                expected_revision=playlist.revision - 1,
+            )
+        assert stale_grant.value.code is LibraryErrorCode.PLAYLIST_REVISION_CONFLICT
+        assert (await library.playlist(owner, playlist.playlist_id)).revision == 6
+
+        with pytest.raises(LibraryError) as owner_collaborator:
+            await library.add_playlist_collaborator(
+                owner,
+                playlist.playlist_id,
+                owner,
+                expected_revision=playlist.revision,
+            )
+        assert (
+            owner_collaborator.value.code
+            is LibraryErrorCode.PLAYLIST_COLLABORATOR_INVALID
+        )
+        assert (await library.playlist(owner, playlist.playlist_id)).revision == 6
+
+        missing_user = UserId(uuid4())
+        with pytest.raises(LibraryError) as missing:
+            await library.add_playlist_collaborator(
+                owner,
+                playlist.playlist_id,
+                missing_user,
+                expected_revision=playlist.revision,
+            )
+        assert missing.value.code is LibraryErrorCode.USER_NOT_FOUND
+        assert (await library.playlist(owner, playlist.playlist_id)).revision == 6
 
     try:
         asyncio.run(scenario())

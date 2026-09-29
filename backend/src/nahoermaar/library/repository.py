@@ -30,9 +30,11 @@ from .domain import (
     LibraryError,
     LibraryErrorCode,
     Playlist,
+    PlaylistAccess,
     PlaylistEntryId,
     PlaylistId,
     PlaylistTrackSelection,
+    PlaylistVisibility,
     ReactionValue,
     TrackReaction,
 )
@@ -41,6 +43,15 @@ from .domain import (
 _REACTION = SqlEnum(
     ReactionValue,
     name="track_reaction_value",
+    native_enum=False,
+    create_constraint=True,
+    validate_strings=True,
+    values_callable=enum_values,
+)
+
+_VISIBILITY = SqlEnum(
+    PlaylistVisibility,
+    name="playlist_visibility",
     native_enum=False,
     create_constraint=True,
     validate_strings=True,
@@ -83,6 +94,7 @@ class _PlaylistRow(Base):
         ),
         CheckConstraint("updated_at >= created_at", name="update_not_before_creation"),
         Index("ix_playlists_owner_updated_id", "owner_id", "updated_at", "id"),
+        Index("ix_playlists_visibility_updated_id", "visibility", "updated_at", "id"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
@@ -90,6 +102,7 @@ class _PlaylistRow(Base):
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
+    visibility: Mapped[PlaylistVisibility] = mapped_column(_VISIBILITY)
     revision: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -123,6 +136,24 @@ class _PlaylistEntryRow(Base):
     )
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class _PlaylistCollaboratorRow(Base):
+    __tablename__ = "playlist_collaborators"
+    __table_args__ = (
+        Index("ix_playlist_collaborators_user_playlist", "user_id", "playlist_id"),
+    )
+
+    playlist_id: Mapped[UUID] = mapped_column(
+        ForeignKey("playlists.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    granted_by: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class TrackReactionRepository:
@@ -189,7 +220,7 @@ class TrackReactionRepository:
 
 
 class PlaylistRepository:
-    """Write personal playlists inside an existing transaction."""
+    """Write playlists through transactional capability checks."""
 
     __slots__ = ("_session",)
 
@@ -206,6 +237,7 @@ class PlaylistRepository:
             id=uuid4(),
             owner_id=owner_id,
             name=name,
+            visibility=PlaylistVisibility.PRIVATE,
             revision=0,
             created_at=now,
             updated_at=now,
@@ -216,40 +248,55 @@ class PlaylistRepository:
 
     async def get(
         self,
-        owner_id: UserId,
+        actor_id: UserId,
         playlist_id: PlaylistId,
     ) -> Playlist:
-        return _playlist(await self._owned(owner_id, playlist_id))
+        row, _access = await self._authorized(
+            actor_id,
+            playlist_id,
+            allowed=frozenset(PlaylistAccess),
+        )
+        return _playlist(row)
 
-    async def rename(
+    async def update(
         self,
-        owner_id: UserId,
+        actor_id: UserId,
         playlist_id: PlaylistId,
-        name: str,
+        *,
+        name: str | None,
+        visibility: PlaylistVisibility | None,
         expected_revision: int,
         now: datetime,
     ) -> Playlist:
-        row = await self._owned(
-            owner_id,
+        row, _access = await self._authorized(
+            actor_id,
             playlist_id,
+            allowed=frozenset({PlaylistAccess.OWNER}),
             expected_revision=expected_revision,
             for_update=True,
         )
-        if row.name != name:
+        changed = False
+        if name is not None and row.name != name:
             row.name = name
+            changed = True
+        if visibility is not None and row.visibility is not visibility:
+            row.visibility = visibility
+            changed = True
+        if changed:
             self._touch(row, now)
             await self._session.flush()
         return _playlist(row)
 
     async def delete(
         self,
-        owner_id: UserId,
+        actor_id: UserId,
         playlist_id: PlaylistId,
         expected_revision: int,
     ) -> Playlist:
-        row = await self._owned(
-            owner_id,
+        row, _access = await self._authorized(
+            actor_id,
             playlist_id,
+            allowed=frozenset({PlaylistAccess.OWNER}),
             expected_revision=expected_revision,
             for_update=True,
         )
@@ -260,20 +307,21 @@ class PlaylistRepository:
 
     async def duplicate(
         self,
-        owner_id: UserId,
+        actor_id: UserId,
         playlist_id: PlaylistId,
         name: str,
         expected_revision: int,
         now: datetime,
     ) -> Playlist:
-        await self._owned(
-            owner_id,
+        await self._authorized(
+            actor_id,
             playlist_id,
+            allowed=frozenset({PlaylistAccess.OWNER}),
             expected_revision=expected_revision,
             for_update=True,
         )
         source_entries = await self._entry_rows(playlist_id, for_update=True)
-        duplicate = await self.create(owner_id, name, now)
+        duplicate = await self.create(actor_id, name, now)
         self._session.add_all(
             [
                 _PlaylistEntryRow(
@@ -293,16 +341,17 @@ class PlaylistRepository:
 
     async def add(
         self,
-        owner_id: UserId,
+        actor_id: UserId,
         playlist_id: PlaylistId,
         selections: tuple[PlaylistTrackSelection, ...],
         added_by: UserId,
         expected_revision: int,
         now: datetime,
     ) -> Playlist:
-        row = await self._owned(
-            owner_id,
+        row, _access = await self._authorized(
+            actor_id,
             playlist_id,
+            allowed=frozenset({PlaylistAccess.OWNER, PlaylistAccess.EDITOR}),
             expected_revision=expected_revision,
             for_update=True,
         )
@@ -330,15 +379,16 @@ class PlaylistRepository:
 
     async def remove(
         self,
-        owner_id: UserId,
+        actor_id: UserId,
         playlist_id: PlaylistId,
         entry_id: PlaylistEntryId,
         expected_revision: int,
         now: datetime,
     ) -> Playlist:
-        row = await self._owned(
-            owner_id,
+        row, _access = await self._authorized(
+            actor_id,
             playlist_id,
+            allowed=frozenset({PlaylistAccess.OWNER, PlaylistAccess.EDITOR}),
             expected_revision=expected_revision,
             for_update=True,
         )
@@ -356,15 +406,16 @@ class PlaylistRepository:
 
     async def reorder(
         self,
-        owner_id: UserId,
+        actor_id: UserId,
         playlist_id: PlaylistId,
         entry_ids: tuple[PlaylistEntryId, ...],
         expected_revision: int,
         now: datetime,
     ) -> Playlist:
-        row = await self._owned(
-            owner_id,
+        row, _access = await self._authorized(
+            actor_id,
             playlist_id,
+            allowed=frozenset({PlaylistAccess.OWNER, PlaylistAccess.EDITOR}),
             expected_revision=expected_revision,
             for_update=True,
         )
@@ -381,14 +432,15 @@ class PlaylistRepository:
 
     async def selections(
         self,
-        owner_id: UserId,
+        actor_id: UserId,
         playlist_id: PlaylistId,
         *,
         expected_revision: int | None = None,
     ) -> tuple[PlaylistTrackSelection, ...]:
-        await self._owned(
-            owner_id,
+        await self._authorized(
+            actor_id,
             playlist_id,
+            allowed=frozenset(PlaylistAccess),
             expected_revision=expected_revision,
         )
         return tuple(
@@ -401,26 +453,130 @@ class PlaylistRepository:
             for entry in await self._entry_rows(playlist_id)
         )
 
-    async def _owned(
+    async def add_collaborator(
         self,
-        owner_id: UserId,
+        actor_id: UserId,
+        playlist_id: PlaylistId,
+        collaborator_id: UserId,
+        *,
+        expected_revision: int,
+        now: datetime,
+    ) -> Playlist:
+        row, _access = await self._authorized(
+            actor_id,
+            playlist_id,
+            allowed=frozenset({PlaylistAccess.OWNER}),
+            expected_revision=expected_revision,
+            for_update=True,
+        )
+        if row.owner_id == collaborator_id:
+            raise LibraryError(LibraryErrorCode.PLAYLIST_COLLABORATOR_INVALID, 422)
+        existing = await self._collaborator(
+            playlist_id, collaborator_id, for_update=True
+        )
+        if existing is not None:
+            raise LibraryError(LibraryErrorCode.PLAYLIST_COLLABORATOR_EXISTS, 409)
+        self._session.add(
+            _PlaylistCollaboratorRow(
+                playlist_id=playlist_id,
+                user_id=collaborator_id,
+                granted_by=actor_id,
+                granted_at=now,
+            )
+        )
+        self._touch(row, now)
+        await self._session.flush()
+        return _playlist(row)
+
+    async def remove_collaborator(
+        self,
+        actor_id: UserId,
+        playlist_id: PlaylistId,
+        collaborator_id: UserId,
+        *,
+        expected_revision: int,
+        now: datetime,
+    ) -> Playlist:
+        row, _access = await self._authorized(
+            actor_id,
+            playlist_id,
+            allowed=frozenset({PlaylistAccess.OWNER}),
+            expected_revision=expected_revision,
+            for_update=True,
+        )
+        if row.owner_id == collaborator_id:
+            raise LibraryError(LibraryErrorCode.PLAYLIST_COLLABORATOR_INVALID, 422)
+        existing = await self._collaborator(
+            playlist_id, collaborator_id, for_update=True
+        )
+        if existing is None:
+            return _playlist(row)
+        await self._session.delete(existing)
+        self._touch(row, now)
+        await self._session.flush()
+        return _playlist(row)
+
+    async def _authorized(
+        self,
+        actor_id: UserId,
         playlist_id: PlaylistId,
         *,
+        allowed: frozenset[PlaylistAccess],
         expected_revision: int | None = None,
         for_update: bool = False,
-    ) -> _PlaylistRow:
-        statement = select(_PlaylistRow).where(
-            _PlaylistRow.id == playlist_id,
-            _PlaylistRow.owner_id == owner_id,
-        )
+    ) -> tuple[_PlaylistRow, PlaylistAccess]:
+        statement = select(_PlaylistRow).where(_PlaylistRow.id == playlist_id)
         if for_update:
             statement = statement.with_for_update()
         row = await self._session.scalar(statement)
         if row is None:
             raise LibraryError(LibraryErrorCode.PLAYLIST_NOT_FOUND, 404)
+        access = await self._access(row, actor_id, for_update=for_update)
+        if access is None:
+            raise LibraryError(LibraryErrorCode.PLAYLIST_NOT_FOUND, 404)
+        if access not in allowed:
+            raise LibraryError(LibraryErrorCode.PLAYLIST_ACCESS_DENIED, 403)
         if expected_revision is not None and row.revision != expected_revision:
             raise LibraryError(LibraryErrorCode.PLAYLIST_REVISION_CONFLICT, 409)
-        return row
+        return row, access
+
+    async def _access(
+        self,
+        row: _PlaylistRow,
+        actor_id: UserId,
+        *,
+        for_update: bool,
+    ) -> PlaylistAccess | None:
+        if row.owner_id == actor_id:
+            return PlaylistAccess.OWNER
+        if row.visibility is PlaylistVisibility.PRIVATE:
+            return None
+        collaborator = await self._collaborator(
+            PlaylistId(row.id), actor_id, for_update=for_update
+        )
+        if collaborator is not None:
+            return PlaylistAccess.EDITOR
+        if row.visibility is PlaylistVisibility.PUBLIC:
+            return PlaylistAccess.READER
+        return None
+
+    async def _collaborator(
+        self,
+        playlist_id: PlaylistId,
+        user_id: UserId,
+        *,
+        for_update: bool,
+    ) -> _PlaylistCollaboratorRow | None:
+        statement = select(_PlaylistCollaboratorRow).where(
+            _PlaylistCollaboratorRow.playlist_id == playlist_id,
+            _PlaylistCollaboratorRow.user_id == user_id,
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        collaborator: _PlaylistCollaboratorRow | None = await self._session.scalar(
+            statement
+        )
+        return collaborator
 
     async def _entry_rows(
         self,
@@ -469,6 +625,7 @@ def _playlist(row: _PlaylistRow) -> Playlist:
         PlaylistId(row.id),
         UserId(row.owner_id),
         row.name,
+        row.visibility,
         row.revision,
         row.created_at,
         row.updated_at,

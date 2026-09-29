@@ -16,7 +16,10 @@ from nahoermaar.catalog.domain import TrackId, TrackSourceId
 from nahoermaar.library.domain import (
     PlaylistEntryId,
     PlaylistId,
+    PlaylistAccess,
+    PlaylistScope,
     PlaylistTrackSelection,
+    PlaylistVisibility,
     ReactionValue,
 )
 from nahoermaar.library.read_model import (
@@ -31,6 +34,7 @@ from nahoermaar.library.read_model import (
 from nahoermaar.messaging import MessageContext
 from nahoermaar.player.domain import OperationId
 from nahoermaar.player.events import AddTracks, TrackSelection
+from nahoermaar.users.domain import UserId
 
 from .errors import ApiError, ApiErrorCode, error_responses
 from .middleware import authenticated
@@ -118,6 +122,8 @@ class PlaylistView(BaseModel):
     playlist_id: UUID
     owner: ContributorView
     name: str
+    visibility: PlaylistVisibility
+    access: PlaylistAccess
     revision: int
     entry_count: int
     artwork_urls: tuple[str, ...]
@@ -164,8 +170,9 @@ class PlaylistRevisionInput(BaseModel):
     expected_revision: int = Field(ge=0)
 
 
-class PlaylistRenameInput(PlaylistRevisionInput):
-    name: str = Field(min_length=1, max_length=100)
+class PlaylistUpdateInput(PlaylistRevisionInput):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    visibility: PlaylistVisibility | None = None
 
 
 class PlaylistDuplicateInput(PlaylistRevisionInput):
@@ -205,6 +212,7 @@ def router(application: Application) -> APIRouter:
     )
     async def list_playlists(
         request: Request,
+        scope: PlaylistScope = PlaylistScope.OWNED,
         q: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
         page: Annotated[int, Query(ge=1)] = 1,
         page_size: Annotated[int, Query(ge=1, le=100)] = 20,
@@ -213,6 +221,7 @@ def router(application: Application) -> APIRouter:
         try:
             result = await application.library.service.playlists(
                 authenticated(request).user.id,
+                scope=scope,
                 page=page,
                 page_size=page_size,
                 query=q,
@@ -264,29 +273,68 @@ def router(application: Application) -> APIRouter:
 
     @routes.patch(
         "/playlists/{playlist_id}",
-        operation_id="renameLibraryPlaylist",
-        responses=error_responses(401, 404, 409, 422, 500, 503),
+        operation_id="updateLibraryPlaylist",
+        responses=error_responses(401, 403, 404, 409, 422, 500, 503),
     )
-    async def rename_playlist(
+    async def update_playlist(
         request: Request,
         playlist_id: UUID,
-        body: PlaylistRenameInput,
+        body: PlaylistUpdateInput,
     ) -> PlaylistView:
         try:
-            playlist = await application.library.service.rename_playlist(
+            playlist = await application.library.service.update_playlist(
                 authenticated(request).user.id,
                 PlaylistId(playlist_id),
-                body.name,
-                body.expected_revision,
+                name=body.name,
+                visibility=body.visibility,
+                expected_revision=body.expected_revision,
             )
         except ValueError as error:
             raise ApiError(ApiErrorCode.VALIDATION_FAILED, 422) from error
         return _playlist_view(playlist, application)
 
+    @routes.put(
+        "/playlists/{playlist_id}/collaborators/{user_id}",
+        operation_id="addLibraryPlaylistCollaborator",
+        responses=error_responses(401, 403, 404, 409, 422, 500, 503),
+    )
+    async def add_playlist_collaborator(
+        request: Request,
+        playlist_id: UUID,
+        user_id: UUID,
+        body: PlaylistRevisionInput,
+    ) -> PlaylistView:
+        playlist = await application.library.service.add_playlist_collaborator(
+            authenticated(request).user.id,
+            PlaylistId(playlist_id),
+            UserId(user_id),
+            expected_revision=body.expected_revision,
+        )
+        return _playlist_view(playlist, application)
+
+    @routes.delete(
+        "/playlists/{playlist_id}/collaborators/{user_id}",
+        operation_id="deleteLibraryPlaylistCollaborator",
+        responses=error_responses(401, 403, 404, 409, 422, 500, 503),
+    )
+    async def delete_playlist_collaborator(
+        request: Request,
+        playlist_id: UUID,
+        user_id: UUID,
+        body: PlaylistRevisionInput,
+    ) -> PlaylistView:
+        playlist = await application.library.service.remove_playlist_collaborator(
+            authenticated(request).user.id,
+            PlaylistId(playlist_id),
+            UserId(user_id),
+            expected_revision=body.expected_revision,
+        )
+        return _playlist_view(playlist, application)
+
     @routes.delete(
         "/playlists/{playlist_id}",
         operation_id="deleteLibraryPlaylist",
-        responses=error_responses(401, 404, 409, 422, 500, 503),
+        responses=error_responses(401, 403, 404, 409, 422, 500, 503),
     )
     async def delete_playlist(
         request: Request,
@@ -303,7 +351,7 @@ def router(application: Application) -> APIRouter:
     @routes.post(
         "/playlists/{playlist_id}/duplicate",
         operation_id="duplicateLibraryPlaylist",
-        responses=error_responses(401, 404, 409, 422, 500, 503),
+        responses=error_responses(401, 403, 404, 409, 422, 500, 503),
     )
     async def duplicate_playlist(
         request: Request,
@@ -324,7 +372,7 @@ def router(application: Application) -> APIRouter:
     @routes.get(
         "/playlists/{playlist_id}/entries",
         operation_id="listLibraryPlaylistEntries",
-        responses=error_responses(401, 404, 409, 422, 500, 503),
+        responses=error_responses(401, 403, 404, 409, 422, 500, 503),
     )
     async def list_playlist_entries(
         request: Request,
@@ -360,7 +408,7 @@ def router(application: Application) -> APIRouter:
     @routes.post(
         "/playlists/{playlist_id}/entries",
         operation_id="addLibraryPlaylistEntries",
-        responses=error_responses(401, 404, 409, 422, 500, 503),
+        responses=error_responses(401, 403, 404, 409, 422, 500, 503),
     )
     async def add_playlist_entries(
         request: Request,
@@ -386,7 +434,7 @@ def router(application: Application) -> APIRouter:
     @routes.delete(
         "/playlists/{playlist_id}/entries/{entry_id}",
         operation_id="deleteLibraryPlaylistEntry",
-        responses=error_responses(401, 404, 409, 422, 500, 503),
+        responses=error_responses(401, 403, 404, 409, 422, 500, 503),
     )
     async def delete_playlist_entry(
         request: Request,
@@ -405,7 +453,7 @@ def router(application: Application) -> APIRouter:
     @routes.put(
         "/playlists/{playlist_id}/order",
         operation_id="replaceLibraryPlaylistOrder",
-        responses=error_responses(401, 404, 409, 422, 500, 503),
+        responses=error_responses(401, 403, 404, 409, 422, 500, 503),
     )
     async def replace_playlist_order(
         request: Request,
@@ -649,6 +697,8 @@ def _playlist_view(
         playlist_id=playlist.playlist_id,
         owner=_contributor_view(playlist.owner, application),
         name=playlist.name,
+        visibility=playlist.visibility,
+        access=playlist.access,
         revision=playlist.revision,
         entry_count=playlist.entry_count,
         artwork_urls=playlist.artwork_urls,

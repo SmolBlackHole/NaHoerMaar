@@ -25,6 +25,24 @@ class ReactionValue(StrEnum):
     DISLIKE = "dislike"
 
 
+class PlaylistVisibility(StrEnum):
+    PRIVATE = "private"
+    COLLABORATORS = "collaborators"
+    PUBLIC = "public"
+
+
+class PlaylistAccess(StrEnum):
+    OWNER = "owner"
+    EDITOR = "editor"
+    READER = "reader"
+
+
+class PlaylistScope(StrEnum):
+    OWNED = "owned"
+    SHARED = "shared"
+    PUBLIC = "public"
+
+
 class LibraryErrorCode(StrEnum):
     TRACK_NOT_FOUND = "library_track_not_found"
     TRACK_SOURCE_NOT_FOUND = "library_track_source_not_found"
@@ -33,6 +51,10 @@ class LibraryErrorCode(StrEnum):
     PLAYLIST_REVISION_CONFLICT = "library_playlist_revision_conflict"
     PLAYLIST_CAPACITY_EXCEEDED = "library_playlist_capacity_exceeded"
     PLAYLIST_ORDER_INVALID = "library_playlist_order_invalid"
+    PLAYLIST_ACCESS_DENIED = "library_playlist_access_denied"
+    PLAYLIST_COLLABORATOR_INVALID = "library_playlist_collaborator_invalid"
+    PLAYLIST_COLLABORATOR_EXISTS = "library_playlist_collaborator_exists"
+    USER_NOT_FOUND = "library_user_not_found"
 
 
 class LibraryError(RuntimeError):
@@ -64,6 +86,7 @@ class Playlist:
     id: PlaylistId
     owner_id: UserId
     name: str
+    visibility: PlaylistVisibility
     revision: int
     created_at: datetime
     updated_at: datetime

@@ -21,8 +21,11 @@ from nahoermaar.users.domain import UserId
 from .domain import (
     LibraryError,
     LibraryErrorCode,
+    PlaylistAccess,
     PlaylistEntryId,
     PlaylistId,
+    PlaylistScope,
+    PlaylistVisibility,
     ReactionValue,
 )
 
@@ -100,6 +103,8 @@ class PlaylistSummary:
     playlist_id: PlaylistId
     owner: LibraryContributor
     name: str
+    visibility: PlaylistVisibility
+    access: PlaylistAccess
     revision: int
     entry_count: int
     artwork_urls: tuple[str, ...]
@@ -150,6 +155,7 @@ class LibraryReadModel:
 
     __slots__ = (
         "_artists",
+        "_collaborators",
         "_discord",
         "_playlist_entries",
         "_playlists",
@@ -158,6 +164,7 @@ class LibraryReadModel:
         "_track_artists",
         "_tracks",
         "_units",
+        "_users",
     )
 
     def __init__(self, units: UnitOfWorkFactory) -> None:
@@ -167,11 +174,24 @@ class LibraryReadModel:
         self._playlist_entries = registered_table(
             "playlist_entries", consumer="Library"
         )
+        self._collaborators = registered_table(
+            "playlist_collaborators", consumer="Library"
+        )
         self._tracks = registered_table("tracks", consumer="Library")
         self._track_artists = registered_table("track_artists", consumer="Library")
         self._artists = registered_table("artists", consumer="Library")
         self._profiles = registered_table("user_profiles", consumer="Library")
         self._discord = registered_table("discord_identities", consumer="Library")
+        self._users = registered_table("users", consumer="Library")
+
+    async def user_exists(self, user_id: UserId) -> bool:
+        async with self._units() as work:
+            return (
+                await work.session.scalar(
+                    select(self._users.c.id).where(self._users.c.id == user_id)
+                )
+                is not None
+            )
 
     async def summaries(
         self,
@@ -401,26 +421,36 @@ class LibraryReadModel:
 
     async def playlist(
         self,
-        owner_id: UserId,
+        actor_id: UserId,
         playlist_id: PlaylistId,
     ) -> PlaylistSummary:
         async with self._units() as work:
-            row = await self._playlist_row(work.session, owner_id, playlist_id)
+            row = await self._playlist_row(work.session, actor_id, playlist_id)
             artworks = await self._artworks(work.session, (playlist_id,))
         return self._playlist_summary(row, artworks.get(playlist_id, ()))
 
     async def playlists(
         self,
-        owner_id: UserId,
+        actor_id: UserId,
         *,
+        scope: PlaylistScope,
         page: int,
         page_size: int,
         query: str | None = None,
         snapshot: LibrarySnapshot | None = None,
     ) -> PlaylistPage:
         _validate_page(page, page_size)
-        relation = self._playlist_relation()
-        filters: list[Any] = [self._playlists.c.owner_id == owner_id]
+        relation = self._playlist_relation(actor_id)
+        if scope is PlaylistScope.OWNED:
+            filters: list[Any] = [self._playlists.c.owner_id == actor_id]
+        elif scope is PlaylistScope.SHARED:
+            filters = [
+                self._playlists.c.owner_id != actor_id,
+                self._playlists.c.visibility != PlaylistVisibility.PRIVATE,
+                self._collaborators.c.user_id == actor_id,
+            ]
+        else:
+            filters = [self._playlists.c.visibility == PlaylistVisibility.PUBLIC]
         normalized = query.strip() if query is not None else ""
         if normalized:
             filters.append(self._playlists.c.name.ilike(f"%{normalized}%"))
@@ -453,7 +483,7 @@ class LibraryReadModel:
             rows = (
                 (
                     await work.session.execute(
-                        self._playlist_select()
+                        self._playlist_select(actor_id)
                         .select_from(relation)
                         .where(*filters)
                         .order_by(
@@ -486,7 +516,7 @@ class LibraryReadModel:
 
     async def playlist_entries(
         self,
-        owner_id: UserId,
+        actor_id: UserId,
         playlist_id: PlaylistId,
         *,
         page: int,
@@ -512,7 +542,7 @@ class LibraryReadModel:
         filters: list[Any] = [self._playlist_entries.c.playlist_id == playlist_id]
         filters.extend(self._track_search_filters(query))
         async with self._units() as work:
-            playlist_row = await self._playlist_row(work.session, owner_id, playlist_id)
+            playlist_row = await self._playlist_row(work.session, actor_id, playlist_id)
             current_revision = int(playlist_row["revision"])
             if revision is not None and revision != current_revision:
                 raise LibraryError(
@@ -568,16 +598,26 @@ class LibraryReadModel:
             current_revision,
         )
 
-    def _playlist_relation(self) -> Any:
-        return self._playlists.outerjoin(
-            self._profiles,
-            self._profiles.c.user_id == self._playlists.c.owner_id,
-        ).outerjoin(
-            self._discord,
-            self._discord.c.user_id == self._playlists.c.owner_id,
+    def _playlist_relation(self, actor_id: UserId) -> Any:
+        return (
+            self._playlists.outerjoin(
+                self._profiles,
+                self._profiles.c.user_id == self._playlists.c.owner_id,
+            )
+            .outerjoin(
+                self._discord,
+                self._discord.c.user_id == self._playlists.c.owner_id,
+            )
+            .outerjoin(
+                self._collaborators,
+                and_(
+                    self._collaborators.c.playlist_id == self._playlists.c.id,
+                    self._collaborators.c.user_id == actor_id,
+                ),
+            )
         )
 
-    def _playlist_select(self) -> Any:
+    def _playlist_select(self, actor_id: UserId) -> Any:
         entry_count = (
             select(func.count())
             .select_from(self._playlist_entries)
@@ -588,6 +628,7 @@ class LibraryReadModel:
             self._playlists.c.id.label("playlist_id"),
             self._playlists.c.owner_id,
             self._playlists.c.name,
+            self._playlists.c.visibility,
             self._playlists.c.revision,
             self._playlists.c.created_at,
             self._playlists.c.updated_at,
@@ -595,23 +636,33 @@ class LibraryReadModel:
             self._discord.c.username,
             self._discord.c.discord_id,
             self._discord.c.avatar_hash,
+            self._collaborators.c.user_id.label("collaborator_user_id"),
+            (self._playlists.c.owner_id == actor_id).label("viewer_is_owner"),
             entry_count.label("entry_count"),
         )
 
     async def _playlist_row(
         self,
         session: AsyncSession,
-        owner_id: UserId,
+        actor_id: UserId,
         playlist_id: PlaylistId,
     ) -> Any:
         row = (
             (
                 await session.execute(
-                    self._playlist_select()
-                    .select_from(self._playlist_relation())
+                    self._playlist_select(actor_id)
+                    .select_from(self._playlist_relation(actor_id))
                     .where(
                         self._playlists.c.id == playlist_id,
-                        self._playlists.c.owner_id == owner_id,
+                        or_(
+                            self._playlists.c.owner_id == actor_id,
+                            self._playlists.c.visibility == PlaylistVisibility.PUBLIC,
+                            and_(
+                                self._playlists.c.visibility
+                                == PlaylistVisibility.COLLABORATORS,
+                                self._collaborators.c.user_id == actor_id,
+                            ),
+                        ),
                     )
                 )
             )
@@ -719,10 +770,21 @@ class LibraryReadModel:
         row: Any,
         artwork_urls: tuple[str, ...],
     ) -> PlaylistSummary:
+        visibility = PlaylistVisibility(row["visibility"])
+        collaborator_id = row["collaborator_user_id"]
+        access = (
+            PlaylistAccess.OWNER
+            if bool(row["viewer_is_owner"])
+            else PlaylistAccess.EDITOR
+            if collaborator_id is not None
+            else PlaylistAccess.READER
+        )
         return PlaylistSummary(
             PlaylistId(row["playlist_id"]),
             cls._contributor(row, user_key="owner_id"),
             cast(str, row["name"]),
+            visibility,
+            access,
             int(row["revision"]),
             int(row["entry_count"]),
             artwork_urls,

@@ -18,9 +18,12 @@ from .domain import (
     LibraryError,
     LibraryErrorCode,
     Playlist,
+    PlaylistAccess,
     PlaylistEntryId,
     PlaylistId,
+    PlaylistScope,
     PlaylistTrackSelection,
+    PlaylistVisibility,
     ReactionValue,
     TrackReaction,
     playlist_name,
@@ -143,56 +146,63 @@ class LibraryService:
 
     async def playlist(
         self,
-        owner_id: UserId,
+        actor_id: UserId,
         playlist_id: PlaylistId,
     ) -> PlaylistSummary:
-        return await self._reader.playlist(owner_id, playlist_id)
+        return await self._reader.playlist(actor_id, playlist_id)
 
     async def playlists(
         self,
-        owner_id: UserId,
+        actor_id: UserId,
         *,
+        scope: PlaylistScope = PlaylistScope.OWNED,
         page: int,
         page_size: int,
         query: str | None = None,
         snapshot: LibrarySnapshot | None = None,
     ) -> PlaylistPage:
         return await self._reader.playlists(
-            owner_id,
+            actor_id,
+            scope=scope,
             page=page,
             page_size=page_size,
             query=query,
             snapshot=snapshot,
         )
 
-    async def rename_playlist(
+    async def update_playlist(
         self,
-        owner_id: UserId,
+        actor_id: UserId,
         playlist_id: PlaylistId,
-        name: str,
+        *,
+        name: str | None,
+        visibility: PlaylistVisibility | None,
         expected_revision: int,
     ) -> PlaylistSummary:
-        normalized = playlist_name(name)
+        if name is None and visibility is None:
+            raise ValueError("A playlist update requires a name or visibility.")
+        normalized = playlist_name(name) if name is not None else None
         async with self._units() as work:
-            await PlaylistRepository(work.session).rename(
-                owner_id,
+            await PlaylistRepository(work.session).update(
+                actor_id,
                 playlist_id,
-                normalized,
-                expected_revision,
-                self._clock(),
+                name=normalized,
+                visibility=visibility,
+                expected_revision=expected_revision,
+                now=self._clock(),
             )
             await work.commit()
-        return await self._reader.playlist(owner_id, playlist_id)
+        return await self._reader.playlist(actor_id, playlist_id)
 
     async def delete_playlist(
         self,
-        owner_id: UserId,
+        actor_id: UserId,
         playlist_id: PlaylistId,
         expected_revision: int,
     ) -> Playlist:
         async with self._units() as work:
             deleted = await PlaylistRepository(work.session).delete(
-                owner_id,
+                actor_id,
                 playlist_id,
                 expected_revision,
             )
@@ -201,13 +211,13 @@ class LibraryService:
 
     async def duplicate_playlist(
         self,
-        owner_id: UserId,
+        actor_id: UserId,
         playlist_id: PlaylistId,
         *,
         name: str | None,
         expected_revision: int,
     ) -> PlaylistSummary:
-        source = await self._reader.playlist(owner_id, playlist_id)
+        source = await self._reader.playlist(actor_id, playlist_id)
         suffix = " copy"
         default_name = (
             f"{source.name[: MAX_PLAYLIST_NAME_LENGTH - len(suffix)]}{suffix}"
@@ -215,18 +225,18 @@ class LibraryService:
         normalized = playlist_name(name or default_name)
         async with self._units() as work:
             duplicate = await PlaylistRepository(work.session).duplicate(
-                owner_id,
+                actor_id,
                 playlist_id,
                 normalized,
                 expected_revision,
                 self._clock(),
             )
             await work.commit()
-        return await self._reader.playlist(owner_id, duplicate.id)
+        return await self._reader.playlist(actor_id, duplicate.id)
 
     async def playlist_entries(
         self,
-        owner_id: UserId,
+        actor_id: UserId,
         playlist_id: PlaylistId,
         *,
         page: int,
@@ -235,7 +245,7 @@ class LibraryService:
         revision: int | None = None,
     ) -> PlaylistEntryPage:
         return await self._reader.playlist_entries(
-            owner_id,
+            actor_id,
             playlist_id,
             page=page,
             page_size=page_size,
@@ -245,7 +255,7 @@ class LibraryService:
 
     async def add_playlist_entries(
         self,
-        owner_id: UserId,
+        actor_id: UserId,
         playlist_id: PlaylistId,
         selections: tuple[PlaylistTrackSelection, ...],
         expected_revision: int,
@@ -253,65 +263,108 @@ class LibraryService:
         await self._validate_selections(selections)
         async with self._units() as work:
             await PlaylistRepository(work.session).add(
-                owner_id,
+                actor_id,
                 playlist_id,
                 selections,
-                owner_id,
+                actor_id,
                 expected_revision,
                 self._clock(),
             )
             await work.commit()
-        return await self._reader.playlist(owner_id, playlist_id)
+        return await self._reader.playlist(actor_id, playlist_id)
 
     async def remove_playlist_entry(
         self,
-        owner_id: UserId,
+        actor_id: UserId,
         playlist_id: PlaylistId,
         entry_id: PlaylistEntryId,
         expected_revision: int,
     ) -> PlaylistSummary:
         async with self._units() as work:
             await PlaylistRepository(work.session).remove(
-                owner_id,
+                actor_id,
                 playlist_id,
                 entry_id,
                 expected_revision,
                 self._clock(),
             )
             await work.commit()
-        return await self._reader.playlist(owner_id, playlist_id)
+        return await self._reader.playlist(actor_id, playlist_id)
 
     async def reorder_playlist(
         self,
-        owner_id: UserId,
+        actor_id: UserId,
         playlist_id: PlaylistId,
         entry_ids: tuple[PlaylistEntryId, ...],
         expected_revision: int,
     ) -> PlaylistSummary:
         async with self._units() as work:
             await PlaylistRepository(work.session).reorder(
-                owner_id,
+                actor_id,
                 playlist_id,
                 entry_ids,
                 expected_revision,
                 self._clock(),
             )
             await work.commit()
-        return await self._reader.playlist(owner_id, playlist_id)
+        return await self._reader.playlist(actor_id, playlist_id)
 
     async def playlist_selections(
         self,
-        owner_id: UserId,
+        actor_id: UserId,
         playlist_id: PlaylistId,
         *,
         expected_revision: int | None = None,
     ) -> tuple[PlaylistTrackSelection, ...]:
         async with self._units() as work:
             return await PlaylistRepository(work.session).selections(
-                owner_id,
+                actor_id,
                 playlist_id,
                 expected_revision=expected_revision,
             )
+
+    async def add_playlist_collaborator(
+        self,
+        actor_id: UserId,
+        playlist_id: PlaylistId,
+        collaborator_id: UserId,
+        *,
+        expected_revision: int,
+    ) -> PlaylistSummary:
+        playlist = await self._reader.playlist(actor_id, playlist_id)
+        if playlist.access is not PlaylistAccess.OWNER:
+            raise LibraryError(LibraryErrorCode.PLAYLIST_ACCESS_DENIED, 403)
+        if not await self._reader.user_exists(collaborator_id):
+            raise LibraryError(LibraryErrorCode.USER_NOT_FOUND, 404)
+        async with self._units() as work:
+            await PlaylistRepository(work.session).add_collaborator(
+                actor_id,
+                playlist_id,
+                collaborator_id,
+                expected_revision=expected_revision,
+                now=self._clock(),
+            )
+            await work.commit()
+        return await self._reader.playlist(actor_id, playlist_id)
+
+    async def remove_playlist_collaborator(
+        self,
+        actor_id: UserId,
+        playlist_id: PlaylistId,
+        collaborator_id: UserId,
+        *,
+        expected_revision: int,
+    ) -> PlaylistSummary:
+        async with self._units() as work:
+            await PlaylistRepository(work.session).remove_collaborator(
+                actor_id,
+                playlist_id,
+                collaborator_id,
+                expected_revision=expected_revision,
+                now=self._clock(),
+            )
+            await work.commit()
+        return await self._reader.playlist(actor_id, playlist_id)
 
     async def _validate_selections(
         self,
