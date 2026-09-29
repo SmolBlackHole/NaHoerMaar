@@ -378,15 +378,15 @@ def test_statistics_project_shared_and_personal_facts_without_double_counting() 
                         "user_id": listener_id,
                         "track_id": seeded.first_track_id,
                         "value": "like",
-                        "created_at": NOW,
-                        "updated_at": NOW,
+                        "created_at": NOW - timedelta(minutes=2),
+                        "updated_at": NOW - timedelta(minutes=2),
                     },
                     {
                         "user_id": listener_id,
                         "track_id": seeded.second_track_id,
                         "value": "dislike",
-                        "created_at": NOW + timedelta(minutes=1),
-                        "updated_at": NOW + timedelta(minutes=1),
+                        "created_at": NOW - timedelta(minutes=1),
+                        "updated_at": NOW - timedelta(minutes=1),
                     },
                 ],
             )
@@ -408,8 +408,8 @@ def test_statistics_project_shared_and_personal_facts_without_double_counting() 
                         "source_unavailable_entry_count": 0,
                         "source_truncated": False,
                         "revision": 0,
-                        "created_at": NOW,
-                        "updated_at": NOW,
+                        "created_at": NOW - timedelta(minutes=2),
+                        "updated_at": NOW - timedelta(minutes=2),
                     },
                     {
                         "id": uuid4(),
@@ -426,8 +426,8 @@ def test_statistics_project_shared_and_personal_facts_without_double_counting() 
                         "source_unavailable_entry_count": 0,
                         "source_truncated": False,
                         "revision": 0,
-                        "created_at": NOW,
-                        "updated_at": NOW,
+                        "created_at": NOW - timedelta(minutes=1),
+                        "updated_at": NOW - timedelta(minutes=1),
                     },
                 ],
             )
@@ -439,7 +439,7 @@ def test_statistics_project_shared_and_personal_facts_without_double_counting() 
                     preferred_source_id=None,
                     added_by=listener_id,
                     position=0,
-                    created_at=NOW,
+                    created_at=NOW - timedelta(minutes=1),
                 )
             )
             await work.commit()
@@ -525,6 +525,21 @@ def test_statistics_project_shared_and_personal_facts_without_double_counting() 
         assert overview.highlights.active_day_streaks.current == 1
         assert overview.highlights.active_day_streaks.longest == 1
         assert overview.highlights.average_listeners == pytest.approx(170 / 180)
+        assert overview.library.likes == 1
+        assert overview.library.dislikes == 1
+        assert overview.library.reactions == 2
+        assert overview.library.like_share == 0.5
+        assert overview.library.public_playlists == 1
+        assert overview.library.shared_playlists == 0
+        assert [track.track_id for track in overview.library.top_liked_tracks] == [
+            seeded.first_track_id
+        ]
+        assert [track.track_id for track in overview.library.top_disliked_tracks] == [
+            seeded.second_track_id
+        ]
+        assert [track.track_id for track in overview.library.most_saved_tracks] == [
+            seeded.first_track_id
+        ]
         assert len(overview.activity) == 7
         assert sum(day.playback_seconds for day in overview.activity) == 180.0
         assert sum(day.listening_seconds for day in overview.activity) == 170.0

@@ -18,6 +18,7 @@ from nahoermaar.statistics.models import (
     ContagiousTrackHighlight,
     GroupStatisticsReport,
     InfluencedTrack,
+    LibraryStatistics,
     ListenerBadge,
     ListenerBadgeKind,
     ListenerIdentity,
@@ -25,6 +26,7 @@ from nahoermaar.statistics.models import (
     PersonalStatisticsReport,
     PlaybackOutcomes,
     RadioConversionHighlight,
+    RankedLibraryTrack,
     RankedListener,
     SharedTrackHighlight,
     StatisticsPeriod,
@@ -211,6 +213,30 @@ class RankedRequestedArtistView(BaseModel):
     requests: int
 
 
+class RankedLibraryTrackView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    track_id: UUID
+    title: str
+    artist_names: tuple[str, ...]
+    artwork_url: str | None
+    count: int
+
+
+class LibraryStatisticsView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    likes: int
+    dislikes: int
+    reactions: int
+    like_share: float | None
+    public_playlists: int
+    shared_playlists: int
+    top_liked_tracks: tuple[RankedLibraryTrackView, ...]
+    top_disliked_tracks: tuple[RankedLibraryTrackView, ...]
+    most_saved_tracks: tuple[RankedLibraryTrackView, ...]
+
+
 class ListenerIdentityView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -324,6 +350,7 @@ class GroupStatisticsView(StatisticsView):
     requested_tracks: tuple[RankedRequestedTrackView, ...]
     requested_artists: tuple[RankedRequestedArtistView, ...]
     highlights: GroupHighlightsView
+    library: LibraryStatisticsView
 
 
 class PersonalStatisticsView(StatisticsView):
@@ -491,6 +518,37 @@ def group_statistics_view(
             ),
             average_listeners=highlights.average_listeners,
         ),
+        library=_library_statistics_view(report.library),
+    )
+
+
+def _library_statistics_view(library: LibraryStatistics) -> LibraryStatisticsView:
+    return LibraryStatisticsView(
+        likes=library.likes,
+        dislikes=library.dislikes,
+        reactions=library.reactions,
+        like_share=library.like_share,
+        public_playlists=library.public_playlists,
+        shared_playlists=library.shared_playlists,
+        top_liked_tracks=tuple(
+            _ranked_library_track_view(track) for track in library.top_liked_tracks
+        ),
+        top_disliked_tracks=tuple(
+            _ranked_library_track_view(track) for track in library.top_disliked_tracks
+        ),
+        most_saved_tracks=tuple(
+            _ranked_library_track_view(track) for track in library.most_saved_tracks
+        ),
+    )
+
+
+def _ranked_library_track_view(track: RankedLibraryTrack) -> RankedLibraryTrackView:
+    return RankedLibraryTrackView(
+        track_id=track.track_id,
+        title=track.title,
+        artist_names=track.artist_names,
+        artwork_url=track.artwork_url,
+        count=track.count,
     )
 
 

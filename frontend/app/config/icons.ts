@@ -61,6 +61,7 @@ export const iconMaps = {
 		warning: "i-lucide-triangle-alert",
 		// Custom keys (app-specific)
 		chevronsUpDown: "i-lucide-chevrons-up-down",
+		chart: "i-lucide-chart-no-axes-combined",
 		layoutDashboard: "i-lucide-layout-dashboard",
 		list: "i-lucide-list",
 		logOut: "i-lucide-log-out",
@@ -139,6 +140,7 @@ export const iconMaps = {
 		warning: "i-ph-warning",
 		// Custom keys (app-specific)
 		chevronsUpDown: "i-ph-caret-up-down",
+		chart: "i-ph-chart-line-up",
 		layoutDashboard: "i-ph-layout",
 		list: "i-ph-list",
 		logOut: "i-ph-sign-out",
@@ -217,6 +219,7 @@ export const iconMaps = {
 		warning: "i-tabler-alert-triangle",
 		// Custom keys (app-specific)
 		chevronsUpDown: "i-tabler-arrows-up-down",
+		chart: "i-tabler-chart-line",
 		layoutDashboard: "i-tabler-layout-dashboard",
 		list: "i-tabler-list",
 		logOut: "i-tabler-logout",
@@ -295,6 +298,7 @@ export const iconMaps = {
 		warning: "i-heroicons-exclamation-triangle-20-solid",
 		// Custom keys (app-specific)
 		chevronsUpDown: "i-heroicons-chevron-up-down-20-solid",
+		chart: "i-heroicons-chart-bar-20-solid",
 		layoutDashboard: "i-heroicons-squares-2x2-20-solid",
 		list: "i-heroicons-list-bullet-20-solid",
 		logOut: "i-heroicons-arrow-left-on-rectangle-20-solid",

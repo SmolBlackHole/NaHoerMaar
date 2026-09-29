@@ -37,6 +37,7 @@ from .models import (
     InfluencedTrack,
     ListenerAchievementFacts,
     ListenerIdentity,
+    LibraryStatistics,
     ListeningPattern,
     ListenerPairHighlight,
     PersonalRequestOutcomes,
@@ -45,6 +46,7 @@ from .models import (
     RadioConversionHighlight,
     RankedArtist,
     RankedListener,
+    RankedLibraryTrack,
     RankedRequestedArtist,
     RankedRequestedTrack,
     RankedTrack,
@@ -69,8 +71,11 @@ class StatisticsRepository:
         "_discord",
         "_listeners",
         "_playbacks",
+        "_playlist_entries",
+        "_playlists",
         "_presence",
         "_profiles",
+        "_reactions",
         "_requests",
         "_session",
         "_track_artists",
@@ -84,6 +89,11 @@ class StatisticsRepository:
         self._playbacks = registered_table("playback_records", consumer="Statistics")
         self._listeners = registered_table("playback_listeners", consumer="Statistics")
         self._presence = registered_table("listener_presence", consumer="Statistics")
+        self._reactions = registered_table("track_reactions", consumer="Statistics")
+        self._playlists = registered_table("playlists", consumer="Statistics")
+        self._playlist_entries = registered_table(
+            "playlist_entries", consumer="Statistics"
+        )
         self._tracks = registered_table("tracks", consumer="Statistics")
         self._track_artists = registered_table("track_artists", consumer="Statistics")
         self._artists = registered_table("artists", consumer="Statistics")
@@ -96,9 +106,86 @@ class StatisticsRepository:
             select(self._requests.c.requested_at.label("occurred_at")),
             select(self._playbacks.c.started_at.label("occurred_at")),
             select(self._presence.c.joined_at.label("occurred_at")),
+            select(self._reactions.c.created_at.label("occurred_at")),
+            select(self._playlists.c.created_at.label("occurred_at")),
+            select(self._playlist_entries.c.created_at.label("occurred_at")),
         ).subquery()
         value = await self._session.scalar(select(func.min(events.c.occurred_at)))
         return cast(datetime | None, value)
+
+    async def library_statistics(
+        self,
+        started_at: datetime,
+        ended_at: datetime,
+        *,
+        limit: int = 5,
+    ) -> LibraryStatistics:
+        reaction_window = and_(
+            self._reactions.c.updated_at >= started_at,
+            self._reactions.c.updated_at < ended_at,
+        )
+        likes = int(
+            await self._session.scalar(
+                select(func.count())
+                .select_from(self._reactions)
+                .where(reaction_window, self._reactions.c.value == "like")
+            )
+            or 0
+        )
+        dislikes = int(
+            await self._session.scalar(
+                select(func.count())
+                .select_from(self._reactions)
+                .where(reaction_window, self._reactions.c.value == "dislike")
+            )
+            or 0
+        )
+        playlist_window = and_(
+            self._playlists.c.created_at >= started_at,
+            self._playlists.c.created_at < ended_at,
+        )
+        public_playlists = int(
+            await self._session.scalar(
+                select(func.count())
+                .select_from(self._playlists)
+                .where(playlist_window, self._playlists.c.visibility == "public")
+            )
+            or 0
+        )
+        shared_playlists = int(
+            await self._session.scalar(
+                select(func.count())
+                .select_from(self._playlists)
+                .where(
+                    playlist_window,
+                    self._playlists.c.visibility == "collaborators",
+                )
+            )
+            or 0
+        )
+        return LibraryStatistics(
+            likes=likes,
+            dislikes=dislikes,
+            public_playlists=public_playlists,
+            shared_playlists=shared_playlists,
+            top_liked_tracks=await self._ranked_reaction_tracks(
+                started_at,
+                ended_at,
+                value="like",
+                limit=limit,
+            ),
+            top_disliked_tracks=await self._ranked_reaction_tracks(
+                started_at,
+                ended_at,
+                value="dislike",
+                limit=limit,
+            ),
+            most_saved_tracks=await self._ranked_saved_tracks(
+                started_at,
+                ended_at,
+                limit=limit,
+            ),
+        )
 
     async def totals(
         self,
@@ -1766,6 +1853,107 @@ class StatisticsRepository:
             .where(and_(*conditions))
         )
         return float(value) if value is not None else None
+
+    async def _ranked_reaction_tracks(
+        self,
+        started_at: datetime,
+        ended_at: datetime,
+        *,
+        value: str,
+        limit: int,
+    ) -> tuple[RankedLibraryTrack, ...]:
+        count = func.count().label("count")
+        artists = self._artist_names()
+        rows = (
+            (
+                await self._session.execute(
+                    select(
+                        self._tracks.c.id,
+                        self._tracks.c.title,
+                        self._tracks.c.artwork_url,
+                        artists.label("artist_names"),
+                        count,
+                    )
+                    .select_from(
+                        self._reactions.join(
+                            self._tracks,
+                            self._tracks.c.id == self._reactions.c.track_id,
+                        )
+                    )
+                    .where(
+                        self._reactions.c.value == value,
+                        self._reactions.c.updated_at >= started_at,
+                        self._reactions.c.updated_at < ended_at,
+                    )
+                    .group_by(
+                        self._tracks.c.id,
+                        self._tracks.c.title,
+                        self._tracks.c.artwork_url,
+                    )
+                    .order_by(count.desc(), self._tracks.c.id)
+                    .limit(limit)
+                )
+            )
+            .mappings()
+            .all()
+        )
+        return tuple(self._library_track(row) for row in rows)
+
+    async def _ranked_saved_tracks(
+        self,
+        started_at: datetime,
+        ended_at: datetime,
+        *,
+        limit: int,
+    ) -> tuple[RankedLibraryTrack, ...]:
+        count = func.count().label("count")
+        artists = self._artist_names()
+        relation = self._playlist_entries.join(
+            self._playlists,
+            self._playlists.c.id == self._playlist_entries.c.playlist_id,
+        ).join(
+            self._tracks,
+            self._tracks.c.id == self._playlist_entries.c.track_id,
+        )
+        rows = (
+            (
+                await self._session.execute(
+                    select(
+                        self._tracks.c.id,
+                        self._tracks.c.title,
+                        self._tracks.c.artwork_url,
+                        artists.label("artist_names"),
+                        count,
+                    )
+                    .select_from(relation)
+                    .where(
+                        self._playlist_entries.c.created_at >= started_at,
+                        self._playlist_entries.c.created_at < ended_at,
+                        self._playlists.c.visibility != "private",
+                    )
+                    .group_by(
+                        self._tracks.c.id,
+                        self._tracks.c.title,
+                        self._tracks.c.artwork_url,
+                    )
+                    .order_by(count.desc(), self._tracks.c.id)
+                    .limit(limit)
+                )
+            )
+            .mappings()
+            .all()
+        )
+        return tuple(self._library_track(row) for row in rows)
+
+    @staticmethod
+    def _library_track(row: RowMapping) -> RankedLibraryTrack:
+        return RankedLibraryTrack(
+            track_id=row["id"],
+            title=row["title"],
+            artist_names=tuple(cast(list[str] | None, row["artist_names"]) or ()),
+            artwork_url=row["artwork_url"],
+            count=int(row["count"]),
+        )
 
     def _artist_names(self) -> ScalarSelect[list[str] | None]:
         return (

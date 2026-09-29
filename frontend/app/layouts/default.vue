@@ -65,6 +65,15 @@ const links = computed(() => [
 		},
 	},
 	{
+		label: "Server Stats",
+		"aria-label": "Server statistics",
+		icon: icons.value.chart,
+		to: "/server-stats",
+		onSelect: () => {
+			open.value = false;
+		},
+	},
+	{
 		label: "History",
 		"aria-label": "Playback history",
 		icon: icons.value.clock,

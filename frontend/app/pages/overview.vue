@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import type { StatisticsPeriod } from "~/core/models/account";
 import { formatStatistic, formatStatisticsDuration } from "~/core/models/statistics";
 
 definePageMeta({ pageTransition: { name: "page", mode: "out-in" } });
@@ -9,9 +8,10 @@ const core = useNuxtApp().$backendCore;
 const statistics = core.workflows.statistics();
 const playbackHistory = core.workflows.playbackHistory();
 const { icons } = useTheme();
-const period = ref<StatisticsPeriod>("7d");
+const period = useStatisticsPeriod();
 const report = computed(() => statistics.groupReport.data.value);
 const recentTracks = computed(() => playbackHistory.history.data.value?.items ?? []);
+const peopleStatsLink = computed(() => `/server-stats?view=people&period=${period.value}`);
 const metrics = computed(() => {
 	const totals = report.value?.totals;
 	return [
@@ -119,15 +119,15 @@ onScopeDispose(() => {
 						<StatisticsListenerLeaderboard
 							:listeners="report.top_listeners"
 							:total-listening-seconds="report.totals.listening_seconds"
+							compact
+							:more-to="peopleStatsLink"
 						/>
 
-						<StatisticsActivity :activity="report.activity" />
-
-						<StatisticsMusicStory :report="report" />
-
-						<StatisticsGroupHighlights :report="report" />
-
-						<StatisticsDetails :report="report" />
+						<StatisticsGroupHighlights
+							:report="report"
+							:limit="2"
+							:more-to="peopleStatsLink"
+						/>
 
 						<section aria-labelledby="recent-heading">
 							<div class="mb-3 flex items-center justify-between gap-4">
@@ -152,6 +152,8 @@ onScopeDispose(() => {
 							</div>
 							<PlayerRecentList :entries="recentTracks" />
 						</section>
+
+						<StatisticsCoverageNotice :coverage="report.coverage" />
 					</template>
 				</div>
 			</template>

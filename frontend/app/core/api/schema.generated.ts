@@ -1542,6 +1542,7 @@ export interface components {
             activity: components["schemas"]["ActivityBucketView"][];
             coverage: components["schemas"]["CoverageView"];
             highlights: components["schemas"]["GroupHighlightsView"];
+            library: components["schemas"]["LibraryStatisticsView"];
             /** Requested Artists */
             requested_artists: components["schemas"]["RankedRequestedArtistView"][];
             /** Requested Tracks */
@@ -1732,6 +1733,27 @@ export interface components {
          * @enum {string}
          */
         JobRunStatus: "running" | "succeeded" | "partial" | "failed" | "cancelled";
+        /** LibraryStatisticsView */
+        LibraryStatisticsView: {
+            /** Dislikes */
+            dislikes: number;
+            /** Like Share */
+            like_share: number | null;
+            /** Likes */
+            likes: number;
+            /** Most Saved Tracks */
+            most_saved_tracks: components["schemas"]["RankedLibraryTrackView"][];
+            /** Public Playlists */
+            public_playlists: number;
+            /** Reactions */
+            reactions: number;
+            /** Shared Playlists */
+            shared_playlists: number;
+            /** Top Disliked Tracks */
+            top_disliked_tracks: components["schemas"]["RankedLibraryTrackView"][];
+            /** Top Liked Tracks */
+            top_liked_tracks: components["schemas"]["RankedLibraryTrackView"][];
+        };
         /** LibraryTrackPageView */
         LibraryTrackPageView: {
             /** Items */
@@ -2643,6 +2665,22 @@ export interface components {
             name: string;
             /** Plays */
             plays: number;
+        };
+        /** RankedLibraryTrackView */
+        RankedLibraryTrackView: {
+            /** Artist Names */
+            artist_names: string[];
+            /** Artwork Url */
+            artwork_url: string | null;
+            /** Count */
+            count: number;
+            /** Title */
+            title: string;
+            /**
+             * Track Id
+             * Format: uuid
+             */
+            track_id: string;
         };
         /** RankedListenerView */
         RankedListenerView: {

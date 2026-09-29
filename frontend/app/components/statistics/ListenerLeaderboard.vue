@@ -10,10 +10,18 @@ type Listener = GroupStatistics["top_listeners"][number];
 const props = defineProps<{
 	listeners: readonly Listener[];
 	totalListeningSeconds: number;
+	compact?: boolean;
+	moreTo?: string;
 }>();
 const { icons } = useTheme();
-const leader = computed(() => props.listeners[0]);
-const runnersUp = computed(() => props.listeners.slice(1));
+const visibleListeners = computed(() =>
+	props.compact ? props.listeners.slice(0, 4) : props.listeners,
+);
+const leader = computed(() => visibleListeners.value[0]);
+const runnersUp = computed(() => visibleListeners.value.slice(1));
+const hiddenListeners = computed(() =>
+	Math.max(0, props.listeners.length - visibleListeners.value.length),
+);
 
 function name(listener: Listener) {
 	return (
@@ -54,10 +62,21 @@ function remainingBadges(listener: Listener) {
 				</h2>
 				<p class="mt-1 text-xs text-muted">Who spent the most time listening in Discord.</p>
 			</div>
-			<p v-if="listeners.length" class="text-xs text-muted">
-				{{ listeners.length }} active
-				{{ listeners.length === 1 ? "listener" : "listeners" }}
-			</p>
+			<div v-if="listeners.length" class="flex items-center gap-3">
+				<p class="text-xs text-muted">
+					{{ listeners.length }} active
+					{{ listeners.length === 1 ? "listener" : "listeners" }}
+				</p>
+				<UButton
+					v-if="moreTo"
+					:to="moreTo"
+					:label="hiddenListeners ? `View all ${listeners.length}` : 'View details'"
+					variant="link"
+					color="neutral"
+					:trailing-icon="icons.arrowRight"
+					size="xs"
+				/>
+			</div>
 		</div>
 
 		<div

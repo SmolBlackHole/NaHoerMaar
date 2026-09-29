@@ -197,6 +197,34 @@ class RankedRequestedArtist:
 
 
 @dataclass(frozen=True, slots=True)
+class RankedLibraryTrack:
+    track_id: UUID
+    title: str
+    artist_names: tuple[str, ...]
+    artwork_url: str | None
+    count: int
+
+
+@dataclass(frozen=True, slots=True)
+class LibraryStatistics:
+    likes: int
+    dislikes: int
+    public_playlists: int
+    shared_playlists: int
+    top_liked_tracks: tuple[RankedLibraryTrack, ...]
+    top_disliked_tracks: tuple[RankedLibraryTrack, ...]
+    most_saved_tracks: tuple[RankedLibraryTrack, ...]
+
+    @property
+    def reactions(self) -> int:
+        return self.likes + self.dislikes
+
+    @property
+    def like_share(self) -> float | None:
+        return self.likes / self.reactions if self.reactions else None
+
+
+@dataclass(frozen=True, slots=True)
 class ListenerBadge:
     kind: ListenerBadgeKind
     value: float
@@ -356,6 +384,7 @@ class GroupStatisticsReport(StatisticsReport):
     requested_tracks: tuple[RankedRequestedTrack, ...]
     requested_artists: tuple[RankedRequestedArtist, ...]
     highlights: GroupHighlights
+    library: LibraryStatistics
 
 
 @dataclass(frozen=True, slots=True)

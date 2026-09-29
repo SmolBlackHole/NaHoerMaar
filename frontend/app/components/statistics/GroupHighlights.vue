@@ -14,7 +14,10 @@ type Highlight = {
 	links?: readonly { label: string; to: string }[];
 };
 
-const props = defineProps<{ report: GroupStatistics }>();
+const props = withDefaults(
+	defineProps<{ report: GroupStatistics; limit?: number; moreTo?: string }>(),
+	{ limit: 4 },
+);
 const { icons } = useTheme();
 
 function listenerName(
@@ -113,16 +116,28 @@ const highlights = computed<Highlight[]>(() => {
 			icon: icons.value.play,
 		});
 	}
-	return items.slice(0, 4);
+	return items.slice(0, props.limit);
 });
 </script>
 
 <template>
 	<section v-if="highlights.length" aria-labelledby="highlights-heading">
-		<h2 id="highlights-heading" class="text-lg font-semibold text-highlighted">
-			Group highlights
-		</h2>
-		<p class="mt-1 text-xs text-muted">The small stories hiding inside this period.</p>
+		<div class="flex items-end justify-between gap-4">
+			<div>
+				<h2 id="highlights-heading" class="text-lg font-semibold text-highlighted">
+					Group highlights
+				</h2>
+				<p class="mt-1 text-xs text-muted">The small stories hiding inside this period.</p>
+			</div>
+			<UButton
+				v-if="moreTo"
+				:to="moreTo"
+				label="View all"
+				variant="link"
+				color="neutral"
+				:trailing-icon="icons.arrowRight"
+			/>
+		</div>
 		<div class="mt-4 grid gap-3 sm:grid-cols-2">
 			<article
 				v-for="(item, index) in highlights"

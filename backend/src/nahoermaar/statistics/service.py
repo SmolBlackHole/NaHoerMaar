@@ -22,6 +22,7 @@ from .models import (
     Coverage,
     GroupHighlights,
     GroupStatisticsReport,
+    LibraryStatistics,
     ListenerBadge,
     ListenerBadgeKind,
     PersonalHighlights,
@@ -125,6 +126,7 @@ class StatisticsService:
         requested_tracks: tuple[RankedRequestedTrack, ...] = ()
         requested_artists: tuple[RankedRequestedArtist, ...] = ()
         highlights: GroupHighlights | None = None
+        library_statistics: LibraryStatistics | None = None
         top_tracks_by_listening: tuple[RankedTrack, ...] = ()
         top_artists_by_listening: tuple[RankedArtist, ...] = ()
         personal_highlights: PersonalHighlights | None = None
@@ -238,6 +240,10 @@ class StatisticsService:
                         else None
                     ),
                 )
+                library_statistics = await repository.library_statistics(
+                    started_at,
+                    ended_at,
+                )
             else:
                 top_tracks_by_listening = await repository.top_tracks(
                     started_at,
@@ -322,8 +328,8 @@ class StatisticsService:
             partial,
         )
         if user_id is None:
-            if highlights is None:
-                raise RuntimeError("Group statistics highlights were not projected.")
+            if highlights is None or library_statistics is None:
+                raise RuntimeError("Group statistics were not fully projected.")
             return GroupStatisticsReport(
                 coverage=coverage,
                 totals=totals,
@@ -335,6 +341,7 @@ class StatisticsService:
                 requested_tracks=requested_tracks,
                 requested_artists=requested_artists,
                 highlights=highlights,
+                library=library_statistics,
             )
         if personal_highlights is None:
             raise RuntimeError("Personal statistics highlights were not projected.")
