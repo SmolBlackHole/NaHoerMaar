@@ -237,7 +237,9 @@ const confirmationDescription = computed(() =>
 					<span v-else>Your next track is up to you</span>
 				</template>
 			</SharedTrackIdentity>
-			<div v-if="current" class="dock-track-actions flex shrink-0 items-center gap-0.5">
+		</div>
+		<div class="dock-track-actions flex shrink-0 items-center gap-0.5">
+			<template v-if="current">
 				<LibraryReactionActions
 					:track-id="current.track.id"
 					:title="current.track.title"
@@ -251,7 +253,7 @@ const confirmationDescription = computed(() =>
 					:title="current.track.title"
 				/>
 				<PlayerRadioAction :entry="current" labelled />
-			</div>
+			</template>
 		</div>
 		<div class="dock-transport flex items-center justify-center gap-3">
 			<UTooltip text="Stop and return track to queue">
@@ -468,8 +470,10 @@ const confirmationDescription = computed(() =>
 .player-dock {
 	position: relative;
 	display: grid;
-	grid-template-columns: minmax(12rem, 1fr) auto minmax(14rem, 32rem) auto;
-	grid-template-areas: "track transport timeline volume";
+	grid-template-columns:
+		minmax(12rem, 20rem) auto minmax(7rem, 1fr) minmax(18rem, 34rem)
+		auto;
+	grid-template-areas: "track actions transport timeline volume";
 	align-items: center;
 	gap: 1rem;
 	flex-shrink: 0;
@@ -480,6 +484,9 @@ const confirmationDescription = computed(() =>
 }
 .dock-track {
 	grid-area: track;
+}
+.dock-track-actions {
+	grid-area: actions;
 }
 .dock-transport {
 	grid-area: transport;
@@ -601,8 +608,10 @@ const confirmationDescription = computed(() =>
 }
 @container workspace (max-width: 1000px) {
 	.player-dock {
-		grid-template-columns: minmax(0, 1fr) auto auto;
-		grid-template-areas: "track transport volume" "timeline timeline timeline";
+		grid-template-columns: minmax(0, 1fr) auto auto auto;
+		grid-template-areas:
+			"track actions transport volume"
+			"timeline timeline timeline timeline";
 		gap: 0.75rem 1rem;
 		padding: 0.625rem 1.25rem;
 	}
@@ -610,7 +619,10 @@ const confirmationDescription = computed(() =>
 @container workspace (max-width: 600px) {
 	.player-dock {
 		grid-template-columns: minmax(0, 1fr) auto;
-		grid-template-areas: "track track" "transport volume" "timeline timeline";
+		grid-template-areas:
+			"track actions"
+			"transport volume"
+			"timeline timeline";
 		gap: 0.75rem;
 		padding: 0.75rem 1rem max(0.75rem, env(safe-area-inset-bottom));
 	}
@@ -618,7 +630,7 @@ const confirmationDescription = computed(() =>
 		display: none;
 	}
 	.dock-track-actions {
-		margin-left: auto;
+		justify-self: end;
 	}
 	.dock-transport {
 		gap: 0;

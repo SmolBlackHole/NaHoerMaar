@@ -327,26 +327,6 @@ async function queueSelected() {
 		actionPending.value = false;
 	}
 }
-async function queuePlaylist(value: Playlist) {
-	if (!value.entry_count || value.entry_count > 100 || actionPending.value) return;
-	actionPending.value = true;
-	try {
-		await core.client.library.queuePlaylist(
-			value.playlist_id,
-			value.revision,
-			crypto.randomUUID(),
-		);
-		toast.add({
-			title: "Playlist added to queue",
-			description: `${value.entry_count} tracks added.`,
-			color: "success",
-		});
-	} catch (failure) {
-		actionError.value = failureMessage(failure);
-	} finally {
-		actionPending.value = false;
-	}
-}
 async function moveEntry(entryId: string, position: number) {
 	const current = playlist.value;
 	if (!current || actionPending.value) return;
@@ -635,29 +615,23 @@ onScopeDispose(library.dispose);
 									}}
 								</p>
 							</div>
-							<div class="flex flex-wrap items-center justify-end gap-2">
-								<template v-if="selectingEntries">
-									<span class="text-xs tabular-nums text-muted">
-										{{ selectedEntries.length }} selected
-									</span>
-									<UButton
-										label="Select page"
-										color="neutral"
-										variant="ghost"
-										:disabled="!entryResult?.items.length"
-										@click="
-											selectedEntryIds = new Set(
-												entryResult?.items.map(({ entry_id }) => entry_id),
-											)
-										"
-									/>
-									<UButton
-										label="Clear"
-										color="neutral"
-										variant="ghost"
-										:disabled="!selectedEntries.length"
-										@click="selectedEntryIds = new Set()"
-									/>
+							<SharedTrackSelection
+								:active="selectingEntries"
+								:selected-count="selectedEntries.length"
+								:available-count="entryResult?.items.length ?? 0"
+								select-all-label="Select page"
+								allow-select-all
+								:disabled="actionPending"
+								@start="selectingEntries = true"
+								@select-all="
+									selectedEntryIds = new Set(
+										entryResult?.items.map(({ entry_id }) => entry_id),
+									)
+								"
+								@clear="selectedEntryIds = new Set()"
+								@done="finishEntrySelection"
+							>
+								<template #actions>
 									<UButton
 										label="Add selected to queue"
 										:icon="icons.plus"
@@ -665,32 +639,19 @@ onScopeDispose(library.dispose);
 										:loading="actionPending"
 										@click="queueSelected"
 									/>
-									<UButton
-										label="Done"
-										:icon="icons.check"
-										color="neutral"
-										variant="soft"
-										@click="finishEntrySelection"
-									/>
 								</template>
-								<UButton
-									v-else
-									label="Select"
-									:icon="icons.check"
-									color="neutral"
-									variant="ghost"
-									:disabled="!playlist.entry_count"
-									@click="selectingEntries = true"
-								/>
-								<UDropdownMenu :items="playlistMenu"
-									><UButton
-										:icon="icons.ellipsis"
-										aria-label="Playlist options"
-										color="neutral"
-										variant="ghost"
-										class="size-10 justify-center"
-								/></UDropdownMenu>
-							</div>
+								<template #idle>
+									<UDropdownMenu :items="playlistMenu">
+										<UButton
+											:icon="icons.ellipsis"
+											aria-label="Playlist options"
+											color="neutral"
+											variant="ghost"
+											class="size-10 justify-center"
+										/>
+									</UDropdownMenu>
+								</template>
+							</SharedTrackSelection>
 						</div>
 
 						<Transition name="library-view" mode="out-in">
@@ -753,7 +714,6 @@ onScopeDispose(library.dispose);
 										v-else-if="playlistResult"
 										:items="playlistResult.items"
 										@select="openPlaylist"
-										@queue="queuePlaylist"
 										@rename="editPlaylist"
 										@duplicate="duplicatePlaylist"
 										@delete="confirmDelete"

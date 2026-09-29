@@ -323,18 +323,15 @@ function formatWait(seconds: number) {
 					{{ queue.length }} {{ queue.length === 1 ? "track" : "tracks" }}
 				</span>
 			</div>
-			<div class="flex flex-wrap items-center justify-end gap-1">
-				<template v-if="selecting">
-					<span class="mr-2 text-xs tabular-nums text-muted"
-						>{{ selectedEntries.length }} selected</span
-					>
-					<UButton
-						label="Clear"
-						color="neutral"
-						variant="ghost"
-						:disabled="!selectedEntries.length"
-						@click="selectedIds = new Set()"
-					/>
+			<SharedTrackSelection
+				:active="selecting"
+				:selected-count="selectedEntries.length"
+				:available-count="queue.length"
+				@start="selecting = true"
+				@clear="selectedIds = new Set()"
+				@done="finishSelection"
+			>
+				<template #actions>
 					<LibraryPlaylistPicker
 						:tracks="
 							selectedEntries.map(({ request }) => ({
@@ -346,23 +343,8 @@ function formatWait(seconds: number) {
 						:disabled="!selectedEntries.length"
 						@added="finishSelection"
 					/>
-					<UButton
-						label="Done"
-						:icon="icons.check"
-						color="neutral"
-						variant="soft"
-						@click="finishSelection"
-					/>
 				</template>
-				<template v-else>
-					<UButton
-						label="Select"
-						:icon="icons.check"
-						color="neutral"
-						variant="ghost"
-						:disabled="!queue.length"
-						@click="selecting = true"
-					/>
+				<template #idle>
 					<UDropdownMenu
 						:items="removalItems"
 						:content="{ align: 'end' }"
@@ -382,7 +364,7 @@ function formatWait(seconds: number) {
 						/>
 					</UDropdownMenu>
 				</template>
-			</div>
+			</SharedTrackSelection>
 		</div>
 
 		<div
@@ -699,6 +681,10 @@ function formatWait(seconds: number) {
 	}
 }
 @container workspace (max-width: 600px) {
+	.queue-heading {
+		align-items: flex-start;
+		flex-direction: column;
+	}
 	.queue-heading-label {
 		flex-wrap: wrap;
 		gap: 0.125rem 0.75rem;

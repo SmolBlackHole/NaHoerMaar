@@ -179,7 +179,9 @@ async function openQueue() {
 	z-index: 2;
 }
 .queue-workspace {
+	box-sizing: border-box;
 	width: 100%;
+	padding: 1rem 1rem 2rem;
 }
 .is-listening :focus-visible {
 	outline-color: var(--ui-text-highlighted);
@@ -187,6 +189,9 @@ async function openQueue() {
 @container workspace (max-width: 600px) {
 	.music-tab-list {
 		gap: 1rem;
+	}
+	.queue-workspace {
+		padding: 0.75rem 0 1rem;
 	}
 }
 </style>

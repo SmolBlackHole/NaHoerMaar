@@ -200,7 +200,15 @@ watch(loadVideo, (visible) => {
 				<div class="media-top-shade" aria-hidden="true" />
 			</template>
 		</div>
-		<div v-if="current" class="media-toolbar">
+		<div v-if="loading" class="media-toolbar" aria-hidden="true">
+			<div class="media-preview-switch media-preview-skeleton">
+				<USkeleton class="h-9 w-14 rounded-md" />
+				<USkeleton class="h-9 w-14 rounded-md" />
+				<USkeleton class="h-9 w-14 rounded-md" />
+			</div>
+			<USkeleton class="h-9 w-28 rounded-lg" />
+		</div>
+		<div v-else-if="current" class="media-toolbar">
 			<div class="media-preview-controls">
 				<div class="media-preview-switch" role="group" aria-label="Preview mode">
 					<button
@@ -306,9 +314,8 @@ watch(loadVideo, (visible) => {
 		<div v-show="preview !== 'lyrics' && (!videoControls || videoFailed)" class="media-details">
 			<div v-if="loading" class="media-copy space-y-4" aria-busy="true">
 				<USkeleton class="h-5 w-36 rounded-full" />
-				<USkeleton class="h-12 w-full max-w-2xl" />
-				<USkeleton class="h-12 w-3/5 max-w-lg" />
-				<USkeleton class="mt-3 h-10 w-32 rounded-lg" />
+				<USkeleton class="h-12 w-4/5 max-w-2xl" />
+				<USkeleton class="h-12 w-2/5 max-w-md" />
 			</div>
 			<div v-else class="media-copy">
 				<PlayerContributor
@@ -566,6 +573,9 @@ watch(loadVideo, (visible) => {
 	background: var(--player-control-bg);
 	border-radius: 0.5rem;
 	padding: 0.25rem;
+}
+.media-preview-skeleton {
+	gap: 0.125rem;
 }
 .media-preview-controls {
 	display: flex;

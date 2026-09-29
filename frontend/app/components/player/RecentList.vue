@@ -2,6 +2,7 @@
 <!-- SPDX-License-Identifier: MPL-2.0 -->
 
 <script setup lang="ts">
+import type { ContextMenuItem } from "@nuxt/ui";
 import { formatTime } from "~/core/models/player";
 import type { PlaybackHistoryEntry } from "~/core/models/playbacks";
 
@@ -59,6 +60,26 @@ function endState(item: PlaybackHistoryEntry) {
 }
 function requeue(item: PlaybackHistoryEntry) {
 	return player.add([{ track_id: item.track_id, source_id: null }]);
+}
+function openSource(url: string) {
+	window.open(url, "_blank", "noopener,noreferrer");
+}
+function contextItems(item: PlaybackHistoryEntry): ContextMenuItem[][] {
+	const primary: ContextMenuItem[] = [
+		{
+			label: `Queue ${item.title} again`,
+			icon: icons.value.plus,
+			disabled: !player.canControl,
+			onSelect: () => requeue(item),
+		},
+	];
+	if (item.source_url)
+		primary.push({
+			label: "Open source",
+			icon: icons.value.external,
+			onSelect: () => openSource(item.source_url as string),
+		});
+	return [primary];
 }
 watch(
 	() => [props.entries.map(({ track_id }) => track_id).join(","), session.status] as const,
@@ -138,6 +159,7 @@ watch(
 				:artist-names="item.artist_names"
 				:source-url="item.source_url"
 				:artist-url="artistUrl(item)"
+				:context-items="contextItems(item)"
 				multiline
 			>
 				<template v-if="selectable" #leading>

@@ -2,6 +2,7 @@
 <!-- SPDX-License-Identifier: MPL-2.0 -->
 
 <script setup lang="ts">
+import type { ContextMenuItem } from "@nuxt/ui";
 import { formatDuration, type DiscoveryEntry } from "../../core/models/catalog";
 import type { PlayerState } from "../../core/models/player";
 
@@ -43,6 +44,24 @@ function presence(trackId: string): string | null {
 		? "Already queued"
 		: null;
 }
+function contextItems(entry: DiscoveryEntry): ContextMenuItem[][] {
+	return [
+		[
+			{
+				label: `Add ${entry.track.title} to queue`,
+				icon: icons.value.plus,
+				disabled: !props.canControl || unavailable(entry),
+				onSelect: () => emit("add", entry),
+			},
+			{
+				label: "Start a radio from this track",
+				icon: icons.value.radio,
+				disabled: !props.canControl || unavailable(entry),
+				onSelect: () => emit("radio", entry),
+			},
+		],
+	];
+}
 </script>
 
 <template>
@@ -62,6 +81,7 @@ function presence(trackId: string): string | null {
 			:artist-names="item.track.artists.map(({ name }) => name)"
 			:source-url="item.source.source_url"
 			:metadata="formatDuration(item.track.duration_seconds)"
+			:context-items="selectable ? [] : contextItems(item)"
 			multiline
 		>
 			<template v-if="selectable" #leading>

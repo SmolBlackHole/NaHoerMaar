@@ -11,7 +11,6 @@ const props = withDefaults(
 );
 const emit = defineEmits<{
 	select: [playlist: Playlist];
-	queue: [playlist: Playlist];
 	rename: [playlist: Playlist];
 	duplicate: [playlist: Playlist];
 	delete: [playlist: Playlist];
@@ -25,12 +24,6 @@ function contextItems(playlist: Playlist): ContextMenuItem[][] {
 				label: "Open",
 				icon: icons.value.arrowRight,
 				onSelect: () => emit("select", playlist),
-			},
-			{
-				label: "Add to queue",
-				icon: icons.value.play,
-				disabled: !playlist.entry_count || playlist.entry_count > 100,
-				onSelect: () => emit("queue", playlist),
 			},
 		],
 		[
