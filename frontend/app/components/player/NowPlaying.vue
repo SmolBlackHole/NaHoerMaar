@@ -312,10 +312,14 @@ watch(loadVideo, (visible) => {
 			:visible="preview === 'lyrics'"
 		/>
 		<div v-show="preview !== 'lyrics' && (!videoControls || videoFailed)" class="media-details">
-			<div v-if="loading" class="media-copy space-y-4" aria-busy="true">
-				<USkeleton class="h-5 w-36 rounded-full" />
-				<USkeleton class="h-12 w-4/5 max-w-2xl" />
-				<USkeleton class="h-12 w-2/5 max-w-md" />
+			<div v-if="loading" class="media-copy" aria-busy="true">
+				<div class="media-contributor media-contributor-skeleton">
+					<USkeleton class="size-6 shrink-0 rounded-full" />
+					<USkeleton class="h-3 w-28" />
+				</div>
+				<div class="media-title media-title-skeleton">
+					<USkeleton class="size-full rounded-lg" />
+				</div>
 			</div>
 			<div v-else class="media-copy">
 				<PlayerContributor
@@ -637,6 +641,15 @@ watch(loadVideo, (visible) => {
 	margin-bottom: 1rem;
 	font-size: 0.75rem;
 	color: var(--ui-text-muted);
+}
+.media-contributor-skeleton {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+.media-title-skeleton {
+	width: min(78%, 34rem);
+	height: 1.09em;
 }
 .media-empty-help {
 	font-size: 1rem;

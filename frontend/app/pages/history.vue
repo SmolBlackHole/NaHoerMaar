@@ -324,23 +324,13 @@ onScopeDispose(playbackHistory.dispose);
 			<template v-if="initialLoading || (result && result.page_count > 1)" #footer>
 				<div class="shrink-0 border-t border-default bg-default px-4 sm:px-6">
 					<SharedPagePagination
-						v-if="result"
 						v-model:page="currentPage"
-						:page-size="result.page_size"
-						:total="result.total"
+						:page-size="result?.page_size ?? 25"
+						:total="result?.total ?? 0"
 						:disabled="playbackHistory.history.loading.value"
+						:loading="!result"
 						@select="changePage"
 					/>
-					<div
-						v-else
-						class="flex min-h-16 items-center justify-between gap-4"
-						aria-hidden="true"
-					>
-						<USkeleton class="h-3 w-36" />
-						<div class="flex items-center gap-1">
-							<USkeleton v-for="index in 8" :key="index" class="size-8 rounded-md" />
-						</div>
-					</div>
 				</div>
 			</template>
 		</UDashboardPanel>

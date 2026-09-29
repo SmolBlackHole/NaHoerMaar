@@ -85,11 +85,9 @@ function contextItems(track: LibraryTrack): ContextMenuItem[][] {
 				<template #details><USkeleton class="library-saved h-3 w-20" /></template>
 				<template #actions>
 					<div class="library-actions flex items-center gap-1">
-						<USkeleton class="size-10 rounded-lg" />
-						<USkeleton class="size-10 rounded-lg" />
+						<USkeleton v-for="action in 3" :key="action" class="size-10 rounded-lg" />
 					</div>
 				</template>
-				<template #menu><USkeleton class="library-menu size-10 rounded-lg" /></template>
 			</SharedTrackRow>
 		</ol>
 		<ol v-else class="library-list" aria-label="Library tracks">
@@ -127,21 +125,19 @@ function contextItems(track: LibraryTrack): ContextMenuItem[][] {
 							:track="{ track_id: track.track_id, preferred_source_id: null }"
 							:title="track.title"
 						/>
+						<UTooltip :text="`Add ${track.title} to queue`">
+							<UButton
+								:icon="icons.plus"
+								:aria-label="`Add ${track.title} to queue`"
+								color="neutral"
+								variant="ghost"
+								class="size-10 justify-center"
+								:disabled="!player.canControl"
+								:loading="player.isPending('queue.add')"
+								@click="queue(track)"
+							/>
+						</UTooltip>
 					</div>
-				</template>
-				<template #menu>
-					<UTooltip :text="`Add ${track.title} to queue`">
-						<UButton
-							:icon="icons.plus"
-							:aria-label="`Add ${track.title} to queue`"
-							color="neutral"
-							variant="ghost"
-							class="size-10 justify-center"
-							:disabled="!player.canControl"
-							:loading="player.isPending('queue.add')"
-							@click="queue(track)"
-						/>
-					</UTooltip>
 				</template>
 			</SharedTrackRow>
 		</ol>
@@ -166,6 +162,10 @@ function contextItems(track: LibraryTrack): ContextMenuItem[][] {
 :deep(.library-identity) {
 	grid-column: 1 / span 2;
 }
+.library-actions {
+	grid-column: 4 / -1;
+	justify-self: end;
+}
 @container workspace (max-width: 760px) {
 	.library-columns {
 		display: none;
@@ -184,13 +184,9 @@ function contextItems(track: LibraryTrack): ContextMenuItem[][] {
 		display: none;
 	}
 	.library-actions {
-		grid-column: 2;
+		grid-column: 1 / -1;
 		grid-row: 2;
 		justify-self: end;
-	}
-	.library-menu {
-		grid-column: 3;
-		grid-row: 2;
 	}
 }
 </style>

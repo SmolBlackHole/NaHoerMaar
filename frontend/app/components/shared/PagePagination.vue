@@ -6,6 +6,7 @@ const props = defineProps<{
 	pageSize: number;
 	total: number;
 	disabled?: boolean;
+	loading?: boolean;
 }>();
 const page = defineModel<number>("page", { required: true });
 const emit = defineEmits<{ select: [page: number] }>();
@@ -46,77 +47,92 @@ function selectPage(nextPage: number) {
 </script>
 
 <template>
-	<div class="flex min-h-16 items-center justify-center gap-4 sm:justify-between">
-		<div class="hidden min-w-0 text-xs tabular-nums text-muted sm:block">
-			<p class="hidden sm:block">
-				Showing {{ firstItem.toLocaleString() }}-{{ lastItem.toLocaleString() }} of
-				{{ total.toLocaleString() }}
-			</p>
-			<p class="sm:hidden">Page {{ page }} of {{ pageCount }}</p>
-		</div>
-		<nav class="flex items-center gap-1" aria-label="Pagination">
-			<UButton
-				:icon="icons.chevronDoubleLeft"
-				color="neutral"
-				variant="outline"
-				size="sm"
-				aria-label="First page"
-				class="hidden size-8 justify-center p-0 sm:inline-flex"
-				:disabled="disabled || page === 1"
-				@click="selectPage(1)"
-			/>
-			<UButton
-				:icon="icons.chevronLeft"
-				color="neutral"
-				variant="outline"
-				size="sm"
-				aria-label="Previous page"
-				class="size-8 justify-center p-0"
-				:disabled="disabled || page === 1"
-				@click="selectPage(page - 1)"
-			/>
-			<template v-for="(item, index) in pageItems" :key="`${item}-${index}`">
-				<span
-					v-if="item === 'ellipsis'"
-					class="grid size-8 place-items-center text-sm text-muted"
-					aria-hidden="true"
-				>
-					…
-				</span>
+	<div
+		class="flex min-h-16 items-center justify-center gap-4 sm:justify-between"
+		:aria-hidden="loading ? 'true' : undefined"
+	>
+		<template v-if="loading">
+			<USkeleton class="hidden h-3 w-36 sm:block" />
+			<nav class="flex items-center gap-1" aria-label="Loading pagination">
+				<USkeleton class="hidden size-8 rounded-md sm:block" />
+				<USkeleton class="size-8 rounded-md" />
+				<USkeleton class="size-8 rounded-md" />
+				<USkeleton class="size-8 rounded-md" />
+				<USkeleton class="hidden size-8 rounded-md sm:block" />
+			</nav>
+		</template>
+		<template v-else>
+			<div class="hidden min-w-0 text-xs tabular-nums text-muted sm:block">
+				<p class="hidden sm:block">
+					Showing {{ firstItem.toLocaleString() }}-{{ lastItem.toLocaleString() }} of
+					{{ total.toLocaleString() }}
+				</p>
+				<p class="sm:hidden">Page {{ page }} of {{ pageCount }}</p>
+			</div>
+			<nav class="flex items-center gap-1" aria-label="Pagination">
 				<UButton
-					v-else
-					:label="String(item)"
-					:color="page === item ? 'primary' : 'neutral'"
-					:variant="page === item ? 'solid' : 'outline'"
+					:icon="icons.chevronDoubleLeft"
+					color="neutral"
+					variant="outline"
 					size="sm"
-					square
-					class="size-8 justify-center p-0"
-					:aria-label="`Page ${item}`"
-					:aria-current="page === item ? 'page' : undefined"
-					:disabled="disabled"
-					@click="selectPage(item)"
+					aria-label="First page"
+					class="hidden size-8 justify-center p-0 sm:inline-flex"
+					:disabled="disabled || page === 1"
+					@click="selectPage(1)"
 				/>
-			</template>
-			<UButton
-				:icon="icons.chevronRight"
-				color="neutral"
-				variant="outline"
-				size="sm"
-				aria-label="Next page"
-				class="size-8 justify-center p-0"
-				:disabled="disabled || page === pageCount"
-				@click="selectPage(page + 1)"
-			/>
-			<UButton
-				:icon="icons.chevronDoubleRight"
-				color="neutral"
-				variant="outline"
-				size="sm"
-				aria-label="Last page"
-				class="hidden size-8 justify-center p-0 sm:inline-flex"
-				:disabled="disabled || page === pageCount"
-				@click="selectPage(pageCount)"
-			/>
-		</nav>
+				<UButton
+					:icon="icons.chevronLeft"
+					color="neutral"
+					variant="outline"
+					size="sm"
+					aria-label="Previous page"
+					class="size-8 justify-center p-0"
+					:disabled="disabled || page === 1"
+					@click="selectPage(page - 1)"
+				/>
+				<template v-for="(item, index) in pageItems" :key="`${item}-${index}`">
+					<span
+						v-if="item === 'ellipsis'"
+						class="grid size-8 place-items-center text-sm text-muted"
+						aria-hidden="true"
+					>
+						…
+					</span>
+					<UButton
+						v-else
+						:label="String(item)"
+						:color="page === item ? 'primary' : 'neutral'"
+						:variant="page === item ? 'solid' : 'outline'"
+						size="sm"
+						square
+						class="size-8 justify-center p-0"
+						:aria-label="`Page ${item}`"
+						:aria-current="page === item ? 'page' : undefined"
+						:disabled="disabled"
+						@click="selectPage(item)"
+					/>
+				</template>
+				<UButton
+					:icon="icons.chevronRight"
+					color="neutral"
+					variant="outline"
+					size="sm"
+					aria-label="Next page"
+					class="size-8 justify-center p-0"
+					:disabled="disabled || page === pageCount"
+					@click="selectPage(page + 1)"
+				/>
+				<UButton
+					:icon="icons.chevronDoubleRight"
+					color="neutral"
+					variant="outline"
+					size="sm"
+					aria-label="Last page"
+					class="hidden size-8 justify-center p-0 sm:inline-flex"
+					:disabled="disabled || page === pageCount"
+					@click="selectPage(pageCount)"
+				/>
+			</nav>
+		</template>
 	</div>
 </template>

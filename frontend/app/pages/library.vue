@@ -966,23 +966,13 @@ onScopeDispose(library.dispose);
 			<template v-if="initialLoading || activeResult" #footer>
 				<div class="shrink-0 border-t border-default bg-default px-4 sm:px-6">
 					<SharedPagePagination
-						v-if="activeResult"
 						v-model:page="currentPage"
-						:page-size="activeResult.page_size"
-						:total="activeResult.total"
+						:page-size="activeResult?.page_size ?? 25"
+						:total="activeResult?.total ?? 0"
 						:disabled="initialLoading"
+						:loading="!activeResult"
 						@select="selectPage"
 					/>
-					<div
-						v-else
-						class="flex min-h-16 items-center justify-between gap-4"
-						aria-hidden="true"
-					>
-						<USkeleton class="h-3 w-36" />
-						<div class="flex items-center gap-1">
-							<USkeleton v-for="index in 8" :key="index" class="size-8 rounded-md" />
-						</div>
-					</div>
 				</div>
 			</template>
 		</UDashboardPanel>
