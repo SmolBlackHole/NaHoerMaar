@@ -12,8 +12,16 @@ const props = withDefaults(
 		loading?: boolean;
 		skeletonCount?: number;
 		startIndex?: number;
+		reactionControls?: boolean;
+		savedLabel?: string;
 	}>(),
-	{ loading: false, skeletonCount: 8, startIndex: 0 },
+	{
+		loading: false,
+		skeletonCount: 8,
+		startIndex: 0,
+		reactionControls: true,
+		savedLabel: "Saved",
+	},
 );
 const player = useNuxtApp().$backendCore.stores.usePlayerStore();
 const reactions = useNuxtApp().$backendCore.stores.useLibraryStore();
@@ -32,7 +40,7 @@ function queue(track: LibraryTrack) {
 }
 
 function contextItems(track: LibraryTrack): ContextMenuItem[][] {
-	return [
+	const items: ContextMenuItem[][] = [
 		[
 			{
 				label: "Add to queue",
@@ -41,7 +49,9 @@ function contextItems(track: LibraryTrack): ContextMenuItem[][] {
 				onSelect: () => void queue(track),
 			},
 		],
-		[
+	];
+	if (props.reactionControls) {
+		items.push([
 			{
 				label: "Like",
 				icon: icons.value.like,
@@ -59,8 +69,9 @@ function contextItems(track: LibraryTrack): ContextMenuItem[][] {
 				icon: icons.value.close,
 				onSelect: () => void reactions.removeReaction(track.track_id),
 			},
-		],
-	];
+		]);
+	}
+	return items;
 }
 </script>
 
@@ -69,8 +80,8 @@ function contextItems(track: LibraryTrack): ContextMenuItem[][] {
 		<div class="library-columns library-grid" aria-hidden="true">
 			<span></span>
 			<span>Track</span>
-			<span>Saved</span>
-			<span>Reaction</span>
+			<span>{{ savedLabel }}</span>
+			<span>{{ reactionControls ? "Reaction" : "" }}</span>
 			<span></span>
 		</div>
 		<ol v-if="loading" class="library-list" aria-label="Loading library tracks">
@@ -85,7 +96,11 @@ function contextItems(track: LibraryTrack): ContextMenuItem[][] {
 				<template #details><USkeleton class="library-saved h-3 w-20" /></template>
 				<template #actions>
 					<div class="library-actions flex items-center gap-1">
-						<USkeleton v-for="action in 3" :key="action" class="size-10 rounded-lg" />
+						<USkeleton
+							v-for="action in reactionControls ? 3 : 2"
+							:key="action"
+							class="size-10 rounded-lg"
+						/>
 					</div>
 				</template>
 			</SharedTrackRow>
@@ -116,6 +131,7 @@ function contextItems(track: LibraryTrack): ContextMenuItem[][] {
 				<template #actions>
 					<div class="library-actions flex items-center gap-1">
 						<LibraryReactionActions
+							v-if="reactionControls"
 							:track-id="track.track_id"
 							:title="track.title"
 							mode="menu"

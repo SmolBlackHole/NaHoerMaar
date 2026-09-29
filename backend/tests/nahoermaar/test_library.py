@@ -387,6 +387,15 @@ def test_reactions_are_idempotent_personal_queryable_and_cleanup_safe() -> None:
             query="Mt Eden",
         )
         assert tuple(item.track_id for item in by_artist.entries) == (tracks[0].id,)
+        profile_likes = await library.profile_tracks(
+            first_user,
+            reaction=ReactionValue.LIKE,
+            page=1,
+            page_size=2,
+        )
+        assert profile_likes.total == 3
+        assert profile_likes.page_count == 2
+        assert profile_likes.entries[0].reaction is ReactionValue.LIKE
 
         first_page = await library.tracks(
             first_user,
@@ -1185,6 +1194,13 @@ def test_playlist_visibility_collaboration_and_scopes_enforce_capabilities() -> 
         assert playlist.visibility is PlaylistVisibility.PRIVATE
         assert playlist.access is PlaylistAccess.OWNER
         assert playlist.collaborators == ()
+        private_profile = await library.profile_playlists(
+            stranger,
+            owner,
+            page=1,
+            page_size=20,
+        )
+        assert private_profile.total == 0
         matches = await library.contributors(owner, query="dit", limit=10)
         assert tuple(match.user_id for match in matches) == (editor,)
         assert await library.contributors(owner, query="Owner", limit=10) == ()
@@ -1249,6 +1265,13 @@ def test_playlist_visibility_collaboration_and_scopes_enforce_capabilities() -> 
         assert hidden_page.total == 0
         assert hidden_page.page_count == 0
         assert hidden_page.entries == ()
+        collaborator_profile = await library.profile_playlists(
+            editor,
+            owner,
+            page=1,
+            page_size=20,
+        )
+        assert collaborator_profile.total == 0
 
         clock[0] += timedelta(minutes=1)
         playlist = await library.add_playlist_entries(
@@ -1297,6 +1320,17 @@ def test_playlist_visibility_collaboration_and_scopes_enforce_capabilities() -> 
         assert tuple(item.playlist_id for item in public.entries) == (
             playlist.playlist_id,
         )
+        profile_public = await library.profile_playlists(
+            stranger,
+            owner,
+            page=1,
+            page_size=20,
+            query="Shared",
+        )
+        assert tuple(item.playlist_id for item in profile_public.entries) == (
+            playlist.playlist_id,
+        )
+        assert profile_public.entries[0].access is PlaylistAccess.READER
         assert (
             len(
                 await library.playlist_selections(
@@ -1355,6 +1389,14 @@ def test_playlist_visibility_collaboration_and_scopes_enforce_capabilities() -> 
                 page=1,
                 page_size=1,
                 query="Shared later",
+            )
+        ).total == 0
+        assert (
+            await library.profile_playlists(
+                editor,
+                owner,
+                page=1,
+                page_size=20,
             )
         ).total == 0
         with pytest.raises(LibraryError) as stale_grant:

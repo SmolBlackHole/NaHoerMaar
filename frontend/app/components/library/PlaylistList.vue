@@ -14,8 +14,16 @@ const props = withDefaults(
 		reorderable?: boolean;
 		pending?: boolean;
 		total?: number;
+		manage?: boolean;
 	}>(),
-	{ loading: false, skeletonCount: 6, reorderable: false, pending: false, total: 0 },
+	{
+		loading: false,
+		skeletonCount: 6,
+		reorderable: false,
+		pending: false,
+		total: 0,
+		manage: true,
+	},
 );
 const emit = defineEmits<{
 	select: [playlist: Playlist];
@@ -97,7 +105,7 @@ onMounted(() => {
 onBeforeUnmount(() => sortable?.destroy());
 
 function contextItems(playlist: Playlist): ContextMenuItem[][] {
-	return [
+	const items: ContextMenuItem[][] = [
 		[
 			{
 				label: "Open",
@@ -105,7 +113,9 @@ function contextItems(playlist: Playlist): ContextMenuItem[][] {
 				onSelect: () => emit("select", playlist),
 			},
 		],
-		[
+	];
+	if (props.manage) {
+		items.push([
 			{
 				label: "Rename",
 				icon: icons.value.type,
@@ -125,8 +135,9 @@ function contextItems(playlist: Playlist): ContextMenuItem[][] {
 				disabled: playlist.access !== "owner",
 				onSelect: () => emit("delete", playlist),
 			},
-		],
-	];
+		]);
+	}
+	return items;
 }
 
 function playlistMeta(playlist: Playlist) {

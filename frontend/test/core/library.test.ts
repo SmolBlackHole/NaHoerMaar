@@ -42,6 +42,19 @@ describe("library core", () => {
 			reaction: "dislike",
 			snapshot: "people one",
 		});
+		await client.library.profileTracks("user/one", {
+			page: 2,
+			pageSize: 10,
+			query: "Alive",
+			reaction: "like",
+			snapshot: "profile tracks",
+		});
+		await client.library.profilePlaylists("user/one", {
+			page: 3,
+			pageSize: 12,
+			query: "Road",
+			snapshot: "profile playlists",
+		});
 
 		expect(fetcher.mock.calls.map(([url, options]) => [url, options?.method])).toEqual([
 			[
@@ -53,6 +66,14 @@ describe("library core", () => {
 			["/api/library/tracks/track%2Fone/reaction", "DELETE"],
 			[
 				"/api/library/tracks/track%2Fone/reactions?page=3&page_size=8&reaction=dislike&snapshot=people%20one",
+				"GET",
+			],
+			[
+				"/api/library/profiles/user%2Fone/tracks?page=2&page_size=10&q=Alive&reaction=like&snapshot=profile%20tracks",
+				"GET",
+			],
+			[
+				"/api/library/profiles/user%2Fone/playlists?page=3&page_size=12&q=Road&snapshot=profile%20playlists",
 				"GET",
 			],
 		]);
@@ -210,6 +231,41 @@ describe("library core", () => {
 			"/api/library/playlists?page=2&page_size=1&scope=owned&snapshot=playlists-one",
 			"/api/library/playlists/playlist-one/entries?page=1&page_size=1",
 			"/api/library/playlists/playlist-one/entries?page=2&page_size=1&snapshot=entries-one",
+		]);
+		workflow.dispose();
+	});
+
+	it("keeps profile Library pages on subject-specific snapshots", async () => {
+		const fetcher = vi
+			.fn<typeof fetch>()
+			.mockResolvedValueOnce(Response.json(libraryPage(1, "profile-tracks")))
+			.mockResolvedValueOnce(Response.json(libraryPage(2, "profile-tracks")))
+			.mockResolvedValueOnce(Response.json(libraryPage(1, "profile-playlists")));
+		const core = createBackendCore({ fetch: fetcher });
+		core.authority.replace("session-token", "restored");
+		const workflow = core.workflows.library();
+
+		await workflow.loadProfileTracks("user-one", {
+			page: 1,
+			pageSize: 1,
+			reaction: "like",
+			newSnapshot: true,
+		});
+		await workflow.loadProfileTracks("user-one", {
+			page: 2,
+			pageSize: 1,
+			reaction: "like",
+		});
+		await workflow.loadProfilePlaylists("user-two", {
+			page: 1,
+			pageSize: 1,
+			newSnapshot: true,
+		});
+
+		expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+			"/api/library/profiles/user-one/tracks?page=1&page_size=1&reaction=like",
+			"/api/library/profiles/user-one/tracks?page=2&page_size=1&reaction=like&snapshot=profile-tracks",
+			"/api/library/profiles/user-two/playlists?page=1&page_size=1",
 		]);
 		workflow.dispose();
 	});

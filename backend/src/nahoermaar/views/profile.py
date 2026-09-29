@@ -17,6 +17,11 @@ from nahoermaar.catalog.domain import TrackId
 from nahoermaar.database.schema import registered_table
 from nahoermaar.database.uow import UnitOfWork, UnitOfWorkFactory
 from nahoermaar.listening.domain import PlaybackEndReason, PlaybackRecordId
+from nahoermaar.library.domain import (
+    PlaylistId,
+    PlaylistVisibility,
+    ReactionValue,
+)
 from nahoermaar.statistics.models import (
     PersonalStatisticsReport,
     StatisticsPeriod,
@@ -40,6 +45,7 @@ from nahoermaar.users.domain import (
 
 _LOGGER = logging.getLogger(__name__)
 _RECENT_TRACK_LIMIT = 10
+_LIBRARY_PREVIEW_LIMIT = 4
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,10 +75,40 @@ class RecentTrack:
 
 
 @dataclass(frozen=True, slots=True)
+class ProfileLibraryTrack:
+    track_id: TrackId
+    title: str
+    artist_names: tuple[str, ...]
+    artwork_url: str | None
+    duration_seconds: float | None
+    reacted_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class ProfilePlaylist:
+    playlist_id: PlaylistId
+    name: str
+    entry_count: int
+    artwork_urls: tuple[str, ...]
+    updated_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class ProfileLibrary:
+    likes_count: int
+    dislikes_count: int
+    public_playlist_count: int
+    liked_tracks: tuple[ProfileLibraryTrack, ...]
+    disliked_tracks: tuple[ProfileLibraryTrack, ...]
+    public_playlists: tuple[ProfilePlaylist, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class ProfileReport:
     identity: ProfileIdentity
     statistics: PersonalStatisticsReport
     recent_tracks: tuple[RecentTrack, ...]
+    library: ProfileLibrary
 
 
 class ProfileView:
@@ -83,8 +119,11 @@ class ProfileView:
         "_discord",
         "_listeners",
         "_playbacks",
+        "_playlist_entries",
+        "_playlists",
         "_preferences",
         "_profiles",
+        "_reactions",
         "_requests",
         "_statistics",
         "_track_artists",
@@ -107,6 +146,11 @@ class ProfileView:
         self._listeners = registered_table("playback_listeners", consumer="Profile")
         self._playbacks = registered_table("playback_records", consumer="Profile")
         self._requests = registered_table("track_requests", consumer="Profile")
+        self._reactions = registered_table("track_reactions", consumer="Profile")
+        self._playlists = registered_table("playlists", consumer="Profile")
+        self._playlist_entries = registered_table(
+            "playlist_entries", consumer="Profile"
+        )
         self._tracks = registered_table("tracks", consumer="Profile")
         self._track_artists = registered_table("track_artists", consumer="Profile")
         self._artists = registered_table("artists", consumer="Profile")
@@ -120,6 +164,7 @@ class ProfileView:
         async with self._units() as work:
             identity = await self._identity(work, user_id)
             recent_tracks = await self._recent_tracks(work, user_id)
+            library = await self._library(work, user_id)
         statistics = await self._statistics.user(user_id, period)
         _LOGGER.info(
             "profile.projected user_id=%s period=%s recent_tracks=%d partial=%s duration_ms=%.1f",
@@ -129,7 +174,7 @@ class ProfileView:
             statistics.coverage.partial,
             (perf_counter() - started_at) * 1000,
         )
-        return ProfileReport(identity, statistics, recent_tracks)
+        return ProfileReport(identity, statistics, recent_tracks, library)
 
     async def _identity(
         self,
@@ -294,3 +339,207 @@ class ProfileView:
             )
             for row in rows
         )
+
+    async def _library(
+        self,
+        work: UnitOfWork,
+        user_id: UserId,
+    ) -> ProfileLibrary:
+        reaction_counts = (
+            await work.session.execute(
+                select(
+                    func.count()
+                    .filter(self._reactions.c.value == ReactionValue.LIKE.value)
+                    .label("likes"),
+                    func.count()
+                    .filter(self._reactions.c.value == ReactionValue.DISLIKE.value)
+                    .label("dislikes"),
+                ).where(self._reactions.c.user_id == user_id)
+            )
+        ).one()
+        public_playlist_count = int(
+            await work.session.scalar(
+                select(func.count())
+                .select_from(self._playlists)
+                .where(
+                    self._playlists.c.owner_id == user_id,
+                    self._playlists.c.visibility == PlaylistVisibility.PUBLIC.value,
+                )
+            )
+            or 0
+        )
+        liked_tracks = await self._reaction_preview(
+            work,
+            user_id,
+            ReactionValue.LIKE,
+        )
+        disliked_tracks = await self._reaction_preview(
+            work,
+            user_id,
+            ReactionValue.DISLIKE,
+        )
+        public_playlists = await self._playlist_preview(work, user_id)
+        return ProfileLibrary(
+            int(reaction_counts.likes),
+            int(reaction_counts.dislikes),
+            public_playlist_count,
+            liked_tracks,
+            disliked_tracks,
+            public_playlists,
+        )
+
+    async def _reaction_preview(
+        self,
+        work: UnitOfWork,
+        user_id: UserId,
+        reaction: ReactionValue,
+    ) -> tuple[ProfileLibraryTrack, ...]:
+        artist_names = (
+            select(
+                func.array_agg(
+                    aggregate_order_by(
+                        self._artists.c.name,
+                        self._track_artists.c.position,
+                    )
+                )
+            )
+            .select_from(
+                self._track_artists.join(
+                    self._artists,
+                    self._artists.c.id == self._track_artists.c.artist_id,
+                )
+            )
+            .where(self._track_artists.c.track_id == self._tracks.c.id)
+            .scalar_subquery()
+        )
+        rows = (
+            (
+                await work.session.execute(
+                    select(
+                        self._tracks.c.id.label("track_id"),
+                        self._tracks.c.title,
+                        self._tracks.c.artwork_url,
+                        self._tracks.c.duration_seconds,
+                        self._reactions.c.updated_at,
+                        artist_names.label("artist_names"),
+                    )
+                    .select_from(
+                        self._reactions.join(
+                            self._tracks,
+                            self._tracks.c.id == self._reactions.c.track_id,
+                        )
+                    )
+                    .where(
+                        self._reactions.c.user_id == user_id,
+                        self._reactions.c.value == reaction.value,
+                    )
+                    .order_by(
+                        self._reactions.c.updated_at.desc(),
+                        self._reactions.c.track_id.desc(),
+                    )
+                    .limit(_LIBRARY_PREVIEW_LIMIT)
+                )
+            )
+            .mappings()
+            .all()
+        )
+        return tuple(
+            ProfileLibraryTrack(
+                TrackId(row["track_id"]),
+                cast(str, row["title"]),
+                tuple(cast(list[str] | None, row["artist_names"]) or ()),
+                row["artwork_url"],
+                row["duration_seconds"],
+                row["updated_at"],
+            )
+            for row in rows
+        )
+
+    async def _playlist_preview(
+        self,
+        work: UnitOfWork,
+        user_id: UserId,
+    ) -> tuple[ProfilePlaylist, ...]:
+        entry_count = (
+            select(func.count())
+            .select_from(self._playlist_entries)
+            .where(self._playlist_entries.c.playlist_id == self._playlists.c.id)
+            .scalar_subquery()
+        )
+        rows = (
+            (
+                await work.session.execute(
+                    select(
+                        self._playlists.c.id.label("playlist_id"),
+                        self._playlists.c.name,
+                        self._playlists.c.updated_at,
+                        entry_count.label("entry_count"),
+                    )
+                    .where(
+                        self._playlists.c.owner_id == user_id,
+                        self._playlists.c.visibility == PlaylistVisibility.PUBLIC.value,
+                    )
+                    .order_by(
+                        self._playlists.c.updated_at.desc(),
+                        self._playlists.c.id.desc(),
+                    )
+                    .limit(_LIBRARY_PREVIEW_LIMIT)
+                )
+            )
+            .mappings()
+            .all()
+        )
+        playlist_ids = tuple(PlaylistId(row["playlist_id"]) for row in rows)
+        artworks = await self._playlist_artworks(work, playlist_ids)
+        return tuple(
+            ProfilePlaylist(
+                PlaylistId(row["playlist_id"]),
+                cast(str, row["name"]),
+                int(row["entry_count"]),
+                artworks.get(PlaylistId(row["playlist_id"]), ()),
+                row["updated_at"],
+            )
+            for row in rows
+        )
+
+    async def _playlist_artworks(
+        self,
+        work: UnitOfWork,
+        playlist_ids: tuple[PlaylistId, ...],
+    ) -> dict[PlaylistId, tuple[str, ...]]:
+        if not playlist_ids:
+            return {}
+        rows = (
+            (
+                await work.session.execute(
+                    select(
+                        self._playlist_entries.c.playlist_id,
+                        self._tracks.c.artwork_url,
+                    )
+                    .select_from(
+                        self._playlist_entries.join(
+                            self._tracks,
+                            self._tracks.c.id == self._playlist_entries.c.track_id,
+                        )
+                    )
+                    .where(
+                        self._playlist_entries.c.playlist_id.in_(playlist_ids),
+                        self._tracks.c.artwork_url.is_not(None),
+                    )
+                    .order_by(
+                        self._playlist_entries.c.playlist_id,
+                        self._playlist_entries.c.position,
+                    )
+                )
+            )
+            .mappings()
+            .all()
+        )
+        collected: dict[PlaylistId, list[str]] = {}
+        for row in rows:
+            playlist_id = PlaylistId(row["playlist_id"])
+            artwork = cast(str, row["artwork_url"])
+            values = collected.setdefault(playlist_id, [])
+            if artwork not in values and len(values) < 4:
+                values.append(artwork)
+        return {playlist_id: tuple(values) for playlist_id, values in collected.items()}

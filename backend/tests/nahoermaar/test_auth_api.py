@@ -408,6 +408,14 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
             assert len(personal_highlights["listening_pattern"]["weekdays"]) == 7
             assert len(personal_highlights["listening_pattern"]["hours"]) == 24
             assert own_profile.json()["recent_tracks"] == []
+            assert own_profile.json()["library"] == {
+                "likes_count": 0,
+                "dislikes_count": 0,
+                "public_playlist_count": 0,
+                "liked_tracks": [],
+                "disliked_tracks": [],
+                "public_playlists": [],
+            }
             current_profile = await client.get("/api/profiles/me")
             assert current_profile.status_code == 200
             assert current_profile.json() == own_profile.json()

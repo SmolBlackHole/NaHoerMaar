@@ -7,7 +7,16 @@ import { formatStatistic, formatStatisticsDuration } from "~/core/models/statist
 
 const props = defineProps<{ value: ListenerProfile }>();
 const period = defineModel<StatisticsPeriod>("period", { required: true });
+const view = defineModel<"overview" | "liked" | "disliked" | "playlists">("view", {
+	required: true,
+});
 const { icons } = useTheme();
+const views = [
+	{ value: "overview", label: "Overview", compactLabel: "Overview" },
+	{ value: "liked", label: "Likes", compactLabel: "Likes" },
+	{ value: "disliked", label: "Dislikes", compactLabel: "Dislikes" },
+	{ value: "playlists", label: "Public playlists", compactLabel: "Playlists" },
+] as const;
 
 const displayName = computed(
 	() =>
@@ -93,71 +102,151 @@ function formatDate(value: string) {
 					</p>
 				</div>
 			</div>
-			<StatisticsPeriodSelect v-model="period" />
+			<StatisticsPeriodSelect v-if="view === 'overview'" v-model="period" />
 		</header>
 
-		<StatisticsMetricGrid class="mt-7" :items="metrics" />
-		<p v-if="value.statistics.coverage.partial" class="mt-3 text-xs leading-relaxed text-muted">
-			Showing the activity NaHörMaar has recorded so far. Earlier listening is not included.
-		</p>
+		<nav class="profile-view-nav mt-7" aria-label="Profile sections">
+			<button
+				v-for="item in views"
+				:key="item.value"
+				type="button"
+				class="profile-view-button"
+				:class="{ 'profile-view-button-active': view === item.value }"
+				:aria-current="view === item.value ? 'page' : undefined"
+				:aria-label="item.label"
+				@click="view = item.value"
+			>
+				<span class="sm:hidden">{{ item.compactLabel }}</span>
+				<span class="hidden sm:inline">{{ item.label }}</span>
+			</button>
+		</nav>
 
-		<slot name="details" />
+		<template v-if="view === 'overview'">
+			<StatisticsMetricGrid class="mt-7" :items="metrics" />
+			<p
+				v-if="value.statistics.coverage.partial"
+				class="mt-3 text-xs leading-relaxed text-muted"
+			>
+				Showing the activity NaHörMaar has recorded so far. Earlier listening is not
+				included.
+			</p>
 
-		<section
-			v-if="value.statistics.highlights.badges.length"
-			class="mt-10 rounded-2xl bg-linear-to-br from-primary/10 via-elevated/35 to-elevated/20 p-5"
-			aria-label="Achievements"
-		>
-			<StatisticsListenerBadges
-				:badges="value.statistics.highlights.badges"
-				:period-label="periodLabel"
-				heading
-			/>
-		</section>
+			<slot name="details" />
+			<ProfileLibraryPreview class="mt-10" :value="value.library" @select="view = $event" />
 
-		<div class="mt-12 grid gap-12 2xl:grid-cols-[minmax(0,1.15fr)_minmax(24rem,0.85fr)]">
-			<StatisticsActivity
-				:activity="value.statistics.activity"
-				:granularity="value.statistics.coverage.granularity"
-				scope="personal"
-			/>
-			<ProfileListeningRhythm :pattern="value.statistics.highlights.listening_pattern" />
-		</div>
+			<section
+				v-if="value.statistics.highlights.badges.length"
+				class="mt-10 rounded-2xl bg-linear-to-br from-primary/10 via-elevated/35 to-elevated/20 p-5"
+				aria-label="Achievements"
+			>
+				<StatisticsListenerBadges
+					:badges="value.statistics.highlights.badges"
+					:period-label="periodLabel"
+					heading
+				/>
+			</section>
 
-		<ProfileFavorites class="mt-12" :statistics="value.statistics" />
-		<ProfileInsights class="mt-12" :highlights="value.statistics.highlights" />
-
-		<section class="mt-12" aria-labelledby="recent-heading">
-			<div>
-				<h2 id="recent-heading" class="text-lg font-semibold text-highlighted">
-					Recently heard
-				</h2>
-				<p class="mt-1 text-xs text-muted">
-					The latest tracks this listener actually heard.
-				</p>
+			<div class="mt-12 grid gap-12 2xl:grid-cols-[minmax(0,1.15fr)_minmax(24rem,0.85fr)]">
+				<StatisticsActivity
+					:activity="value.statistics.activity"
+					:granularity="value.statistics.coverage.granularity"
+					scope="personal"
+				/>
+				<ProfileListeningRhythm :pattern="value.statistics.highlights.listening_pattern" />
 			</div>
-			<ul v-if="recentTracks.length" class="mt-5 grid gap-2 lg:grid-cols-2">
-				<li
-					v-for="track in recentTracks"
-					:key="track.playback_id"
-					class="flex min-w-0 items-center gap-3 rounded-xl bg-elevated/35 p-2.5"
-				>
-					<SharedTrackIdentity
-						:entry="track"
-						:title="track.title"
-						:artist-names="track.artist_names"
-						class="min-w-0 flex-1"
-						multiline
-					/>
-					<div class="shrink-0 text-right text-xs text-muted">
-						<p class="tabular-nums">
-							{{ formatStatisticsDuration(track.audio_seconds) }}
-						</p>
-						<p class="mt-0.5">{{ formatDate(track.last_heard_at) }}</p>
-					</div>
-				</li>
-			</ul>
-			<p v-else class="mt-5 text-sm text-muted">No recent listening yet.</p>
-		</section>
+
+			<ProfileFavorites class="mt-12" :statistics="value.statistics" />
+			<ProfileInsights class="mt-12" :highlights="value.statistics.highlights" />
+
+			<section class="mt-12" aria-labelledby="recent-heading">
+				<div>
+					<h2 id="recent-heading" class="text-lg font-semibold text-highlighted">
+						Recently heard
+					</h2>
+					<p class="mt-1 text-xs text-muted">
+						The latest tracks this listener actually heard.
+					</p>
+				</div>
+				<ul v-if="recentTracks.length" class="mt-5 grid gap-2 lg:grid-cols-2">
+					<li
+						v-for="track in recentTracks"
+						:key="track.playback_id"
+						class="flex min-w-0 items-center gap-3 rounded-xl bg-elevated/35 p-2.5"
+					>
+						<SharedTrackIdentity
+							:entry="track"
+							:title="track.title"
+							:artist-names="track.artist_names"
+							class="min-w-0 flex-1"
+							multiline
+						/>
+						<div class="shrink-0 text-right text-xs text-muted">
+							<p class="tabular-nums">
+								{{ formatStatisticsDuration(track.audio_seconds) }}
+							</p>
+							<p class="mt-0.5">{{ formatDate(track.last_heard_at) }}</p>
+						</div>
+					</li>
+				</ul>
+				<p v-else class="mt-5 text-sm text-muted">No recent listening yet.</p>
+			</section>
+		</template>
+		<slot v-else name="collection" />
 	</div>
 </template>
+
+<style scoped>
+.profile-view-nav {
+	display: flex;
+	gap: 0.25rem;
+	overflow-x: auto;
+	border-bottom: 1px solid var(--ui-border);
+}
+.profile-view-button {
+	position: relative;
+	flex: 0 0 auto;
+	padding: 0.75rem 0.875rem;
+	font-size: 0.875rem;
+	font-weight: 500;
+	color: var(--ui-text-muted);
+}
+.profile-view-button::after {
+	position: absolute;
+	right: 0.75rem;
+	bottom: -1px;
+	left: 0.75rem;
+	height: 2px;
+	content: "";
+	background: transparent;
+}
+.profile-view-button:hover,
+.profile-view-button:focus-visible,
+.profile-view-button-active {
+	color: var(--ui-text-highlighted);
+}
+.profile-view-button-active::after {
+	background: var(--ui-primary);
+}
+.profile-view-button:focus-visible {
+	outline: 2px solid var(--ui-primary);
+	outline-offset: -2px;
+}
+@media (max-width: 639px) {
+	.profile-view-nav {
+		display: grid;
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+		gap: 0;
+		overflow-x: visible;
+	}
+	.profile-view-button {
+		min-width: 0;
+		padding-inline: 0.25rem;
+		font-size: 0.75rem;
+		text-align: center;
+	}
+	.profile-view-button::after {
+		right: 0.25rem;
+		left: 0.25rem;
+	}
+}
+</style>

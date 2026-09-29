@@ -58,6 +58,25 @@ export function createLibraryRepository(request: Transport) {
 					signal,
 				}),
 			),
+		profilePlaylists: (
+			userId: string,
+			options: Omit<PlaylistPageQuery, "scope"> = {},
+			signal?: AbortSignal,
+		) =>
+			request((api) =>
+				api.GET("/api/library/profiles/{user_id}/playlists", {
+					params: {
+						path: { user_id: userId },
+						query: {
+							page: options.page ?? 1,
+							page_size: options.pageSize ?? 20,
+							q: options.query,
+							snapshot: options.snapshot,
+						},
+					},
+					signal,
+				}),
+			),
 		playlist: (playlistId: string, signal?: AbortSignal) =>
 			request((api) =>
 				api.GET("/api/library/playlists/{playlist_id}", {
@@ -256,6 +275,22 @@ export function createLibraryRepository(request: Transport) {
 			request((api) =>
 				api.GET("/api/library/tracks", {
 					params: {
+						query: {
+							page: options.page ?? 1,
+							page_size: options.pageSize ?? 20,
+							q: options.query,
+							reaction: options.reaction,
+							snapshot: options.snapshot,
+						},
+					},
+					signal,
+				}),
+			),
+		profileTracks: (userId: string, options: LibraryTracksQuery = {}, signal?: AbortSignal) =>
+			request((api) =>
+				api.GET("/api/library/profiles/{user_id}/tracks", {
+					params: {
+						path: { user_id: userId },
 						query: {
 							page: options.page ?? 1,
 							page_size: options.pageSize ?? 20,

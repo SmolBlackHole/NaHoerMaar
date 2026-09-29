@@ -312,6 +312,39 @@ def router(application: Application) -> APIRouter:
             snapshot=_encoded_snapshot(result.snapshot),
         )
 
+    @routes.get(
+        "/profiles/{user_id}/playlists",
+        operation_id="listProfilePublicPlaylists",
+        responses=error_responses(401, 404, 422, 500, 503),
+    )
+    async def list_profile_playlists(
+        request: Request,
+        user_id: UUID,
+        q: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
+        page: Annotated[int, Query(ge=1)] = 1,
+        page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+        snapshot: str | None = None,
+    ) -> PlaylistPageView:
+        try:
+            result = await application.library.service.profile_playlists(
+                authenticated(request).user.id,
+                UserId(user_id),
+                page=page,
+                page_size=page_size,
+                query=q,
+                snapshot=_snapshot(snapshot),
+            )
+        except ValueError as error:
+            raise ApiError(ApiErrorCode.VALIDATION_FAILED, 422) from error
+        return PlaylistPageView(
+            items=tuple(_playlist_view(item, application) for item in result.entries),
+            page=result.page,
+            page_size=result.page_size,
+            total=result.total,
+            page_count=result.page_count,
+            snapshot=_encoded_snapshot(result.snapshot),
+        )
+
     @routes.post(
         "/playlists",
         operation_id="createLibraryPlaylist",
@@ -685,6 +718,41 @@ def router(application: Application) -> APIRouter:
         try:
             result = await application.library.service.tracks(
                 authenticated(request).user.id,
+                reaction=reaction,
+                page=page,
+                page_size=page_size,
+                query=q,
+                snapshot=_snapshot(snapshot),
+            )
+        except ValueError as error:
+            raise ApiError(ApiErrorCode.VALIDATION_FAILED, 422) from error
+        return LibraryTrackPageView(
+            items=tuple(_track_view(item) for item in result.entries),
+            page=result.page,
+            page_size=result.page_size,
+            total=result.total,
+            page_count=result.page_count,
+            snapshot=_encoded_snapshot(result.snapshot),
+        )
+
+    @routes.get(
+        "/profiles/{user_id}/tracks",
+        operation_id="listProfileLibraryTracks",
+        responses=error_responses(401, 404, 422, 500, 503),
+    )
+    async def list_profile_tracks(
+        request: Request,
+        user_id: UUID,
+        reaction: ReactionValue = ReactionValue.LIKE,
+        q: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
+        page: Annotated[int, Query(ge=1)] = 1,
+        page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+        snapshot: str | None = None,
+    ) -> LibraryTrackPageView:
+        authenticated(request)
+        try:
+            result = await application.library.service.profile_tracks(
+                UserId(user_id),
                 reaction=reaction,
                 page=page,
                 page_size=page_size,

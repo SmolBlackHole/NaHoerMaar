@@ -7,6 +7,7 @@ const session = core.stores.useSessionStore();
 const account = core.stores.useAccountStore();
 const profile = core.workflows.profile();
 const period = ref<StatisticsPeriod>("30d");
+const section = useProfileSection();
 const details = computed(() => profile.profile.data.value);
 const { icons } = useTheme();
 const toast = useToast();
@@ -47,6 +48,7 @@ onScopeDispose(profile.dispose);
 					<ProfileSkeleton
 						v-if="profile.profile.loading.value && !details"
 						aria-label="Loading your profile"
+						:view="section"
 						editable
 					/>
 
@@ -73,7 +75,24 @@ onScopeDispose(profile.dispose);
 						</div>
 					</div>
 
-					<ProfileOverview v-else v-model:period="period" :value="details">
+					<ProfileOverview
+						v-else
+						v-model:period="period"
+						v-model:view="section"
+						:value="details"
+					>
+						<template #collection>
+							<ProfileLibraryCollection
+								:user-id="details.id"
+								:display-name="
+									details.profile.display_name ??
+									details.discord.display_name ??
+									details.discord.username ??
+									'Listener'
+								"
+								:view="section === 'overview' ? 'liked' : section"
+							/>
+						</template>
 						<template #details>
 							<div
 								class="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.65fr)] lg:items-start"

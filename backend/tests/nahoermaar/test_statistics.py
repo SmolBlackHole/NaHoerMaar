@@ -15,7 +15,7 @@ import pytest
 from sqlalchemy import insert
 
 from nahoermaar.database.core import Database
-from nahoermaar.database.schema import Base
+from nahoermaar.database.schema import Base, registered_table
 from nahoermaar.database.uow import UnitOfWork
 from nahoermaar.statistics.main import create_statistics_module
 from nahoermaar.statistics.models import (
@@ -364,6 +364,85 @@ def test_statistics_project_shared_and_personal_facts_without_double_counting() 
         )
         service = module.service
         profiles = ProfileView(units, service)
+        reactions = registered_table("track_reactions", consumer="Statistics tests")
+        playlists = registered_table("playlists", consumer="Statistics tests")
+        playlist_entries = registered_table(
+            "playlist_entries", consumer="Statistics tests"
+        )
+        public_playlist_id = uuid4()
+        async with units() as work:
+            await work.session.execute(
+                insert(reactions),
+                [
+                    {
+                        "user_id": listener_id,
+                        "track_id": seeded.first_track_id,
+                        "value": "like",
+                        "created_at": NOW,
+                        "updated_at": NOW,
+                    },
+                    {
+                        "user_id": listener_id,
+                        "track_id": seeded.second_track_id,
+                        "value": "dislike",
+                        "created_at": NOW + timedelta(minutes=1),
+                        "updated_at": NOW + timedelta(minutes=1),
+                    },
+                ],
+            )
+            await work.session.execute(
+                insert(playlists),
+                [
+                    {
+                        "id": public_playlist_id,
+                        "owner_id": listener_id,
+                        "owner_position": 0,
+                        "name": "Public favourites",
+                        "visibility": "public",
+                        "source_provider_key": None,
+                        "source_external_id": None,
+                        "source_url": None,
+                        "source_last_attempt_at": None,
+                        "source_last_successful_sync_at": None,
+                        "source_last_error_code": None,
+                        "source_unavailable_entry_count": 0,
+                        "source_truncated": False,
+                        "revision": 0,
+                        "created_at": NOW,
+                        "updated_at": NOW,
+                    },
+                    {
+                        "id": uuid4(),
+                        "owner_id": listener_id,
+                        "owner_position": 1,
+                        "name": "Private favourites",
+                        "visibility": "private",
+                        "source_provider_key": None,
+                        "source_external_id": None,
+                        "source_url": None,
+                        "source_last_attempt_at": None,
+                        "source_last_successful_sync_at": None,
+                        "source_last_error_code": None,
+                        "source_unavailable_entry_count": 0,
+                        "source_truncated": False,
+                        "revision": 0,
+                        "created_at": NOW,
+                        "updated_at": NOW,
+                    },
+                ],
+            )
+            await work.session.execute(
+                insert(playlist_entries).values(
+                    id=uuid4(),
+                    playlist_id=public_playlist_id,
+                    track_id=seeded.first_track_id,
+                    preferred_source_id=None,
+                    added_by=listener_id,
+                    position=0,
+                    created_at=NOW,
+                )
+            )
+            await work.commit()
         overview = await service.overview(StatisticsPeriod.DAYS_7)
         personal = await service.user(listener_id, StatisticsPeriod.DAYS_7)
 
@@ -522,6 +601,19 @@ def test_statistics_project_shared_and_personal_facts_without_double_counting() 
         assert profile.recent_tracks[0].artist_names == ("Shared artist",)
         assert profile.recent_tracks[0].audio_seconds == 40.0
         assert profile.recent_tracks[1].audio_seconds == 100.0
+        assert profile.library.likes_count == 1
+        assert profile.library.dislikes_count == 1
+        assert profile.library.public_playlist_count == 1
+        assert [track.title for track in profile.library.liked_tracks] == [
+            "First track"
+        ]
+        assert [track.title for track in profile.library.disliked_tracks] == [
+            "Second track"
+        ]
+        assert [playlist.name for playlist in profile.library.public_playlists] == [
+            "Public favourites"
+        ]
+        assert profile.library.public_playlists[0].entry_count == 1
 
         with pytest.raises(AuthError) as caught:
             await service.user(blocked_id, StatisticsPeriod.ALL)

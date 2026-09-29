@@ -9,6 +9,7 @@ const profile = core.workflows.profile();
 const details = computed(() => profile.profile.data.value);
 const userId = computed(() => String(route.params.userId));
 const period = ref<StatisticsPeriod>("30d");
+const section = useProfileSection();
 const { icons } = useTheme();
 
 async function load(id: string) {
@@ -47,6 +48,7 @@ onScopeDispose(profile.dispose);
 					<ProfileSkeleton
 						v-if="profile.profile.loading.value && !details"
 						aria-label="Loading listener profile"
+						:view="section"
 					/>
 
 					<div v-else-if="!details" class="grid min-h-80 place-items-center">
@@ -72,7 +74,25 @@ onScopeDispose(profile.dispose);
 						</div>
 					</div>
 
-					<ProfileOverview v-else v-model:period="period" :value="details" />
+					<ProfileOverview
+						v-else
+						v-model:period="period"
+						v-model:view="section"
+						:value="details"
+					>
+						<template #collection>
+							<ProfileLibraryCollection
+								:user-id="details.id"
+								:display-name="
+									details.profile.display_name ??
+									details.discord.display_name ??
+									details.discord.username ??
+									'Listener'
+								"
+								:view="section === 'overview' ? 'liked' : section"
+							/>
+						</template>
+					</ProfileOverview>
 				</div>
 			</template>
 		</UDashboardPanel>

@@ -557,6 +557,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/library/profiles/{user_id}/playlists": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Profile Playlists */
+        get: operations["listProfilePublicPlaylists"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/library/profiles/{user_id}/tracks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Profile Tracks */
+        get: operations["listProfileLibraryTracks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/library/reactions": {
         parameters: {
             query?: never;
@@ -2418,6 +2452,42 @@ export interface components {
          * @enum {string}
          */
         PrimaryColor: "red" | "orange" | "amber" | "yellow" | "lime" | "green" | "emerald" | "teal" | "cyan" | "sky" | "blue" | "indigo" | "violet" | "purple" | "fuchsia" | "pink" | "rose";
+        /** ProfileLibraryTrackView */
+        ProfileLibraryTrackView: {
+            /** Artist Names */
+            artist_names: string[];
+            /** Artwork Url */
+            artwork_url: string | null;
+            /** Duration Seconds */
+            duration_seconds: number | null;
+            /**
+             * Reacted At
+             * Format: date-time
+             */
+            reacted_at: string;
+            /** Title */
+            title: string;
+            /**
+             * Track Id
+             * Format: uuid
+             */
+            track_id: string;
+        };
+        /** ProfileLibraryView */
+        ProfileLibraryView: {
+            /** Disliked Tracks */
+            disliked_tracks: components["schemas"]["ProfileLibraryTrackView"][];
+            /** Dislikes Count */
+            dislikes_count: number;
+            /** Liked Tracks */
+            liked_tracks: components["schemas"]["ProfileLibraryTrackView"][];
+            /** Likes Count */
+            likes_count: number;
+            /** Public Playlist Count */
+            public_playlist_count: number;
+            /** Public Playlists */
+            public_playlists: components["schemas"]["ProfilePlaylistView"][];
+        };
         /** ProfilePageView */
         ProfilePageView: {
             appearance: components["schemas"]["AppearanceView"];
@@ -2434,11 +2504,31 @@ export interface components {
             id: string;
             /** Last Login At */
             last_login_at: string | null;
+            library: components["schemas"]["ProfileLibraryView"];
             profile: components["schemas"]["ProfileView"];
             /** Recent Tracks */
             recent_tracks: components["schemas"]["RecentTrackView"][];
             role: components["schemas"]["AccessRole"] | null;
             statistics: components["schemas"]["PersonalStatisticsView"];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** ProfilePlaylistView */
+        ProfilePlaylistView: {
+            /** Artwork Urls */
+            artwork_urls: string[];
+            /** Entry Count */
+            entry_count: number;
+            /** Name */
+            name: string;
+            /**
+             * Playlist Id
+             * Format: uuid
+             */
+            playlist_id: string;
             /**
              * Updated At
              * Format: date-time
@@ -5823,6 +5913,151 @@ export interface operations {
             };
             /** @description Upstream dependency failed */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Dependency unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+        };
+    };
+    listProfilePublicPlaylists: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+                q?: string | null;
+                snapshot?: string | null;
+            };
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaylistPageView"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Dependency unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+        };
+    };
+    listProfileLibraryTracks: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+                q?: string | null;
+                reaction?: components["schemas"]["ReactionValue"];
+                snapshot?: string | null;
+            };
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryTrackPageView"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

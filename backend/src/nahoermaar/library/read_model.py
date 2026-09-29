@@ -500,6 +500,7 @@ class LibraryReadModel:
         actor_id: UserId,
         *,
         scope: PlaylistScope,
+        owner_id: UserId | None = None,
         page: int,
         page_size: int,
         query: str | None = None,
@@ -517,6 +518,10 @@ class LibraryReadModel:
             ]
         else:
             filters = [self._playlists.c.visibility == PlaylistVisibility.PUBLIC]
+        if owner_id is not None:
+            if scope is not PlaylistScope.PUBLIC:
+                raise ValueError("An owner filter requires the public playlist scope.")
+            filters.append(self._playlists.c.owner_id == owner_id)
         normalized = query.strip() if query is not None else ""
         if normalized:
             filters.append(self._playlists.c.name.ilike(f"%{normalized}%"))

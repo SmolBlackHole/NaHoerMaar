@@ -102,9 +102,42 @@ class RecentTrackView(BaseModel):
     end_reason: PlaybackEndReason | None
 
 
+class ProfileLibraryTrackView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    track_id: UUID
+    title: str
+    artist_names: tuple[str, ...]
+    artwork_url: str | None
+    duration_seconds: float | None
+    reacted_at: datetime
+
+
+class ProfilePlaylistView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    playlist_id: UUID
+    name: str
+    entry_count: int
+    artwork_urls: tuple[str, ...]
+    updated_at: datetime
+
+
+class ProfileLibraryView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    likes_count: int
+    dislikes_count: int
+    public_playlist_count: int
+    liked_tracks: tuple[ProfileLibraryTrackView, ...]
+    disliked_tracks: tuple[ProfileLibraryTrackView, ...]
+    public_playlists: tuple[ProfilePlaylistView, ...]
+
+
 class ProfilePageView(UserView):
     statistics: PersonalStatisticsView
     recent_tracks: tuple[RecentTrackView, ...]
+    library: ProfileLibraryView
 
 
 class ProfileUpdate(BaseModel):
@@ -459,6 +492,43 @@ def _profile_page_view(
                 end_reason=track.end_reason,
             )
             for track in report.recent_tracks
+        ),
+        library=ProfileLibraryView(
+            likes_count=report.library.likes_count,
+            dislikes_count=report.library.dislikes_count,
+            public_playlist_count=report.library.public_playlist_count,
+            liked_tracks=tuple(
+                ProfileLibraryTrackView(
+                    track_id=track.track_id,
+                    title=track.title,
+                    artist_names=track.artist_names,
+                    artwork_url=track.artwork_url,
+                    duration_seconds=track.duration_seconds,
+                    reacted_at=track.reacted_at,
+                )
+                for track in report.library.liked_tracks
+            ),
+            disliked_tracks=tuple(
+                ProfileLibraryTrackView(
+                    track_id=track.track_id,
+                    title=track.title,
+                    artist_names=track.artist_names,
+                    artwork_url=track.artwork_url,
+                    duration_seconds=track.duration_seconds,
+                    reacted_at=track.reacted_at,
+                )
+                for track in report.library.disliked_tracks
+            ),
+            public_playlists=tuple(
+                ProfilePlaylistView(
+                    playlist_id=playlist.playlist_id,
+                    name=playlist.name,
+                    entry_count=playlist.entry_count,
+                    artwork_urls=playlist.artwork_urls,
+                    updated_at=playlist.updated_at,
+                )
+                for playlist in report.library.public_playlists
+            ),
         ),
     )
 

@@ -121,6 +121,26 @@ class LibraryService:
             snapshot=snapshot,
         )
 
+    async def profile_tracks(
+        self,
+        subject_id: UserId,
+        *,
+        reaction: ReactionValue,
+        page: int,
+        page_size: int,
+        query: str | None = None,
+        snapshot: LibrarySnapshot | None = None,
+    ) -> LibraryTrackPage:
+        await self._require_user(subject_id)
+        return await self._reader.tracks(
+            subject_id,
+            reaction=reaction,
+            page=page,
+            page_size=page_size,
+            query=query,
+            snapshot=snapshot,
+        )
+
     async def participants(
         self,
         track_id: TrackId,
@@ -214,6 +234,27 @@ class LibraryService:
         return await self._reader.playlists(
             actor_id,
             scope=scope,
+            page=page,
+            page_size=page_size,
+            query=query,
+            snapshot=snapshot,
+        )
+
+    async def profile_playlists(
+        self,
+        actor_id: UserId,
+        subject_id: UserId,
+        *,
+        page: int,
+        page_size: int,
+        query: str | None = None,
+        snapshot: LibrarySnapshot | None = None,
+    ) -> PlaylistPage:
+        await self._require_user(subject_id)
+        return await self._reader.playlists(
+            actor_id,
+            scope=PlaylistScope.PUBLIC,
+            owner_id=subject_id,
             page=page,
             page_size=page_size,
             query=query,
@@ -517,3 +558,7 @@ class LibraryService:
     async def _require_track(self, track_id: TrackId) -> None:
         if track_id not in await self._catalog.tracks({track_id}):
             raise LibraryError(LibraryErrorCode.TRACK_NOT_FOUND, 404)
+
+    async def _require_user(self, user_id: UserId) -> None:
+        if not await self._reader.user_exists(user_id):
+            raise LibraryError(LibraryErrorCode.USER_NOT_FOUND, 404)

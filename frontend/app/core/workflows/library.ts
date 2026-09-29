@@ -28,6 +28,7 @@ export interface PlaylistFilters {
 export function createLibraryWorkflow(client: BackendClient, authority: SessionAuthority) {
 	let participantTrackId: string | null = null;
 	let entryPlaylistId: string | null = null;
+	let profileUserId: string | null = null;
 	const tracks = createPagePagination<LibraryTrackPage, LibraryTrackFilters>(
 		authority,
 		(request, signal) =>
@@ -87,6 +88,36 @@ export function createLibraryWorkflow(client: BackendClient, authority: SessionA
 			signal,
 		);
 	});
+	const profileTracks = createPagePagination<LibraryTrackPage, LibraryTrackFilters>(
+		authority,
+		(request, signal) => {
+			if (!profileUserId) throw new Error("A profile is required before loading tracks.");
+			return client.library.profileTracks(
+				profileUserId,
+				{
+					page: request.page,
+					pageSize: request.pageSize,
+					query: request.query,
+					reaction: request.filters.reaction,
+					snapshot: request.snapshot,
+				},
+				signal,
+			);
+		},
+	);
+	const profilePlaylists = createPagePagination<PlaylistPage>(authority, (request, signal) => {
+		if (!profileUserId) throw new Error("A profile is required before loading playlists.");
+		return client.library.profilePlaylists(
+			profileUserId,
+			{
+				page: request.page,
+				pageSize: request.pageSize,
+				query: request.query,
+				snapshot: request.snapshot,
+			},
+			signal,
+		);
+	});
 	return {
 		tracks: tracks.page,
 		loadTracks: tracks.load,
@@ -136,11 +167,49 @@ export function createLibraryWorkflow(client: BackendClient, authority: SessionA
 			entryPlaylistId = null;
 			entries.page.set(null);
 		},
+		profileTracks: profileTracks.page,
+		loadProfileTracks: (
+			userId: string,
+			options: {
+				page?: number;
+				pageSize?: number;
+				query?: string;
+				reaction: ReactionValue;
+				newSnapshot?: boolean;
+			},
+		) => {
+			const changedProfile = profileUserId !== userId;
+			profileUserId = userId;
+			return profileTracks.load({
+				...options,
+				filters: { reaction: options.reaction },
+				newSnapshot: options.newSnapshot || changedProfile,
+			});
+		},
+		profilePlaylists: profilePlaylists.page,
+		loadProfilePlaylists: (
+			userId: string,
+			options: {
+				page?: number;
+				pageSize?: number;
+				query?: string;
+				newSnapshot?: boolean;
+			},
+		) => {
+			const changedProfile = profileUserId !== userId;
+			profileUserId = userId;
+			return profilePlaylists.load({
+				...options,
+				newSnapshot: options.newSnapshot || changedProfile,
+			});
+		},
 		dispose: () => {
 			tracks.dispose();
 			participants.dispose();
 			playlists.dispose();
 			entries.dispose();
+			profileTracks.dispose();
+			profilePlaylists.dispose();
 		},
 	};
 }
