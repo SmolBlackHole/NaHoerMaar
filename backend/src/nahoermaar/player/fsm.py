@@ -173,6 +173,8 @@ def _actor(actor_id: UserId | None) -> UserId:
 
 
 def _play(state: PlayerState, now: datetime) -> Transition:
+    if state.session.channel_id is None:
+        raise PlayerError(PlayerErrorCode.VOICE_CHANNEL_REQUIRED, 409)
     checkpoint = state.checkpoint
     if checkpoint.intent is PlaybackIntent.PLAYING:
         return Transition(state, MutationOutcome(PlayerAction.PLAYBACK_PLAYED))
@@ -303,20 +305,27 @@ def _suspend_playback(
     state: PlayerState,
     command: SuspendPlayback,
 ) -> Transition:
+    updated = _disconnect_voice(
+        state,
+        clear_sleep_timer=command.reason is SuspensionReason.SLEEP_TIMER,
+    )
+    return Transition(updated, MutationOutcome(PlayerAction.PLAYBACK_SUSPENDED))
+
+
+def _disconnect_voice(
+    state: PlayerState,
+    *,
+    clear_sleep_timer: bool = False,
+) -> PlayerState:
     checkpoint = state.checkpoint
     if checkpoint.intent is PlaybackIntent.PLAYING:
         checkpoint = replace(checkpoint, intent=PlaybackIntent.PAUSED)
     session = replace(
         state.session,
         channel_id=None,
-        sleep_at=(
-            None
-            if command.reason is SuspensionReason.SLEEP_TIMER
-            else state.session.sleep_at
-        ),
+        sleep_at=None if clear_sleep_timer else state.session.sleep_at,
     )
-    updated = replace(state, session=session, checkpoint=checkpoint)
-    return Transition(updated, MutationOutcome(PlayerAction.PLAYBACK_SUSPENDED))
+    return replace(state, session=session, checkpoint=checkpoint)
 
 
 def _join_voice(state: PlayerState, command: JoinVoice) -> Transition:
@@ -330,10 +339,7 @@ def _join_voice(state: PlayerState, command: JoinVoice) -> Transition:
 
 
 def _leave_voice(state: PlayerState) -> Transition:
-    updated = replace(
-        state,
-        session=replace(state.session, channel_id=None),
-    )
+    updated = _disconnect_voice(state)
     return Transition(updated, MutationOutcome(PlayerAction.VOICE_LEFT))
 
 

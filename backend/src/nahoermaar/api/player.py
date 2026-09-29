@@ -26,6 +26,7 @@ from nahoermaar.messaging import MessageContext
 from nahoermaar.player.domain import (
     ListeningSessionId,
     OperationId,
+    PlaybackIntent,
     PlayerState,
     QueueEntryId,
     RadioSeed,
@@ -676,11 +677,14 @@ def player_document(
         and runtime.request is not None
         and runtime.request.id == current_request.id
     )
-    runtime_phase = (
-        runtime.phase
-        if current_request is None or runtime_matches_current
-        else PlaybackPhase.STARTING
-    )
+    if current_request is None or runtime_matches_current:
+        runtime_phase = runtime.phase
+    elif state.session.channel_id is not None:
+        runtime_phase = PlaybackPhase.STARTING
+    elif state.checkpoint.intent is PlaybackIntent.PAUSED:
+        runtime_phase = PlaybackPhase.PAUSED
+    else:
+        runtime_phase = PlaybackPhase.IDLE
     return PlayerView(
         session_id=state.session.id,
         revision=state.session.revision,

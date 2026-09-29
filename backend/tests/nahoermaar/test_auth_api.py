@@ -877,6 +877,22 @@ def test_auth_profile_access_origin_and_csrf_share_one_api_boundary(
                 headers={**headers, "Idempotency-Key": str(play_operation_id)},
                 json={"action": "play"},
             )
+            assert played.status_code == 409
+            assert played.json() == {"code": "voice_channel_required"}
+
+            joined = await client.put(
+                "/api/player/voice",
+                headers={**headers, "Idempotency-Key": str(uuid4())},
+                json={"channel_id": "42"},
+            )
+            assert joined.status_code == 200
+            await anext(events)
+
+            played = await client.post(
+                "/api/player/control",
+                headers={**headers, "Idempotency-Key": str(uuid4())},
+                json={"action": "play"},
+            )
             assert played.status_code == 200
             runtime = played.json()["player"]["runtime"]
             assert runtime["phase"] == "starting"

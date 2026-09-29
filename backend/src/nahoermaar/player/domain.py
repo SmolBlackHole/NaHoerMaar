@@ -119,6 +119,7 @@ class PlayerErrorCode(StrEnum):
     RADIO_NOT_ACTIVE = "radio_not_active"
     SESSION_CLOSED = "session_closed"
     UNDO_UNAVAILABLE = "undo_unavailable"
+    VOICE_CHANNEL_REQUIRED = "voice_channel_required"
 
 
 class PlayerError(RuntimeError):

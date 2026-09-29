@@ -313,6 +313,35 @@ describe("new backend Pinia stores", () => {
 		expect(fixture.playerStore.error).not.toContain("queue_conflict");
 	});
 
+	it("clears the play spinner when no voice channel is selected", async () => {
+		const fixture = playerFixture();
+		await authenticate(fixture);
+		fixture.events.send("state", { ...player(), channel_id: null });
+		await nextTick();
+
+		let finishHttp!: (response: Response) => void;
+		const response = new Promise<Response>((resolve) => (finishHttp = resolve));
+		fixture.fetcher.mockClear();
+		fixture.fetcher.mockImplementation(async (input) => {
+			if (String(input) === "/api/player/control") return response;
+			throw new Error(`Unexpected request: ${String(input)}`);
+		});
+
+		const pending = fixture.playerStore.play();
+		await vi.waitFor(() => expect(fixture.fetcher).toHaveBeenCalledOnce());
+		expect(fixture.playerStore.isPending("play")).toBe(true);
+
+		finishHttp(Response.json({ code: "voice_channel_required" }, { status: 409 }));
+		await pending;
+
+		expect(fixture.playerStore.isPending("play")).toBe(false);
+		expect(fixture.playerStore.pendingOperationIds).toEqual([]);
+		expect(fixture.playerStore.failure).toMatchObject({
+			code: "voice_channel_required",
+			title: "Join a voice channel first.",
+		});
+	});
+
 	it("keeps queue order authoritative and sends the observed revision when moving an entry", async () => {
 		const fixture = playerFixture();
 		await authenticate(fixture);

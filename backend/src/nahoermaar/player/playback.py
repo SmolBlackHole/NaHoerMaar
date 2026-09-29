@@ -832,6 +832,8 @@ class PlaybackCoordinator:
                 intent is PlaybackIntent.PAUSED,
                 (time.monotonic() - started_at) * 1000,
             )
+            if self._current is logical:
+                await self._publish_runtime(logical.context)
             if recovering:
                 await self._record_incident(
                     severity=IncidentSeverity.WARNING,

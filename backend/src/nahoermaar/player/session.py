@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from hashlib import sha256
 import json
@@ -25,6 +25,7 @@ from .domain import (
     RECEIPT_LIFETIME,
     OperationId,
     OperationReceipt,
+    PlaybackIntent,
     PlayerError,
     PlayerErrorCode,
     PlayerState,
@@ -355,6 +356,23 @@ class PlayerSessionManager:
             repository = SessionRepository(work.session)
             await repository.prune(now)
             state = await repository.load_default(now)
+            if (
+                state.session.channel_id is None
+                and state.checkpoint.intent is PlaybackIntent.PLAYING
+            ):
+                state = replace(
+                    state,
+                    session=replace(
+                        state.session,
+                        revision=state.session.revision + 1,
+                        updated_at=now,
+                    ),
+                    checkpoint=replace(
+                        state.checkpoint,
+                        intent=PlaybackIntent.PAUSED,
+                    ),
+                )
+                await repository.save(state)
             await work.commit()
         self._session = PlayerSession(state, self._units, self._bus)
         run = state.radio

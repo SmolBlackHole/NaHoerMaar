@@ -5,12 +5,16 @@
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+import pytest
+
 from nahoermaar.catalog.domain import TrackId, TrackSourceId
 from nahoermaar.player.domain import (
     ListeningSessionId,
     OperationId,
     PlaybackIntent,
     PlayerAction,
+    PlayerError,
+    PlayerErrorCode,
     PlayerState,
     SuspensionReason,
 )
@@ -58,9 +62,15 @@ def _queued_state(count: int = 2) -> tuple[PlayerState, UserId]:
 def test_stop_returns_the_current_request_to_the_front() -> None:
     queued, actor_id = _queued_state()
     current = queued.queue.entries[0].request
-    playing = transition(
+    joined = transition(
         queued,
-        Play(queued.session.id, _operation()),
+        JoinVoice(queued.session.id, _operation(), 123456789),
+        actor_id,
+        NOW,
+    )
+    playing = transition(
+        joined.state,
+        Play(joined.state.session.id, _operation()),
         actor_id,
         NOW,
     )
@@ -82,9 +92,15 @@ def test_failed_source_returns_after_the_remaining_queue() -> None:
     queued, actor_id = _queued_state()
     failed_request = queued.queue.entries[0].request
     remaining_request = queued.queue.entries[1].request
-    playing = transition(
+    joined = transition(
         queued,
-        Play(queued.session.id, _operation()),
+        JoinVoice(queued.session.id, _operation(), 123456789),
+        actor_id,
+        NOW,
+    )
+    playing = transition(
+        joined.state,
+        Play(joined.state.session.id, _operation()),
         actor_id,
         NOW,
     )
@@ -109,6 +125,23 @@ def test_failed_source_returns_after_the_remaining_queue() -> None:
     assert failed.outcome.restored_count == 1
 
 
+def test_play_requires_a_voice_target_before_mutating_state() -> None:
+    queued, actor_id = _queued_state()
+
+    with pytest.raises(PlayerError) as captured:
+        transition(
+            queued,
+            Play(queued.session.id, _operation()),
+            actor_id,
+            NOW,
+        )
+
+    assert captured.value.code is PlayerErrorCode.VOICE_CHANNEL_REQUIRED
+    assert captured.value.status == 409
+    assert queued.checkpoint.intent is PlaybackIntent.STOPPED
+    assert len(queued.queue.entries) == 2
+
+
 def test_voice_target_is_persisted_by_the_same_fsm() -> None:
     state, actor_id = _queued_state(1)
     joined = transition(
@@ -128,6 +161,36 @@ def test_voice_target_is_persisted_by_the_same_fsm() -> None:
     assert joined.outcome.action is PlayerAction.VOICE_JOINED
     assert left.state.session.channel_id is None
     assert left.outcome.action is PlayerAction.VOICE_LEFT
+
+
+def test_leaving_voice_pauses_and_retains_the_current_request() -> None:
+    queued, actor_id = _queued_state()
+    joined = transition(
+        queued,
+        JoinVoice(queued.session.id, _operation(), 123456789),
+        actor_id,
+        NOW,
+    )
+    playing = transition(
+        joined.state,
+        Play(joined.state.session.id, _operation()),
+        actor_id,
+        NOW,
+    )
+
+    left = transition(
+        playing.state,
+        LeaveVoice(playing.state.session.id, _operation()),
+        actor_id,
+        NOW,
+    )
+
+    assert left.outcome.action is PlayerAction.VOICE_LEFT
+    assert left.state.session.channel_id is None
+    assert left.state.checkpoint.intent is PlaybackIntent.PAUSED
+    assert left.state.checkpoint.request == playing.state.checkpoint.request
+    assert left.state.checkpoint.position_seconds == 0
+    assert left.state.queue == playing.state.queue
 
 
 def test_player_settings_are_updated_atomically() -> None:

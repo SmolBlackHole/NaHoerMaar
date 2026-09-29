@@ -22,6 +22,8 @@ from nahoermaar.catalog.domain import (
 from nahoermaar.integrations.avatars import DiscordAvatarStore
 from nahoermaar.player.domain import (
     ListeningSessionId,
+    PlaybackCheckpoint,
+    PlaybackIntent,
     PlayerState,
     Queue,
     QueueEntry,
@@ -120,6 +122,69 @@ def test_runtime_track_remains_visible_during_checkpoint_gap() -> None:
     assert view.runtime.current.id == request.id
     assert view.runtime.current.track.title == "Runtime track"
     assert view.runtime.position_seconds == 21.5
+
+
+def test_disconnected_retained_track_projects_as_paused() -> None:
+    session_id = ListeningSessionId(uuid4())
+    track_id = TrackId(uuid4())
+    actor_id = UserId(uuid4())
+    track = Track(
+        track_id,
+        "Retained track",
+        180.0,
+        None,
+        None,
+        None,
+        None,
+        NOW,
+        NOW,
+    )
+    request = new_request(
+        session_id,
+        track_id,
+        None,
+        NOW,
+        actor_id=actor_id,
+    )
+    empty = PlayerState.empty(session_id, NOW)
+    state = replace(
+        empty,
+        checkpoint=PlaybackCheckpoint(
+            session_id,
+            PlaybackIntent.PAUSED,
+            request,
+            37.5,
+        ),
+    )
+    runtime = PlaybackRuntimeState(
+        PlaybackPhase.IDLE,
+        None,
+        None,
+        None,
+        0.0,
+        None,
+        None,
+        VoiceConnectionState(),
+        None,
+    )
+    reader = PlayerReader(Catalog(track), Access(), lambda: runtime)
+    application = cast(
+        Application,
+        SimpleNamespace(
+            player=SimpleNamespace(reader=reader),
+            integrations=SimpleNamespace(
+                avatars=DiscordAvatarStore(Path("data/avatars"))
+            ),
+        ),
+    )
+
+    view = asyncio.run(player_view(application, state))
+
+    assert view.runtime.phase == PlaybackPhase.PAUSED.value
+    assert view.runtime.current is not None
+    assert view.runtime.current.id == request.id
+    assert view.runtime.position_seconds == 37.5
+    assert view.runtime.playback_id is None
 
 
 def test_radio_queue_request_keeps_its_requester_without_an_active_radio() -> None:

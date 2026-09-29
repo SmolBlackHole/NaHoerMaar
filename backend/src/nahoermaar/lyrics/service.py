@@ -19,6 +19,8 @@ from .domain import LyricsResult, LyricsState, TrackLyrics
 from .providers import LyricsProvider, LyricsProviderError
 from .repository import LyricsRepository
 
+_METADATA_SIGNATURE_VERSION = 2
+
 
 class LyricsErrorCode(StrEnum):
     TRACK_NOT_FOUND = "lyrics_track_not_found"
@@ -172,6 +174,7 @@ class LyricsService:
 
 def _metadata_signature(track: Track) -> str:
     payload = {
+        "version": _METADATA_SIGNATURE_VERSION,
         "title": track.title.casefold(),
         "artists": [
             credit.artist.name.casefold()

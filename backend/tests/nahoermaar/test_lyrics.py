@@ -4,6 +4,8 @@
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+import hashlib
+import json
 import os
 
 from nahoermaar.catalog.domain import ObservationQuality, ProviderName
@@ -13,8 +15,9 @@ from nahoermaar.catalog.service import CatalogService
 from nahoermaar.database.core import Database
 from nahoermaar.database.schema import migrate
 from nahoermaar.database.uow import UnitOfWork
-from nahoermaar.lyrics.domain import LyricsState, parse_synced_lyrics
+from nahoermaar.lyrics.domain import LyricsState, TrackLyrics, parse_synced_lyrics
 from nahoermaar.lyrics.providers import LyricsProviderError, ProviderLyrics
+from nahoermaar.lyrics.repository import LyricsRepository
 from nahoermaar.lyrics.service import LyricsService
 
 NOW = datetime(2026, 9, 28, 12, tzinfo=UTC)
@@ -97,6 +100,41 @@ def test_lyrics_cache_handles_hits_expiry_misses_and_stale_fallback() -> None:
         async with units() as work:
             track = await CatalogRepository(work.session).upsert(observation, NOW)
             await work.commit()
+        legacy_payload = {
+            "title": track.title.casefold(),
+            "artists": [
+                credit.artist.name.casefold()
+                for credit in sorted(track.artists, key=lambda item: item.position)
+            ],
+            "album": track.album_title.casefold() if track.album_title else None,
+            "duration": (
+                round(track.duration_seconds)
+                if track.duration_seconds is not None
+                else None
+            ),
+        }
+        legacy_signature = hashlib.sha256(
+            json.dumps(
+                legacy_payload,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode()
+        ).hexdigest()
+        async with units() as work:
+            await LyricsRepository(work.session).save(
+                TrackLyrics(
+                    track.id,
+                    legacy_signature,
+                    LyricsState.AVAILABLE,
+                    99,
+                    "Old translated line",
+                    "[00:01.00]Old translated line",
+                    NOW,
+                    NOW + timedelta(hours=1),
+                )
+            )
+            await work.commit()
         catalog = CatalogService(units, (), clock=lambda: clock[0])
         service = LyricsService(
             units,
@@ -111,6 +149,8 @@ def test_lyrics_cache_handles_hits_expiry_misses_and_stale_fallback() -> None:
         again = await service.get(track.id)
         assert first.lyrics.state is LyricsState.AVAILABLE
         assert not first.cached
+        assert first.lyrics.provider_record_id == 42
+        assert first.lyrics.metadata_signature != legacy_signature
         assert again.cached
         assert provider.calls == 1
 

@@ -33,6 +33,7 @@ from nahoermaar.player.domain import (
     PlayerAction,
     PlayerErrorCode,
     PlayerState,
+    PlaybackIntent,
     RadioSeed,
     RequestOrigin,
 )
@@ -40,6 +41,7 @@ from nahoermaar.player.events import (
     AddTracks,
     ApplyRadioCandidates,
     CompletePlayback,
+    JoinVoice,
     MutationReply,
     Play,
     PlayerChanged,
@@ -225,11 +227,17 @@ def test_fsm_keeps_manual_requests_distinct_and_radio_at_target() -> None:
     assert applied.state.radio is not None
     assert len(applied.state.radio.candidates) == 1
 
-    playing = transition(
+    joined = transition(
         applied.state,
-        Play(session_id, OperationId(uuid4())),
+        JoinVoice(session_id, OperationId(uuid4()), 42),
         actor,
         NOW + timedelta(seconds=3),
+    )
+    playing = transition(
+        joined.state,
+        Play(session_id, OperationId(uuid4())),
+        actor,
+        NOW + timedelta(seconds=4),
     )
     assert playing.state.checkpoint.request is not None
     second_manual = transition(
@@ -648,6 +656,88 @@ def test_mailbox_serializes_commands_and_replays_operation_receipts() -> None:
         else:
             raise AssertionError("Changed idempotent command was accepted.")
         await manager.close()
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        asyncio.run(database.close())
+
+
+def test_start_normalizes_a_disconnected_playing_checkpoint_once() -> None:
+    database = _database()
+    user_id = UserId(uuid4())
+    track_id = TrackId(uuid4())
+    source_id = TrackSourceId(uuid4())
+
+    async def scenario() -> None:
+        await _seed(
+            database,
+            user_id=user_id,
+            tracks=((track_id, source_id),),
+        )
+        session_id = ListeningSessionId(uuid4())
+        added = transition(
+            PlayerState.empty(session_id, NOW),
+            AddTracks(
+                session_id,
+                OperationId(uuid4()),
+                (TrackSelection(track_id, source_id),),
+            ),
+            user_id,
+            NOW,
+        )
+        joined = transition(
+            added.state,
+            JoinVoice(session_id, OperationId(uuid4()), 42),
+            user_id,
+            NOW + timedelta(seconds=1),
+        )
+        playing = transition(
+            joined.state,
+            Play(session_id, OperationId(uuid4())),
+            user_id,
+            NOW + timedelta(seconds=2),
+        )
+        legacy = replace(
+            playing.state,
+            session=replace(playing.state.session, channel_id=None),
+            checkpoint=replace(playing.state.checkpoint, position_seconds=37.5),
+        )
+        original_revision = legacy.session.revision
+        async with UnitOfWork(database.sessions) as work:
+            await SessionRepository(work.session).save(legacy)
+            await work.commit()
+
+        first = PlayerSessionManager(
+            lambda: UnitOfWork(database.sessions),
+            MessageBus(),
+            NoRadio(),
+        )
+        await first.start()
+        assert first.state.session.revision == original_revision + 1
+        assert first.state.session.queue_revision == legacy.session.queue_revision
+        assert first.state.session.channel_id is None
+        assert first.state.checkpoint.intent is PlaybackIntent.PAUSED
+        assert first.state.checkpoint.request == legacy.checkpoint.request
+        assert first.state.checkpoint.position_seconds == 37.5
+        normalized_revision = first.state.session.revision
+        await first.close()
+
+        async with UnitOfWork(database.sessions) as work:
+            persisted = await SessionRepository(work.session).load(session_id)
+        assert persisted is not None
+        assert persisted.session.revision == normalized_revision
+        assert persisted.checkpoint.intent is PlaybackIntent.PAUSED
+
+        second = PlayerSessionManager(
+            lambda: UnitOfWork(database.sessions),
+            MessageBus(),
+            NoRadio(),
+        )
+        await second.start()
+        assert second.state.session.revision == normalized_revision
+        assert second.state.checkpoint.intent is PlaybackIntent.PAUSED
+        await second.close()
 
     try:
         asyncio.run(scenario())

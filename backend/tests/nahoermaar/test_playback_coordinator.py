@@ -472,6 +472,17 @@ async def _wait_for_runtime_change(bus: RecordingBus) -> PlaybackRuntimeChanged:
     return await asyncio.wait_for(wait(), timeout=1)
 
 
+async def _wait_for_runtime_count(bus: RecordingBus, count: int) -> None:
+    async def wait() -> None:
+        while (
+            sum(isinstance(event, PlaybackRuntimeChanged) for event in bus.events)
+            < count
+        ):
+            await asyncio.sleep(0)
+
+    await asyncio.wait_for(wait(), timeout=1)
+
+
 def test_audio_facts_start_on_first_frame_and_next_track_is_preloaded() -> None:
     async def scenario() -> None:
         tracks = (_track(1), _track(2))
@@ -570,6 +581,67 @@ def test_audio_facts_start_on_first_frame_and_next_track_is_preloaded() -> None:
         finally:
             await coordinator.close()
         assert transport.closed
+
+    asyncio.run(scenario())
+
+
+def test_paused_output_publishes_runtime_when_transport_is_ready() -> None:
+    class BlockingTransport(FakeTransport):
+        def __init__(self) -> None:
+            super().__init__()
+            self.release_output = asyncio.Event()
+
+        async def play(
+            self,
+            source: PlayableSource,
+            attempt_id: UUID,
+            notify: Callable[[AudioEvent], None],
+            *,
+            position_seconds: float = 0,
+            paused: bool = False,
+        ) -> None:
+            await super().play(
+                source,
+                attempt_id,
+                notify,
+                position_seconds=position_seconds,
+                paused=paused,
+            )
+            await self.release_output.wait()
+
+    async def scenario() -> None:
+        tracks = (_track(1),)
+        playing, request = _playing_state(tracks)
+        paused = replace(
+            playing,
+            checkpoint=replace(
+                playing.checkpoint,
+                intent=PlaybackIntent.PAUSED,
+                position_seconds=37.5,
+            ),
+        )
+        transport = BlockingTransport()
+        coordinator, bus = _coordinator(paused, tracks, transport)
+        try:
+            await coordinator.start()
+            await asyncio.wait_for(transport.play_ready.wait(), timeout=1)
+            await _wait_for_runtime_count(bus, 1)
+            count_before_ready = sum(
+                isinstance(event, PlaybackRuntimeChanged) for event in bus.events
+            )
+
+            transport.release_output.set()
+            await _wait_for_runtime_count(bus, count_before_ready + 1)
+
+            assert coordinator.status.phase is PlaybackPhase.PAUSED
+            assert coordinator.status.request == request
+            assert coordinator.status.position_seconds == 37.5
+            assert not any(
+                isinstance(command, BeginPlayback) for command in bus.commands
+            )
+        finally:
+            transport.release_output.set()
+            await coordinator.close()
 
     asyncio.run(scenario())
 

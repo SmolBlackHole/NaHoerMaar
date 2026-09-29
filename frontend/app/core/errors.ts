@@ -213,6 +213,11 @@ const failures: Record<string, FailureCopy> = {
 		description: "Add something before asking the bot to perform miracles.",
 		icon: "list",
 	},
+	voice_channel_required: {
+		title: "Join a voice channel first.",
+		description: "Choose a Discord voice channel before starting playback.",
+		icon: "headphones",
+	},
 	operator_access_managed_in_config: {
 		title: "That role lives in the server config.",
 		description: "Owner and admin access can only be changed by the bot operator.",
