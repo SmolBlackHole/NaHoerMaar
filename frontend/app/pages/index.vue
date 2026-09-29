@@ -25,6 +25,26 @@ async function openQueue() {
 		if (selected.value === "queue") document.getElementById("youtube-link")?.focus();
 	});
 }
+function restorePlayerViewFocus() {
+	if (!import.meta.client) return;
+	void nextTick(() => {
+		requestAnimationFrame(() => {
+			const active =
+				document.activeElement instanceof HTMLElement ? document.activeElement : null;
+			const target = document.getElementById(`player-view-${selected.value}`);
+			if (
+				active &&
+				active !== document.body &&
+				!active.classList.contains("music-tab-trigger") &&
+				!active.closest('.music-tab-content[data-state="inactive"]')
+			) {
+				return;
+			}
+			target?.focus({ preventScroll: true });
+		});
+	});
+}
+watch(selected, restorePlayerViewFocus);
 </script>
 
 <template>
@@ -44,6 +64,7 @@ async function openQueue() {
 							<TabsTrigger
 								v-for="tab in tabs"
 								:key="tab.value"
+								:id="`player-view-${tab.value}`"
 								:value="tab.value"
 								class="music-tab-trigger"
 							>
@@ -62,7 +83,7 @@ async function openQueue() {
 				</UDashboardNavbar>
 			</template>
 			<template #body>
-				<Transition name="player-view" :duration="{ enter: 200, leave: 0 }">
+				<Transition name="page">
 					<TabsContent
 						v-show="selected === 'player'"
 						force-mount
@@ -73,7 +94,7 @@ async function openQueue() {
 						<PlayerNowPlaying :active="selected === 'player'" @queue="openQueue" />
 					</TabsContent>
 				</Transition>
-				<Transition name="player-view" :duration="{ enter: 200, leave: 0 }">
+				<Transition name="page">
 					<TabsContent
 						v-show="selected === 'queue'"
 						force-mount
@@ -145,19 +166,8 @@ async function openQueue() {
 	min-width: 0;
 	outline-offset: 4px;
 }
-.player-view-enter-active {
-	transition: opacity 200ms ease-out;
-}
-.player-view-enter-from {
-	opacity: 0;
-}
-.player-view-leave-active {
+.music-tab-content.page-leave-active {
 	display: none !important;
-}
-@media (prefers-reduced-motion: reduce) {
-	.player-view-enter-active {
-		transition: none;
-	}
 }
 .player-page {
 	isolation: isolate;

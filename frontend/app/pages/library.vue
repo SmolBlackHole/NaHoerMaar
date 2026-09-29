@@ -171,6 +171,25 @@ async function chooseView(view: LibraryView) {
 		query: routeQuery({ view, playlist: "", q: "", page: 1 }),
 	});
 }
+function restoreLibraryViewFocus() {
+	if (!import.meta.client) return;
+	void nextTick(() => {
+		requestAnimationFrame(() => {
+			const active =
+				document.activeElement instanceof HTMLElement ? document.activeElement : null;
+			const target = document.getElementById(`library-view-${selectedView()}`);
+			if (
+				active &&
+				active !== document.body &&
+				!active.id.startsWith("library-view-") &&
+				!active.closest("[data-library-view-content]")
+			) {
+				return;
+			}
+			target?.focus({ preventScroll: true });
+		});
+	});
+}
 async function openPlaylist(value: Playlist) {
 	await router.push({
 		path: "/library",
@@ -439,6 +458,7 @@ watch(
 		if (mounted.value) void load();
 	},
 );
+watch(libraryViewKey, restoreLibraryViewFocus);
 watch(
 	() => reactions.revision,
 	() => {
@@ -476,6 +496,7 @@ onScopeDispose(library.dispose);
 							aria-label="Library view"
 						>
 							<UButton
+								id="library-view-liked"
 								:icon="icons.like"
 								aria-label="Liked tracks"
 								:color="selectedView() === 'liked' ? 'primary' : 'neutral'"
@@ -486,6 +507,7 @@ onScopeDispose(library.dispose);
 								<span class="hidden sm:inline">Liked</span>
 							</UButton>
 							<UButton
+								id="library-view-disliked"
 								:icon="icons.dislike"
 								aria-label="Disliked tracks"
 								:color="selectedView() === 'disliked' ? 'primary' : 'neutral'"
@@ -496,6 +518,7 @@ onScopeDispose(library.dispose);
 								<span class="hidden sm:inline">Disliked</span>
 							</UButton>
 							<UButton
+								id="library-view-playlists"
 								:icon="icons.folder"
 								aria-label="Playlists"
 								:color="selectedView() === 'playlists' ? 'primary' : 'neutral'"
@@ -727,8 +750,8 @@ onScopeDispose(library.dispose);
 							</SharedTrackSelection>
 						</div>
 
-						<Transition name="library-view" mode="out-in">
-							<div :key="libraryViewKey">
+						<Transition name="page" mode="out-in">
+							<div :key="libraryViewKey" data-library-view-content>
 								<template
 									v-if="selectedView() === 'playlists' && !selectedPlaylistId"
 								>
@@ -1035,29 +1058,9 @@ onScopeDispose(library.dispose);
 	outline: 2px solid var(--ui-primary);
 	outline-offset: 0.25rem;
 }
-.library-view-enter-active,
-.library-view-leave-active {
-	transition:
-		opacity 160ms ease-out,
-		transform 160ms ease-out;
-}
-.library-view-enter-from {
-	opacity: 0;
-	transform: translateY(0.25rem);
-}
-.library-view-leave-to {
-	opacity: 0;
-	transform: translateY(-0.125rem);
-}
 @media (prefers-reduced-motion: reduce) {
-	.playlist-name,
-	.library-view-enter-active,
-	.library-view-leave-active {
+	.playlist-name {
 		transition: none;
-	}
-	.library-view-enter-from,
-	.library-view-leave-to {
-		transform: none;
 	}
 }
 </style>
