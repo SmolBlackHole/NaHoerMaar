@@ -7,6 +7,7 @@ import type {
 	LibraryTrackPage,
 	PlaylistEntryPage,
 	PlaylistPage,
+	PlaylistScope,
 	ReactionParticipantPage,
 	ReactionValue,
 } from "../models/library";
@@ -18,6 +19,10 @@ export interface LibraryTrackFilters {
 
 export interface ReactionParticipantFilters {
 	reaction: ReactionValue;
+}
+
+export interface PlaylistFilters {
+	scope: PlaylistScope;
 }
 
 export function createLibraryWorkflow(client: BackendClient, authority: SessionAuthority) {
@@ -54,16 +59,19 @@ export function createLibraryWorkflow(client: BackendClient, authority: SessionA
 			);
 		},
 	);
-	const playlists = createPagePagination<PlaylistPage>(authority, (request, signal) =>
-		client.library.playlists(
-			{
-				page: request.page,
-				pageSize: request.pageSize,
-				query: request.query,
-				snapshot: request.snapshot,
-			},
-			signal,
-		),
+	const playlists = createPagePagination<PlaylistPage, PlaylistFilters>(
+		authority,
+		(request, signal) =>
+			client.library.playlists(
+				{
+					page: request.page,
+					pageSize: request.pageSize,
+					query: request.query,
+					scope: request.filters.scope,
+					snapshot: request.snapshot,
+				},
+				signal,
+			),
 	);
 	const entries = createPagePagination<PlaylistEntryPage>(authority, (request, signal) => {
 		const playlistId = entryPlaylistId;

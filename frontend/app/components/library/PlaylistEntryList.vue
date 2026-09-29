@@ -17,6 +17,7 @@ const props = withDefaults(
 		total?: number;
 		selectable?: boolean;
 		selectedEntryIds?: Set<string>;
+		editable?: boolean;
 	}>(),
 	{
 		loading: false,
@@ -26,6 +27,7 @@ const props = withDefaults(
 		total: 0,
 		selectable: false,
 		selectedEntryIds: () => new Set(),
+		editable: true,
 	},
 );
 const emit = defineEmits<{
@@ -114,7 +116,7 @@ function queue(entry: PlaylistEntry) {
 }
 
 function contextItems(entry: PlaylistEntry, index: number): ContextMenuItem[][] {
-	return [
+	const groups: ContextMenuItem[][] = [
 		[
 			{
 				label: "Add to queue",
@@ -122,20 +124,29 @@ function contextItems(entry: PlaylistEntry, index: number): ContextMenuItem[][] 
 				disabled: !player.canControl,
 				onSelect: () => void queue(entry),
 			},
-			{
-				label: "Move up",
-				icon: icons.value.arrowUp,
-				disabled: !props.reorderable || props.pending || entry.position === 0,
-				onSelect: () => move(index, -1),
-			},
-			{
-				label: "Move down",
-				icon: icons.value.arrowDown,
-				disabled: !props.reorderable || props.pending || entry.position >= props.total - 1,
-				onSelect: () => move(index, 1),
-			},
+			...(props.editable
+				? [
+						{
+							label: "Move up",
+							icon: icons.value.arrowUp,
+							disabled: !props.reorderable || props.pending || entry.position === 0,
+							onSelect: () => move(index, -1),
+						} satisfies ContextMenuItem,
+						{
+							label: "Move down",
+							icon: icons.value.arrowDown,
+							disabled:
+								!props.reorderable ||
+								props.pending ||
+								entry.position >= props.total - 1,
+							onSelect: () => move(index, 1),
+						} satisfies ContextMenuItem,
+					]
+				: []),
 		],
-		[
+	];
+	if (props.editable)
+		groups.push([
 			{
 				label: "Remove from playlist",
 				icon: icons.value.trash,
@@ -143,8 +154,8 @@ function contextItems(entry: PlaylistEntry, index: number): ContextMenuItem[][] 
 				disabled: props.pending,
 				onSelect: () => emit("remove", entry),
 			},
-		],
-	];
+		]);
+	return groups;
 }
 </script>
 
@@ -156,7 +167,7 @@ function contextItems(entry: PlaylistEntry, index: number): ContextMenuItem[][] 
 			class="playlist-entry playlist-entry-grid"
 			identity-class="playlist-identity"
 			:position="index"
-			:reorderable="reorderable"
+			:reorderable="editable && reorderable"
 			loading
 		>
 			<template v-if="selectable" #leading>
@@ -170,7 +181,11 @@ function contextItems(entry: PlaylistEntry, index: number): ContextMenuItem[][] 
 			</template>
 			<template #actions>
 				<div class="playlist-actions flex gap-1">
-					<USkeleton v-for="action in 4" :key="action" class="size-10 rounded-lg" />
+					<USkeleton
+						v-for="action in editable ? 4 : 3"
+						:key="action"
+						class="size-10 rounded-lg"
+					/>
 				</div>
 			</template>
 		</SharedTrackRow>
@@ -187,7 +202,7 @@ function contextItems(entry: PlaylistEntry, index: number): ContextMenuItem[][] 
 			:title="entry.title"
 			:artist-names="entry.artist_names"
 			:position="entry.position + 1"
-			:reorderable="reorderable"
+			:reorderable="editable && reorderable"
 			:reorder-disabled="pending"
 			multiline
 			@move="move(index, $event)"
@@ -246,7 +261,7 @@ function contextItems(entry: PlaylistEntry, index: number): ContextMenuItem[][] 
 							:loading="player.isPending('queue.add')"
 							@click="queue(entry)"
 					/></UTooltip>
-					<UTooltip :text="`Remove ${entry.title} from playlist`"
+					<UTooltip v-if="editable" :text="`Remove ${entry.title} from playlist`"
 						><UButton
 							:icon="icons.trash"
 							:aria-label="`Remove ${entry.title} from playlist`"

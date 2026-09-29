@@ -52,6 +52,7 @@ from nahoermaar.library.read_model import LibraryReadModel
 from nahoermaar.library.maintenance import PlaylistSyncMaintenance
 from nahoermaar.library.repository import PlaylistRepository
 from nahoermaar.library.service import LibraryService
+from nahoermaar.library.synchronization import PlaylistSynchronizer
 from nahoermaar.messaging import MessageContext
 from nahoermaar.operations.jobs import (
     JobRunDetailOutcome,
@@ -338,6 +339,7 @@ def test_reactions_are_idempotent_personal_queryable_and_cleanup_safe() -> None:
             units,
             catalog,
             LibraryReadModel(units),
+            PlaylistSynchronizer(units, catalog),
             clock=lambda: clock[0],
         )
 
@@ -466,10 +468,12 @@ def test_personal_playlists_preserve_order_revisions_and_catalog_references() ->
             await work.commit()
 
         clock = [NOW]
+        catalog = CatalogService(units, ())
         library = LibraryService(
             units,
-            CatalogService(units, ()),
+            catalog,
             LibraryReadModel(units),
+            PlaylistSynchronizer(units, catalog),
             clock=lambda: clock[0],
         )
 
@@ -787,10 +791,12 @@ def test_owned_playlist_order_is_persistent_and_does_not_change_public_order() -
             await work.commit()
 
         clock = [NOW]
+        catalog = CatalogService(units, ())
         library = LibraryService(
             units,
-            CatalogService(units, ()),
+            catalog,
             LibraryReadModel(units),
+            PlaylistSynchronizer(units, catalog),
             clock=lambda: clock[0],
         )
 
@@ -868,10 +874,12 @@ def test_linked_playlist_import_is_deterministic_read_only_and_detachable() -> N
             _track(151, "Repeated song", "Loop Artist"),
             _track(152, "Last song", "Final Artist"),
         )
+        catalog = CatalogService(units, (PlaylistProvider(provider_tracks),))
         library = LibraryService(
             units,
-            CatalogService(units, (PlaylistProvider(provider_tracks),)),
+            catalog,
             LibraryReadModel(units),
+            PlaylistSynchronizer(units, catalog),
             clock=lambda: clock[0],
         )
 
@@ -937,10 +945,25 @@ def test_linked_playlist_import_is_deterministic_read_only_and_detachable() -> N
         assert linked_move.value.code is LibraryErrorCode.PLAYLIST_LINKED_READ_ONLY
 
         clock[0] += timedelta(minutes=1)
+        synchronized = await library.synchronize_playlist(
+            owner,
+            playlist.playlist_id,
+        )
+        assert synchronized.revision == playlist.revision
+        assert synchronized.source is not None
+        assert synchronized.source.last_attempt_at == clock[0]
+        assert synchronized.source.last_error_code is None
+
+        manual = await library.create_playlist(owner, "Manual")
+        with pytest.raises(LibraryError) as not_linked:
+            await library.synchronize_playlist(owner, manual.playlist_id)
+        assert not_linked.value.code is LibraryErrorCode.PLAYLIST_NOT_LINKED
+
+        clock[0] += timedelta(minutes=1)
         detached = await library.detach_playlist_source(
             owner,
             playlist.playlist_id,
-            playlist.revision,
+            synchronized.revision,
         )
         assert detached.source is None
         assert detached.revision == 1
@@ -1008,6 +1031,7 @@ def test_playlist_sync_job_reconciles_occurrences_and_keeps_failed_cache() -> No
             units,
             catalog,
             LibraryReadModel(units),
+            PlaylistSynchronizer(units, catalog),
             clock=lambda: clock[0],
         )
         first = await library.import_playlist(owner, PLAYLIST_URL)
@@ -1031,7 +1055,7 @@ def test_playlist_sync_job_reconciles_occurrences_and_keeps_failed_cache() -> No
         progress: list[tuple[int, int, JobProgressUnit]] = []
         maintenance = PlaylistSyncMaintenance(
             units,
-            catalog,
+            PlaylistSynchronizer(units, catalog),
             clock=lambda: clock[0],
             parallel_requests=1,
         )
@@ -1148,16 +1172,22 @@ def test_playlist_visibility_collaboration_and_scopes_enforce_capabilities() -> 
             await work.commit()
 
         clock = [NOW]
+        catalog = CatalogService(units, ())
         library = LibraryService(
             units,
-            CatalogService(units, ()),
+            catalog,
             LibraryReadModel(units),
+            PlaylistSynchronizer(units, catalog),
             clock=lambda: clock[0],
         )
 
         playlist = await library.create_playlist(owner, "Shared later")
         assert playlist.visibility is PlaylistVisibility.PRIVATE
         assert playlist.access is PlaylistAccess.OWNER
+        assert playlist.collaborators == ()
+        matches = await library.contributors(owner, query="dit", limit=10)
+        assert tuple(match.user_id for match in matches) == (editor,)
+        assert await library.contributors(owner, query="Owner", limit=10) == ()
         assert (await library.playlists(owner, page=1, page_size=20)).total == 1
         assert (
             await library.playlists(
@@ -1176,6 +1206,7 @@ def test_playlist_visibility_collaboration_and_scopes_enforce_capabilities() -> 
             expected_revision=playlist.revision,
         )
         assert playlist.revision == 1
+        assert tuple(item.user_id for item in playlist.collaborators) == (editor,)
         with pytest.raises(LibraryError) as duplicate:
             await library.add_playlist_collaborator(
                 owner,
@@ -1293,6 +1324,7 @@ def test_playlist_visibility_collaboration_and_scopes_enforce_capabilities() -> 
             editor,
             expected_revision=playlist.revision,
         )
+        assert playlist.collaborators == ()
         assert (
             await library.playlist(editor, playlist.playlist_id)
         ).access is PlaylistAccess.READER

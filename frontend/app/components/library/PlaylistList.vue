@@ -128,6 +128,12 @@ function contextItems(playlist: Playlist): ContextMenuItem[][] {
 		],
 	];
 }
+
+function playlistMeta(playlist: Playlist) {
+	const ownership =
+		playlist.access === "owner" ? playlist.visibility : `by ${playlist.owner.display_name}`;
+	return playlist.source ? `${ownership} · linked` : ownership;
+}
 </script>
 
 <template>
@@ -145,7 +151,9 @@ function contextItems(playlist: Playlist): ContextMenuItem[][] {
 				/>
 				<USkeleton class="aspect-square w-full rounded-2xl" />
 				<div class="mt-4 space-y-2">
-					<USkeleton class="h-5 w-2/3" /><USkeleton class="h-3 w-24" />
+					<USkeleton class="h-5 w-2/3" />
+					<USkeleton class="h-3 w-28" />
+					<USkeleton class="h-3 w-20" />
 				</div>
 			</article>
 		</li>
@@ -191,10 +199,13 @@ function contextItems(playlist: Playlist): ContextMenuItem[][] {
 							class="mt-4 block truncate text-base font-semibold text-highlighted"
 							>{{ playlist.name }}</span
 						>
-						<span class="mt-1 block text-xs text-muted"
-							>{{ playlist.entry_count }}
-							{{ playlist.entry_count === 1 ? "track" : "tracks" }}</span
-						>
+						<span class="mt-1 block truncate text-xs text-muted">{{
+							playlistMeta(playlist)
+						}}</span>
+						<span class="mt-1 block text-xs text-muted">
+							{{ playlist.entry_count }}
+							{{ playlist.entry_count === 1 ? "track" : "tracks" }}
+						</span>
 					</button>
 				</article>
 			</UContextMenu>

@@ -103,6 +103,7 @@ class LibraryContributor:
 class PlaylistSummary:
     playlist_id: PlaylistId
     owner: LibraryContributor
+    collaborators: tuple[LibraryContributor, ...]
     position: int
     name: str
     visibility: PlaylistVisibility
@@ -195,6 +196,60 @@ class LibraryReadModel:
                 )
                 is not None
             )
+
+    async def contributors(
+        self,
+        actor_id: UserId,
+        *,
+        query: str,
+        limit: int,
+    ) -> tuple[LibraryContributor, ...]:
+        normalized = query.strip()
+        if not normalized:
+            raise ValueError("Contributor search requires a query.")
+        if not 1 <= limit <= 25:
+            raise ValueError("Contributor search limit must be between 1 and 25.")
+        pattern = f"%{normalized}%"
+        relation = self._users.outerjoin(
+            self._profiles,
+            self._profiles.c.user_id == self._users.c.id,
+        ).outerjoin(
+            self._discord,
+            self._discord.c.user_id == self._users.c.id,
+        )
+        async with self._units() as work:
+            rows = (
+                (
+                    await work.session.execute(
+                        select(
+                            self._users.c.id.label("user_id"),
+                            self._profiles.c.display_name,
+                            self._discord.c.username,
+                            self._discord.c.discord_id,
+                            self._discord.c.avatar_hash,
+                        )
+                        .select_from(relation)
+                        .where(
+                            self._users.c.id != actor_id,
+                            or_(
+                                self._profiles.c.display_name.ilike(pattern),
+                                self._discord.c.username.ilike(pattern),
+                            ),
+                        )
+                        .order_by(
+                            func.coalesce(
+                                self._profiles.c.display_name,
+                                self._discord.c.username,
+                            ),
+                            self._users.c.id,
+                        )
+                        .limit(limit)
+                    )
+                )
+                .mappings()
+                .all()
+            )
+        return tuple(self._contributor(row, user_key="user_id") for row in rows)
 
     async def summaries(
         self,
@@ -430,7 +485,15 @@ class LibraryReadModel:
         async with self._units() as work:
             row = await self._playlist_row(work.session, actor_id, playlist_id)
             artworks = await self._artworks(work.session, (playlist_id,))
-        return self._playlist_summary(row, artworks.get(playlist_id, ()))
+            collaborators = await self._playlist_collaborators(
+                work.session,
+                (playlist_id,),
+            )
+        return self._playlist_summary(
+            row,
+            artworks.get(playlist_id, ()),
+            collaborators.get(playlist_id, ()),
+        )
 
     async def playlists(
         self,
@@ -504,11 +567,16 @@ class LibraryReadModel:
             )
             identifiers = tuple(PlaylistId(row["playlist_id"]) for row in rows)
             artworks = await self._artworks(work.session, identifiers)
+            collaborators = await self._playlist_collaborators(
+                work.session,
+                identifiers,
+            )
         return PlaylistPage(
             tuple(
                 self._playlist_summary(
                     row,
                     artworks.get(PlaylistId(row["playlist_id"]), ()),
+                    collaborators.get(PlaylistId(row["playlist_id"]), ()),
                 )
                 for row in rows
             ),
@@ -729,6 +797,52 @@ class LibraryReadModel:
                 values.append(artwork)
         return {playlist_id: tuple(values) for playlist_id, values in collected.items()}
 
+    async def _playlist_collaborators(
+        self,
+        session: AsyncSession,
+        playlist_ids: tuple[PlaylistId, ...],
+    ) -> dict[PlaylistId, tuple[LibraryContributor, ...]]:
+        if not playlist_ids:
+            return {}
+        relation = self._collaborators.outerjoin(
+            self._profiles,
+            self._profiles.c.user_id == self._collaborators.c.user_id,
+        ).outerjoin(
+            self._discord,
+            self._discord.c.user_id == self._collaborators.c.user_id,
+        )
+        rows = (
+            (
+                await session.execute(
+                    select(
+                        self._collaborators.c.playlist_id,
+                        self._collaborators.c.user_id,
+                        self._collaborators.c.granted_at,
+                        self._profiles.c.display_name,
+                        self._discord.c.username,
+                        self._discord.c.discord_id,
+                        self._discord.c.avatar_hash,
+                    )
+                    .select_from(relation)
+                    .where(self._collaborators.c.playlist_id.in_(playlist_ids))
+                    .order_by(
+                        self._collaborators.c.playlist_id,
+                        self._collaborators.c.granted_at,
+                        self._collaborators.c.user_id,
+                    )
+                )
+            )
+            .mappings()
+            .all()
+        )
+        collected: dict[PlaylistId, list[LibraryContributor]] = {}
+        for row in rows:
+            playlist_id = PlaylistId(row["playlist_id"])
+            collected.setdefault(playlist_id, []).append(
+                self._contributor(row, user_key="user_id")
+            )
+        return {playlist_id: tuple(values) for playlist_id, values in collected.items()}
+
     def _playlist_snapshot_filter(
         self,
         snapshot: LibrarySnapshot | None,
@@ -783,6 +897,7 @@ class LibraryReadModel:
         cls,
         row: Any,
         artwork_urls: tuple[str, ...],
+        collaborators: tuple[LibraryContributor, ...],
     ) -> PlaylistSummary:
         visibility = PlaylistVisibility(row["visibility"])
         collaborator_id = row["collaborator_user_id"]
@@ -796,6 +911,7 @@ class LibraryReadModel:
         return PlaylistSummary(
             PlaylistId(row["playlist_id"]),
             cls._contributor(row, user_key="owner_id"),
+            collaborators,
             int(row["owner_position"]),
             cast(str, row["name"]),
             visibility,

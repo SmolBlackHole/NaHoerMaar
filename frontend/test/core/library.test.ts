@@ -93,13 +93,27 @@ describe("library core", () => {
 		const { client, fetcher } = fixture();
 		fetcher.mockImplementation(async () => Response.json({ items: [] }));
 
-		await client.library.playlists({ page: 2, pageSize: 25, query: "Road", snapshot: "list" });
+		await client.library.contributors("Kai", 5);
+		await client.library.playlists({
+			page: 2,
+			pageSize: 25,
+			query: "Road",
+			scope: "shared",
+			snapshot: "list",
+		});
 		await client.library.playlist("playlist/one");
 		await client.library.createPlaylist("Road trip");
 		await client.library.importPlaylist("https://youtube.com/playlist?list=source", "Source");
-		await client.library.renamePlaylist("playlist/one", "Night drive", 4);
+		await client.library.updatePlaylist(
+			"playlist/one",
+			{ name: "Night drive", visibility: "collaborators" },
+			4,
+		);
+		await client.library.addPlaylistCollaborator("playlist/one", "user/one", 5);
+		await client.library.removePlaylistCollaborator("playlist/one", "user/one", 6);
 		await client.library.movePlaylist("playlist/one", 0);
 		await client.library.detachPlaylistSource("playlist/one", 5);
+		await client.library.syncPlaylist("playlist/one");
 		await client.library.duplicatePlaylist("playlist/one", 5, "Copy");
 		await client.library.playlistEntries("playlist/one", {
 			page: 3,
@@ -122,13 +136,17 @@ describe("library core", () => {
 		await client.library.deletePlaylist("playlist/one", 11);
 
 		expect(fetcher.mock.calls.map(([url, options]) => [url, options?.method])).toEqual([
-			["/api/library/playlists?page=2&page_size=25&q=Road&snapshot=list", "GET"],
+			["/api/library/contributors?q=Kai&limit=5", "GET"],
+			["/api/library/playlists?page=2&page_size=25&q=Road&scope=shared&snapshot=list", "GET"],
 			["/api/library/playlists/playlist%2Fone", "GET"],
 			["/api/library/playlists", "POST"],
 			["/api/library/playlists/imports", "POST"],
 			["/api/library/playlists/playlist%2Fone", "PATCH"],
+			["/api/library/playlists/playlist%2Fone/collaborators/user%2Fone", "PUT"],
+			["/api/library/playlists/playlist%2Fone/collaborators/user%2Fone", "DELETE"],
 			["/api/library/playlists/playlist%2Fone/position", "PUT"],
 			["/api/library/playlists/playlist%2Fone/source", "DELETE"],
+			["/api/library/playlists/playlist%2Fone/sync", "POST"],
 			["/api/library/playlists/playlist%2Fone/duplicate", "POST"],
 			[
 				"/api/library/playlists/playlist%2Fone/entries?page=3&page_size=10&q=Still%20Alive&snapshot=revision",
@@ -141,27 +159,27 @@ describe("library core", () => {
 			["/api/library/playlists/playlist%2Fone/queue", "POST"],
 			["/api/library/playlists/playlist%2Fone", "DELETE"],
 		]);
-		expect(JSON.parse(String(fetcher.mock.calls[3]![1]?.body))).toEqual({
+		expect(JSON.parse(String(fetcher.mock.calls[4]![1]?.body))).toEqual({
 			name: "Source",
 			source_url: "https://youtube.com/playlist?list=source",
 		});
-		expect(JSON.parse(String(fetcher.mock.calls[5]![1]?.body))).toEqual({ position: 0 });
-		expect(JSON.parse(String(fetcher.mock.calls[9]![1]?.body))).toEqual({
+		expect(JSON.parse(String(fetcher.mock.calls[8]![1]?.body))).toEqual({ position: 0 });
+		expect(JSON.parse(String(fetcher.mock.calls[13]![1]?.body))).toEqual({
 			expected_revision: 6,
 			tracks: [
 				{ track_id: "track-one", preferred_source_id: "source-one" },
 				{ track_id: "track-one", preferred_source_id: null },
 			],
 		});
-		expect(JSON.parse(String(fetcher.mock.calls[11]![1]?.body))).toEqual({
+		expect(JSON.parse(String(fetcher.mock.calls[15]![1]?.body))).toEqual({
 			undo_id: "undo-one",
 			expected_revision: 8,
 		});
-		expect(JSON.parse(String(fetcher.mock.calls[12]![1]?.body))).toEqual({
+		expect(JSON.parse(String(fetcher.mock.calls[16]![1]?.body))).toEqual({
 			position: 0,
 			expected_revision: 9,
 		});
-		expect(new Headers(fetcher.mock.calls[13]![1]?.headers).get("Idempotency-Key")).toBe(
+		expect(new Headers(fetcher.mock.calls[17]![1]?.headers).get("Idempotency-Key")).toBe(
 			"operation-one",
 		);
 	});
@@ -177,14 +195,19 @@ describe("library core", () => {
 		core.authority.replace("session-token", "restored");
 		const workflow = core.workflows.library();
 
-		await workflow.loadPlaylists({ page: 1, pageSize: 1, newSnapshot: true });
-		await workflow.loadPlaylists({ page: 2, pageSize: 1 });
+		await workflow.loadPlaylists({
+			page: 1,
+			pageSize: 1,
+			filters: { scope: "owned" },
+			newSnapshot: true,
+		});
+		await workflow.loadPlaylists({ page: 2, pageSize: 1, filters: { scope: "owned" } });
 		await workflow.loadEntries("playlist-one", { page: 1, pageSize: 1, newSnapshot: true });
 		await workflow.loadEntries("playlist-one", { page: 2, pageSize: 1 });
 
 		expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
-			"/api/library/playlists?page=1&page_size=1",
-			"/api/library/playlists?page=2&page_size=1&snapshot=playlists-one",
+			"/api/library/playlists?page=1&page_size=1&scope=owned",
+			"/api/library/playlists?page=2&page_size=1&scope=owned&snapshot=playlists-one",
 			"/api/library/playlists/playlist-one/entries?page=1&page_size=1",
 			"/api/library/playlists/playlist-one/entries?page=2&page_size=1&snapshot=entries-one",
 		]);

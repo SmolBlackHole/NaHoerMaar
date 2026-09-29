@@ -186,6 +186,47 @@ const failures: Record<string, FailureCopy> = {
 		description: "The playlist changed or the removed track can no longer be restored.",
 		icon: "reload",
 	},
+	library_playlist_access_denied: {
+		title: "That playlist is not yours to change.",
+		description: "You can still open it, but only its owner can manage these settings.",
+		icon: "eyeOff",
+	},
+	library_playlist_collaborator_exists: {
+		title: "They are already a collaborator.",
+		description: "No second invitation is needed.",
+		icon: "users",
+	},
+	library_playlist_collaborator_invalid: {
+		title: "That person cannot be added.",
+		description: "Choose another NaHörMaar listener.",
+		icon: "userPlus",
+	},
+	library_playlist_linked_read_only: {
+		title: "This playlist follows its source.",
+		description: "Detach it before changing the track order or contents.",
+		icon: "external",
+	},
+	library_playlist_not_found: {
+		title: "That playlist is gone or private.",
+		description: "Return to the Library and choose another collection.",
+		icon: "folder",
+	},
+	library_playlist_not_linked: {
+		title: "There is no source to refresh.",
+		description: "This is a manual playlist, so its tracks already are the source of truth.",
+		icon: "reload",
+	},
+	library_playlist_revision_conflict: {
+		title: "That playlist changed underneath you.",
+		description: "Reload it before trying the edit again.",
+		icon: "reload",
+		retryable: true,
+	},
+	library_user_not_found: {
+		title: "That listener is no longer available.",
+		description: "Search again before adding a collaborator.",
+		icon: "user",
+	},
 	maintenance_busy: {
 		title: "The maintenance job is already busy.",
 		description: "Let the current run finish before starting another one.",

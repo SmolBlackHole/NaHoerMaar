@@ -14,6 +14,7 @@ from nahoermaar.operations.scheduler import JobDefinition
 from .maintenance import LibraryMaintenance, PlaylistSyncMaintenance
 from .read_model import LibraryReadModel
 from .service import LibraryService
+from .synchronization import PlaylistSynchronizer
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,9 +32,10 @@ def create_library_module(
 ) -> LibraryModule:
     """Build personal Library use cases and projections."""
     reader = LibraryReadModel(units)
-    service = LibraryService(units, catalog, reader)
+    synchronizer = PlaylistSynchronizer(units, catalog)
+    service = LibraryService(units, catalog, reader, synchronizer)
     return LibraryModule(
         service,
-        (PlaylistSyncMaintenance(units, catalog).definition(),),
+        (PlaylistSyncMaintenance(units, synchronizer).definition(),),
         LibraryMaintenance(units).contribution(),
     )

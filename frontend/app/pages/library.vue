@@ -4,13 +4,18 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from "@nuxt/ui";
 import { failureMessage } from "~/core/errors";
-import type { Playlist, PlaylistEntry, ReactionValue } from "~/core/models/library";
+import type { Playlist, PlaylistEntry, PlaylistScope, ReactionValue } from "~/core/models/library";
 
 definePageMeta({ pageTransition: { name: "page", mode: "out-in" } });
 useSeoMeta({ title: "Library | NaHörMaar" });
 
 type LibraryView = "liked" | "disliked" | "playlists";
 const PAGE_SIZE = 25;
+const playlistScopes: { label: string; value: PlaylistScope }[] = [
+	{ label: "Mine", value: "owned" },
+	{ label: "Shared", value: "shared" },
+	{ label: "Public", value: "public" },
+];
 const core = useNuxtApp().$backendCore;
 const library = core.workflows.library();
 const reactions = core.stores.useLibraryStore();
@@ -27,6 +32,8 @@ const playlistLoading = ref(false);
 const actionPending = ref(false);
 const actionError = ref<string | null>(null);
 const createOpen = ref(false);
+const importOpen = ref(false);
+const shareOpen = ref(false);
 const deleteOpen = ref(false);
 const playlistName = ref("");
 const renaming = ref(false);
@@ -39,7 +46,12 @@ const playlistResult = computed(() => library.playlists.data.value);
 const entryResult = computed(() => library.entries.data.value);
 const selectedPlaylistId = computed(() => queryValue(route.query.playlist));
 const libraryViewKey = computed(() =>
-	selectedPlaylistId.value ? `playlist:${selectedPlaylistId.value}` : selectedView(),
+	selectedPlaylistId.value
+		? `playlist:${selectedPlaylistId.value}`
+		: `${selectedView()}:${selectedScope()}`,
+);
+const canEditEntries = computed(
+	() => Boolean(playlist.value) && playlist.value?.access !== "reader" && !playlist.value?.source,
 );
 const canReorderEntries = computed(
 	() =>
@@ -50,7 +62,11 @@ const canReorderEntries = computed(
 		!selectingEntries.value,
 );
 const canReorderPlaylists = computed(
-	() => selectedView() === "playlists" && !selectedPlaylistId.value && !selectedQuery(),
+	() =>
+		selectedView() === "playlists" &&
+		selectedScope() === "owned" &&
+		!selectedPlaylistId.value &&
+		!selectedQuery(),
 );
 const selectedEntries = computed(() =>
 	(entryResult.value?.items ?? []).filter(({ entry_id }) => selectedEntryIds.value.has(entry_id)),
@@ -75,6 +91,31 @@ function selectedView(): LibraryView {
 function selectedReaction(): ReactionValue {
 	return selectedView() === "disliked" ? "dislike" : "like";
 }
+function selectedScope(): PlaylistScope {
+	const value = queryValue(route.query.scope);
+	return value === "shared" || value === "public" ? value : "owned";
+}
+function playlistScopeTitle() {
+	if (selectedScope() === "shared") return "Shared with you";
+	if (selectedScope() === "public") return "Public playlists";
+	return "Your playlists";
+}
+function playlistScopeDescription() {
+	if (selectedScope() === "shared") return "Collections you can help shape with other listeners.";
+	if (selectedScope() === "public") return "Playlists the server has made visible to everyone.";
+	return "Keep your own ordered collections or link them to YouTube.";
+}
+function playlistScopeEmptyTitle() {
+	if (selectedScope() === "shared") return "Nothing shared with you yet";
+	if (selectedScope() === "public") return "No public playlists yet";
+	return "No playlists yet";
+}
+function playlistScopeEmptyDescription() {
+	if (selectedScope() === "shared") return "Collaborative playlists will appear here.";
+	if (selectedScope() === "public")
+		return "Public collections from other listeners will appear here.";
+	return "Create one here or import a YouTube playlist.";
+}
 function selectedPage() {
 	const page = Number(queryValue(route.query.page));
 	return Number.isInteger(page) && page > 0 ? page : 1;
@@ -88,15 +129,18 @@ function routeQuery(
 		playlist?: string;
 		q?: string;
 		page?: number;
+		scope?: PlaylistScope;
 	} = {},
 ) {
 	const view = overrides.view ?? selectedView();
 	const playlistId = overrides.playlist ?? selectedPlaylistId.value;
 	const q = overrides.q ?? selectedQuery();
 	const page = overrides.page ?? selectedPage();
+	const scope = overrides.scope ?? selectedScope();
 	return {
 		...(view !== "playlists" ? { view } : {}),
 		...(view === "playlists" && playlistId ? { playlist: playlistId } : {}),
+		...(view === "playlists" && scope !== "owned" ? { scope } : {}),
 		...(q ? { q } : {}),
 		...(page > 1 ? { page: String(page) } : {}),
 	};
@@ -135,6 +179,7 @@ async function load(newSnapshot = false) {
 			page,
 			pageSize: PAGE_SIZE,
 			query: selectedQuery(),
+			filters: { scope: selectedScope() },
 			newSnapshot,
 		});
 		if (loaded) await normalizePage(loaded.page, page);
@@ -163,6 +208,13 @@ async function load(newSnapshot = false) {
 		),
 	);
 	await normalizePage(loaded.page, page);
+}
+
+async function chooseScope(scope: PlaylistScope) {
+	await router.push({
+		path: "/library",
+		query: routeQuery({ scope, playlist: "", q: "", page: 1 }),
+	});
 }
 
 async function chooseView(view: LibraryView) {
@@ -238,9 +290,9 @@ async function renamePlaylist() {
 	if (!current || !name || actionPending.value) return;
 	actionPending.value = true;
 	try {
-		playlist.value = await core.client.library.renamePlaylist(
+		playlist.value = await core.client.library.updatePlaylist(
 			current.playlist_id,
-			name,
+			{ name },
 			current.revision,
 		);
 		renaming.value = false;
@@ -251,6 +303,15 @@ async function renamePlaylist() {
 	} finally {
 		actionPending.value = false;
 	}
+}
+function acceptPlaylistChange(value: Playlist) {
+	playlist.value = value;
+	reactions.invalidatePlaylists();
+}
+async function acceptImportedPlaylist(value: Playlist) {
+	importOpen.value = false;
+	reactions.invalidatePlaylists();
+	await openPlaylist(value);
 }
 async function beginRename(value = playlist.value) {
 	if (!value || value.access !== "owner") return;
@@ -531,17 +592,33 @@ onScopeDispose(library.dispose);
 						</div>
 					</template>
 					<template #right>
-						<UButton
-							v-if="selectedView() === 'playlists' && !selectedPlaylistId"
-							:icon="icons.plus"
-							aria-label="New playlist"
-							@click="
-								playlistName = '';
-								createOpen = true;
+						<template
+							v-if="
+								selectedView() === 'playlists' &&
+								!selectedPlaylistId &&
+								selectedScope() === 'owned'
 							"
 						>
-							<span class="hidden sm:inline">New playlist</span>
-						</UButton>
+							<UButton
+								:icon="icons.upload"
+								aria-label="Import playlist"
+								color="neutral"
+								variant="ghost"
+								@click="importOpen = true"
+							>
+								<span class="hidden sm:inline">Import</span>
+							</UButton>
+							<UButton
+								:icon="icons.plus"
+								aria-label="New playlist"
+								@click="
+									playlistName = '';
+									createOpen = true;
+								"
+							>
+								<span class="hidden sm:inline">New playlist</span>
+							</UButton>
+						</template>
 						<PlayerConnection />
 					</template>
 				</UDashboardNavbar>
@@ -633,7 +710,7 @@ onScopeDispose(library.dispose);
 									>
 										{{
 											selectedView() === "playlists"
-												? "Your playlists"
+												? playlistScopeTitle()
 												: "Your library"
 										}}
 									</h1>
@@ -642,7 +719,7 @@ onScopeDispose(library.dispose);
 											playlist
 												? `${playlist.entry_count} ${playlist.entry_count === 1 ? "track" : "tracks"}, in the order you chose.`
 												: selectedView() === "playlists"
-													? "Keep your own ordered collections and queue them whenever you want."
+													? playlistScopeDescription()
 													: "Tracks you explicitly liked or disliked."
 										}}
 									</p>
@@ -678,6 +755,30 @@ onScopeDispose(library.dispose);
 							/>
 						</form>
 					</div>
+
+					<div
+						v-if="selectedView() === 'playlists' && !selectedPlaylistId"
+						class="mt-7 inline-flex rounded-lg bg-elevated p-1"
+						role="group"
+						aria-label="Playlist scope"
+					>
+						<UButton
+							v-for="scope in playlistScopes"
+							:key="scope.value"
+							:label="scope.label"
+							:color="selectedScope() === scope.value ? 'primary' : 'neutral'"
+							:variant="selectedScope() === scope.value ? 'soft' : 'ghost'"
+							:aria-pressed="selectedScope() === scope.value"
+							@click="chooseScope(scope.value)"
+						/>
+					</div>
+
+					<LibraryPlaylistSourceCard
+						v-if="playlist?.source"
+						class="mt-7"
+						:playlist="playlist"
+						@changed="acceptPlaylistChange"
+					/>
 
 					<p v-if="actionError" class="mt-5 text-sm text-warning" role="alert">
 						{{ actionError }}
@@ -737,6 +838,14 @@ onScopeDispose(library.dispose);
 									/>
 								</template>
 								<template #idle>
+									<UButton
+										v-if="playlist.access === 'owner'"
+										label="Share"
+										:icon="icons.users"
+										color="neutral"
+										variant="soft"
+										@click="shareOpen = true"
+									/>
 									<UDropdownMenu :items="playlistMenu">
 										<UButton
 											:icon="icons.ellipsis"
@@ -796,14 +905,14 @@ onScopeDispose(library.dispose);
 											{{
 												selectedQuery()
 													? "No matching playlists"
-													: "No playlists yet"
+													: playlistScopeEmptyTitle()
 											}}
 										</h3>
 										<p class="mt-2 text-sm text-muted">
 											{{
 												selectedQuery()
 													? "Try another name."
-													: "Create one here or from any track action."
+													: playlistScopeEmptyDescription()
 											}}
 										</p>
 									</div>
@@ -827,6 +936,7 @@ onScopeDispose(library.dispose);
 										:items="[]"
 										loading
 										:reorderable="canReorderEntries"
+										:editable="canEditEntries"
 									/>
 									<div
 										v-else-if="library.entries.error.value && !entryResult"
@@ -879,6 +989,7 @@ onScopeDispose(library.dispose);
 										:items="entryResult.items"
 										:total="entryResult.total"
 										:reorderable="canReorderEntries"
+										:editable="canEditEntries"
 										:selectable="selectingEntries"
 										:selected-entry-ids="selectedEntryIds"
 										:pending="actionPending"
@@ -976,6 +1087,14 @@ onScopeDispose(library.dispose);
 				</div>
 			</template>
 		</UDashboardPanel>
+
+		<LibraryPlaylistImportDialog v-model:open="importOpen" @imported="acceptImportedPlaylist" />
+		<LibraryPlaylistSharingDialog
+			v-if="playlist && playlist.access === 'owner'"
+			v-model:open="shareOpen"
+			:playlist="playlist"
+			@changed="acceptPlaylistChange"
+		/>
 
 		<UModal
 			:open="createOpen"

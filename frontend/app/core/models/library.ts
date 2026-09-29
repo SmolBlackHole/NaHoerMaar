@@ -7,7 +7,11 @@ type Schema = components["schemas"];
 
 export type LibraryTrack = Schema["LibraryTrackView"];
 export type LibraryTrackPage = Schema["LibraryTrackPageView"];
+export type LibraryContributor = Schema["nahoermaar__api__library__ContributorView"];
+export type LibraryContributors = Schema["ContributorsView"];
 export type Playlist = Schema["PlaylistView"];
+export type PlaylistScope = Schema["PlaylistScope"];
+export type PlaylistVisibility = Schema["PlaylistVisibility"];
 export type PlaylistPage = Schema["PlaylistPageView"];
 export type PlaylistEntry = Schema["PlaylistEntryView"];
 export type PlaylistEntryDeletion = Schema["PlaylistEntryDeletionView"];

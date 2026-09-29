@@ -118,6 +118,12 @@ class ContributorView(BaseModel):
     avatar_url: str | None
 
 
+class ContributorsView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: tuple[ContributorView, ...]
+
+
 class PlaylistSourceView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -136,6 +142,7 @@ class PlaylistView(BaseModel):
 
     playlist_id: UUID
     owner: ContributorView
+    collaborators: tuple[ContributorView, ...]
     position: int
     name: str
     visibility: PlaylistVisibility
@@ -246,6 +253,31 @@ class PlaylistDeletionView(BaseModel):
 def router(application: Application) -> APIRouter:
     """Build personal Library routes around the composed application."""
     routes = APIRouter(prefix="/api/library", tags=["library"])
+
+    @routes.get(
+        "/contributors",
+        operation_id="searchLibraryContributors",
+        responses=error_responses(401, 422, 500, 503),
+    )
+    async def search_contributors(
+        request: Request,
+        q: Annotated[str, Query(min_length=1, max_length=100)],
+        limit: Annotated[int, Query(ge=1, le=25)] = 10,
+    ) -> ContributorsView:
+        try:
+            contributors = await application.library.service.contributors(
+                authenticated(request).user.id,
+                query=q,
+                limit=limit,
+            )
+        except ValueError as error:
+            raise ApiError(ApiErrorCode.VALIDATION_FAILED, 422) from error
+        return ContributorsView(
+            items=tuple(
+                _contributor_view(contributor, application)
+                for contributor in contributors
+            )
+        )
 
     @routes.get(
         "/playlists",
@@ -440,6 +472,21 @@ def router(application: Application) -> APIRouter:
             authenticated(request).user.id,
             PlaylistId(playlist_id),
             body.expected_revision,
+        )
+        return _playlist_view(playlist, application)
+
+    @routes.post(
+        "/playlists/{playlist_id}/sync",
+        operation_id="syncLibraryPlaylist",
+        responses=error_responses(401, 403, 404, 409, 422, 500, 502, 503),
+    )
+    async def sync_playlist(
+        request: Request,
+        playlist_id: UUID,
+    ) -> PlaylistView:
+        playlist = await application.library.service.synchronize_playlist(
+            authenticated(request).user.id,
+            PlaylistId(playlist_id),
         )
         return _playlist_view(playlist, application)
 
@@ -817,6 +864,10 @@ def _playlist_view(
     return PlaylistView(
         playlist_id=playlist.playlist_id,
         owner=_contributor_view(playlist.owner, application),
+        collaborators=tuple(
+            _contributor_view(collaborator, application)
+            for collaborator in playlist.collaborators
+        ),
         position=playlist.position,
         name=playlist.name,
         visibility=playlist.visibility,

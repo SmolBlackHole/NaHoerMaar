@@ -58,6 +58,7 @@ class LibraryErrorCode(StrEnum):
     PLAYLIST_COLLABORATOR_INVALID = "library_playlist_collaborator_invalid"
     PLAYLIST_COLLABORATOR_EXISTS = "library_playlist_collaborator_exists"
     PLAYLIST_LINKED_READ_ONLY = "library_playlist_linked_read_only"
+    PLAYLIST_NOT_LINKED = "library_playlist_not_linked"
     PLAYLIST_UNDO_UNAVAILABLE = "library_playlist_undo_unavailable"
     USER_NOT_FOUND = "library_user_not_found"
 

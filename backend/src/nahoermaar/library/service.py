@@ -31,6 +31,7 @@ from .domain import (
     playlist_name,
 )
 from .read_model import (
+    LibraryContributor,
     LibraryReadModel,
     LibrarySnapshot,
     LibraryTrackPage,
@@ -41,6 +42,7 @@ from .read_model import (
     ReactionSummary,
 )
 from .repository import PlaylistRepository, TrackReactionRepository
+from .synchronization import PlaylistSynchronizer
 
 type Clock = Callable[[], datetime]
 
@@ -52,19 +54,21 @@ def _utc_now() -> datetime:
 class LibraryService:
     """Own personal reactions, playlists and Library read contracts."""
 
-    __slots__ = ("_catalog", "_clock", "_reader", "_units")
+    __slots__ = ("_catalog", "_clock", "_reader", "_synchronizer", "_units")
 
     def __init__(
         self,
         units: UnitOfWorkFactory,
         catalog: CatalogService,
         reader: LibraryReadModel,
+        synchronizer: PlaylistSynchronizer,
         *,
         clock: Clock = _utc_now,
     ) -> None:
         self._units = units
         self._catalog = catalog
         self._reader = reader
+        self._synchronizer = synchronizer
         self._clock = clock
 
     async def set_reaction(
@@ -134,6 +138,15 @@ class LibraryService:
             page_size=page_size,
             snapshot=snapshot,
         )
+
+    async def contributors(
+        self,
+        actor_id: UserId,
+        *,
+        query: str,
+        limit: int = 10,
+    ) -> tuple[LibraryContributor, ...]:
+        return await self._reader.contributors(actor_id, query=query, limit=limit)
 
     async def create_playlist(self, owner_id: UserId, name: str) -> PlaylistSummary:
         normalized = playlist_name(name)
@@ -395,6 +408,32 @@ class LibraryService:
                 now=self._clock(),
             )
             await work.commit()
+        return await self._reader.playlist(actor_id, playlist_id)
+
+    async def synchronize_playlist(
+        self,
+        actor_id: UserId,
+        playlist_id: PlaylistId,
+    ) -> PlaylistSummary:
+        summary = await self._reader.playlist(actor_id, playlist_id)
+        if summary.access is not PlaylistAccess.OWNER:
+            raise LibraryError(LibraryErrorCode.PLAYLIST_ACCESS_DENIED, 403)
+        if summary.source is None:
+            raise LibraryError(LibraryErrorCode.PLAYLIST_NOT_LINKED, 409)
+        await self._synchronizer.synchronize(
+            Playlist(
+                summary.playlist_id,
+                summary.owner.user_id,
+                summary.position,
+                summary.name,
+                summary.visibility,
+                summary.source,
+                summary.revision,
+                summary.created_at,
+                summary.updated_at,
+            ),
+            now=self._clock(),
+        )
         return await self._reader.playlist(actor_id, playlist_id)
 
     async def playlist_selections(

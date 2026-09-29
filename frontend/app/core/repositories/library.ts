@@ -2,7 +2,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
 import type { Transport } from "../api/transport";
-import type { PlaylistTrack, ReactionValue } from "../models/library";
+import type {
+	PlaylistScope,
+	PlaylistTrack,
+	PlaylistVisibility,
+	ReactionValue,
+} from "../models/library";
 
 export interface LibraryTracksQuery {
 	page?: number;
@@ -24,12 +29,20 @@ export interface PlaylistPageQuery {
 	pageSize?: number;
 	query?: string;
 	snapshot?: string;
+	scope?: PlaylistScope;
 }
 
 const idempotencyHeader = (operationId: string) => ({ "Idempotency-Key": operationId });
 
 export function createLibraryRepository(request: Transport) {
 	return {
+		contributors: (query: string, limit = 10, signal?: AbortSignal) =>
+			request((api) =>
+				api.GET("/api/library/contributors", {
+					params: { query: { q: query, limit } },
+					signal,
+				}),
+			),
 		playlists: (options: PlaylistPageQuery = {}, signal?: AbortSignal) =>
 			request((api) =>
 				api.GET("/api/library/playlists", {
@@ -38,6 +51,7 @@ export function createLibraryRepository(request: Transport) {
 							page: options.page ?? 1,
 							page_size: options.pageSize ?? 20,
 							q: options.query,
+							scope: options.scope,
 							snapshot: options.snapshot,
 						},
 					},
@@ -60,16 +74,42 @@ export function createLibraryRepository(request: Transport) {
 					signal,
 				}),
 			),
-		renamePlaylist: (
+		updatePlaylist: (
 			playlistId: string,
-			name: string,
+			changes: { name?: string; visibility?: PlaylistVisibility },
 			expectedRevision: number,
 			signal?: AbortSignal,
 		) =>
 			request((api) =>
 				api.PATCH("/api/library/playlists/{playlist_id}", {
 					params: { path: { playlist_id: playlistId } },
-					body: { name, expected_revision: expectedRevision },
+					body: { ...changes, expected_revision: expectedRevision },
+					signal,
+				}),
+			),
+		addPlaylistCollaborator: (
+			playlistId: string,
+			userId: string,
+			expectedRevision: number,
+			signal?: AbortSignal,
+		) =>
+			request((api) =>
+				api.PUT("/api/library/playlists/{playlist_id}/collaborators/{user_id}", {
+					params: { path: { playlist_id: playlistId, user_id: userId } },
+					body: { expected_revision: expectedRevision },
+					signal,
+				}),
+			),
+		removePlaylistCollaborator: (
+			playlistId: string,
+			userId: string,
+			expectedRevision: number,
+			signal?: AbortSignal,
+		) =>
+			request((api) =>
+				api.DELETE("/api/library/playlists/{playlist_id}/collaborators/{user_id}", {
+					params: { path: { playlist_id: playlistId, user_id: userId } },
+					body: { expected_revision: expectedRevision },
 					signal,
 				}),
 			),
@@ -98,6 +138,13 @@ export function createLibraryRepository(request: Transport) {
 				api.DELETE("/api/library/playlists/{playlist_id}/source", {
 					params: { path: { playlist_id: playlistId } },
 					body: { expected_revision: expectedRevision },
+					signal,
+				}),
+			),
+		syncPlaylist: (playlistId: string, signal?: AbortSignal) =>
+			request((api) =>
+				api.POST("/api/library/playlists/{playlist_id}/sync", {
+					params: { path: { playlist_id: playlistId } },
 					signal,
 				}),
 			),
