@@ -266,6 +266,7 @@ def _application(
         ),
         LibraryModule(
             cast(LibraryService, object()),
+            (),
             cast(HousekeepingContribution, object()),
         ),
         LyricsModule(cast(LyricsService, object())),

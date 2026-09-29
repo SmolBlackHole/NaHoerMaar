@@ -29,6 +29,7 @@ from nahoermaar.catalog.domain import (
 from nahoermaar.catalog.providers import (
     ProviderArtist,
     ProviderAudio,
+    ProviderError,
     ProviderPage,
     ProviderPlaylist,
     ProviderTrack,
@@ -48,9 +49,19 @@ from nahoermaar.library.domain import (
     ReactionValue,
 )
 from nahoermaar.library.read_model import LibraryReadModel
+from nahoermaar.library.maintenance import PlaylistSyncMaintenance
 from nahoermaar.library.repository import PlaylistRepository
 from nahoermaar.library.service import LibraryService
 from nahoermaar.messaging import MessageContext
+from nahoermaar.operations.jobs import (
+    JobRunDetailOutcome,
+    JobTrigger,
+)
+from nahoermaar.operations.scheduler import (
+    JobExecution,
+    JobOptions,
+    JobProgressUnit,
+)
 from nahoermaar.player.domain import ListeningSessionId, OperationId
 from nahoermaar.player.events import AddTracks, TrackSelection
 from nahoermaar.users.domain import (
@@ -65,6 +76,7 @@ from nahoermaar.views.catalog import CatalogCleanupView
 ROOT = Path(__file__).parents[3]
 NOW = datetime(2026, 9, 29, 12, tzinfo=UTC)
 PLAYLIST_URL = "https://www.youtube.com/playlist?list=PLlibrarysource"
+SECOND_PLAYLIST_URL = "https://www.youtube.com/playlist?list=PLlibrarysecond"
 
 
 class PlaylistProvider:
@@ -121,6 +133,91 @@ class PlaylistProvider:
     async def track(self, reference: MediaReference) -> ProviderTrack:
         del reference
         return self.tracks[0]
+
+    async def radio(
+        self,
+        reference: MediaReference,
+        *,
+        limit: int,
+        continuation: str | None = None,
+    ) -> ProviderPage:
+        del reference, limit, continuation
+        return ProviderPage(())
+
+    async def resolve_audio(self, reference: MediaReference) -> ProviderAudio:
+        del reference
+        return ProviderAudio("https://audio.example/stream")
+
+    async def close(self) -> None:
+        return None
+
+
+class SyncPlaylistProvider:
+    key = "youtube"
+
+    def __init__(
+        self,
+        contents: dict[str, tuple[ProviderTrack, ...]],
+    ) -> None:
+        self.contents = contents
+        self.failures: set[str] = set()
+        self.active_requests = 0
+        self.maximum_active_requests = 0
+
+    def identify(
+        self,
+        source_url: str,
+        *,
+        kind: MediaKind | None = None,
+    ) -> MediaReference | None:
+        if source_url not in self.contents or kind not in {None, MediaKind.PLAYLIST}:
+            return None
+        return MediaReference(
+            ProviderName.YOUTUBE,
+            source_url.rsplit("=", maxsplit=1)[-1],
+            MediaKind.PLAYLIST,
+            source_url,
+        )
+
+    async def playlist(
+        self,
+        reference: MediaReference,
+        *,
+        limit: int,
+        continuation: str | None = None,
+    ) -> ProviderPlaylist:
+        assert continuation is None
+        self.active_requests += 1
+        self.maximum_active_requests = max(
+            self.maximum_active_requests,
+            self.active_requests,
+        )
+        try:
+            await asyncio.sleep(0)
+            if reference.external_id in self.failures:
+                raise ProviderError("playlist unavailable")
+            entries = self.contents[reference.source_url]
+            assert len(entries) <= limit
+            return ProviderPlaylist(
+                reference,
+                f"Playlist {reference.external_id}",
+                ProviderPage(entries),
+            )
+        finally:
+            self.active_requests -= 1
+
+    async def search(
+        self,
+        query: str,
+        *,
+        limit: int,
+        continuation: str | None = None,
+    ) -> ProviderPage:
+        del query, limit, continuation
+        return ProviderPage(())
+
+    async def track(self, reference: MediaReference) -> ProviderTrack:
+        return self.contents[reference.source_url][0]
 
     async def radio(
         self,
@@ -876,6 +973,152 @@ def test_linked_playlist_import_is_deterministic_read_only_and_detachable() -> N
         )
         assert reordered.entries[0].entry_id == detached_entries.entries[2].entry_id
         assert tuple(entry.position for entry in reordered.entries) == (0, 1, 2)
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        asyncio.run(database.close())
+
+
+def test_playlist_sync_job_reconciles_occurrences_and_keeps_failed_cache() -> None:
+    database = _database()
+
+    async def scenario() -> None:
+        def units() -> UnitOfWork:
+            return UnitOfWork(database.sessions)
+
+        owner = UserId(uuid4())
+        async with units() as work:
+            await _add_user(work, owner, "181", "Andrey")
+            await work.commit()
+
+        first_track = _track(181, "First", "Sync Artist")
+        retained_track = _track(182, "Retained", "Sync Artist")
+        failed_track = _track(183, "Cached", "Other Artist")
+        added_track = _track(184, "Added", "Sync Artist")
+        provider = SyncPlaylistProvider(
+            {
+                PLAYLIST_URL: (first_track, retained_track),
+                SECOND_PLAYLIST_URL: (failed_track,),
+            }
+        )
+        clock = [NOW]
+        catalog = CatalogService(units, (provider,), clock=lambda: clock[0])
+        library = LibraryService(
+            units,
+            catalog,
+            LibraryReadModel(units),
+            clock=lambda: clock[0],
+        )
+        first = await library.import_playlist(owner, PLAYLIST_URL)
+        second = await library.import_playlist(owner, SECOND_PLAYLIST_URL)
+        first_before = await library.playlist_entries(
+            owner,
+            first.playlist_id,
+            page=1,
+            page_size=100,
+        )
+        second_before = await library.playlist_entries(
+            owner,
+            second.playlist_id,
+            page=1,
+            page_size=100,
+        )
+
+        provider.contents[PLAYLIST_URL] = (retained_track, added_track)
+        provider.failures.add("PLlibrarysecond")
+        clock[0] += timedelta(hours=2)
+        progress: list[tuple[int, int, JobProgressUnit]] = []
+        maintenance = PlaylistSyncMaintenance(
+            units,
+            catalog,
+            clock=lambda: clock[0],
+            parallel_requests=1,
+        )
+
+        def execution() -> JobExecution:
+            return JobExecution(
+                JobOptions(batch_size=10),
+                JobTrigger.SCHEDULED,
+                None,
+                lambda current, total, unit: progress.append((current, total, unit)),
+            )
+
+        first_run = await maintenance.run(execution())
+        assert first_run.candidate_count == 2
+        assert first_run.processed_count == 2
+        assert first_run.changed_count == 1
+        assert first_run.failure_count == 1
+        assert first_run.error_code == "playlist_sync_partial"
+        assert provider.maximum_active_requests == 1
+        assert progress[-1] == (2, 2, JobProgressUnit.RECORDS)
+
+        details = {detail.subject_id: detail for detail in first_run.details}
+        changed_detail = details[str(first.playlist_id)]
+        assert changed_detail.outcome is JobRunDetailOutcome.CHANGED
+        assert changed_detail.summary == (
+            "1 added, 1 removed, 1 moved, 0 unavailable, 0 unchanged."
+        )
+        assert changed_detail.affected_count == 3
+        failed_detail = details[str(second.playlist_id)]
+        assert failed_detail.outcome is JobRunDetailOutcome.FAILED
+        assert failed_detail.error_code == "provider_failed"
+
+        first_after = await library.playlist(
+            owner,
+            first.playlist_id,
+        )
+        first_entries = await library.playlist_entries(
+            owner,
+            first.playlist_id,
+            page=1,
+            page_size=100,
+        )
+        assert first_after.revision == first.revision + 1
+        assert first_entries.entries[0].track_id == first_before.entries[1].track_id
+        assert first_entries.entries[1].track_id not in {
+            entry.track_id for entry in first_before.entries
+        }
+        assert first_entries.entries[0].entry_id == first_before.entries[1].entry_id
+        assert first_entries.entries[1].entry_id not in {
+            entry.entry_id for entry in first_before.entries
+        }
+
+        second_after = await library.playlist(owner, second.playlist_id)
+        second_entries = await library.playlist_entries(
+            owner,
+            second.playlist_id,
+            page=1,
+            page_size=100,
+        )
+        assert second_after.revision == second.revision
+        assert second_after.source is not None
+        assert second_after.source.last_error_code == "provider_failed"
+        assert tuple(entry.entry_id for entry in second_entries.entries) == tuple(
+            entry.entry_id for entry in second_before.entries
+        )
+
+        immediate = await maintenance.run(execution())
+        assert immediate.candidate_count == 0
+        assert immediate.details == ()
+
+        provider.failures.clear()
+        clock[0] += timedelta(hours=1)
+        recovered = await maintenance.run(execution())
+        assert recovered.candidate_count == 2
+        assert recovered.changed_count == 0
+        assert recovered.failure_count == 0
+        assert all(
+            detail.outcome is JobRunDetailOutcome.UNCHANGED
+            for detail in recovered.details
+        )
+        recovered_first = await library.playlist(owner, first.playlist_id)
+        recovered_second = await library.playlist(owner, second.playlist_id)
+        assert recovered_first.revision == first_after.revision
+        assert recovered_second.revision == second.revision
+        assert recovered_second.source is not None
+        assert recovered_second.source.last_error_code is None
+        await catalog.close()
 
     try:
         asyncio.run(scenario())

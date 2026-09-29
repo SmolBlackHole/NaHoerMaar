@@ -4,6 +4,7 @@
 
 """Transactional persistence owned by the personal Library."""
 
+from collections import defaultdict, deque
 from datetime import datetime
 from uuid import UUID, uuid4
 
@@ -41,6 +42,7 @@ from .domain import (
     PlaylistEntryUndoId,
     PlaylistId,
     PlaylistSource,
+    PlaylistSyncChanges,
     PlaylistTrackSelection,
     PlaylistVisibility,
     ReactionValue,
@@ -414,6 +416,133 @@ class PlaylistRepository:
         )
         await self._session.flush()
         return _playlist(row), True
+
+    async def linked_sync_candidates(
+        self,
+        *,
+        due_before: datetime,
+        limit: int,
+    ) -> tuple[Playlist, ...]:
+        rows = await self._session.scalars(
+            select(_PlaylistRow)
+            .where(
+                _PlaylistRow.source_provider_key.is_not(None),
+                _PlaylistRow.source_last_attempt_at <= due_before,
+            )
+            .order_by(
+                _PlaylistRow.source_last_successful_sync_at,
+                _PlaylistRow.id,
+            )
+            .limit(limit)
+        )
+        return tuple(_playlist(row) for row in rows)
+
+    async def synchronize_linked(
+        self,
+        playlist_id: PlaylistId,
+        *,
+        provider_key: str,
+        external_id: str,
+        canonical_url: str,
+        selections: tuple[PlaylistTrackSelection, ...],
+        unavailable_entry_count: int,
+        truncated: bool,
+        now: datetime,
+    ) -> PlaylistSyncChanges | None:
+        if len(selections) > MAX_PLAYLIST_ENTRIES:
+            raise LibraryError(LibraryErrorCode.PLAYLIST_CAPACITY_EXCEEDED, 409)
+        row = await self._session.scalar(
+            select(_PlaylistRow).where(_PlaylistRow.id == playlist_id).with_for_update()
+        )
+        if (
+            row is None
+            or row.source_provider_key != provider_key
+            or row.source_external_id != external_id
+        ):
+            return None
+
+        existing = list(await self._entry_rows(playlist_id, for_update=True))
+        original_positions = {entry.id: entry.position for entry in existing}
+        by_source: dict[tuple[bool, UUID], deque[_PlaylistEntryRow]] = defaultdict(
+            deque
+        )
+        for entry in existing:
+            by_source[_entry_match_key(entry)].append(entry)
+
+        offset = max(len(existing), len(selections)) + 1
+        for entry in existing:
+            entry.position += offset
+        await self._session.flush()
+
+        added = 0
+        moved = 0
+        unchanged = 0
+        retained: set[UUID] = set()
+        for position, selection in enumerate(selections):
+            matches = by_source[_selection_match_key(selection)]
+            if matches:
+                entry = matches.popleft()
+                retained.add(entry.id)
+                if original_positions[entry.id] == position:
+                    unchanged += 1
+                else:
+                    moved += 1
+                entry.track_id = selection.track_id
+                entry.preferred_source_id = selection.preferred_source_id
+                entry.position = position
+                continue
+            self._session.add(
+                _PlaylistEntryRow(
+                    id=uuid4(),
+                    playlist_id=row.id,
+                    track_id=selection.track_id,
+                    preferred_source_id=selection.preferred_source_id,
+                    added_by=row.owner_id,
+                    position=position,
+                    created_at=now,
+                )
+            )
+            added += 1
+
+        removed = len(existing) - len(retained)
+        for entry in existing:
+            if entry.id not in retained:
+                await self._session.delete(entry)
+
+        changes = PlaylistSyncChanges(added, removed, moved, unchanged)
+        row.source_url = canonical_url
+        row.source_last_attempt_at = now
+        row.source_last_successful_sync_at = now
+        row.source_last_error_code = None
+        row.source_unavailable_entry_count = unavailable_entry_count
+        row.source_truncated = truncated
+        if changes.content_changed:
+            self._touch(row, now)
+        await self._session.flush()
+        return changes
+
+    async def mark_linked_sync_failed(
+        self,
+        playlist_id: PlaylistId,
+        *,
+        provider_key: str,
+        external_id: str,
+        error_code: str,
+        now: datetime,
+    ) -> bool:
+        row = await self._session.scalar(
+            select(_PlaylistRow).where(_PlaylistRow.id == playlist_id).with_for_update()
+        )
+        if (
+            row is None
+            or row.source_provider_key != provider_key
+            or row.source_external_id != external_id
+        ):
+            return False
+        row.source_last_attempt_at = now
+        row.source_last_error_code = error_code[:200]
+        await self._session.flush()
+        return True
 
     async def get(
         self,
@@ -971,6 +1100,18 @@ def _reaction(row: _TrackReactionRow) -> TrackReaction:
         row.created_at,
         row.updated_at,
     )
+
+
+def _entry_match_key(entry: _PlaylistEntryRow) -> tuple[bool, UUID]:
+    if entry.preferred_source_id is not None:
+        return True, entry.preferred_source_id
+    return False, entry.track_id
+
+
+def _selection_match_key(selection: PlaylistTrackSelection) -> tuple[bool, UUID]:
+    if selection.preferred_source_id is not None:
+        return True, selection.preferred_source_id
+    return False, selection.track_id
 
 
 def _playlist(row: _PlaylistRow) -> Playlist:

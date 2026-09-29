@@ -9,8 +9,9 @@ from dataclasses import dataclass
 from nahoermaar.catalog.service import CatalogService
 from nahoermaar.database.uow import UnitOfWorkFactory
 from nahoermaar.operations.maintenance import HousekeepingContribution
+from nahoermaar.operations.scheduler import JobDefinition
 
-from .maintenance import LibraryMaintenance
+from .maintenance import LibraryMaintenance, PlaylistSyncMaintenance
 from .read_model import LibraryReadModel
 from .service import LibraryService
 
@@ -20,6 +21,7 @@ class LibraryModule:
     """Use cases exported by the personal Library."""
 
     service: LibraryService
+    jobs: tuple[JobDefinition, ...]
     housekeeping: HousekeepingContribution
 
 
@@ -29,7 +31,9 @@ def create_library_module(
 ) -> LibraryModule:
     """Build personal Library use cases and projections."""
     reader = LibraryReadModel(units)
+    service = LibraryService(units, catalog, reader)
     return LibraryModule(
-        LibraryService(units, catalog, reader),
+        service,
+        (PlaylistSyncMaintenance(units, catalog).definition(),),
         LibraryMaintenance(units).contribution(),
     )

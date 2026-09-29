@@ -199,6 +199,22 @@ class PlaylistTrackSelection:
     preferred_source_id: TrackSourceId | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class PlaylistSyncChanges:
+    added: int
+    removed: int
+    moved: int
+    unchanged: int
+
+    def __post_init__(self) -> None:
+        if min(self.added, self.removed, self.moved, self.unchanged) < 0:
+            raise ValueError("Playlist sync counts must be non-negative.")
+
+    @property
+    def content_changed(self) -> bool:
+        return bool(self.added or self.removed or self.moved)
+
+
 def playlist_name(value: str) -> str:
     """Normalize and validate one user-visible playlist name."""
     normalized = value.strip()

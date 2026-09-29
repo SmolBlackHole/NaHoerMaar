@@ -274,7 +274,7 @@ def bootstrap(
     )
     operations_module = complete_operations_module(
         operations_foundation,
-        catalog_module.jobs,
+        catalog_module.jobs + library_module.jobs,
         (
             users_module.housekeeping,
             player_module.housekeeping,

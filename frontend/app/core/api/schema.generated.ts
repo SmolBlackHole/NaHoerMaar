@@ -1653,7 +1653,7 @@ export interface components {
          * JobId
          * @enum {string}
          */
-        JobId: "catalog-maintenance" | "catalog-cleanup" | "source-revalidation" | "housekeeping";
+        JobId: "catalog-maintenance" | "catalog-cleanup" | "source-revalidation" | "playlist-sync" | "housekeeping";
         /**
          * JobRunStatus
          * @enum {string}

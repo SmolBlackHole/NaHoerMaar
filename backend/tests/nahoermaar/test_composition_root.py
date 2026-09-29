@@ -93,6 +93,11 @@ def test_bootstrap_loads_settings_and_composes_auth(
     revalidation_job = application.operations.jobs.descriptor(JobId.SOURCE_REVALIDATION)
     assert revalidation_job.module == "catalog"
     assert revalidation_job.controls.batch_size.default == 10
+    playlist_sync_job = application.operations.jobs.descriptor(JobId.PLAYLIST_SYNC)
+    assert playlist_sync_job.module == "library"
+    assert playlist_sync_job.interval.total_seconds() == 60 * 60
+    assert playlist_sync_job.controls.batch_size.default == 10
+    assert playlist_sync_job.parallel_requests == 4
     paths = create_app(application).openapi()["paths"]
     assert {
         "/api/catalog/search",
